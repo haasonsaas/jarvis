@@ -32,7 +32,14 @@ class ToolSummaryStore:
         if isinstance(limit, float) and not math.isfinite(limit):
             parsed_limit = 10
         parsed_limit = max(1, min(200, parsed_limit))
-        return [asdict(item) for item in list(self._items)[:parsed_limit]]
+        items = []
+        for item in list(self._items)[:parsed_limit]:
+            payload = asdict(item)
+            duration = payload.get("duration_ms")
+            if isinstance(duration, (int, float)) and not math.isfinite(float(duration)):
+                payload["duration_ms"] = 0.0
+            items.append(payload)
+        return items
 
 
 _store = ToolSummaryStore()
@@ -46,7 +53,9 @@ def record_summary(
     effect: str | None = None,
     risk: str | None = None,
 ) -> None:
-    duration_ms = max(0.0, (time.monotonic() - start_time) * 1000.0)
+    duration_ms = (time.monotonic() - start_time) * 1000.0
+    if not math.isfinite(duration_ms) or duration_ms < 0.0:
+        duration_ms = 0.0
     _store.add(ToolSummary(
         name=name,
         status=status,

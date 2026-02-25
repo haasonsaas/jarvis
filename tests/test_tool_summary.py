@@ -3,7 +3,7 @@
 import math
 import time
 
-from jarvis.tool_summary import ToolSummaryStore, ToolSummary
+from jarvis.tool_summary import ToolSummaryStore, ToolSummary, record_summary, list_summaries
 
 
 def _summary(name: str) -> ToolSummary:
@@ -35,3 +35,9 @@ def test_list_limit_handles_non_finite_values():
     assert len(items_nan) == 1
     assert len(items_inf) == 1
 
+
+def test_record_summary_clamps_non_finite_start_time():
+    record_summary("nan_case", "ok", math.nan)
+    payload = list_summaries(1)[0]
+    assert payload["name"] == "nan_case"
+    assert payload["duration_ms"] == 0.0
