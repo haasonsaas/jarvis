@@ -239,7 +239,7 @@ class TestServicesTools:
         included = await services.memory_search({"query": "bank", "limit": 5, "include_sensitive": True})
         assert "bank" in included["content"][0]["text"].lower()
 
-        status = await services.memory_status({"warm": True, "sync": True})
+        status = await services.memory_status({"warm": True, "sync": True, "optimize": True, "vacuum": True})
         assert "entries" in status["content"][0]["text"].lower()
 
         recent = await services.memory_recent({"limit": 1, "sources": ["secrets"]})

@@ -471,6 +471,10 @@ async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
         _memory.warm()
     if _as_bool(args.get("sync"), default=False):
         _memory.sync()
+    if _as_bool(args.get("optimize"), default=False):
+        _memory.optimize()
+    if _as_bool(args.get("vacuum"), default=False):
+        _memory.vacuum()
     status = _memory.memory_status()
     record_summary("memory_status", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(status)}]}
@@ -776,6 +780,8 @@ memory_status_tool = tool(
         "properties": {
             "warm": {"type": "boolean"},
             "sync": {"type": "boolean"},
+            "optimize": {"type": "boolean"},
+            "vacuum": {"type": "boolean"},
         },
     },
 )(memory_status)

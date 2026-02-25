@@ -44,7 +44,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 ## 1) P0 Correctness and Safety
 
 ### 1.1 Config validation hardening (`P0`)
-- [ ] Validate runtime parameter ranges at startup (not just type coercion).
+- [x] Validate runtime parameter ranges at startup (not just type coercion).
 - Why:
   - Silent invalid env values can create unstable behavior without obvious failure.
 - Acceptance criteria:
@@ -68,7 +68,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
   - `tests/test_config.py`
 
 ### 1.2 Audio input cancellation responsiveness (`P0`)
-- [ ] Ensure `_listen_loop` exits quickly on cancellation for local mic mode.
+- [x] Ensure `_listen_loop` exits quickly on cancellation for local mic mode.
 - Why:
   - `sd.InputStream.read()` can block and delay shutdown.
 - Acceptance criteria:
@@ -81,7 +81,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
   - `tests/test_main_lifecycle.py`
 
 ### 1.3 Service network exception envelope (`P0`)
-- [ ] Catch and report non-`aiohttp.ClientError` failures in service calls.
+- [x] Catch and report non-`aiohttp.ClientError` failures in service calls.
 - Why:
   - Unexpected decode errors/timeouts/cancelled contexts should not crash tool handler.
 - Acceptance criteria:
@@ -98,7 +98,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 ## 2) P1 Product Behavior
 
 ### 2.1 Startup diagnostics banner (`P1`)
-- [ ] Print a concise capability/status report at startup.
+- [x] Print a concise capability/status report at startup.
 - Why:
   - Operators need immediate confidence in connected subsystems.
 - Acceptance criteria:
@@ -116,7 +116,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
   - `tests/test_main_lifecycle.py` or new startup diagnostics test
 
 ### 2.2 Session telemetry snapshot (`P1`)
-- [ ] Track counters for turn count, barge-ins, average latencies.
+- [x] Track counters for turn count, barge-ins, average latencies.
 - Why:
   - Needed for production tuning and regression detection.
 - Acceptance criteria:
@@ -146,7 +146,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 ## 3) P1/P2 Memory and Planning
 
 ### 3.1 Memory DB pragmas and reliability (`P1`)
-- [ ] Configure SQLite pragmas for reliability/perf baseline.
+- [x] Configure SQLite pragmas for reliability/perf baseline.
 - Why:
   - Better durability/perf tradeoff for long-running assistant.
 - Candidate pragmas:
@@ -162,7 +162,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
   - `tests/test_memory.py`
 
 ### 3.2 Memory close/idempotence (`P1`)
-- [ ] Make `MemoryStore.close()` idempotent.
+- [x] Make `MemoryStore.close()` idempotent.
 - Why:
   - Defensive cleanup behavior under repeated teardown calls.
 - Acceptance criteria:
@@ -174,7 +174,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
   - `tests/test_memory.py`
 
 ### 3.3 Task plan state machine hardening (`P2`)
-- [ ] Formalize plan status transitions.
+- [x] Formalize plan status transitions.
 - Why:
   - Prevent inconsistent states as orchestration grows.
 - Acceptance criteria:
@@ -318,21 +318,21 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 - [x] Audit serialization hardened for non-JSON payload data.
 
 ### Follow-up hardening needed
-- [>] Startup diagnostics banner and health snapshot.
-- [>] Config range validation completeness.
-- [>] Service non-client exception envelope.
-- [>] Memory DB pragmas and idempotent close.
+- [x] Startup diagnostics banner and health snapshot.
+- [x] Config range validation completeness.
+- [x] Service non-client exception envelope.
+- [x] Memory DB pragmas and idempotent close.
 
 ---
 
 ## 9) Current execution wave (this cycle)
 
 ### Wave A (now)
-- [-] Rewrite TODO into detailed engineering execution plan.
-- [-] Implement config boundary validation and tests.
-- [-] Add startup diagnostics summary output and tests.
-- [-] Harden services network exception envelope.
-- [-] Add memory DB pragmas + idempotent close + tests.
+- [x] Rewrite TODO into detailed engineering execution plan.
+- [x] Implement config boundary validation and tests.
+- [x] Add startup diagnostics summary output and tests.
+- [x] Harden services network exception envelope.
+- [x] Add memory DB pragmas + idempotent close + tests.
 
 ### Wave B (next)
 - [x] Audio listen-loop cancellation improvements.
@@ -343,7 +343,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 
 ## 10) Definition of Done for this roadmap
 - [ ] No known P0 bugs open.
-- [ ] `pytest -q` remains green with added hardening tests.
-- [ ] Startup prints deterministic capability summary.
-- [ ] Operator can request status and see core health indicators.
+- [x] `pytest -q` remains green with added hardening tests.
+- [x] Startup prints deterministic capability summary.
+- [x] Operator can request status and see core health indicators.
 - [ ] Memory and tooling layers are resilient to malformed inputs and I/O errors.

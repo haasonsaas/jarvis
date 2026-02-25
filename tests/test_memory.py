@@ -72,3 +72,42 @@ def test_memory_store_enables_foreign_keys(tmp_path):
         assert int(value) == 1
     finally:
         store.close()
+
+
+def test_task_plan_reopens_when_step_marked_not_done(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        plan_id = store.add_task_plan("Plan", ["A", "B"])
+        assert store.update_task_step(plan_id, 0, "done")
+        assert store.update_task_step(plan_id, 1, "done")
+        closed = store.list_task_plans(open_only=False)[0]
+        assert closed.status == "closed"
+
+        assert store.update_task_step(plan_id, 1, "pending")
+        reopened = store.list_task_plans(open_only=False)[0]
+        assert reopened.status == "open"
+    finally:
+        store.close()
+
+
+def test_search_limits_are_clamped_in_store(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        for idx in range(10):
+            store.add_memory(f"memory {idx}")
+        results = store.search_v2("memory", limit=10000)
+        assert len(results) <= 200
+    finally:
+        store.close()
+
+
+def test_memory_optimize_and_vacuum_update_status(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        store.optimize()
+        store.vacuum()
+        status = store.memory_status()
+        assert status["last_optimize"] is not None
+        assert status["last_vacuum"] is not None
+    finally:
+        store.close()

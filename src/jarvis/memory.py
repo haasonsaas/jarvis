@@ -8,6 +8,9 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+MAX_QUERY_LIMIT = 200
+MAX_SEARCH_FANOUT = 800
+
 
 @dataclass
 class MemoryEntry:
@@ -59,6 +62,8 @@ class MemoryStore:
         self._memory_enabled = False
         self._last_warm = None
         self._last_sync = None
+        self._last_optimize = None
+        self._last_vacuum = None
         self._init_schema()
 
     def _configure_connection(self) -> None:
@@ -208,8 +213,15 @@ class MemoryStore:
         cleaned = query.strip()
         if not cleaned:
             return []
+        limit = max(1, min(MAX_QUERY_LIMIT, int(limit)))
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
-        keyword_rows = self._search_keyword(cleaned, limit * 4, sensitivity_clause, sensitivity_params, sources)
+        keyword_rows = self._search_keyword(
+            cleaned,
+            min(MAX_SEARCH_FANOUT, limit * 4),
+            sensitivity_clause,
+            sensitivity_params,
+            sources,
+        )
         if not keyword_rows:
             return []
         entries = [self._row_to_memory(row) for row in keyword_rows]
@@ -230,6 +242,7 @@ class MemoryStore:
         cleaned = query.strip()
         if not cleaned:
             return []
+        limit = max(1, min(MAX_QUERY_LIMIT, int(limit)))
         cur = self._conn.cursor()
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         if self._fts_enabled:
@@ -256,6 +269,7 @@ class MemoryStore:
         return [self._row_to_memory(row) for row in rows]
 
     def recent(self, *, limit: int = 5, kind: str | None = None, sources: list[str] | None = None) -> list[MemoryEntry]:
+        limit = max(1, min(MAX_QUERY_LIMIT, int(limit)))
         cur = self._conn.cursor()
         source_clause, source_params = self._source_filter(sources)
         if kind:
@@ -352,6 +366,11 @@ class MemoryStore:
                 "UPDATE task_plans SET status = 'closed' WHERE id = ?",
                 (plan_id,),
             )
+        elif steps and any(row["status"] != "done" for row in steps):
+            cur.execute(
+                "UPDATE task_plans SET status = 'open' WHERE id = ?",
+                (plan_id,),
+            )
         self._conn.commit()
         return updated
 
@@ -406,6 +425,7 @@ class MemoryStore:
         self._conn.commit()
 
     def list_summaries(self, *, limit: int = 5) -> list[MemorySummary]:
+        limit = max(1, min(MAX_QUERY_LIMIT, int(limit)))
         cur = self._conn.cursor()
         rows = cur.execute(
             "SELECT * FROM memory_summaries ORDER BY updated_at DESC LIMIT ?",
@@ -434,7 +454,20 @@ class MemoryStore:
             "sources": source_counts,
             "last_warm": self._last_warm,
             "last_sync": self._last_sync,
+            "last_optimize": self._last_optimize,
+            "last_vacuum": self._last_vacuum,
         }
+
+    def optimize(self) -> None:
+        self._conn.execute("ANALYZE;")
+        self._conn.execute("PRAGMA optimize;")
+        self._conn.commit()
+        self._last_optimize = time.time()
+
+    def vacuum(self) -> None:
+        self._conn.execute("VACUUM;")
+        self._conn.commit()
+        self._last_vacuum = time.time()
 
     def _row_to_memory(self, row: sqlite3.Row) -> MemoryEntry:
         tags: list[str]
