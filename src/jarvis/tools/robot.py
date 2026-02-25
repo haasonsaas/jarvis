@@ -172,6 +172,8 @@ def _as_bool(value: Any, default: bool = False) -> bool:
             return False
         return default
     if isinstance(value, (int, float)):
+        if isinstance(value, float) and not math.isfinite(value):
+            return default
         return bool(value)
     return default
 

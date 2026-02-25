@@ -169,6 +169,19 @@ class TestRobotTools:
         assert kwargs["blocking"] is False
 
     @pytest.mark.asyncio
+    async def test_run_sequence_non_finite_blocking_uses_default_false(self, mock_robot):
+        from jarvis.tools.robot import run_sequence
+        mock_runner = MagicMock()
+        mock_robot.run_sequence = mock_runner
+
+        await run_sequence({
+            "blocking": float("nan"),
+            "steps": [{"kind": "head", "yaw": 5}],
+        })
+        _, kwargs = mock_runner.call_args
+        assert kwargs["blocking"] is False
+
+    @pytest.mark.asyncio
     async def test_run_sequence_rejects_non_list_steps(self):
         from jarvis.tools.robot import run_sequence
 
@@ -484,6 +497,36 @@ class TestServicesTools:
         recent = store.recent(limit=1)
         assert len(recent) == 1
         assert recent[0].sensitivity == 0.0
+
+    @pytest.mark.asyncio
+    async def test_memory_search_non_finite_include_sensitive_uses_default_false(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        await services.memory_add({"text": "secret token", "sensitivity": 0.9})
+        result = await services.memory_search({
+            "query": "secret",
+            "include_sensitive": float("nan"),
+            "max_sensitivity": 0.4,
+        })
+        assert "no relevant" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_memory_recent_non_finite_limit_does_not_crash(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        await services.memory_add({"text": "hello"})
+        result = await services.memory_recent({"limit": float("inf")})
+        assert "hello" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_task_plan_update_rejects_invalid_status(self, tmp_path):

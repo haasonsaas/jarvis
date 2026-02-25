@@ -296,6 +296,8 @@ def _as_bool(value: Any, default: bool = False) -> bool:
             return False
         return default
     if isinstance(value, (int, float)):
+        if isinstance(value, float) and not math.isfinite(value):
+            return default
         return bool(value)
     return default
 
@@ -303,7 +305,7 @@ def _as_bool(value: Any, default: bool = False) -> bool:
 def _as_int(value: Any, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         parsed = default
     if minimum is not None:
         parsed = max(minimum, parsed)
