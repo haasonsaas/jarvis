@@ -152,6 +152,33 @@ class TestServicesTools:
         assert "cooldown" in cooldown["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_memory_tools(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        created = await services.memory_add({"text": "Call me Boss.", "kind": "profile"})
+        assert "stored" in created["content"][0]["text"].lower()
+
+        found = await services.memory_search({"query": "call me", "limit": 5})
+        assert "call me" in found["content"][0]["text"].lower()
+
+        recent = await services.memory_recent({"limit": 1})
+        assert "profile" in recent["content"][0]["text"].lower()
+
+        plan = await services.task_plan_create({"title": "Morning routine", "steps": ["Check calendar", "Summarize news"]})
+        assert "plan created" in plan["content"][0]["text"].lower()
+
+        plans = await services.task_plan_list({"open_only": True})
+        assert "morning routine" in plans["content"][0]["text"].lower()
+
+        updated = await services.task_plan_update({"plan_id": 1, "step_index": 0, "status": "done"})
+        assert "updated" in updated["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_smart_home_dry_run_explicit_false(self):
         from jarvis.tools.services import smart_home
 

@@ -23,6 +23,7 @@ from claude_agent_sdk import (
 )
 
 from jarvis.config import Config
+from jarvis.memory import MemoryStore
 from jarvis.presence import PresenceLoop, State
 from jarvis.tools.robot import create_robot_server, bind as bind_robot
 from jarvis.tools.services import create_services_server, bind as bind_services
@@ -62,6 +63,7 @@ class Brain:
         self._config = config
         self._presence = presence
         self._session_id = "jarvis"
+        self._memory = MemoryStore(config.memory_path) if config.memory_enabled else None
 
         # Build MCP tool servers
         self._robot_server = create_robot_server()
@@ -71,7 +73,7 @@ class Brain:
         self._client_connected = False
 
         # Bind config to services
-        bind_services(config)
+        bind_services(config, self._memory)
 
     def _build_options(self) -> ClaudeAgentOptions:
         opts = ClaudeAgentOptions(
@@ -90,6 +92,12 @@ class Brain:
                 "mcp__jarvis-services__smart_home",
                 "mcp__jarvis-services__smart_home_state",
                 "mcp__jarvis-services__get_time",
+                "mcp__jarvis-services__memory_add",
+                "mcp__jarvis-services__memory_search",
+                "mcp__jarvis-services__memory_recent",
+                "mcp__jarvis-services__task_plan_create",
+                "mcp__jarvis-services__task_plan_list",
+                "mcp__jarvis-services__task_plan_update",
             ],
             permission_mode="bypassPermissions",
             max_turns=5,
@@ -106,6 +114,8 @@ class Brain:
         if self._client_connected:
             await self._client.disconnect()
             self._client_connected = False
+        if self._memory:
+            self._memory.close()
 
     async def respond(self, user_text: str) -> AsyncIterator[str]:
         """Send user text to Claude and yield response text chunks.
@@ -115,6 +125,17 @@ class Brain:
         """
         self._presence.signals.state = State.THINKING
         log.info("User: %s", user_text)
+
+        if self._memory:
+            memories = self._memory.search(user_text, limit=self._config.memory_search_limit)
+            if memories:
+                memory_lines = []
+                for entry in memories:
+                    tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
+                    snippet = entry.text[:180]
+                    memory_lines.append(f"- ({entry.kind}) {snippet}{tags}")
+                memory_context = "\n".join(memory_lines)
+                user_text = f"{user_text}\n\nContext (memory):\n{memory_context}"
 
         sentence_buffer = ""
         await self._ensure_connected()

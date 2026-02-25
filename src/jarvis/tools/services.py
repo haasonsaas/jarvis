@@ -16,6 +16,7 @@ import aiohttp
 from claude_agent_sdk import tool, create_sdk_mcp_server
 
 from jarvis.config import Config
+from jarvis.memory import MemoryStore
 
 log = logging.getLogger(__name__)
 
@@ -27,12 +28,14 @@ SENSITIVE_DOMAINS = {"lock", "alarm_control_panel", "cover"}
 ACTION_COOLDOWN_SEC = 2.0
 
 _config: Config | None = None
+_memory: MemoryStore | None = None
 _action_last_seen: dict[str, float] = {}
 
 
-def bind(config: Config) -> None:
-    global _config
+def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
+    global _config, _memory
     _config = config
+    _memory = memory_store
     # Ensure audit dir exists
     AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
 
@@ -173,6 +176,100 @@ async def get_time(args: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": _now_local()}]}
 
 
+# ── Memory + planning ───────────────────────────────────────
+
+async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    text = str(args.get("text", "")).strip()
+    if not text:
+        return {"content": [{"type": "text", "text": "Memory text required."}]}
+    tags = args.get("tags") or []
+    kind = str(args.get("kind", "note"))
+    importance = float(args.get("importance", 0.5))
+    source = str(args.get("source", "user"))
+    memory_id = _memory.add_memory(
+        text,
+        kind=kind,
+        tags=[str(tag) for tag in tags],
+        importance=importance,
+        source=source,
+    )
+    return {"content": [{"type": "text", "text": f"Memory stored (id={memory_id})."}]}
+
+
+async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    query = str(args.get("query", "")).strip()
+    if not query:
+        return {"content": [{"type": "text", "text": "Search query required."}]}
+    limit = int(args.get("limit", 5))
+    results = _memory.search(query, limit=limit)
+    if not results:
+        return {"content": [{"type": "text", "text": "No relevant memories found."}]}
+    lines = []
+    for entry in results:
+        tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
+        snippet = entry.text[:200]
+        lines.append(f"[{entry.id}] ({entry.kind}) {snippet}{tags}")
+    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+
+async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    limit = int(args.get("limit", 5))
+    kind = args.get("kind")
+    results = _memory.recent(limit=limit, kind=str(kind) if kind else None)
+    if not results:
+        return {"content": [{"type": "text", "text": "No recent memories found."}]}
+    lines = []
+    for entry in results:
+        tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
+        snippet = entry.text[:200]
+        lines.append(f"[{entry.id}] ({entry.kind}) {snippet}{tags}")
+    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+
+async def task_plan_create(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    title = str(args.get("title", "")).strip()
+    steps = args.get("steps") or []
+    if not title or not steps:
+        return {"content": [{"type": "text", "text": "Plan title and steps required."}]}
+    plan_id = _memory.add_task_plan(title, [str(step) for step in steps])
+    return {"content": [{"type": "text", "text": f"Plan created (id={plan_id})."}]}
+
+
+async def task_plan_list(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    open_only = bool(args.get("open_only", True))
+    plans = _memory.list_task_plans(open_only=open_only)
+    if not plans:
+        return {"content": [{"type": "text", "text": "No task plans found."}]}
+    blocks = []
+    for plan in plans:
+        header = f"Plan {plan.id}: {plan.title} ({plan.status})"
+        steps = "\n".join([f"  {step.index + 1}. {step.text} [{step.status}]" for step in plan.steps])
+        blocks.append(f"{header}\n{steps}")
+    return {"content": [{"type": "text", "text": "\n\n".join(blocks)}]}
+
+
+async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    plan_id = int(args.get("plan_id", 0))
+    step_index = int(args.get("step_index", -1))
+    status = str(args.get("status", "pending"))
+    if plan_id <= 0 or step_index < 0:
+        return {"content": [{"type": "text", "text": "Plan id and step index required."}]}
+    _memory.update_task_step(plan_id, step_index, status)
+    return {"content": [{"type": "text", "text": "Plan updated."}]}
+
+
 # ── Build MCP server ──────────────────────────────────────────
 
 smart_home_tool = tool(
@@ -223,9 +320,98 @@ get_time_tool = tool(
     {},
 )(get_time)
 
+memory_add_tool = tool(
+    "memory_add",
+    "Store a long-term memory (facts, preferences, summaries).",
+    {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string"},
+            "kind": {"type": "string", "description": "note, profile, summary, task, etc."},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "importance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "source": {"type": "string"},
+        },
+        "required": ["text"],
+    },
+)(memory_add)
+
+memory_search_tool = tool(
+    "memory_search",
+    "Search long-term memory for relevant entries.",
+    {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "limit": {"type": "number"},
+        },
+        "required": ["query"],
+    },
+)(memory_search)
+
+memory_recent_tool = tool(
+    "memory_recent",
+    "List recent memory entries.",
+    {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "number"},
+            "kind": {"type": "string"},
+        },
+    },
+)(memory_recent)
+
+task_plan_create_tool = tool(
+    "task_plan_create",
+    "Create a multi-step task plan and store it.",
+    {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "steps": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["title", "steps"],
+    },
+)(task_plan_create)
+
+task_plan_list_tool = tool(
+    "task_plan_list",
+    "List stored task plans (optionally open only).",
+    {
+        "type": "object",
+        "properties": {
+            "open_only": {"type": "boolean"},
+        },
+    },
+)(task_plan_list)
+
+task_plan_update_tool = tool(
+    "task_plan_update",
+    "Update a task plan step status.",
+    {
+        "type": "object",
+        "properties": {
+            "plan_id": {"type": "number"},
+            "step_index": {"type": "number", "description": "0-based index"},
+            "status": {"type": "string", "description": "pending, in_progress, blocked, done"},
+        },
+        "required": ["plan_id", "step_index", "status"],
+    },
+)(task_plan_update)
+
 def create_services_server():
     return create_sdk_mcp_server(
         name="jarvis-services",
         version="0.1.0",
-        tools=[smart_home_tool, smart_home_state_tool, get_time_tool],
+        tools=[
+            smart_home_tool,
+            smart_home_state_tool,
+            get_time_tool,
+            memory_add_tool,
+            memory_search_tool,
+            memory_recent_tool,
+            task_plan_create_tool,
+            task_plan_list_tool,
+            task_plan_update_tool,
+        ],
     )

@@ -66,6 +66,13 @@
 ### 7) Memory + Personalization
 - [ ] Add a lightweight memory summary store (recent preferences + “last discussed”).
 - [ ] Add recall rules: use memory only when relevant and confirm before using sensitive data.
+  - Implemented: basic SQLite memory store + retrieval hook + memory tools.
+
+### 7b) Task Orchestration
+- [ ] Add explicit planner (multi-step tasks, retries, status).
+- [ ] Add task queue with priorities + deadlines.
+- [ ] Provide task progress summaries.
+  - Implemented: lightweight task plan storage + status updates.
 
 ### 8) Reliability + Telemetry
 - [ ] Add watchdog for presence loop + perception threads (auto-restart on failure).

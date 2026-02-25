@@ -7,6 +7,7 @@ Tests should run without any external services or devices.
 from __future__ import annotations
 
 import os
+import tempfile
 import pytest
 import numpy as np
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -14,6 +15,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 # Set required env vars before any imports touch Config
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key-not-real")
 os.environ.setdefault("ELEVENLABS_API_KEY", "test-key-not-real")
+os.environ.setdefault("MEMORY_PATH", os.path.join(tempfile.gettempdir(), "jarvis_test_memory.sqlite"))
 
 
 @pytest.fixture

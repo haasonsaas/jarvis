@@ -32,6 +32,16 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_int(name: str, default: int) -> int:
+    val = os.environ.get(name)
+    if val is None or not val.strip():
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        return default
+
+
 @dataclass
 class Config:
     # Claude
@@ -62,6 +72,11 @@ class Config:
     yolo_model: str = "yolov8n-face.pt"
     face_track_fps: int = 10
     hand_track_enabled: bool = field(default_factory=lambda: _env_bool("HAND_TRACK_ENABLED") or False)
+
+    # Memory + planning
+    memory_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_ENABLED") is not False)
+    memory_path: str = field(default_factory=lambda: os.environ.get("MEMORY_PATH", os.path.expanduser("~/.jarvis/memory.sqlite")))
+    memory_search_limit: int = field(default_factory=lambda: _env_int("MEMORY_SEARCH_LIMIT", 5))
 
     @property
     def has_home_assistant(self) -> bool:

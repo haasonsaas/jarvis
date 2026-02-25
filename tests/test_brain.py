@@ -159,6 +159,26 @@ class TestBrain:
         assert brain._presence.signals.intent_tilt == 0.0
         assert brain._presence.signals.intent_glance_yaw == 0.0
 
+    @pytest.mark.asyncio
+    async def test_respond_includes_memory_context(self, brain):
+        if brain._memory is None:
+            pytest.skip("Memory disabled")
+
+        brain._memory.add_memory("User prefers coffee in the morning.", kind="profile")
+        captured = {}
+
+        async def fake_query(text: str, session_id: str):
+            captured["text"] = text
+
+        with patch.object(brain._client, "query", new=AsyncMock(side_effect=fake_query)), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([])
+            async for _ in brain.respond("coffee"):
+                pass
+
+        assert "Context (memory)" in captured.get("text", "")
+
 
 # ── Helpers ──────────────────────────────────────────────────
 
