@@ -488,3 +488,16 @@ class TestServicesTools:
         content = services.AUDIT_LOG.read_text()
         assert "light.test" in content
         assert "turn_on" in content
+
+    @pytest.mark.asyncio
+    async def test_smart_home_dry_run_handles_non_serializable_data(self):
+        from jarvis.tools.services import smart_home
+
+        result = await smart_home({
+            "domain": "light",
+            "action": "turn_on",
+            "entity_id": "light.misc",
+            "dry_run": True,
+            "data": {"levels": {1, 2, 3}},
+        })
+        assert "DRY RUN" in result["content"][0]["text"]

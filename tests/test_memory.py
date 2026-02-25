@@ -34,3 +34,26 @@ def test_add_task_plan_requires_non_empty_steps(tmp_path):
             store.add_task_plan("Plan", ["  ", "\n"])
     finally:
         store.close()
+
+
+def test_update_task_step_rejects_invalid_status(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        plan_id = store.add_task_plan("Plan", ["step"])
+        with pytest.raises(ValueError):
+            store.update_task_step(plan_id, 0, "finished")
+    finally:
+        store.close()
+
+
+def test_recent_tolerates_invalid_tags_payload(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        memory_id = store.add_memory("Note", tags=["valid"])
+        store._conn.execute("UPDATE memory SET tags = ? WHERE id = ?", ("{not-json", memory_id))
+        store._conn.commit()
+        rows = store.recent(limit=1)
+        assert len(rows) == 1
+        assert rows[0].tags == []
+    finally:
+        store.close()

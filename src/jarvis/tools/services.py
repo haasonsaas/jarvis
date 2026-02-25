@@ -56,6 +56,7 @@ def _tool_permitted(name: str) -> bool:
 
 def _audit(action: str, details: dict) -> None:
     """Append to local audit log: what was heard, what was done, why."""
+    details_json = json.dumps(details, default=str)
     entry = {
         "timestamp": time.time(),
         "action": action,
@@ -63,10 +64,10 @@ def _audit(action: str, details: dict) -> None:
     }
     try:
         with open(AUDIT_LOG, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+            f.write(json.dumps(entry, default=str) + "\n")
     except OSError as e:
         log.warning("Failed to write audit log: %s", e)
-    log.info("AUDIT: %s — %s", action, json.dumps(details))
+    log.info("AUDIT: %s — %s", action, details_json)
 
 
 def _format_tool_summaries(items: list[dict[str, object]]) -> str:
@@ -204,7 +205,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("smart_home", "dry_run", start_time)
         return {"content": [{"type": "text", "text": (
             f"DRY RUN: Would call {domain}.{action} on {entity_id}"
-            f"{' with ' + json.dumps(data) if data else ''}. "
+            f"{' with ' + json.dumps(data, default=str) if data else ''}. "
             f"Set dry_run=false to execute."
         )}]}
 

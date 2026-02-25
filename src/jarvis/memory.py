@@ -325,6 +325,9 @@ class MemoryStore:
         return int(done["done"]), int(total["total"])
 
     def update_task_step(self, plan_id: int, step_index: int, status: str) -> bool:
+        allowed_statuses = {"pending", "in_progress", "blocked", "done"}
+        if status not in allowed_statuses:
+            raise ValueError(f"invalid step status: {status}")
         cur = self._conn.cursor()
         cur.execute(
             "UPDATE task_steps SET status = ? WHERE plan_id = ? AND idx = ?",
@@ -422,7 +425,18 @@ class MemoryStore:
         }
 
     def _row_to_memory(self, row: sqlite3.Row) -> MemoryEntry:
-        tags = json.loads(row["tags"]) if row["tags"] else []
+        tags: list[str]
+        if not row["tags"]:
+            tags = []
+        else:
+            try:
+                parsed = json.loads(row["tags"])
+            except (TypeError, ValueError):
+                parsed = []
+            if isinstance(parsed, list):
+                tags = [str(tag) for tag in parsed if str(tag).strip()]
+            else:
+                tags = []
         return MemoryEntry(
             id=int(row["id"]),
             created_at=float(row["created_at"]),
