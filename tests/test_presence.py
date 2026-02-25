@@ -56,6 +56,7 @@ class TestPresenceLoop:
         sig.face_detected = True
         sig.face_yaw = 20.0
         sig.face_pitch = 10.0
+        sig.face_last_seen = time.monotonic()
 
         # Run several frames
         for i in range(100):
@@ -70,6 +71,7 @@ class TestPresenceLoop:
         sig.state = State.LISTENING
         sig.face_detected = False
         sig.doa_angle = 0.0  # left side
+        sig.doa_last_seen = time.monotonic()
 
         for i in range(100):
             presence._do_listening(float(i) * 0.033, sig)
@@ -81,6 +83,7 @@ class TestPresenceLoop:
         sig = presence.signals
         sig.face_detected = False
         sig.doa_angle = math.pi / 2  # front
+        sig.doa_last_seen = time.monotonic()
 
         for i in range(100):
             presence._do_listening(float(i) * 0.033, sig)
@@ -102,6 +105,7 @@ class TestPresenceLoop:
         sig.face_detected = True
         sig.face_yaw = 0.0
         sig.face_pitch = 0.0
+        sig.face_last_seen = time.monotonic()
         sig.intent_nod = 0.0
         sig.intent_tilt = 0.0
         sig.intent_glance_yaw = 0.0
@@ -116,6 +120,20 @@ class TestPresenceLoop:
 
         assert abs(presence._yaw) < 5.0
         assert abs(presence._pitch) < 5.0
+
+    def test_speaking_uses_hand_when_no_face(self, presence):
+        sig = presence.signals
+        sig.face_detected = False
+        sig.hand_present = True
+        sig.hand_x = 12.0
+        sig.hand_y = -6.0
+        sig.hand_last_seen = time.monotonic()
+
+        for i in range(100):
+            presence._do_speaking(float(i) * 0.033, sig)
+
+        assert presence._yaw > 2.0
+        assert presence._pitch < -1.0
 
     def test_speaking_applies_intent(self, presence):
         sig = presence.signals

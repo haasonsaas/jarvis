@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 import numpy as np
 from dataclasses import dataclass
+from typing import Literal
 
 from reachy_mini import ReachyMini
 from reachy_mini.utils import create_head_pose
@@ -37,6 +40,18 @@ class HeadPose:
     yaw: float = 0.0    # turn (degrees)
 
 
+@dataclass
+class MotionStep:
+    kind: Literal["head", "body", "emotion", "dance", "antennas", "pause"]
+    duration: float = 0.8
+    pose: HeadPose | None = None
+    body_yaw: float | None = None
+    antenna_left: float | None = None
+    antenna_right: float | None = None
+    name: str | None = None
+    wait: float = 0.0
+
+
 class RobotController:
     """High-level controller for Reachy Mini."""
 
@@ -60,6 +75,8 @@ class RobotController:
 
         self._recording_started = False
         self._playing_started = False
+        self._sequence_thread: threading.Thread | None = None
+        self._sequence_stop = threading.Event()
 
     @property
     def sim(self) -> bool:
@@ -123,6 +140,7 @@ class RobotController:
     def disconnect(self) -> None:
         if self._mini and self._connected:
             try:
+                self.stop_sequence()
                 self.stop_audio(recording=True, playing=True)
                 self._mini.__exit__(None, None, None)
             except Exception as e:
@@ -131,6 +149,13 @@ class RobotController:
                 self._mini = None
                 self._connected = False
                 log.info("Disconnected from Reachy Mini")
+
+    def stop_sequence(self) -> None:
+        if self._sequence_thread and self._sequence_thread.is_alive():
+            self._sequence_stop.set()
+            self._sequence_thread.join(timeout=2.0)
+        self._sequence_thread = None
+        self._sequence_stop.clear()
 
     def _clamp_pose(self, pose: HeadPose) -> HeadPose:
         return HeadPose(
@@ -197,6 +222,74 @@ class RobotController:
             self._mini.set_target(antennas=np.deg2rad([left, right]))
         except Exception as e:
             log.debug("Failed to set antennas realtime: %s", e)
+
+    def run_sequence(self, steps: list[MotionStep], blocking: bool = False) -> None:
+        if not steps:
+            return
+
+        def _run() -> None:
+            for step in steps:
+                if self._sequence_stop.is_set():
+                    break
+                duration = max(0.0, float(step.duration))
+                wait = max(0.0, float(step.wait))
+
+                if step.kind == "head" and step.pose is not None:
+                    self.move_head(step.pose, duration=duration)
+                elif step.kind == "body" and step.body_yaw is not None:
+                    self.turn_body(step.body_yaw, duration=duration)
+                elif step.kind == "antennas":
+                    left = float(step.antenna_left or 0.0)
+                    right = float(step.antenna_right or 0.0)
+                    self.set_antennas(left=left, right=right, duration=duration)
+                elif step.kind == "emotion" and step.name:
+                    self.play_emotion(step.name)
+                elif step.kind == "dance" and step.name:
+                    self.play_dance(step.name)
+                elif step.kind == "pause":
+                    time.sleep(duration)
+
+                if wait > 0:
+                    time.sleep(wait)
+
+        if blocking:
+            self._sequence_stop.clear()
+            _run()
+            return
+
+        self.stop_sequence()
+        self._sequence_thread = threading.Thread(target=_run, daemon=True, name="motion-sequence")
+        self._sequence_thread.start()
+
+    def run_macro(self, name: str, intensity: float = 1.0, blocking: bool = False) -> None:
+        intensity = max(0.2, min(1.5, intensity))
+        if name == "acknowledge":
+            steps = [
+                MotionStep(kind="head", pose=HeadPose(pitch=6.0 * intensity), duration=0.3),
+                MotionStep(kind="head", pose=HeadPose(pitch=-2.0 * intensity), duration=0.3),
+            ]
+        elif name == "curious":
+            steps = [
+                MotionStep(kind="head", pose=HeadPose(roll=8.0 * intensity, yaw=8.0 * intensity), duration=0.4),
+                MotionStep(kind="pause", duration=0.2),
+                MotionStep(kind="head", pose=HeadPose(roll=0.0, yaw=0.0), duration=0.4),
+            ]
+        elif name == "affirm":
+            steps = [
+                MotionStep(kind="head", pose=HeadPose(pitch=10.0 * intensity), duration=0.35),
+                MotionStep(kind="head", pose=HeadPose(pitch=-4.0 * intensity), duration=0.35),
+            ]
+        elif name == "shrug":
+            steps = [
+                MotionStep(kind="head", pose=HeadPose(roll=-6.0 * intensity), duration=0.3),
+                MotionStep(kind="head", pose=HeadPose(roll=6.0 * intensity), duration=0.3),
+                MotionStep(kind="head", pose=HeadPose(roll=0.0), duration=0.2),
+            ]
+        else:
+            log.warning("Unknown macro: %s", name)
+            return
+
+        self.run_sequence(steps, blocking=blocking)
 
     # ── Expressions ───────────────────────────────────────────
 

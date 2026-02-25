@@ -64,8 +64,10 @@ class TestBrain:
         mock_msg.subtype = "init"
         mock_msg.data = {"session_id": "test-session"}
 
-        with patch("jarvis.brain.query") as mock_query:
-            mock_query.return_value = _async_iter([mock_msg])
+        with patch.object(brain._client, "query", new=AsyncMock()) as mock_query, \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([mock_msg])
             sentences = []
             async for s in brain.respond("hello"):
                 sentences.append(s)
@@ -91,19 +93,24 @@ class TestBrain:
         mock_assistant = MagicMock(spec=AssistantMessage)
         mock_assistant.content = [mock_block]
 
-        with patch("jarvis.brain.query") as mock_query, \
-             patch("jarvis.brain.isinstance", side_effect=lambda obj, cls: obj is mock_assistant if cls is AssistantMessage else type(obj).__name__ == cls.__name__):
-            mock_query.return_value = _async_iter([mock_init, mock_assistant])
+        with patch.object(brain._client, "query", new=AsyncMock()), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch("jarvis.brain.isinstance", side_effect=lambda obj, cls: obj is mock_assistant if cls is AssistantMessage else type(obj).__name__ == cls.__name__), \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([mock_init, mock_assistant])
+            sentences = []
+            async for sentence in brain.respond("hello"):
+                sentences.append(sentence)
 
-            # Can't easily mock isinstance, so let's just test the generator
-            # by using the real code path
-            pass
+        assert sentences == ["Hello there. How can I help?"]
 
     @pytest.mark.asyncio
     async def test_respond_handles_error(self, brain):
         """Brain should yield error message on exception."""
-        with patch("jarvis.brain.query") as mock_query:
-            mock_query.return_value = _async_iter_error(RuntimeError("API down"))
+        with patch.object(brain._client, "query", new=AsyncMock()), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter_error(RuntimeError("API down"))
 
             sentences = []
             async for s in brain.respond("hello"):
@@ -120,15 +127,17 @@ class TestBrain:
         mock_init.subtype = "init"
         mock_init.data = {"session_id": "session-abc"}
 
-        with patch("jarvis.brain.query") as mock_query, \
-             patch("jarvis.brain.isinstance") as mock_isinstance:
+        with patch.object(brain._client, "query", new=AsyncMock()), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch("jarvis.brain.isinstance") as mock_isinstance, \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
             # Make isinstance work for SystemMessage
             def isinstance_side_effect(obj, cls):
                 if cls is SystemMessage and obj is mock_init:
                     return True
                 return False
             mock_isinstance.side_effect = isinstance_side_effect
-            mock_query.return_value = _async_iter([mock_init])
+            mock_recv.return_value = _async_iter([mock_init])
 
             async for _ in brain.respond("hello"):
                 pass
@@ -139,8 +148,10 @@ class TestBrain:
         brain._presence.signals.intent_nod = 0.8
         brain._presence.signals.intent_tilt = 5.0
 
-        with patch("jarvis.brain.query") as mock_query:
-            mock_query.return_value = _async_iter([])
+        with patch.object(brain._client, "query", new=AsyncMock()), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([])
             async for _ in brain.respond("hello"):
                 pass
 

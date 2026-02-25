@@ -163,8 +163,10 @@ class FaceTracker:
                 self._presence.signals.face_yaw = self._smooth_yaw
                 self._presence.signals.face_pitch = self._smooth_pitch
                 self._presence.signals.intent_tilt = self._smooth_roll
+                self._presence.signals.face_last_seen = time.monotonic()
             else:
                 self._presence.signals.face_detected = False
+
 
             # Maintain target FPS
             elapsed = time.monotonic() - t0

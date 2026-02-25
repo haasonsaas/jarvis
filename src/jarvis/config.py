@@ -61,6 +61,7 @@ class Config:
     # Vision
     yolo_model: str = "yolov8n-face.pt"
     face_track_fps: int = 10
+    hand_track_enabled: bool = field(default_factory=lambda: _env_bool("HAND_TRACK_ENABLED") or False)
 
     @property
     def has_home_assistant(self) -> bool:

@@ -11,12 +11,10 @@ Design for latency:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, AsyncIterator
 
 from claude_agent_sdk import (
-    query,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     AssistantMessage,
@@ -63,11 +61,14 @@ class Brain:
     def __init__(self, config: Config, presence: PresenceLoop):
         self._config = config
         self._presence = presence
-        self._session_id: str | None = None
+        self._session_id = "jarvis"
 
         # Build MCP tool servers
         self._robot_server = create_robot_server()
         self._services_server = create_services_server()
+
+        self._client = ClaudeSDKClient(self._build_options())
+        self._client_connected = False
 
         # Bind config to services
         bind_services(config)
@@ -84,16 +85,27 @@ class Brain:
                 "mcp__jarvis-robot__play_emotion",
                 "mcp__jarvis-robot__play_dance",
                 "mcp__jarvis-robot__list_animations",
+                "mcp__jarvis-robot__run_sequence",
+                "mcp__jarvis-robot__run_macro",
                 "mcp__jarvis-services__smart_home",
                 "mcp__jarvis-services__smart_home_state",
                 "mcp__jarvis-services__get_time",
             ],
             permission_mode="bypassPermissions",
             max_turns=5,
+            include_partial_messages=True,
         )
-        if self._session_id:
-            opts.resume = self._session_id
         return opts
+
+    async def _ensure_connected(self) -> None:
+        if not self._client_connected:
+            await self._client.connect()
+            self._client_connected = True
+
+    async def close(self) -> None:
+        if self._client_connected:
+            await self._client.disconnect()
+            self._client_connected = False
 
     async def respond(self, user_text: str) -> AsyncIterator[str]:
         """Send user text to Claude and yield response text chunks.
@@ -105,17 +117,14 @@ class Brain:
         log.info("User: %s", user_text)
 
         sentence_buffer = ""
+        await self._ensure_connected()
 
         try:
             try:
-                async for message in query(
-                    prompt=user_text,
-                    options=self._build_options(),
-                ):
-                    # Capture session ID from init message
+                await self._client.query(user_text, session_id=self._session_id)
+                async for message in self._client.receive_response():
                     if isinstance(message, SystemMessage) and message.subtype == "init":
-                        self._session_id = message.data.get("session_id")
-                        log.debug("Session: %s", self._session_id)
+                        log.debug("Session: %s", message.data.get("session_id"))
 
                     # Stream assistant text
                     if isinstance(message, AssistantMessage):

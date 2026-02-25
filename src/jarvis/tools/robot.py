@@ -16,6 +16,7 @@ from claude_agent_sdk import tool, create_sdk_mcp_server
 if TYPE_CHECKING:
     from jarvis.robot.controller import RobotController
     from jarvis.presence import PresenceLoop
+    from jarvis.robot.controller import HeadPose, MotionStep
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +62,62 @@ async def list_animations(args: dict[str, Any]) -> dict[str, Any]:
     emotions = _robot.list_emotions() if _robot else []
     dances = _robot.list_dances() if _robot else []
     return {"content": [{"type": "text", "text": json.dumps({"emotions": emotions, "dances": dances})}]}
+
+
+async def run_sequence(args: dict[str, Any]) -> dict[str, Any]:
+    if not _robot:
+        return {"content": [{"type": "text", "text": "Robot not connected (simulation mode)"}]}
+
+    from jarvis.robot.controller import HeadPose, MotionStep
+
+    steps = []
+    for raw in args.get("steps", []):
+        kind = raw.get("kind")
+        duration = float(raw.get("duration", 0.8))
+        wait = float(raw.get("wait", 0.0))
+        if kind == "head":
+            pose = HeadPose(
+                yaw=float(raw.get("yaw", 0.0)),
+                pitch=float(raw.get("pitch", 0.0)),
+                roll=float(raw.get("roll", 0.0)),
+                x=float(raw.get("x", 0.0)),
+                y=float(raw.get("y", 0.0)),
+                z=float(raw.get("z", 0.0)),
+            )
+            steps.append(MotionStep(kind="head", duration=duration, pose=pose, wait=wait))
+        elif kind == "body":
+            steps.append(MotionStep(kind="body", duration=duration, body_yaw=float(raw.get("yaw", 0.0)), wait=wait))
+        elif kind == "antennas":
+            steps.append(MotionStep(
+                kind="antennas",
+                duration=duration,
+                antenna_left=float(raw.get("left", 0.0)),
+                antenna_right=float(raw.get("right", 0.0)),
+                wait=wait,
+            ))
+        elif kind in {"emotion", "dance"}:
+            name = str(raw.get("name", ""))
+            if name:
+                steps.append(MotionStep(kind=kind, duration=duration, name=name, wait=wait))
+        elif kind == "pause":
+            steps.append(MotionStep(kind="pause", duration=duration, wait=wait))
+
+    if not steps:
+        return {"content": [{"type": "text", "text": "No valid steps provided"}]}
+
+    _robot.run_sequence(steps, blocking=bool(args.get("blocking", False)))
+    return {"content": [{"type": "text", "text": f"Queued {len(steps)} motion steps"}]}
+
+
+async def run_macro(args: dict[str, Any]) -> dict[str, Any]:
+    if not _robot:
+        return {"content": [{"type": "text", "text": "Robot not connected (simulation mode)"}]}
+    name = str(args.get("name", ""))
+    if not name:
+        return {"content": [{"type": "text", "text": "Macro name required"}]}
+    intensity = float(args.get("intensity", 1.0))
+    _robot.run_macro(name, intensity=intensity, blocking=bool(args.get("blocking", False)))
+    return {"content": [{"type": "text", "text": f"Macro queued: {name}"}]}
 
 
 # ── Tool objects (kept separate so the underlying Python functions stay callable in tests) ──
@@ -129,11 +186,67 @@ list_animations_tool = tool(
 )(list_animations)
 
 
+run_sequence_tool = tool(
+    "run_sequence",
+    "Run a short motion sequence (head/body/antennas/emotion/dance/pause).",
+    {
+        "type": "object",
+        "properties": {
+            "blocking": {
+                "type": "boolean",
+                "description": "If true, execute synchronously (use sparingly).",
+            },
+            "steps": {
+                "type": "array",
+                "description": "Sequence steps in order.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": ["head", "body", "antennas", "emotion", "dance", "pause"],
+                        },
+                        "duration": {"type": "number"},
+                        "wait": {"type": "number"},
+                        "yaw": {"type": "number"},
+                        "pitch": {"type": "number"},
+                        "roll": {"type": "number"},
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "z": {"type": "number"},
+                        "left": {"type": "number"},
+                        "right": {"type": "number"},
+                        "name": {"type": "string"},
+                    },
+                    "required": ["kind"],
+                },
+            },
+        },
+        "required": ["steps"],
+    },
+)(run_sequence)
+
+
+run_macro_tool = tool(
+    "run_macro",
+    "Run a named gesture macro (acknowledge, affirm, curious, shrug).",
+    {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "intensity": {"type": "number"},
+            "blocking": {"type": "boolean"},
+        },
+        "required": ["name"],
+    },
+)(run_macro)
+
+
 # ── Build MCP server ──────────────────────────────────────────
 
 def create_robot_server():
     return create_sdk_mcp_server(
         name="jarvis-robot",
         version="0.1.0",
-        tools=[embody_tool, play_emotion_tool, play_dance_tool, list_animations_tool],
+        tools=[embody_tool, play_emotion_tool, play_dance_tool, list_animations_tool, run_sequence_tool, run_macro_tool],
     )

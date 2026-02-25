@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
 
-from jarvis.robot.controller import RobotController, HeadPose
+from jarvis.robot.controller import RobotController, HeadPose, MotionStep
 
 
 class TestHeadPose:
@@ -96,6 +96,33 @@ class TestRobotControllerReal:
 
         mock_mini.__exit__.assert_called_once_with(None, None, None)
         assert rc._connected is False
+
+    @patch("jarvis.robot.controller.ReachyMini")
+    @patch("jarvis.robot.controller.RecordedMoves")
+    def test_run_sequence_calls_goto_target(self, mock_moves_cls, mock_mini_cls):
+        mock_mini = MagicMock()
+        mock_mini_cls.return_value = mock_mini
+
+        rc = RobotController(sim=False)
+        rc.connect()
+        rc.run_sequence([
+            MotionStep(kind="head", pose=HeadPose(yaw=10.0), duration=0.2),
+            MotionStep(kind="body", body_yaw=15.0, duration=0.2),
+        ], blocking=True)
+
+        assert mock_mini.goto_target.call_count >= 2
+
+    @patch("jarvis.robot.controller.ReachyMini")
+    @patch("jarvis.robot.controller.RecordedMoves")
+    def test_run_macro_acknowledge(self, mock_moves_cls, mock_mini_cls):
+        mock_mini = MagicMock()
+        mock_mini_cls.return_value = mock_mini
+
+        rc = RobotController(sim=False)
+        rc.connect()
+        rc.run_macro("acknowledge", intensity=1.0, blocking=True)
+
+        assert mock_mini.goto_target.call_count >= 1
 
     @patch("jarvis.robot.controller.ReachyMini")
     @patch("jarvis.robot.controller.RecordedMoves")

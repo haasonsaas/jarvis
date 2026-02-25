@@ -42,6 +42,9 @@ SPEECH_SWAY_FREQ_X = 0.35
 SPEECH_SWAY_FREQ_Y = 0.45
 SPEECH_SWAY_FREQ_Z = 0.25
 
+ATTENTION_HOLD_SEC = 1.2
+ATTENTION_TIMEOUT_SEC = 1.5
+
 
 class State(enum.Enum):
     IDLE = "idle"
@@ -69,11 +72,17 @@ class Signals:
     face_yaw: float = 0.0               # Face tracker's suggested yaw (degrees)
     face_pitch: float = 0.0             # Face tracker's suggested pitch (degrees)
     face_detected: bool = False
+    face_last_seen: float | None = None
     # Set by the embodiment plan from the LLM
     intent_nod: float = 0.0             # 0-1 nod intensity
     intent_tilt: float = 0.0            # degrees of head tilt
     intent_glance_yaw: float = 0.0      # brief glance offset
     speech_energy: float = 0.0          # 0-1 TTS energy for speech sway
+    hand_present: bool = False
+    hand_x: float = 0.0
+    hand_y: float = 0.0
+    hand_last_seen: float | None = None
+    doa_last_seen: float | None = None
 
 
 class PresenceLoop:
@@ -100,6 +109,10 @@ class PresenceLoop:
         self._antenna_left = 0.0
         self._antenna_right = 0.0
         self._speech_energy = 0.0
+        self._attention_source: str | None = None
+        self._attention_hold_until = 0.0
+        self._nod_active_until = 0.0
+        self._nod_next_allowed = 0.0
 
     def start(self) -> None:
         if self._running:
@@ -178,19 +191,8 @@ class PresenceLoop:
         self._roll = self._blend(self._roll, drift_roll, 0.03)
 
     def _do_listening(self, t: float, sig: Signals) -> None:
-        # Orient toward speaker (face tracker or DoA)
-        if sig.face_detected:
-            target_yaw = sig.face_yaw
-            target_pitch = sig.face_pitch
-        elif sig.doa_angle is not None:
-            # DoA: 0=left, pi/2=front, pi=right → map to yaw degrees
-            # Clamp to expected range before mapping
-            angle = max(0.0, min(math.pi, sig.doa_angle))
-            target_yaw = -((angle - math.pi / 2) / (math.pi / 2)) * 40.0
-            target_pitch = 0.0
-        else:
-            target_yaw = 0.0
-            target_pitch = 0.0
+        now = time.monotonic()
+        target_yaw, target_pitch = self._resolve_attention(sig, now)
 
         # Lean forward slightly when listening
         lean = 2.0
@@ -211,6 +213,9 @@ class PresenceLoop:
         think_yaw = 15.0 + math.sin(t * 0.5) * 5.0
         think_pitch = 5.0 + math.sin(t * 0.7) * 2.0
         think_roll = math.sin(t * 0.4) * 3.0
+        if t - self._t0 > 1.0:
+            think_yaw += math.sin(t * 0.9) * 6.0
+            think_pitch += math.sin(t * 0.5) * 2.5
 
         self._yaw = self._blend(self._yaw, think_yaw, 0.08)
         self._pitch = self._blend(self._pitch, think_pitch, 0.08)
@@ -220,17 +225,16 @@ class PresenceLoop:
         self._y = self._blend(self._y, 0.0, 0.05)
 
     def _do_speaking(self, t: float, sig: Signals) -> None:
-        # Return gaze to user, stable with subtle animation
-        if sig.face_detected:
-            target_yaw = sig.face_yaw
-            target_pitch = sig.face_pitch
-        else:
-            target_yaw = 0.0
-            target_pitch = 0.0
+        now = time.monotonic()
+        target_yaw, target_pitch = self._resolve_attention(sig, now)
 
         # Add any LLM-requested intent
         target_yaw += sig.intent_glance_yaw
-        target_pitch += sig.intent_nod * math.sin(t * 3.0) * 4.0
+        if sig.intent_nod > 0.0 and t >= self._nod_next_allowed:
+            self._nod_active_until = t + 0.6
+            self._nod_next_allowed = t + 2.0
+        if t <= self._nod_active_until:
+            target_pitch += sig.intent_nod * math.sin(t * 3.0) * 4.0
         target_roll = sig.intent_tilt
 
         self._speech_energy = self._blend(self._speech_energy, sig.speech_energy, 0.2)
@@ -284,3 +288,42 @@ class PresenceLoop:
         self._antenna_left = self._blend(self._antenna_left, target_left, 0.1)
         self._antenna_right = self._blend(self._antenna_right, target_right, 0.1)
         self._robot.set_antennas_realtime(self._antenna_left, self._antenna_right)
+
+    def _resolve_attention(self, sig: Signals, now: float) -> tuple[float, float]:
+        candidates: list[tuple[int, str, float, float]] = []
+
+        if sig.face_detected and sig.face_last_seen is not None:
+            if now - sig.face_last_seen <= ATTENTION_TIMEOUT_SEC:
+                candidates.append((3, "face", sig.face_yaw, sig.face_pitch))
+
+        if sig.hand_present and sig.hand_last_seen is not None:
+            if now - sig.hand_last_seen <= ATTENTION_TIMEOUT_SEC:
+                candidates.append((2, "hand", sig.hand_x, sig.hand_y))
+
+        if sig.doa_angle is not None and sig.doa_last_seen is not None:
+            if now - sig.doa_last_seen <= ATTENTION_TIMEOUT_SEC:
+                angle = max(0.0, min(math.pi, sig.doa_angle))
+                doa_yaw = -((angle - math.pi / 2) / (math.pi / 2)) * 40.0
+                candidates.append((1, "doa", doa_yaw, 0.0))
+
+        if not candidates:
+            self._attention_source = None
+            return 0.0, 0.0
+
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        best_priority, best_source, best_yaw, best_pitch = candidates[0]
+
+        if self._attention_source:
+            current = next((c for c in candidates if c[1] == self._attention_source), None)
+            if current:
+                current_priority = current[0]
+                if best_priority > current_priority:
+                    self._attention_source = best_source
+                    self._attention_hold_until = now + ATTENTION_HOLD_SEC
+                    return best_yaw, best_pitch
+                if now < self._attention_hold_until:
+                    return current[2], current[3]
+
+        self._attention_source = best_source
+        self._attention_hold_until = now + ATTENTION_HOLD_SEC
+        return best_yaw, best_pitch

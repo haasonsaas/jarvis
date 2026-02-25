@@ -118,6 +118,7 @@ class Jarvis:
 
         # Face tracker (lazy init)
         self.face_tracker = None
+        self.hand_tracker = None
 
         # Barge-in control — use a lock for thread safety
         self._lock = threading.Lock()
@@ -157,6 +158,15 @@ class Jarvis:
             )
             self.face_tracker.start()
 
+            if self.config.hand_track_enabled:
+                from jarvis.vision.hand_tracker import HandTracker
+                self.hand_tracker = HandTracker(
+                    presence=self.presence,
+                    get_frame=self.robot.get_frame,
+                    fps=self.config.face_track_fps,
+                )
+                self.hand_tracker.start()
+
         if self._use_robot_audio:
             self.robot.start_audio(recording=True, playing=self.tts is not None)
             time.sleep(0.2)  # give media pipelines a moment to warm up
@@ -191,6 +201,8 @@ class Jarvis:
 
         if self.face_tracker:
             self.face_tracker.stop()
+        if self.hand_tracker:
+            self.hand_tracker.stop()
         self.presence.stop()
         self.robot.disconnect()
         log.info("Jarvis offline.")
@@ -233,6 +245,7 @@ class Jarvis:
                 with suppress(asyncio.CancelledError):
                     await self._tts_task
                 self._tts_task = None
+            await self.brain.close()
             self.stop()
 
     async def _enqueue_utterance(self, audio: np.ndarray) -> None:
@@ -267,6 +280,7 @@ class Jarvis:
                         self._last_doa_angle = doa_angle
                         self._last_doa_update = now
                         self.presence.signals.doa_angle = doa_angle
+                        self.presence.signals.doa_last_seen = now
                 else:
                     if self._last_doa_update and (now - self._last_doa_update) > self.config.doa_timeout:
                         self.presence.signals.doa_angle = None

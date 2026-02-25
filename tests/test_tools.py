@@ -82,6 +82,27 @@ class TestRobotTools:
         assert "emotions" in data
         assert "dances" in data
 
+    @pytest.mark.asyncio
+    async def test_run_sequence_sim(self):
+        from jarvis.tools.robot import run_sequence
+
+        result = await run_sequence({
+            "steps": [
+                {"kind": "head", "yaw": 10.0, "pitch": 5.0},
+                {"kind": "pause", "duration": 0.1},
+                {"kind": "antennas", "left": 5.0, "right": -5.0},
+            ]
+        })
+
+        assert "Queued" in result["content"][0]["text"]
+
+    @pytest.mark.asyncio
+    async def test_run_macro_sim(self):
+        from jarvis.tools.robot import run_macro
+
+        result = await run_macro({"name": "acknowledge", "intensity": 1.0})
+        assert "Macro queued" in result["content"][0]["text"]
+
 
 class TestServicesTools:
     @pytest.fixture(autouse=True)
