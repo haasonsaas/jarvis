@@ -47,6 +47,10 @@ THINKING_FILLER_DELAY = 0.35
 THINKING_FILLER_TEXT = "One moment."
 TTS_TARGET_RMS = 0.08
 TTS_GAIN_SMOOTH = 0.2
+INTENDED_QUERY_MIN_ATTENTION = 0.35
+CONFIRMATION_PHRASE = "Did you mean me?"
+AFFIRMATIONS = {"yes", "yeah", "yep", "yup", "correct", "affirmative", "sure", "please"}
+NEGATIONS = {"no", "nope", "nah", "negative"}
 
 
 def _to_mono(audio: np.ndarray) -> np.ndarray:
@@ -138,6 +142,9 @@ class Jarvis:
 
         self._last_doa_angle: float | None = None
         self._last_doa_update: float = 0.0
+        self._last_doa_speech: bool | None = None
+        self._awaiting_confirmation = False
+        self._pending_text: str | None = None
 
         self._tts_queue: asyncio.Queue[str] = asyncio.Queue()
         self._tts_task: asyncio.Task[None] | None = None
@@ -247,6 +254,35 @@ class Jarvis:
                     self.presence.signals.state = State.IDLE
                     continue
 
+                if self._awaiting_confirmation:
+                    normalized = text.strip().lower()
+                    if normalized in AFFIRMATIONS and self._pending_text:
+                        self._awaiting_confirmation = False
+                        text = self._pending_text
+                        self._pending_text = None
+                    elif normalized in NEGATIONS:
+                        self._awaiting_confirmation = False
+                        self._pending_text = None
+                        if self.tts:
+                            await self._tts_queue.put((self._active_response_id, "Understood.", True))
+                        else:
+                            print("  JARVIS: Understood.")
+                        self.presence.signals.state = State.IDLE
+                        continue
+                    else:
+                        self._awaiting_confirmation = False
+                        self._pending_text = None
+
+                if self._requires_confirmation(time.monotonic()):
+                    self._awaiting_confirmation = True
+                    self._pending_text = text
+                    if self.tts:
+                        await self._tts_queue.put((self._active_response_id, CONFIRMATION_PHRASE, True))
+                    else:
+                        print(f"  JARVIS: {CONFIRMATION_PHRASE}")
+                    self.presence.signals.state = State.LISTENING
+                    continue
+
                 # Get response from Claude and play it
                 await self._respond_and_speak(text)
 
@@ -292,6 +328,7 @@ class Jarvis:
             self.presence.signals.vad_energy = max(0.0, min(1.0, conf))
             doa_angle, doa_speech = self.robot.get_doa()
             now = time.monotonic()
+            self._last_doa_speech = doa_speech
             if doa_angle is not None:
                 if doa_speech is None or doa_speech:
                     if self._last_doa_angle is None or abs(doa_angle - self._last_doa_angle) >= self.config.doa_change_threshold:
@@ -538,6 +575,23 @@ class Jarvis:
         score = (0.6 * conf) + (0.3 * doa_score) + (0.1 * attention)
         threshold = TURN_TAKING_BARGE_IN_THRESHOLD if assistant_busy else TURN_TAKING_THRESHOLD
         return score >= threshold
+
+    def _attention_confidence(self, now: float) -> float:
+        if self.presence.signals.face_last_seen and (now - self.presence.signals.face_last_seen) <= ATTENTION_RECENCY_SEC:
+            return 1.0
+        if self.presence.signals.hand_last_seen and (now - self.presence.signals.hand_last_seen) <= ATTENTION_RECENCY_SEC:
+            return 0.8
+        if self.presence.signals.doa_last_seen and (now - self.presence.signals.doa_last_seen) <= ATTENTION_RECENCY_SEC:
+            return 0.5
+        return 0.0
+
+    def _requires_confirmation(self, now: float) -> bool:
+        attention = self._attention_confidence(now)
+        if attention >= INTENDED_QUERY_MIN_ATTENTION:
+            return False
+        if self._last_doa_speech is True:
+            return False
+        return True
 
     async def _thinking_filler(self) -> None:
         await asyncio.sleep(THINKING_FILLER_DELAY)

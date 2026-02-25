@@ -52,10 +52,12 @@
 ### 11) Backchannel + Feedback
 - [ ] Add lightweight backchannel scheduler (subtle nod/tilt on user pauses).
 - [ ] Use DoA/face confidence to bias backchannel timing.
+  - Implemented: backchannel nod scheduler in listening state.
 
 ### 12) Multimodal Intent
 - [ ] Add intended-query gate to ignore off-axis chatter (ASR intent detection or simple heuristic).
 - [ ] Add “attention confirmation” when confidence is low (short prompt: “Did you mean me?”).
+  - Implemented: attention confidence gate + confirmation prompt.
 
 ### 7) Memory + Personalization
 - [ ] Add a lightweight memory summary store (recent preferences + “last discussed”).
