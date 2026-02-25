@@ -181,53 +181,57 @@ class Jarvis:
         """Initialize all subsystems."""
         if self._started:
             return
-        self.robot.connect()
-        if self.config.motion_enabled:
-            self.presence.start()
+        self._started = True
+        try:
+            self.robot.connect()
+            if self.config.motion_enabled:
+                self.presence.start()
 
-        self._use_robot_audio = not self.robot.sim
+            self._use_robot_audio = not self.robot.sim
 
-        if not self.args.no_vision and not self.robot.sim:
-            from jarvis.vision.face_tracker import FaceTracker
-            self.face_tracker = FaceTracker(
-                presence=self.presence,
-                get_frame=self.robot.get_frame,
-                model_path=self.config.yolo_model,
-                fps=self.config.face_track_fps,
-            )
-            self.face_tracker.start()
-
-            if self.config.hand_track_enabled:
-                from jarvis.vision.hand_tracker import HandTracker
-                self.hand_tracker = HandTracker(
+            if not self.args.no_vision and not self.robot.sim:
+                from jarvis.vision.face_tracker import FaceTracker
+                self.face_tracker = FaceTracker(
                     presence=self.presence,
                     get_frame=self.robot.get_frame,
+                    model_path=self.config.yolo_model,
                     fps=self.config.face_track_fps,
                 )
-                self.hand_tracker.start()
+                self.face_tracker.start()
 
-        if self._use_robot_audio:
-            self.robot.start_audio(recording=True, playing=self.tts is not None)
-            time.sleep(0.2)  # give media pipelines a moment to warm up
-            self._robot_input_sr = self.robot.get_input_audio_samplerate() or self.config.sample_rate
-            self._robot_output_sr = self.robot.get_output_audio_samplerate() or self.config.sample_rate
-            log.info(
-                "Using Reachy Mini media audio (in=%dHz out=%dHz)",
-                self._robot_input_sr,
-                self._robot_output_sr,
-            )
-        else:
-            if self.tts is not None:
-                # Open persistent audio output stream
-                self._output_stream = sd.OutputStream(
-                    samplerate=self.config.sample_rate,
-                    channels=1,
-                    dtype="float32",
+                if self.config.hand_track_enabled:
+                    from jarvis.vision.hand_tracker import HandTracker
+                    self.hand_tracker = HandTracker(
+                        presence=self.presence,
+                        get_frame=self.robot.get_frame,
+                        fps=self.config.face_track_fps,
+                    )
+                    self.hand_tracker.start()
+
+            if self._use_robot_audio:
+                self.robot.start_audio(recording=True, playing=self.tts is not None)
+                time.sleep(0.2)  # give media pipelines a moment to warm up
+                self._robot_input_sr = self.robot.get_input_audio_samplerate() or self.config.sample_rate
+                self._robot_output_sr = self.robot.get_output_audio_samplerate() or self.config.sample_rate
+                log.info(
+                    "Using Reachy Mini media audio (in=%dHz out=%dHz)",
+                    self._robot_input_sr,
+                    self._robot_output_sr,
                 )
-                self._output_stream.start()
+            else:
+                if self.tts is not None:
+                    # Open persistent audio output stream
+                    self._output_stream = sd.OutputStream(
+                        samplerate=self.config.sample_rate,
+                        channels=1,
+                        dtype="float32",
+                    )
+                    self._output_stream.start()
 
-        self._started = True
-        log.info("Jarvis is online.")
+            log.info("Jarvis is online.")
+        except Exception:
+            self.stop()
+            raise
 
     def stop(self) -> None:
         """Shut down all subsystems."""
@@ -260,14 +264,14 @@ class Jarvis:
 
     async def run(self) -> None:
         """Main conversation loop."""
-        self.start()
-        if self.tts is not None:
-            self._tts_task = asyncio.create_task(self._tts_loop(), name="tts")
-        self._listen_task = asyncio.create_task(self._listen_loop(), name="listen")
-        print("\n  JARVIS is online. Speak to begin.\n")
-        print("  Press Ctrl+C to exit.\n")
-
         try:
+            self.start()
+            if self.tts is not None:
+                self._tts_task = asyncio.create_task(self._tts_loop(), name="tts")
+            self._listen_task = asyncio.create_task(self._listen_loop(), name="listen")
+            print("\n  JARVIS is online. Speak to begin.\n")
+            print("  Press Ctrl+C to exit.\n")
+
             while True:
                 utterance = await self._utterance_queue.get()
 

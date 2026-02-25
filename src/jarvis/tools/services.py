@@ -199,6 +199,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
 
     if dry_run:
         tool_feedback("start")
+        tool_feedback("done")
         _touch_action(domain, action, entity_id)
         record_summary("smart_home", "dry_run", start_time)
         return {"content": [{"type": "text", "text": (

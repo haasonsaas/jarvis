@@ -452,6 +452,25 @@ class TestServicesTools:
         assert calls == ["start", "done"]
 
     @pytest.mark.asyncio
+    async def test_smart_home_dry_run_emits_feedback_start_done(self, monkeypatch):
+        from jarvis.tools import services
+        calls = []
+
+        def _feedback(kind: str) -> None:
+            calls.append(kind)
+
+        monkeypatch.setattr("jarvis.tools.robot.tool_feedback", _feedback)
+        services._action_last_seen.clear()
+
+        await services.smart_home({
+            "domain": "light",
+            "action": "turn_on",
+            "entity_id": "light.feedback",
+            "dry_run": True,
+        })
+        assert calls == ["start", "done"]
+
+    @pytest.mark.asyncio
     async def test_audit_log_written(self, tmp_path):
         from jarvis.tools import services
 

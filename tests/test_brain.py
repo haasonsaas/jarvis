@@ -156,6 +156,8 @@ class TestBrain:
             async for _ in brain.respond("hello"):
                 pass
 
+        assert brain._session_id == "session-abc"
+
     @pytest.mark.asyncio
     async def test_respond_resets_intent_signals(self, brain):
         """After response, intent signals should be zeroed."""

@@ -172,7 +172,10 @@ class Brain:
                 await self._client.query(user_text, session_id=self._session_id)
                 async for message in self._client.receive_response():
                     if isinstance(message, SystemMessage) and message.subtype == "init":
-                        log.debug("Session: %s", message.data.get("session_id"))
+                        session_id = message.data.get("session_id")
+                        if session_id:
+                            self._session_id = str(session_id)
+                            log.debug("Session: %s", self._session_id)
 
                     # Stream assistant text
                     if isinstance(message, AssistantMessage):
