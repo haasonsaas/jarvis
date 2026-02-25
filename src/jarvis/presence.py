@@ -28,6 +28,20 @@ log = logging.getLogger(__name__)
 LOOP_HZ = 30
 LOOP_INTERVAL = 1.0 / LOOP_HZ
 
+# Speech sway tuning (inspired by reachy_mini_experiments speech sway)
+SPEECH_SWAY_YAW_DEG = 4.0
+SPEECH_SWAY_PITCH_DEG = 2.0
+SPEECH_SWAY_ROLL_DEG = 1.5
+SPEECH_SWAY_X_MM = 2.5
+SPEECH_SWAY_Y_MM = 2.0
+SPEECH_SWAY_Z_MM = 1.5
+SPEECH_SWAY_FREQ_YAW = 0.6
+SPEECH_SWAY_FREQ_PITCH = 2.0
+SPEECH_SWAY_FREQ_ROLL = 1.2
+SPEECH_SWAY_FREQ_X = 0.35
+SPEECH_SWAY_FREQ_Y = 0.45
+SPEECH_SWAY_FREQ_Z = 0.25
+
 
 class State(enum.Enum):
     IDLE = "idle"
@@ -77,6 +91,8 @@ class PresenceLoop:
         self._t0 = 0.0
 
         # Smoothed outputs
+        self._x = 0.0
+        self._y = 0.0
         self._yaw = 0.0
         self._pitch = 0.0
         self._roll = 0.0
@@ -124,6 +140,8 @@ class PresenceLoop:
 
             # Apply smoothed pose
             self._robot.set_head_realtime(HeadPose(
+                x=self._x,
+                y=self._y,
                 yaw=self._yaw,
                 pitch=self._pitch,
                 roll=self._roll,
@@ -153,6 +171,8 @@ class PresenceLoop:
         drift_roll = math.sin(t * 0.3) * 1.5
 
         self._z = self._blend(self._z, breath)
+        self._x = self._blend(self._x, 0.0, 0.05)
+        self._y = self._blend(self._y, 0.0, 0.05)
         self._yaw = self._blend(self._yaw, drift_yaw, 0.03)
         self._pitch = self._blend(self._pitch, -2.0, 0.03)  # slight downward rest
         self._roll = self._blend(self._roll, drift_roll, 0.03)
@@ -182,6 +202,8 @@ class PresenceLoop:
         self._yaw = self._blend(self._yaw, target_yaw, 0.15)
         self._pitch = self._blend(self._pitch, target_pitch, 0.15)
         self._z = self._blend(self._z, lean, 0.1)
+        self._x = self._blend(self._x, 0.0, 0.08)
+        self._y = self._blend(self._y, 0.0, 0.08)
         self._roll = self._blend(self._roll, 0.0, 0.1)
 
     def _do_thinking(self, t: float) -> None:
@@ -194,6 +216,8 @@ class PresenceLoop:
         self._pitch = self._blend(self._pitch, think_pitch, 0.08)
         self._roll = self._blend(self._roll, think_roll, 0.05)
         self._z = self._blend(self._z, 0.0, 0.05)
+        self._x = self._blend(self._x, 0.0, 0.05)
+        self._y = self._blend(self._y, 0.0, 0.05)
 
     def _do_speaking(self, t: float, sig: Signals) -> None:
         # Return gaze to user, stable with subtle animation
@@ -211,9 +235,12 @@ class PresenceLoop:
 
         self._speech_energy = self._blend(self._speech_energy, sig.speech_energy, 0.2)
         sway = self._speech_energy
-        target_yaw += math.sin(t * 0.6) * 4.0 * sway
-        target_pitch += math.sin(t * 2.0) * 2.0 * sway
-        target_roll += math.sin(t * 1.2) * 1.5 * sway
+        target_yaw += math.sin(t * SPEECH_SWAY_FREQ_YAW) * SPEECH_SWAY_YAW_DEG * sway
+        target_pitch += math.sin(t * SPEECH_SWAY_FREQ_PITCH) * SPEECH_SWAY_PITCH_DEG * sway
+        target_roll += math.sin(t * SPEECH_SWAY_FREQ_ROLL) * SPEECH_SWAY_ROLL_DEG * sway
+        target_x = math.sin(t * SPEECH_SWAY_FREQ_X) * SPEECH_SWAY_X_MM * sway
+        target_y = math.sin(t * SPEECH_SWAY_FREQ_Y) * SPEECH_SWAY_Y_MM * sway
+        target_z = 1.0 + math.sin(t * SPEECH_SWAY_FREQ_Z) * SPEECH_SWAY_Z_MM * sway
 
         target_yaw = self._clamp(target_yaw, -45.0, 45.0)
         target_pitch = self._clamp(target_pitch, -20.0, 20.0)
@@ -222,7 +249,9 @@ class PresenceLoop:
         self._yaw = self._blend(self._yaw, target_yaw, 0.12)
         self._pitch = self._blend(self._pitch, target_pitch, 0.12)
         self._roll = self._blend(self._roll, target_roll, 0.08)
-        self._z = self._blend(self._z, 1.0, 0.05)  # slight upward "engaged" posture
+        self._x = self._blend(self._x, target_x, 0.08)
+        self._y = self._blend(self._y, target_y, 0.08)
+        self._z = self._blend(self._z, target_z, 0.05)  # slight upward "engaged" posture
 
     def _do_muted(self) -> None:
         # Privacy posture: centered, looking slightly down
@@ -230,6 +259,8 @@ class PresenceLoop:
         self._pitch = self._blend(self._pitch, -10.0, 0.05)
         self._roll = self._blend(self._roll, 0.0, 0.05)
         self._z = self._blend(self._z, -3.0, 0.05)
+        self._x = self._blend(self._x, 0.0, 0.05)
+        self._y = self._blend(self._y, 0.0, 0.05)
 
     def _update_antennas(self, t: float, sig: Signals) -> None:
         if sig.state == State.IDLE:

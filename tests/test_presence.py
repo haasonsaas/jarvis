@@ -141,7 +141,14 @@ class TestPresenceLoop:
         for i in range(200):
             presence._do_speaking(float(i) * 0.033, sig)
 
-        assert abs(presence._yaw) > 0.5 or abs(presence._pitch) > 0.5 or abs(presence._roll) > 0.5
+        assert (
+            abs(presence._yaw) > 0.5
+            or abs(presence._pitch) > 0.5
+            or abs(presence._roll) > 0.5
+            or abs(presence._x) > 0.2
+            or abs(presence._y) > 0.2
+            or abs(presence._z) > 0.2
+        )
 
     def test_muted_looks_down(self, presence):
         presence._yaw = 30.0

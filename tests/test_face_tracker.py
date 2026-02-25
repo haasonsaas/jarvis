@@ -122,6 +122,7 @@ class TestFaceTracker:
 
         # Should have set face_detected and face position
         assert mock_presence.signals.face_detected is True
+        assert abs(mock_presence.signals.intent_tilt) <= 15.0
 
     @patch("jarvis.vision.face_tracker.YOLO")
     def test_no_face_clears_signal(self, mock_yolo_cls, mock_presence):

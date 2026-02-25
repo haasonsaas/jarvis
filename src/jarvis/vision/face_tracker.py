@@ -73,6 +73,7 @@ class FaceTracker:
         # Smoothed output
         self._smooth_yaw = 0.0
         self._smooth_pitch = 0.0
+        self._smooth_roll = 0.0
 
     def start(self) -> None:
         """Start the face tracking loop in a background thread."""
@@ -150,15 +151,18 @@ class FaceTracker:
 
                 raw_yaw = err_x * GAIN_YAW
                 raw_pitch = err_y * GAIN_PITCH
+                raw_roll = -raw_yaw * 0.25
 
                 # Exponential smoothing — SMOOTH_ALPHA is the weight on NEW values
                 self._smooth_yaw += SMOOTH_ALPHA * (raw_yaw - self._smooth_yaw)
                 self._smooth_pitch += SMOOTH_ALPHA * (raw_pitch - self._smooth_pitch)
+                self._smooth_roll += SMOOTH_ALPHA * (raw_roll - self._smooth_roll)
 
                 # Feed into presence loop signals (not robot directly)
                 self._presence.signals.face_detected = True
                 self._presence.signals.face_yaw = self._smooth_yaw
                 self._presence.signals.face_pitch = self._smooth_pitch
+                self._presence.signals.intent_tilt = self._smooth_roll
             else:
                 self._presence.signals.face_detected = False
 
