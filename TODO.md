@@ -372,7 +372,7 @@ This section is the long-horizon execution plan for continued reliability and ma
   - `tests/test_tools.py`
 
 ### 11.2 P0 Memory Transaction Safety
-- [ ] Add targeted transaction tests for partial failures in task-plan writes.
+- [x] Add targeted transaction tests for partial failures in task-plan writes.
 - Why:
   - Multi-step operations should never leave half-written plan state.
 - Acceptance criteria:

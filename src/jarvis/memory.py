@@ -293,18 +293,18 @@ class MemoryStore:
         if not clean_steps:
             raise ValueError("steps required")
         created_at = time.time()
-        cur = self._conn.cursor()
-        cur.execute(
-            "INSERT INTO task_plans(created_at, title, status) VALUES (?, ?, ?)",
-            (created_at, clean_title, "open"),
-        )
-        plan_id = int(cur.lastrowid)
-        for idx, clean_step in enumerate(clean_steps):
+        with self._conn:
+            cur = self._conn.cursor()
             cur.execute(
-                "INSERT INTO task_steps(plan_id, idx, text, status) VALUES (?, ?, ?, ?)",
-                (plan_id, idx, clean_step, "pending"),
+                "INSERT INTO task_plans(created_at, title, status) VALUES (?, ?, ?)",
+                (created_at, clean_title, "open"),
             )
-        self._conn.commit()
+            plan_id = int(cur.lastrowid)
+            for idx, clean_step in enumerate(clean_steps):
+                cur.execute(
+                    "INSERT INTO task_steps(plan_id, idx, text, status) VALUES (?, ?, ?, ?)",
+                    (plan_id, idx, clean_step, "pending"),
+                )
         return plan_id
 
     def list_task_plans(self, *, open_only: bool = True) -> list[TaskPlan]:
@@ -352,27 +352,27 @@ class MemoryStore:
         allowed_statuses = {"pending", "in_progress", "blocked", "done"}
         if status not in allowed_statuses:
             raise ValueError(f"invalid step status: {status}")
-        cur = self._conn.cursor()
-        cur.execute(
-            "UPDATE task_steps SET status = ? WHERE plan_id = ? AND idx = ?",
-            (status, plan_id, step_index),
-        )
-        updated = cur.rowcount > 0
-        steps = cur.execute(
-            "SELECT status FROM task_steps WHERE plan_id = ?",
-            (plan_id,),
-        ).fetchall()
-        if steps and all(row["status"] == "done" for row in steps):
+        with self._conn:
+            cur = self._conn.cursor()
             cur.execute(
-                "UPDATE task_plans SET status = 'closed' WHERE id = ?",
-                (plan_id,),
+                "UPDATE task_steps SET status = ? WHERE plan_id = ? AND idx = ?",
+                (status, plan_id, step_index),
             )
-        elif steps and any(row["status"] != "done" for row in steps):
-            cur.execute(
-                "UPDATE task_plans SET status = 'open' WHERE id = ?",
+            updated = cur.rowcount > 0
+            steps = cur.execute(
+                "SELECT status FROM task_steps WHERE plan_id = ?",
                 (plan_id,),
-            )
-        self._conn.commit()
+            ).fetchall()
+            if steps and all(row["status"] == "done" for row in steps):
+                cur.execute(
+                    "UPDATE task_plans SET status = 'closed' WHERE id = ?",
+                    (plan_id,),
+                )
+            elif steps and any(row["status"] != "done" for row in steps):
+                cur.execute(
+                    "UPDATE task_plans SET status = 'open' WHERE id = ?",
+                    (plan_id,),
+                )
         return updated
 
     def next_task_step(self, plan_id: int | None = None) -> tuple[TaskPlan, TaskStep] | None:

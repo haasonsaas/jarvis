@@ -1,5 +1,6 @@
 """Tests for jarvis.memory."""
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -129,5 +130,57 @@ def test_get_summary_returns_topic_case_insensitive(tmp_path):
         summary = store.get_summary("persona_style")
         assert summary is not None
         assert summary.summary == "friendly"
+    finally:
+        store.close()
+
+
+def test_add_task_plan_rolls_back_on_step_insert_failure(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        store._conn.execute(
+            """
+            CREATE TRIGGER fail_second_step_insert
+            BEFORE INSERT ON task_steps
+            WHEN NEW.idx = 1
+            BEGIN
+                SELECT RAISE(FAIL, 'step insert failure');
+            END;
+            """
+        )
+        with pytest.raises(sqlite3.DatabaseError):
+            store.add_task_plan("Plan", ["A", "B"])
+        plan_count = store._conn.execute("SELECT COUNT(*) FROM task_plans").fetchone()[0]
+        step_count = store._conn.execute("SELECT COUNT(*) FROM task_steps").fetchone()[0]
+        assert int(plan_count) == 0
+        assert int(step_count) == 0
+    finally:
+        store.close()
+
+
+def test_update_task_step_rolls_back_on_plan_status_failure(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        plan_id = store.add_task_plan("Plan", ["A"])
+        store._conn.execute(
+            """
+            CREATE TRIGGER fail_plan_status_update
+            BEFORE UPDATE ON task_plans
+            BEGIN
+                SELECT RAISE(FAIL, 'plan status update failure');
+            END;
+            """
+        )
+        with pytest.raises(sqlite3.DatabaseError):
+            store.update_task_step(plan_id, 0, "done")
+        step_status = store._conn.execute(
+            "SELECT status FROM task_steps WHERE plan_id = ? AND idx = 0",
+            (plan_id,),
+        ).fetchone()[0]
+        plan_status = store._conn.execute(
+            "SELECT status FROM task_plans WHERE id = ?",
+            (plan_id,),
+        ).fetchone()[0]
+        assert step_status == "pending"
+        assert plan_status == "open"
     finally:
         store.close()
