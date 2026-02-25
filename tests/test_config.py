@@ -91,6 +91,7 @@ class TestConfig:
         monkeypatch.setenv("MEMORY_SEARCH_LIMIT", "oops")
         monkeypatch.setenv("BACKCHANNEL_STYLE", "LOUD")
         monkeypatch.setenv("PERSONA_STYLE", "chatty")
+        monkeypatch.setenv("HOME_ENABLED", "maybe")
         from jarvis.config import Config
 
         c = Config()
@@ -99,3 +100,14 @@ class TestConfig:
         assert "MEMORY_SEARCH_LIMIT invalid" in text
         assert "BACKCHANNEL_STYLE invalid" in text
         assert "PERSONA_STYLE invalid" in text
+        assert "HOME_ENABLED invalid boolean" in text
+
+    def test_invalid_bool_env_falls_back_to_default_behavior(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("HOME_ENABLED", "invalid")
+        monkeypatch.setenv("MEMORY_ENABLED", "invalid")
+        from jarvis.config import Config
+
+        c = Config()
+        assert c.home_enabled is True
+        assert c.memory_enabled is True

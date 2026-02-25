@@ -19,7 +19,12 @@ def _env_bool(name: str) -> bool | None:
     val = os.environ.get(name)
     if val is None:
         return None
-    return val.strip().lower() in {"1", "true", "yes", "y", "on"}
+    normalized = val.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return None
 
 
 def _env_float(name: str, default: float) -> float:
@@ -188,4 +193,21 @@ class Config:
                     int(raw)
             except ValueError:
                 warnings.append(f"{name} invalid; using {fallback}.")
+        bool_checks = [
+            "REACHY_AUTOMATIC_BODY_YAW",
+            "MEMORY_ENABLED",
+            "MEMORY_DECAY_ENABLED",
+            "MEMORY_MMR_ENABLED",
+            "MOTION_ENABLED",
+            "HAND_TRACK_ENABLED",
+            "HOME_ENABLED",
+        ]
+        for name in bool_checks:
+            raw = os.environ.get(name)
+            if raw is None or not raw.strip():
+                continue
+            normalized = raw.strip().lower()
+            if normalized in {"1", "true", "yes", "y", "on", "0", "false", "no", "n", "off"}:
+                continue
+            warnings.append(f"{name} invalid boolean; using default behavior.")
         return warnings

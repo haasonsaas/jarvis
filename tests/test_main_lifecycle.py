@@ -121,3 +121,19 @@ def test_refresh_tool_error_counters():
 
     assert jarvis._telemetry["service_errors"] == 1.0
     assert jarvis._telemetry["storage_errors"] == 1.0
+
+
+def test_refresh_tool_error_counters_includes_network_taxonomy():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._telemetry = {"service_errors": 0.0, "storage_errors": 0.0}
+    from unittest.mock import patch
+
+    with patch("jarvis.__main__.list_summaries", return_value=[
+        {"status": "error", "detail": "network_client_error"},
+        {"status": "error", "detail": "http_error"},
+        {"status": "error", "detail": "unknown_error"},
+    ]):
+        Jarvis._refresh_tool_error_counters(jarvis)
+
+    assert jarvis._telemetry["service_errors"] == 2.0
+    assert jarvis._telemetry["storage_errors"] == 0.0

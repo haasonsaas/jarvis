@@ -229,7 +229,14 @@ SERVICE_ERROR_CODES: set[str] = {
     "invalid_status",
     "invalid_steps",
     "http_error",
+    "summary_unavailable",
+    "unknown_error",
 }
+
+
+def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
+    normalized = code if code in SERVICE_ERROR_CODES else "unknown_error"
+    record_summary(tool_name, "error", start_time, normalized)
 
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
@@ -475,7 +482,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     from jarvis.tools.robot import tool_feedback
 
     if not _config or not _config.has_home_assistant:
-        record_summary("smart_home", "error", start_time, "missing_config")
+        _record_service_error("smart_home", start_time, "missing_config")
         return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
 
     domain = str(args.get("domain", "")).strip()
@@ -483,10 +490,10 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     entity_id = str(args.get("entity_id", "")).strip()
     data = args.get("data", {})
     if not domain or not action or not entity_id:
-        record_summary("smart_home", "error", start_time, "missing_fields")
+        _record_service_error("smart_home", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Domain, action, and entity_id are required."}]}
     if not isinstance(data, dict):
-        record_summary("smart_home", "error", start_time, "invalid_data")
+        _record_service_error("smart_home", start_time, "invalid_data")
         return {"content": [{"type": "text", "text": "Service data must be an object."}]}
     # Force dry_run for sensitive domains unless explicitly set to false
     dry_run = _as_bool(args.get("dry_run"), default=domain in SENSITIVE_DOMAINS)
@@ -540,11 +547,11 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                     return {"content": [{"type": "text", "text": f"Done: {domain}.{action} on {entity_id}"}]}
                 elif resp.status == 401:
                     tool_feedback("done")
-                    record_summary("smart_home", "error", start_time, "auth")
+                    _record_service_error("smart_home", start_time, "auth")
                     return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
                 elif resp.status == 404:
                     tool_feedback("done")
-                    record_summary("smart_home", "error", start_time, "not_found")
+                    _record_service_error("smart_home", start_time, "not_found")
                     return {"content": [{"type": "text", "text": f"Service not found: {domain}.{action}"}]}
                 else:
                     try:
@@ -552,23 +559,23 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                     except Exception:
                         text = "<body unavailable>"
                     tool_feedback("done")
-                    record_summary("smart_home", "error", start_time, "http_error")
+                    _record_service_error("smart_home", start_time, "http_error")
                     return {"content": [{"type": "text", "text": f"Home Assistant error ({resp.status}): {text[:200]}"}]}
     except asyncio.TimeoutError:
         tool_feedback("done")
-        record_summary("smart_home", "error", start_time, "timeout")
+        _record_service_error("smart_home", start_time, "timeout")
         return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
     except asyncio.CancelledError:
         tool_feedback("done")
-        record_summary("smart_home", "error", start_time, "cancelled")
+        _record_service_error("smart_home", start_time, "cancelled")
         return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
     except aiohttp.ClientError as e:
         tool_feedback("done")
-        record_summary("smart_home", "error", start_time, "network_client_error")
+        _record_service_error("smart_home", start_time, "network_client_error")
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
     except Exception as e:
         tool_feedback("done")
-        record_summary("smart_home", "error", start_time, "unexpected")
+        _record_service_error("smart_home", start_time, "unexpected")
         log.exception("Unexpected smart_home failure")
         return {"content": [{"type": "text", "text": f"Unexpected Home Assistant error: {e}"}]}
 
@@ -581,12 +588,12 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
     from jarvis.tools.robot import tool_feedback
 
     if not _config or not _config.has_home_assistant:
-        record_summary("smart_home_state", "error", start_time, "missing_config")
+        _record_service_error("smart_home_state", start_time, "missing_config")
         return {"content": [{"type": "text", "text": "Home Assistant not configured."}]}
 
     entity_id = str(args.get("entity_id", "")).strip()
     if not entity_id:
-        record_summary("smart_home_state", "error", start_time, "missing_entity")
+        _record_service_error("smart_home_state", start_time, "missing_entity")
         return {"content": [{"type": "text", "text": "Entity id required."}]}
 
     url = f"{_config.hass_url}/api/states/{entity_id}"
@@ -602,7 +609,7 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
                         data = await resp.json()
                     except Exception:
                         tool_feedback("done")
-                        record_summary("smart_home_state", "error", start_time, "invalid_json")
+                        _record_service_error("smart_home_state", start_time, "invalid_json")
                         return {"content": [{"type": "text", "text": "Invalid response from Home Assistant."}]}
                     tool_feedback("done")
                     record_summary("smart_home_state", "ok", start_time)
@@ -612,27 +619,27 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
                     })}]}
                 elif resp.status == 404:
                     tool_feedback("done")
-                    record_summary("smart_home_state", "error", start_time, "not_found")
+                    _record_service_error("smart_home_state", start_time, "not_found")
                     return {"content": [{"type": "text", "text": f"Entity not found: {entity_id}"}]}
                 else:
                     tool_feedback("done")
-                    record_summary("smart_home_state", "error", start_time, "http_error")
+                    _record_service_error("smart_home_state", start_time, "http_error")
                     return {"content": [{"type": "text", "text": f"Error ({resp.status}) fetching entity state"}]}
     except asyncio.TimeoutError:
         tool_feedback("done")
-        record_summary("smart_home_state", "error", start_time, "timeout")
+        _record_service_error("smart_home_state", start_time, "timeout")
         return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
     except asyncio.CancelledError:
         tool_feedback("done")
-        record_summary("smart_home_state", "error", start_time, "cancelled")
+        _record_service_error("smart_home_state", start_time, "cancelled")
         return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
     except aiohttp.ClientError as e:
         tool_feedback("done")
-        record_summary("smart_home_state", "error", start_time, "network_client_error")
+        _record_service_error("smart_home_state", start_time, "network_client_error")
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
     except Exception as e:
         tool_feedback("done")
-        record_summary("smart_home_state", "error", start_time, "unexpected")
+        _record_service_error("smart_home_state", start_time, "unexpected")
         log.exception("Unexpected smart_home_state failure")
         return {"content": [{"type": "text", "text": f"Unexpected Home Assistant error: {e}"}]}
 
@@ -1013,7 +1020,7 @@ async def tool_summary(args: dict[str, Any]) -> dict[str, Any]:
     try:
         summaries = list_summaries(limit)
     except Exception as e:
-        record_summary("tool_summary", "error", start_time, "summary_unavailable")
+        _record_service_error("tool_summary", start_time, "summary_unavailable")
         return {"content": [{"type": "text", "text": f"Tool summaries unavailable: {e}"}]}
     record_summary("tool_summary", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(summaries, default=str)}]}
@@ -1029,7 +1036,7 @@ async def tool_summary_text(args: dict[str, Any]) -> dict[str, Any]:
         summaries = list_summaries(limit)
         text = _format_tool_summaries(summaries)
     except Exception as e:
-        record_summary("tool_summary_text", "error", start_time, "summary_unavailable")
+        _record_service_error("tool_summary_text", start_time, "summary_unavailable")
         return {"content": [{"type": "text", "text": f"Tool summaries unavailable: {e}"}]}
     record_summary("tool_summary_text", "ok", start_time)
     return {"content": [{"type": "text", "text": text}]}

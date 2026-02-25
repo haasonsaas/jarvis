@@ -111,12 +111,16 @@ make test-fast
 
 # Fault-injection oriented subset
 make test-faults
+
+# Soak/stability subset
+make test-soak
 ```
 
 Equivalent scripts are available under `scripts/`:
 - `scripts/check.sh`
 - `scripts/test_fast.sh`
 - `scripts/test_faults.sh`
+- `scripts/test_soak.sh`
 
 ## Project Structure
 

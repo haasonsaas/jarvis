@@ -224,6 +224,24 @@ class TestServicesTools:
         yield
         services._config = None
 
+    def test_service_error_codes_include_required_entries(self):
+        from jarvis.tools import services
+
+        assert "summary_unavailable" in services.SERVICE_ERROR_CODES
+        assert "unknown_error" in services.SERVICE_ERROR_CODES
+
+    def test_record_service_error_normalizes_unknown_code(self, monkeypatch):
+        from jarvis.tools import services
+
+        calls = []
+
+        def _record(name, status, start_time, detail=None, effect=None, risk=None):
+            calls.append((name, status, detail))
+
+        monkeypatch.setattr("jarvis.tools.services.record_summary", _record)
+        services._record_service_error("smart_home", 0.0, "not_a_known_code")
+        assert calls == [("smart_home", "error", "unknown_error")]
+
     @pytest.mark.asyncio
     async def test_smart_home_dry_run_for_locks(self):
         from jarvis.tools.services import smart_home
