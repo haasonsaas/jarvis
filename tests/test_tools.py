@@ -474,6 +474,36 @@ class TestServicesTools:
         assert len(text) >= 10
 
     @pytest.mark.asyncio
+    async def test_system_status_reports_snapshot(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        services.AUDIT_LOG = tmp_path / "audit.jsonl"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        await services.memory_add({"text": "status probe"})
+
+        result = await services.system_status({})
+        payload = json.loads(result["content"][0]["text"])
+        assert "local_time" in payload
+        assert "tool_policy" in payload
+        assert "memory" in payload
+        assert "audit" in payload
+
+    @pytest.mark.asyncio
+    async def test_system_status_denied_by_policy(self):
+        from jarvis.config import Config
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.tool_denylist = ["system_status"]
+        services.bind(cfg)
+
+        result = await services.system_status({})
+        assert "not permitted" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_tool_feedback_called(self, monkeypatch):
         from jarvis.tools import services
         calls = []

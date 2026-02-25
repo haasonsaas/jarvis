@@ -279,7 +279,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 ## 7) P3 UX and Personality
 
 ### 7.1 Operator-friendly status command (`P3`)
-- [ ] Add a `system_status` tool for quick diagnosis.
+- [x] Add a `system_status` tool for quick diagnosis.
 - Why:
   - Reduces guesswork during demos and failures.
 - Acceptance criteria:

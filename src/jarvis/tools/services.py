@@ -186,6 +186,28 @@ def _touch_action(domain: str, action: str, entity_id: str) -> None:
     _action_last_seen[_action_key(domain, action, entity_id)] = time.monotonic()
 
 
+def _audit_status() -> dict[str, Any]:
+    exists = AUDIT_LOG.exists()
+    size_bytes = AUDIT_LOG.stat().st_size if exists else 0
+    backups = []
+    for idx in range(1, _audit_log_backups + 1):
+        backup_path = AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.{idx}")
+        if backup_path.exists():
+            backups.append(
+                {
+                    "path": str(backup_path),
+                    "size_bytes": int(backup_path.stat().st_size),
+                }
+            )
+    return {
+        "path": str(AUDIT_LOG),
+        "exists": exists,
+        "size_bytes": int(size_bytes),
+        "max_bytes": int(_audit_log_max_bytes),
+        "backups": backups,
+    }
+
+
 # ── Home Assistant ────────────────────────────────────────────
 
 async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
@@ -332,6 +354,38 @@ async def get_time(args: dict[str, Any]) -> dict[str, Any]:
     tool_feedback("done")
     record_summary("get_time", "ok", start_time)
     return {"content": [{"type": "text", "text": _now_local()}]}
+
+
+async def system_status(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("system_status"):
+        record_summary("system_status", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+
+    memory_status = None
+    if _memory is not None:
+        try:
+            memory_status = _memory.memory_status()
+        except Exception as e:
+            memory_status = {"error": str(e)}
+
+    status = {
+        "local_time": _now_local(),
+        "home_assistant_configured": bool(_config and _config.has_home_assistant),
+        "motion_enabled": bool(_config and _config.motion_enabled),
+        "home_tools_enabled": bool(_config and _config.home_enabled),
+        "memory_enabled": bool(_config and _config.memory_enabled),
+        "backchannel_style": _config.backchannel_style if _config else "unknown",
+        "tool_policy": {
+            "allow_count": len(_tool_allowlist),
+            "deny_count": len(_tool_denylist),
+        },
+        "memory": memory_status,
+        "audit": _audit_status(),
+        "recent_tools": list_summaries(limit=5),
+    }
+    record_summary("system_status", "ok", start_time)
+    return {"content": [{"type": "text", "text": json.dumps(status)}]}
 
 
 # ── Memory + planning ───────────────────────────────────────
@@ -670,6 +724,12 @@ get_time_tool = tool(
     {},
 )(get_time)
 
+system_status_tool = tool(
+    "system_status",
+    "Report current runtime capabilities and health snapshot.",
+    {},
+)(system_status)
+
 memory_add_tool = tool(
     "memory_add",
     "Store a long-term memory (facts, preferences, summaries).",
@@ -848,6 +908,7 @@ def create_services_server():
             smart_home_tool,
             smart_home_state_tool,
             get_time_tool,
+            system_status_tool,
             tool_summary_tool,
             tool_summary_text_tool,
             memory_add_tool,

@@ -90,6 +90,7 @@ class Brain:
                 "mcp__jarvis-services__smart_home",
                 "mcp__jarvis-services__smart_home_state",
                 "mcp__jarvis-services__get_time",
+                "mcp__jarvis-services__system_status",
                 "mcp__jarvis-services__memory_add",
                 "mcp__jarvis-services__memory_search",
                 "mcp__jarvis-services__memory_recent",
