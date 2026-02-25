@@ -69,6 +69,17 @@ class TestPresenceLoop:
         assert presence._yaw > 5.0  # should be approaching 20
         assert presence._pitch > 2.0  # should be approaching 10
 
+    def test_listening_loop_adds_motion(self, presence):
+        sig = presence.signals
+        sig.state = State.LISTENING
+        sig.vad_energy = 0.05
+        sig.face_detected = False
+
+        for i in range(200):
+            presence._do_listening(float(i) * 0.033, sig)
+
+        assert abs(presence._roll) > 0.2
+
     def test_listening_uses_doa_when_no_face(self, presence):
         sig = presence.signals
         sig.state = State.LISTENING
@@ -147,6 +158,7 @@ class TestPresenceLoop:
         sig.face_detected = False
         sig.intent_glance_yaw = 20.0
         sig.intent_tilt = 10.0
+        sig.intent_nod_style = "double"
 
         for i in range(100):
             presence._do_speaking(float(i) * 0.033, sig)

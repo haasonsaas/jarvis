@@ -20,6 +20,7 @@ import math
 import threading
 import time
 from dataclasses import dataclass, field
+from collections import deque
 
 from jarvis.robot.controller import RobotController, HeadPose
 
@@ -55,6 +56,7 @@ TOOL_FEEDBACK_START_SCALE = 0.6
 
 ATTENTION_HOLD_SEC = 1.2
 ATTENTION_TIMEOUT_SEC = 1.5
+ATTENTION_SMOOTH_WINDOW = 12
 
 IDLE_CHOREO_COOLDOWN_SEC = 8.0
 IDLE_CHOREO_WINDOW_SEC = 1.6
@@ -89,6 +91,7 @@ class Signals:
     face_last_seen: float | None = None
     # Set by the embodiment plan from the LLM
     intent_nod: float = 0.0             # 0-1 nod intensity
+    intent_nod_style: str = "single"    # single, double, slow
     intent_tilt: float = 0.0            # degrees of head tilt
     intent_glance_yaw: float = 0.0      # brief glance offset
     speech_energy: float = 0.0          # 0-1 TTS energy for speech sway
@@ -133,6 +136,7 @@ class PresenceLoop:
         self._tool_feedback_strength = 0.0
         self._idle_choreo_until = 0.0
         self._idle_choreo_next = 0.0
+        self._attention_history: deque[float] = deque(maxlen=ATTENTION_SMOOTH_WINDOW)
 
     def start(self) -> None:
         if self._running:
@@ -227,12 +231,16 @@ class PresenceLoop:
 
         target_yaw = self._clamp(target_yaw, -45.0, 45.0)
         target_pitch = self._clamp(target_pitch + nod, -20.0, 20.0)
+        loop_yaw, loop_pitch, loop_roll = self._listening_loop(t, sig)
+        target_yaw = self._clamp(target_yaw + loop_yaw, -45.0, 45.0)
+        target_pitch = self._clamp(target_pitch + loop_pitch, -20.0, 20.0)
+
         self._yaw = self._blend(self._yaw, target_yaw, 0.15)
         self._pitch = self._blend(self._pitch, target_pitch, 0.15)
         self._z = self._blend(self._z, lean, 0.1)
         self._x = self._blend(self._x, 0.0, 0.08)
         self._y = self._blend(self._y, 0.0, 0.08)
-        self._roll = self._blend(self._roll, 0.0, 0.1)
+        self._roll = self._blend(self._roll, loop_roll, 0.1)
 
     def _do_thinking(self, t: float) -> None:
         # Look slightly away and up — the "pondering" pose
@@ -262,10 +270,10 @@ class PresenceLoop:
         # Add any LLM-requested intent
         target_yaw += sig.intent_glance_yaw
         if sig.intent_nod > 0.0 and t >= self._nod_next_allowed:
-            self._nod_active_until = t + 0.6
+            self._nod_active_until = t + self._nod_duration(sig.intent_nod_style)
             self._nod_next_allowed = t + 2.0
         if t <= self._nod_active_until:
-            target_pitch += sig.intent_nod * math.sin(t * 3.0) * 4.0
+            target_pitch += self._intent_nod_offset(t, sig.intent_nod, sig.intent_nod_style)
         target_roll = sig.intent_tilt
         target_pitch += self._tool_feedback_nod(t, now)
 
@@ -393,12 +401,17 @@ class PresenceLoop:
 
     def _attention_strength(self, sig: Signals, now: float) -> float:
         if sig.face_last_seen and (now - sig.face_last_seen) <= ATTENTION_TIMEOUT_SEC:
-            return 1.0
-        if sig.hand_last_seen and (now - sig.hand_last_seen) <= ATTENTION_TIMEOUT_SEC:
-            return 0.8
-        if sig.doa_last_seen and (now - sig.doa_last_seen) <= ATTENTION_TIMEOUT_SEC:
-            return 0.6
-        return 0.0
+            raw = 1.0
+        elif sig.hand_last_seen and (now - sig.hand_last_seen) <= ATTENTION_TIMEOUT_SEC:
+            raw = 0.8
+        elif sig.doa_last_seen and (now - sig.doa_last_seen) <= ATTENTION_TIMEOUT_SEC:
+            raw = 0.6
+        else:
+            raw = 0.0
+        self._attention_history.append(raw)
+        if not self._attention_history:
+            return raw
+        return sum(self._attention_history) / len(self._attention_history)
 
     def tool_feedback(self, kind: str) -> None:
         now = time.monotonic()
@@ -412,3 +425,28 @@ class PresenceLoop:
         if now > self._tool_feedback_until:
             return 0.0
         return math.sin(t * 6.0) * TOOL_FEEDBACK_NOD_DEG * self._tool_feedback_strength
+
+    def _listening_loop(self, t: float, sig: Signals) -> tuple[float, float, float]:
+        if sig.vad_energy > 0.6:
+            return 0.0, 0.0, 0.0
+        strength = max(0.0, 1.0 - sig.vad_energy)
+        yaw = math.sin(t * 0.6) * 2.5 * strength
+        pitch = math.sin(t * 1.1) * 1.2 * strength
+        roll = math.sin(t * 0.8) * 2.0 * strength
+        return yaw, pitch, roll
+
+    def _intent_nod_offset(self, t: float, intensity: float, style: str) -> float:
+        style = (style or "single").lower()
+        if style == "double":
+            return intensity * (math.sin(t * 4.5) + 0.6 * math.sin(t * 9.0)) * 3.5
+        if style == "slow":
+            return intensity * math.sin(t * 1.6) * 4.5
+        return intensity * math.sin(t * 3.0) * 4.0
+
+    def _nod_duration(self, style: str) -> float:
+        style = (style or "single").lower()
+        if style == "double":
+            return 0.9
+        if style == "slow":
+            return 1.1
+        return 0.6

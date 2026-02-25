@@ -56,6 +56,7 @@ async def embody(args: dict[str, Any]) -> dict[str, Any]:
         _presence.signals.intent_nod = max(0.0, min(1.0, args.get("nod", 0.0)))
         _presence.signals.intent_tilt = max(-15.0, min(15.0, args.get("tilt", 0.0)))
         _presence.signals.intent_glance_yaw = max(-30.0, min(30.0, args.get("glance_yaw", 0.0)))
+        _presence.signals.intent_nod_style = str(args.get("nod_style", "single"))
     return {"content": [{"type": "text", "text": f"Embodiment set: {args['intent']}/{args['prosody']}"}]}
 
 
@@ -181,6 +182,11 @@ embody_tool = tool(
                 "minimum": 0.0,
                 "maximum": 1.0,
                 "description": "Nod intensity (0 = none, 1 = emphatic). Use for agreement/acknowledgment.",
+            },
+            "nod_style": {
+                "type": "string",
+                "enum": ["single", "double", "slow"],
+                "description": "Nod shape to use when nodding.",
             },
             "tilt": {
                 "type": "number",
