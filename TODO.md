@@ -43,6 +43,7 @@
 - [ ] Add tool policy guardrails for smart-home operations (explicit user confirmation for sensitive domains).
 - [ ] Add per-action cooldowns to avoid rapid repeat commands.
 - [ ] Add action audit trail summaries for user review (not just raw logs).
+  - Implemented: per-action cooldowns for smart-home tool.
 
 ### 6) Voice + Audio UX
 - [ ] Add streaming TTS chunk normalization (loudness leveling, RMS smoothing).

@@ -24,8 +24,10 @@ AUDIT_LOG = Path.home() / ".jarvis" / "audit.jsonl"
 
 # Domains that always default to dry_run
 SENSITIVE_DOMAINS = {"lock", "alarm_control_panel", "cover"}
+ACTION_COOLDOWN_SEC = 2.0
 
 _config: Config | None = None
+_action_last_seen: dict[str, float] = {}
 
 
 def bind(config: Config) -> None:
@@ -54,6 +56,23 @@ def _now_local() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
 
+def _action_key(domain: str, action: str, entity_id: str) -> str:
+    return f"{domain}:{action}:{entity_id}"
+
+
+def _cooldown_active(domain: str, action: str, entity_id: str) -> bool:
+    now = time.monotonic()
+    key = _action_key(domain, action, entity_id)
+    last = _action_last_seen.get(key)
+    if last is None:
+        return False
+    return (now - last) < ACTION_COOLDOWN_SEC
+
+
+def _touch_action(domain: str, action: str, entity_id: str) -> None:
+    _action_last_seen[_action_key(domain, action, entity_id)] = time.monotonic()
+
+
 # ── Home Assistant ────────────────────────────────────────────
 
 async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
@@ -69,6 +88,10 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     # Force dry_run for sensitive domains unless explicitly set to false
     dry_run = args.get("dry_run", domain in SENSITIVE_DOMAINS)
 
+    if _cooldown_active(domain, action, entity_id):
+        tool_feedback("done")
+        return {"content": [{"type": "text", "text": "Action cooldown active. Try again in a moment."}]}
+
     _audit("smart_home", {
         "domain": domain, "action": action, "entity_id": entity_id,
         "data": data, "dry_run": dry_run,
@@ -76,6 +99,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
 
     if dry_run:
         tool_feedback("start")
+        _touch_action(domain, action, entity_id)
         return {"content": [{"type": "text", "text": (
             f"DRY RUN: Would call {domain}.{action} on {entity_id}"
             f"{' with ' + json.dumps(data) if data else ''}. "
@@ -93,6 +117,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
             async with session.post(url, headers=headers, json=payload) as resp:
                 if resp.status == 200:
                     tool_feedback("done")
+                    _touch_action(domain, action, entity_id)
                     return {"content": [{"type": "text", "text": f"Done: {domain}.{action} on {entity_id}"}]}
                 elif resp.status == 401:
                     tool_feedback("done")

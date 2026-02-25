@@ -131,6 +131,27 @@ class TestServicesTools:
         assert "DRY RUN" in text
 
     @pytest.mark.asyncio
+    async def test_smart_home_cooldown(self):
+        from jarvis.tools import services
+
+        services._action_last_seen.clear()
+        result = await services.smart_home({
+            "domain": "light",
+            "action": "turn_on",
+            "entity_id": "light.cooldown",
+            "dry_run": True,
+        })
+        assert "DRY RUN" in result["content"][0]["text"]
+
+        cooldown = await services.smart_home({
+            "domain": "light",
+            "action": "turn_on",
+            "entity_id": "light.cooldown",
+            "dry_run": True,
+        })
+        assert "cooldown" in cooldown["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_smart_home_dry_run_explicit_false(self):
         from jarvis.tools.services import smart_home
 
