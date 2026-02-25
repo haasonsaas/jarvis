@@ -536,3 +536,24 @@ class TestServicesTools:
             "data": {"levels": {1, 2, 3}},
         })
         assert "DRY RUN" in result["content"][0]["text"]
+
+    @pytest.mark.asyncio
+    async def test_audit_log_rotates_when_large(self, tmp_path):
+        from jarvis.tools import services
+
+        services.AUDIT_LOG = tmp_path / "audit.jsonl"
+        services._audit_log_max_bytes = 64
+        services._audit_log_backups = 2
+        services._action_last_seen.clear()
+
+        for idx in range(6):
+            await services.smart_home({
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": f"light.rotate_{idx}",
+                "dry_run": True,
+                "data": {"payload": "x" * 80},
+            })
+
+        assert services.AUDIT_LOG.exists()
+        assert (tmp_path / "audit.jsonl.1").exists()

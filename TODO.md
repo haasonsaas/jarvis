@@ -335,9 +335,9 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 - [-] Add memory DB pragmas + idempotent close + tests.
 
 ### Wave B (next)
-- [ ] Audio listen-loop cancellation improvements.
-- [ ] Telemetry counters and periodic status logs.
-- [ ] Audit retention policy.
+- [x] Audio listen-loop cancellation improvements.
+- [x] Telemetry counters and periodic status logs.
+- [x] Audit retention policy.
 
 ---
 
@@ -347,4 +347,3 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 - [ ] Startup prints deterministic capability summary.
 - [ ] Operator can request status and see core health indicators.
 - [ ] Memory and tooling layers are resilient to malformed inputs and I/O errors.
-

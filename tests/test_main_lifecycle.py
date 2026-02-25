@@ -76,3 +76,23 @@ def test_startup_summary_lines_include_core_status():
     assert "Mode: simulation" in joined
     assert "Memory: enabled" in joined
     assert "Tool policy: allow=1 deny=2" in joined
+
+
+def test_telemetry_snapshot_averages():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._telemetry = {
+        "turns": 10.0,
+        "barge_ins": 2.0,
+        "stt_latency_total_ms": 1000.0,
+        "stt_latency_count": 4.0,
+        "llm_first_sentence_total_ms": 1200.0,
+        "llm_first_sentence_count": 3.0,
+        "tts_first_audio_total_ms": 500.0,
+        "tts_first_audio_count": 2.0,
+    }
+    snapshot = Jarvis._telemetry_snapshot(jarvis)
+    assert snapshot["turns"] == 10.0
+    assert snapshot["barge_ins"] == 2.0
+    assert snapshot["avg_stt_latency_ms"] == 250.0
+    assert snapshot["avg_llm_first_sentence_ms"] == 400.0
+    assert snapshot["avg_tts_first_audio_ms"] == 250.0

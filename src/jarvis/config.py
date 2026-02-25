@@ -97,6 +97,10 @@ class Config:
     # Backchannel preferences
     backchannel_style: str = field(default_factory=lambda: os.environ.get("BACKCHANNEL_STYLE", "balanced"))
 
+    # Service audit retention
+    audit_log_max_bytes: int = field(default_factory=lambda: _env_int("AUDIT_LOG_MAX_BYTES", 1_000_000))
+    audit_log_backups: int = field(default_factory=lambda: _env_int("AUDIT_LOG_BACKUPS", 3))
+
     # Quick toggles
     motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)
     hand_track_enabled: bool = field(default_factory=lambda: _env_bool("HAND_TRACK_ENABLED") or False)
@@ -127,6 +131,10 @@ class Config:
             raise ValueError("memory_decay_half_life_days must be > 0")
         if not (0.0 <= self.memory_mmr_lambda <= 1.0):
             raise ValueError("memory_mmr_lambda must be between 0.0 and 1.0")
+        if self.audit_log_max_bytes <= 0:
+            raise ValueError("audit_log_max_bytes must be > 0")
+        if self.audit_log_backups < 1:
+            raise ValueError("audit_log_backups must be >= 1")
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
 
     @staticmethod

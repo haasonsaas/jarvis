@@ -71,3 +71,11 @@ class TestConfig:
         from jarvis.config import Config
         c = Config(backchannel_style="LOUD")
         assert c.backchannel_style == "balanced"
+
+    def test_invalid_audit_retention_raises(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        with pytest.raises(ValueError, match="audit_log_max_bytes"):
+            Config(audit_log_max_bytes=0)
+        with pytest.raises(ValueError, match="audit_log_backups"):
+            Config(audit_log_backups=0)

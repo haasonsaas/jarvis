@@ -34,12 +34,16 @@ _memory: MemoryStore | None = None
 _action_last_seen: dict[str, float] = {}
 _tool_allowlist: list[str] = []
 _tool_denylist: list[str] = []
+_audit_log_max_bytes: int = 1_000_000
+_audit_log_backups: int = 3
 
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
-    global _config, _memory
+    global _config, _memory, _audit_log_max_bytes, _audit_log_backups
     _config = config
     _memory = memory_store
+    _audit_log_max_bytes = int(config.audit_log_max_bytes)
+    _audit_log_backups = int(config.audit_log_backups)
     global _tool_allowlist, _tool_denylist
     _tool_allowlist = list(config.tool_allowlist)
     _tool_denylist = list(config.tool_denylist)
@@ -63,11 +67,31 @@ def _audit(action: str, details: dict) -> None:
         **details,
     }
     try:
+        _rotate_audit_log_if_needed()
         with open(AUDIT_LOG, "a") as f:
             f.write(json.dumps(entry, default=str) + "\n")
     except OSError as e:
         log.warning("Failed to write audit log: %s", e)
     log.info("AUDIT: %s — %s", action, details_json)
+
+
+def _rotate_audit_log_if_needed() -> None:
+    if _audit_log_backups < 1:
+        return
+    try:
+        if AUDIT_LOG.exists() and AUDIT_LOG.stat().st_size >= _audit_log_max_bytes:
+            for idx in range(_audit_log_backups, 0, -1):
+                src = AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.{idx}")
+                dst = AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.{idx + 1}")
+                if src.exists():
+                    if idx == _audit_log_backups:
+                        src.unlink(missing_ok=True)
+                    else:
+                        src.rename(dst)
+            rotated = AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.1")
+            AUDIT_LOG.rename(rotated)
+    except OSError as e:
+        log.warning("Failed to rotate audit log: %s", e)
 
 
 def _format_tool_summaries(items: list[dict[str, object]]) -> str:

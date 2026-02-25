@@ -54,6 +54,7 @@ INTENDED_QUERY_MIN_ATTENTION = 0.35
 CONFIRMATION_PHRASE = "Did you mean me?"
 AFFIRMATIONS = {"yes", "yeah", "yep", "yup", "correct", "affirmative", "sure", "please"}
 NEGATIONS = {"no", "nope", "nah", "negative"}
+TELEMETRY_LOG_EVERY_TURNS = 5
 
 
 def _to_mono(audio: np.ndarray) -> np.ndarray:
@@ -176,6 +177,16 @@ class Jarvis:
         # Audio output stream (persistent, avoids open/close per chunk)
         self._output_stream: sd.OutputStream | None = None
         self._started = False
+        self._telemetry: dict[str, float] = {
+            "turns": 0.0,
+            "barge_ins": 0.0,
+            "stt_latency_total_ms": 0.0,
+            "stt_latency_count": 0.0,
+            "llm_first_sentence_total_ms": 0.0,
+            "llm_first_sentence_count": 0.0,
+            "tts_first_audio_total_ms": 0.0,
+            "tts_first_audio_count": 0.0,
+        }
 
     def start(self) -> None:
         """Initialize all subsystems."""
@@ -246,6 +257,21 @@ class Jarvis:
             f"Tool policy: allow={len(self.config.tool_allowlist)} deny={len(self.config.tool_denylist)}",
         ]
 
+    def _telemetry_snapshot(self) -> dict[str, float]:
+        def avg(total_key: str, count_key: str) -> float:
+            count = self._telemetry.get(count_key, 0.0)
+            if count <= 0:
+                return 0.0
+            return self._telemetry.get(total_key, 0.0) / count
+
+        return {
+            "turns": self._telemetry.get("turns", 0.0),
+            "barge_ins": self._telemetry.get("barge_ins", 0.0),
+            "avg_stt_latency_ms": avg("stt_latency_total_ms", "stt_latency_count"),
+            "avg_llm_first_sentence_ms": avg("llm_first_sentence_total_ms", "llm_first_sentence_count"),
+            "avg_tts_first_audio_ms": avg("tts_first_audio_total_ms", "tts_first_audio_count"),
+        }
+
     def stop(self) -> None:
         """Shut down all subsystems."""
         if not self._started:
@@ -299,6 +325,8 @@ class Jarvis:
                 stt_elapsed = time.monotonic() - self._last_doa_update if self._last_doa_update else None
                 if stt_elapsed is not None:
                     log.info("STT latency: %.0fms", stt_elapsed * 1000.0)
+                    self._telemetry["stt_latency_total_ms"] += stt_elapsed * 1000.0
+                    self._telemetry["stt_latency_count"] += 1.0
                 if not text.strip():
                     self.presence.signals.state = State.IDLE
                     continue
@@ -333,7 +361,18 @@ class Jarvis:
                     continue
 
                 # Get response from Claude and play it
+                self._telemetry["turns"] += 1.0
                 await self._respond_and_speak(text)
+                if int(self._telemetry["turns"]) % TELEMETRY_LOG_EVERY_TURNS == 0:
+                    snapshot = self._telemetry_snapshot()
+                    log.info(
+                        "Telemetry turns=%d barge_ins=%d stt=%.0fms llm=%.0fms tts=%.0fms",
+                        int(snapshot["turns"]),
+                        int(snapshot["barge_ins"]),
+                        snapshot["avg_stt_latency_ms"],
+                        snapshot["avg_llm_first_sentence_ms"],
+                        snapshot["avg_tts_first_audio_ms"],
+                    )
 
         except asyncio.CancelledError:
             pass
@@ -423,6 +462,7 @@ class Jarvis:
                     self._flush_output()
                     self._clear_tts_queue()
                     self.presence.signals.state = State.LISTENING
+                    self._telemetry["barge_ins"] += 1.0
                     log.info("Barge-in detected")
 
             elif recording:
@@ -454,7 +494,7 @@ class Jarvis:
                 blocksize=CHUNK_SAMPLES,
             ) as stream:
                 while True:
-                    data, overflowed = stream.read(CHUNK_SAMPLES)
+                    data, overflowed = await asyncio.to_thread(stream.read, CHUNK_SAMPLES)
                     if overflowed:
                         log.warning("Audio input buffer overflowed")
                     await process_chunk(data[:, 0])
@@ -555,9 +595,12 @@ class Jarvis:
                     self._response_started = True
                     self._first_sentence_at = time.monotonic()
                     if self._response_start_at is not None:
+                        latency_ms = (self._first_sentence_at - self._response_start_at) * 1000.0
+                        self._telemetry["llm_first_sentence_total_ms"] += latency_ms
+                        self._telemetry["llm_first_sentence_count"] += 1.0
                         log.info(
                             "LLM first sentence latency: %.0fms",
-                            (self._first_sentence_at - self._response_start_at) * 1000.0,
+                            latency_ms,
                         )
                     if self._filler_task is not None:
                         self._filler_task.cancel()
@@ -597,9 +640,12 @@ class Jarvis:
                     if not is_filler and response_id == self._active_response_id and self._first_audio_at is None:
                         self._first_audio_at = time.monotonic()
                         if self._response_start_at is not None:
+                            latency_ms = (self._first_audio_at - self._response_start_at) * 1000.0
+                            self._telemetry["tts_first_audio_total_ms"] += latency_ms
+                            self._telemetry["tts_first_audio_count"] += 1.0
                             log.info(
                                 "TTS first audio latency: %.0fms",
-                                (self._first_audio_at - self._response_start_at) * 1000.0,
+                                latency_ms,
                             )
                     self.presence.signals.speech_energy = float(
                         max(0.0, min(1.0, float(np.sqrt(np.mean(audio_chunk ** 2)) * 5.0)))
