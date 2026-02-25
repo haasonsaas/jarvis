@@ -94,18 +94,24 @@ async def embody(args: dict[str, Any]) -> dict[str, Any]:
 async def play_emotion(args: dict[str, Any]) -> dict[str, Any]:
     if not _tool_permitted("play_emotion"):
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    name = str(args.get("name", "")).strip()
+    if not name:
+        return {"content": [{"type": "text", "text": "Emotion name required"}]}
     if _robot:
-        _robot.play_emotion(args["name"])
-        return {"content": [{"type": "text", "text": f"Playing emotion: {args['name']}"}]}
+        _robot.play_emotion(name)
+        return {"content": [{"type": "text", "text": f"Playing emotion: {name}"}]}
     return {"content": [{"type": "text", "text": "Robot not connected (simulation mode)"}]}
 
 
 async def play_dance(args: dict[str, Any]) -> dict[str, Any]:
     if not _tool_permitted("play_dance"):
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    name = str(args.get("name", "")).strip()
+    if not name:
+        return {"content": [{"type": "text", "text": "Dance name required"}]}
     if _robot:
-        _robot.play_dance(args["name"])
-        return {"content": [{"type": "text", "text": f"Dancing: {args['name']}"}]}
+        _robot.play_dance(name)
+        return {"content": [{"type": "text", "text": f"Dancing: {name}"}]}
     return {"content": [{"type": "text", "text": "Robot not connected (simulation mode)"}]}
 
 

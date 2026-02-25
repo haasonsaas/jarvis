@@ -499,7 +499,10 @@ class Jarvis:
             return
 
         if self._output_stream is not None:
-            self._output_stream.write(audio_16k.reshape(-1, 1))
+            try:
+                self._output_stream.write(audio_16k.reshape(-1, 1))
+            except Exception as e:
+                log.warning("Audio output write failed: %s", e)
 
     async def _respond_and_speak(self, text: str) -> None:
         """Get Claude's response and stream TTS with barge-in support."""
@@ -569,24 +572,27 @@ class Jarvis:
                 self.presence.signals.speech_energy = 0.0
                 continue
 
-            async for audio_chunk in self.tts.stream_chunks_async(sentence):
-                if self._barge_in.is_set():
-                    self._flush_output()
-                    self.presence.signals.speech_energy = 0.0
-                    break
-                if not is_filler and response_id == self._active_response_id and self._first_audio_at is None:
-                    self._first_audio_at = time.monotonic()
-                    if self._response_start_at is not None:
-                        log.info(
-                            "TTS first audio latency: %.0fms",
-                            (self._first_audio_at - self._response_start_at) * 1000.0,
-                        )
-                self.presence.signals.speech_energy = float(
-                    max(0.0, min(1.0, float(np.sqrt(np.mean(audio_chunk ** 2)) * 5.0)))
-                )
-                normalized = self._normalize_tts_chunk(audio_chunk)
-                self._play_audio_chunk(normalized)
-                await asyncio.sleep(0)
+            try:
+                async for audio_chunk in self.tts.stream_chunks_async(sentence):
+                    if self._barge_in.is_set():
+                        self._flush_output()
+                        self.presence.signals.speech_energy = 0.0
+                        break
+                    if not is_filler and response_id == self._active_response_id and self._first_audio_at is None:
+                        self._first_audio_at = time.monotonic()
+                        if self._response_start_at is not None:
+                            log.info(
+                                "TTS first audio latency: %.0fms",
+                                (self._first_audio_at - self._response_start_at) * 1000.0,
+                            )
+                    self.presence.signals.speech_energy = float(
+                        max(0.0, min(1.0, float(np.sqrt(np.mean(audio_chunk ** 2)) * 5.0)))
+                    )
+                    normalized = self._normalize_tts_chunk(audio_chunk)
+                    self._play_audio_chunk(normalized)
+                    await asyncio.sleep(0)
+            except Exception as e:
+                log.warning("TTS loop failed for sentence chunk: %s", e)
             self.presence.signals.speech_energy = 0.0
             if pause > 0:
                 await asyncio.sleep(pause)

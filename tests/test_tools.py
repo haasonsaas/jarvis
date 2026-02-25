@@ -83,11 +83,25 @@ class TestRobotTools:
         assert "happy" in result["content"][0]["text"]
 
     @pytest.mark.asyncio
+    async def test_play_emotion_requires_name(self):
+        from jarvis.tools.robot import play_emotion
+
+        result = await play_emotion({})
+        assert "required" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_play_dance_sim(self):
         from jarvis.tools.robot import play_dance
 
         result = await play_dance({"name": "groove"})
         assert "groove" in result["content"][0]["text"]
+
+    @pytest.mark.asyncio
+    async def test_play_dance_requires_name(self):
+        from jarvis.tools.robot import play_dance
+
+        result = await play_dance({})
+        assert "required" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_list_animations_sim(self):
