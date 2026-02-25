@@ -240,6 +240,11 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         tool_feedback("done")
         record_summary("smart_home", "error", start_time, str(e))
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
+    except Exception as e:
+        tool_feedback("done")
+        record_summary("smart_home", "error", start_time, "unexpected")
+        log.exception("Unexpected smart_home failure")
+        return {"content": [{"type": "text", "text": f"Unexpected Home Assistant error: {e}"}]}
 
 
 async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
@@ -286,6 +291,11 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
         tool_feedback("done")
         record_summary("smart_home_state", "error", start_time, str(e))
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
+    except Exception as e:
+        tool_feedback("done")
+        record_summary("smart_home_state", "error", start_time, "unexpected")
+        log.exception("Unexpected smart_home_state failure")
+        return {"content": [{"type": "text", "text": f"Unexpected Home Assistant error: {e}"}]}
 
 
 async def get_time(args: dict[str, Any]) -> dict[str, Any]:

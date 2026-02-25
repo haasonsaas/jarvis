@@ -109,3 +109,29 @@ class Config:
     def __post_init__(self) -> None:
         if self.sample_rate != 16000:
             raise ValueError("sample_rate must be 16000 (required by Silero VAD)")
+        if not (0.0 <= self.vad_threshold <= 1.0):
+            raise ValueError("vad_threshold must be between 0.0 and 1.0")
+        if self.doa_change_threshold <= 0.0:
+            raise ValueError("doa_change_threshold must be > 0")
+        if self.doa_timeout <= 0.0:
+            raise ValueError("doa_timeout must be > 0")
+        if self.face_track_fps <= 0:
+            raise ValueError("face_track_fps must be > 0")
+        if self.memory_search_limit < 1:
+            raise ValueError("memory_search_limit must be >= 1")
+        if not (0.0 <= self.memory_max_sensitivity <= 1.0):
+            raise ValueError("memory_max_sensitivity must be between 0.0 and 1.0")
+        if not (0.0 <= self.memory_hybrid_weight <= 1.0):
+            raise ValueError("memory_hybrid_weight must be between 0.0 and 1.0")
+        if self.memory_decay_half_life_days <= 0.0:
+            raise ValueError("memory_decay_half_life_days must be > 0")
+        if not (0.0 <= self.memory_mmr_lambda <= 1.0):
+            raise ValueError("memory_mmr_lambda must be between 0.0 and 1.0")
+        self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
+
+    @staticmethod
+    def _normalize_backchannel_style(style: str) -> str:
+        normalized = (style or "balanced").strip().lower()
+        if normalized in {"quiet", "balanced", "expressive"}:
+            return normalized
+        return "balanced"

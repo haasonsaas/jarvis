@@ -53,11 +53,20 @@ class MemoryStore:
                 os.makedirs(parent, exist_ok=True)
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._closed = False
+        self._configure_connection()
         self._fts_enabled = False
         self._memory_enabled = False
         self._last_warm = None
         self._last_sync = None
         self._init_schema()
+
+    def _configure_connection(self) -> None:
+        cur = self._conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL;")
+        cur.execute("PRAGMA synchronous=NORMAL;")
+        cur.execute("PRAGMA foreign_keys=ON;")
+        self._conn.commit()
 
     def _init_schema(self) -> None:
         cur = self._conn.cursor()
@@ -408,7 +417,10 @@ class MemoryStore:
         ]
 
     def close(self) -> None:
+        if self._closed:
+            return
         self._conn.close()
+        self._closed = True
 
     def memory_status(self) -> dict[str, Any]:
         cur = self._conn.cursor()

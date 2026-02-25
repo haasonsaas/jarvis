@@ -54,3 +54,25 @@ async def test_run_cleans_up_when_start_fails():
 
     jarvis.brain.close.assert_awaited_once()
     jarvis.stop.assert_called_once()
+
+
+def test_startup_summary_lines_include_core_status():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis.robot = SimpleNamespace(sim=True)
+    jarvis.args = SimpleNamespace(no_vision=False)
+    jarvis.tts = None
+    jarvis.config = SimpleNamespace(
+        motion_enabled=True,
+        hand_track_enabled=False,
+        home_enabled=True,
+        memory_enabled=True,
+        memory_path="/tmp/memory.sqlite",
+        tool_allowlist=["a"],
+        tool_denylist=["b", "c"],
+    )
+
+    lines = Jarvis._startup_summary_lines(jarvis)
+    joined = "\n".join(lines)
+    assert "Mode: simulation" in joined
+    assert "Memory: enabled" in joined
+    assert "Tool policy: allow=1 deny=2" in joined

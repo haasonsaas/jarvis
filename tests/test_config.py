@@ -47,3 +47,27 @@ class TestConfig:
         from jarvis.config import Config
         c = Config()
         assert c.has_home_assistant is False
+
+    def test_invalid_vad_threshold_raises(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        with pytest.raises(ValueError, match="vad_threshold"):
+            Config(vad_threshold=1.5)
+
+    def test_invalid_face_track_fps_raises(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        with pytest.raises(ValueError, match="face_track_fps"):
+            Config(face_track_fps=0)
+
+    def test_invalid_memory_weights_raise(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        with pytest.raises(ValueError, match="memory_hybrid_weight"):
+            Config(memory_hybrid_weight=-0.1)
+
+    def test_backchannel_style_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(backchannel_style="LOUD")
+        assert c.backchannel_style == "balanced"

@@ -57,3 +57,18 @@ def test_recent_tolerates_invalid_tags_payload(tmp_path):
         assert rows[0].tags == []
     finally:
         store.close()
+
+
+def test_memory_store_close_is_idempotent(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    store.close()
+    store.close()  # should not raise
+
+
+def test_memory_store_enables_foreign_keys(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        value = store._conn.execute("PRAGMA foreign_keys;").fetchone()[0]
+        assert int(value) == 1
+    finally:
+        store.close()

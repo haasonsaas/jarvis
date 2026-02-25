@@ -367,12 +367,33 @@ class TestServicesTools:
         assert "not configured" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_smart_home_handles_unexpected_exception(self):
+        from jarvis.tools.services import smart_home
+
+        with patch("aiohttp.ClientSession", side_effect=RuntimeError("boom")):
+            result = await smart_home({
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": "light.kitchen",
+                "dry_run": False,
+            })
+        assert "unexpected home assistant error" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_smart_home_state_not_configured(self):
         from jarvis.tools import services
         services._config = None
 
         result = await services.smart_home_state({"entity_id": "light.kitchen"})
         assert "not configured" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_state_handles_unexpected_exception(self):
+        from jarvis.tools.services import smart_home_state
+
+        with patch("aiohttp.ClientSession", side_effect=RuntimeError("boom")):
+            result = await smart_home_state({"entity_id": "light.kitchen"})
+        assert "unexpected home assistant error" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_smart_home_validates_data_object(self):

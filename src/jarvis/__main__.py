@@ -233,6 +233,19 @@ class Jarvis:
             self.stop()
             raise
 
+    def _startup_summary_lines(self) -> list[str]:
+        tts_enabled = bool(self.tts is not None)
+        tts_reason = "enabled" if tts_enabled else "disabled (no ELEVENLABS_API_KEY or --no-tts)"
+        memory_state = "enabled" if self.config.memory_enabled else "disabled"
+        return [
+            f"Mode: {'simulation' if self.robot.sim else 'hardware'}",
+            f"Motion: {'on' if self.config.motion_enabled else 'off'} | Vision: {'on' if not self.args.no_vision and not self.robot.sim else 'off'} | Hands: {'on' if self.config.hand_track_enabled else 'off'}",
+            f"Home tools: {'on' if self.config.home_enabled else 'off'}",
+            f"TTS: {tts_reason}",
+            f"Memory: {memory_state} ({self.config.memory_path})",
+            f"Tool policy: allow={len(self.config.tool_allowlist)} deny={len(self.config.tool_denylist)}",
+        ]
+
     def stop(self) -> None:
         """Shut down all subsystems."""
         if not self._started:
@@ -271,6 +284,9 @@ class Jarvis:
             self._listen_task = asyncio.create_task(self._listen_loop(), name="listen")
             print("\n  JARVIS is online. Speak to begin.\n")
             print("  Press Ctrl+C to exit.\n")
+            for line in self._startup_summary_lines():
+                print(f"  {line}")
+            print("")
 
             while True:
                 utterance = await self._utterance_queue.get()
