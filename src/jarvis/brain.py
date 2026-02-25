@@ -12,6 +12,7 @@ Design for latency:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, AsyncIterator
 
 from claude_agent_sdk import (
@@ -98,6 +99,7 @@ class Brain:
                 "mcp__jarvis-services__task_plan_create",
                 "mcp__jarvis-services__task_plan_list",
                 "mcp__jarvis-services__task_plan_update",
+                "mcp__jarvis-services__task_plan_next",
             ],
             permission_mode="bypassPermissions",
             max_turns=5,
@@ -127,15 +129,22 @@ class Brain:
         log.info("User: %s", user_text)
 
         if self._memory:
-            memories = self._memory.search(user_text, limit=self._config.memory_search_limit)
+            memories = self._memory.search(
+                user_text,
+                limit=self._config.memory_search_limit,
+                max_sensitivity=self._config.memory_max_sensitivity,
+            )
             if memories:
                 memory_lines = []
                 for entry in memories:
+                    if not _memory_relevant(user_text, entry):
+                        continue
                     tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
                     snippet = entry.text[:180]
                     memory_lines.append(f"- ({entry.kind}) {snippet}{tags}")
                 memory_context = "\n".join(memory_lines)
-                user_text = f"{user_text}\n\nContext (memory):\n{memory_context}"
+                if memory_context:
+                    user_text = f"{user_text}\n\nContext (memory):\n{memory_context}"
 
         sentence_buffer = ""
         await self._ensure_connected()
@@ -192,3 +201,13 @@ def _find_sentence_boundary(text: str) -> int:
         if ch in ".!?" and (i + 1 == len(text) or text[i + 1] == " "):
             best = i
     return best
+
+
+def _memory_relevant(query: str, entry: Any) -> bool:
+    tokens = {token for token in re.findall(r"\w+", query.lower()) if len(token) > 2}
+    if not tokens:
+        return False
+    entry_tokens = set(re.findall(r"\w+", entry.text.lower()))
+    overlap = len(tokens & entry_tokens)
+    ratio = overlap / max(1, len(tokens))
+    return ratio >= 0.25 or entry.importance >= 0.7

@@ -164,7 +164,7 @@ class TestBrain:
         if brain._memory is None:
             pytest.skip("Memory disabled")
 
-        brain._memory.add_memory("User prefers coffee in the morning.", kind="profile")
+        brain._memory.add_memory("User prefers coffee in the morning.", kind="profile", sensitivity=0.2)
         captured = {}
 
         async def fake_query(text: str, session_id: str):

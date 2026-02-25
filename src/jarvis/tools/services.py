@@ -187,12 +187,14 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
     tags = args.get("tags") or []
     kind = str(args.get("kind", "note"))
     importance = float(args.get("importance", 0.5))
+    sensitivity = float(args.get("sensitivity", 0.0))
     source = str(args.get("source", "user"))
     memory_id = _memory.add_memory(
         text,
         kind=kind,
         tags=[str(tag) for tag in tags],
         importance=importance,
+        sensitivity=sensitivity,
         source=source,
     )
     return {"content": [{"type": "text", "text": f"Memory stored (id={memory_id})."}]}
@@ -205,7 +207,9 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
     if not query:
         return {"content": [{"type": "text", "text": "Search query required."}]}
     limit = int(args.get("limit", 5))
-    results = _memory.search(query, limit=limit)
+    include_sensitive = bool(args.get("include_sensitive", False))
+    max_sensitivity = None if include_sensitive else float(args.get("max_sensitivity", 0.4))
+    results = _memory.search(query, limit=limit, max_sensitivity=max_sensitivity)
     if not results:
         return {"content": [{"type": "text", "text": "No relevant memories found."}]}
     lines = []
@@ -270,6 +274,18 @@ async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": "Plan updated."}]}
 
 
+async def task_plan_next(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    plan_id = args.get("plan_id")
+    plan = _memory.next_task_step(int(plan_id)) if plan_id is not None else _memory.next_task_step()
+    if not plan:
+        return {"content": [{"type": "text", "text": "No pending steps found."}]}
+    task_plan, step = plan
+    text = f"Next step for plan {task_plan.id} ({task_plan.title}): {step.index + 1}. {step.text}"
+    return {"content": [{"type": "text", "text": text}]}
+
+
 # ── Build MCP server ──────────────────────────────────────────
 
 smart_home_tool = tool(
@@ -330,6 +346,7 @@ memory_add_tool = tool(
             "kind": {"type": "string", "description": "note, profile, summary, task, etc."},
             "tags": {"type": "array", "items": {"type": "string"}},
             "importance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "sensitivity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "source": {"type": "string"},
         },
         "required": ["text"],
@@ -344,6 +361,8 @@ memory_search_tool = tool(
         "properties": {
             "query": {"type": "string"},
             "limit": {"type": "number"},
+            "max_sensitivity": {"type": "number"},
+            "include_sensitive": {"type": "boolean"},
         },
         "required": ["query"],
     },
@@ -399,6 +418,17 @@ task_plan_update_tool = tool(
     },
 )(task_plan_update)
 
+task_plan_next_tool = tool(
+    "task_plan_next",
+    "Get the next pending step in a task plan.",
+    {
+        "type": "object",
+        "properties": {
+            "plan_id": {"type": "number"},
+        },
+    },
+)(task_plan_next)
+
 def create_services_server():
     return create_sdk_mcp_server(
         name="jarvis-services",
@@ -413,5 +443,6 @@ def create_services_server():
             task_plan_create_tool,
             task_plan_list_tool,
             task_plan_update_tool,
+            task_plan_next_tool,
         ],
     )

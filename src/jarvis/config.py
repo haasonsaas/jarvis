@@ -77,6 +77,7 @@ class Config:
     memory_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_ENABLED") is not False)
     memory_path: str = field(default_factory=lambda: os.environ.get("MEMORY_PATH", os.path.expanduser("~/.jarvis/memory.sqlite")))
     memory_search_limit: int = field(default_factory=lambda: _env_int("MEMORY_SEARCH_LIMIT", 5))
+    memory_max_sensitivity: float = field(default_factory=lambda: _env_float("MEMORY_MAX_SENSITIVITY", 0.4))
 
     @property
     def has_home_assistant(self) -> bool:

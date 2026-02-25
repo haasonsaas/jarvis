@@ -17,6 +17,7 @@ class MemoryEntry:
     text: str
     tags: list[str]
     importance: float
+    sensitivity: float
     source: str
 
 
@@ -55,10 +56,12 @@ class MemoryStore:
                 text TEXT NOT NULL,
                 tags TEXT NOT NULL,
                 importance REAL NOT NULL,
+                sensitivity REAL NOT NULL DEFAULT 0.0,
                 source TEXT NOT NULL
             );
             """
         )
+        self._ensure_column(cur, "memory", "sensitivity", "REAL NOT NULL DEFAULT 0.0")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memory_created_at ON memory(created_at DESC);")
         cur.execute(
             """
@@ -105,6 +108,7 @@ class MemoryStore:
         kind: str = "note",
         tags: list[str] | None = None,
         importance: float = 0.5,
+        sensitivity: float = 0.0,
         source: str = "user",
     ) -> int:
         clean = text.strip()
@@ -114,8 +118,11 @@ class MemoryStore:
         created_at = time.time()
         cur = self._conn.cursor()
         cur.execute(
-            "INSERT INTO memory(created_at, kind, text, tags, importance, source) VALUES (?, ?, ?, ?, ?, ?)",
-            (created_at, kind, clean, payload, float(importance), source),
+            """
+            INSERT INTO memory(created_at, kind, text, tags, importance, sensitivity, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (created_at, kind, clean, payload, float(importance), float(sensitivity), source),
         )
         memory_id = int(cur.lastrowid)
         if self._fts_enabled:
@@ -123,31 +130,39 @@ class MemoryStore:
         self._conn.commit()
         return memory_id
 
-    def search(self, query: str, *, limit: int = 5) -> list[MemoryEntry]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        max_sensitivity: float | None = None,
+    ) -> list[MemoryEntry]:
         cleaned = query.strip()
         if not cleaned:
             return []
         cur = self._conn.cursor()
+        sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         if self._fts_enabled:
             fts_query = self._build_fts_query(cleaned)
             if not fts_query:
                 return []
-            rows = cur.execute(
-                """
-                SELECT memory.* FROM memory_fts
-                JOIN memory ON memory_fts.rowid = memory.id
-                WHERE memory_fts MATCH ?
-                ORDER BY bm25(memory_fts) ASC
-                LIMIT ?
-                """,
-                (fts_query, limit),
-            ).fetchall()
+            sql = (
+                "SELECT memory.* FROM memory_fts "
+                "JOIN memory ON memory_fts.rowid = memory.id "
+                "WHERE memory_fts MATCH ? "
+                f"{sensitivity_clause} "
+                "ORDER BY bm25(memory_fts) ASC "
+                "LIMIT ?"
+            )
+            rows = cur.execute(sql, (fts_query, *sensitivity_params, limit)).fetchall()
         else:
             like = f"%{cleaned}%"
-            rows = cur.execute(
-                "SELECT * FROM memory WHERE text LIKE ? ORDER BY created_at DESC LIMIT ?",
-                (like, limit),
-            ).fetchall()
+            sql = (
+                "SELECT * FROM memory WHERE text LIKE ? "
+                f"{sensitivity_clause} "
+                "ORDER BY created_at DESC LIMIT ?"
+            )
+            rows = cur.execute(sql, (like, *sensitivity_params, limit)).fetchall()
         return [self._row_to_memory(row) for row in rows]
 
     def recent(self, *, limit: int = 5, kind: str | None = None) -> list[MemoryEntry]:
@@ -232,6 +247,39 @@ class MemoryStore:
             )
         self._conn.commit()
 
+    def next_task_step(self, plan_id: int | None = None) -> tuple[TaskPlan, TaskStep] | None:
+        cur = self._conn.cursor()
+        if plan_id is None:
+            plan_row = cur.execute(
+                "SELECT * FROM task_plans WHERE status != 'closed' ORDER BY created_at DESC LIMIT 1",
+            ).fetchone()
+        else:
+            plan_row = cur.execute(
+                "SELECT * FROM task_plans WHERE id = ?",
+                (plan_id,),
+            ).fetchone()
+        if not plan_row:
+            return None
+        step_row = cur.execute(
+            """
+            SELECT idx, text, status FROM task_steps
+            WHERE plan_id = ? AND status != 'done'
+            ORDER BY idx LIMIT 1
+            """,
+            (plan_row["id"],),
+        ).fetchone()
+        if not step_row:
+            return None
+        plan = TaskPlan(
+            id=int(plan_row["id"]),
+            created_at=float(plan_row["created_at"]),
+            title=str(plan_row["title"]),
+            status=str(plan_row["status"]),
+            steps=[],
+        )
+        step = TaskStep(index=int(step_row["idx"]), text=str(step_row["text"]), status=str(step_row["status"]))
+        return plan, step
+
     def close(self) -> None:
         self._conn.close()
 
@@ -244,9 +292,21 @@ class MemoryStore:
             text=str(row["text"]),
             tags=tags,
             importance=float(row["importance"]),
+            sensitivity=float(row["sensitivity"]),
             source=str(row["source"]),
         )
 
     def _build_fts_query(self, text: str) -> str:
         tokens = re.findall(r"\w+", text.lower())
         return " OR ".join(tokens[:12])
+
+    def _sensitivity_filter(self, max_sensitivity: float | None) -> tuple[str, list[float]]:
+        if max_sensitivity is None:
+            return "", []
+        return "AND sensitivity <= ?", [float(max_sensitivity)]
+
+    def _ensure_column(self, cur: sqlite3.Cursor, table: str, column: str, ddl: str) -> None:
+        info = cur.execute(f"PRAGMA table_info({table})").fetchall()
+        columns = {row["name"] for row in info}
+        if column not in columns:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")

@@ -160,14 +160,23 @@ class TestServicesTools:
         store = MemoryStore(str(memory_path))
         services.bind(services._config, store)
 
-        created = await services.memory_add({"text": "Call me Boss.", "kind": "profile"})
+        created = await services.memory_add({"text": "Call me Boss.", "kind": "profile", "sensitivity": 0.2})
         assert "stored" in created["content"][0]["text"].lower()
+
+        sensitive = await services.memory_add({"text": "My bank code is 1234", "kind": "note", "sensitivity": 0.9})
+        assert "stored" in sensitive["content"][0]["text"].lower()
 
         found = await services.memory_search({"query": "call me", "limit": 5})
         assert "call me" in found["content"][0]["text"].lower()
 
+        filtered = await services.memory_search({"query": "bank", "limit": 5, "max_sensitivity": 0.4})
+        assert "no relevant" in filtered["content"][0]["text"].lower()
+
+        included = await services.memory_search({"query": "bank", "limit": 5, "include_sensitive": True})
+        assert "bank" in included["content"][0]["text"].lower()
+
         recent = await services.memory_recent({"limit": 1})
-        assert "profile" in recent["content"][0]["text"].lower()
+        assert "note" in recent["content"][0]["text"].lower()
 
         plan = await services.task_plan_create({"title": "Morning routine", "steps": ["Check calendar", "Summarize news"]})
         assert "plan created" in plan["content"][0]["text"].lower()
@@ -177,6 +186,9 @@ class TestServicesTools:
 
         updated = await services.task_plan_update({"plan_id": 1, "step_index": 0, "status": "done"})
         assert "updated" in updated["content"][0]["text"].lower()
+
+        next_step = await services.task_plan_next({"plan_id": 1})
+        assert "next step" in next_step["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_smart_home_dry_run_explicit_false(self):
