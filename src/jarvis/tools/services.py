@@ -209,6 +209,8 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
     limit = int(args.get("limit", 5))
     include_sensitive = bool(args.get("include_sensitive", False))
     max_sensitivity = None if include_sensitive else float(args.get("max_sensitivity", 0.4))
+    sources = args.get("sources")
+    source_list = [str(source) for source in sources] if isinstance(sources, list) else None
     results = _memory.search_v2(
         query,
         limit=limit,
@@ -218,6 +220,7 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
         decay_half_life_days=float(args.get("decay_half_life_days", 30.0)),
         mmr_enabled=bool(args.get("mmr_enabled", False)),
         mmr_lambda=float(args.get("mmr_lambda", 0.7)),
+        sources=source_list,
     )
     if not results:
         return {"content": [{"type": "text", "text": "No relevant memories found."}]}
@@ -232,6 +235,10 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
 async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    if args.get("warm"):
+        _memory.warm()
+    if args.get("sync"):
+        _memory.sync()
     status = _memory.memory_status()
     return {"content": [{"type": "text", "text": json.dumps(status)}]}
 
@@ -241,7 +248,9 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     limit = int(args.get("limit", 5))
     kind = args.get("kind")
-    results = _memory.recent(limit=limit, kind=str(kind) if kind else None)
+    sources = args.get("sources")
+    source_list = [str(source) for source in sources] if isinstance(sources, list) else None
+    results = _memory.recent(limit=limit, kind=str(kind) if kind else None, sources=source_list)
     if not results:
         return {"content": [{"type": "text", "text": "No recent memories found."}]}
     lines = []
@@ -420,6 +429,7 @@ memory_search_tool = tool(
             "decay_half_life_days": {"type": "number"},
             "mmr_enabled": {"type": "boolean"},
             "mmr_lambda": {"type": "number"},
+            "sources": {"type": "array", "items": {"type": "string"}},
         },
         "required": ["query"],
     },
@@ -428,7 +438,13 @@ memory_search_tool = tool(
 memory_status_tool = tool(
     "memory_status",
     "Report memory index status and availability.",
-    {"type": "object", "properties": {}},
+    {
+        "type": "object",
+        "properties": {
+            "warm": {"type": "boolean"},
+            "sync": {"type": "boolean"},
+        },
+    },
 )(memory_status)
 
 memory_recent_tool = tool(
@@ -439,6 +455,7 @@ memory_recent_tool = tool(
         "properties": {
             "limit": {"type": "number"},
             "kind": {"type": "string"},
+            "sources": {"type": "array", "items": {"type": "string"}},
         },
     },
 )(memory_recent)

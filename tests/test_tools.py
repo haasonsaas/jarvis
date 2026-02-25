@@ -160,13 +160,13 @@ class TestServicesTools:
         store = MemoryStore(str(memory_path))
         services.bind(services._config, store)
 
-        created = await services.memory_add({"text": "Call me Boss.", "kind": "profile", "sensitivity": 0.2})
+        created = await services.memory_add({"text": "Call me Boss.", "kind": "profile", "sensitivity": 0.2, "source": "profile"})
         assert "stored" in created["content"][0]["text"].lower()
 
-        sensitive = await services.memory_add({"text": "My bank code is 1234", "kind": "note", "sensitivity": 0.9})
+        sensitive = await services.memory_add({"text": "My bank code is 1234", "kind": "note", "sensitivity": 0.9, "source": "secrets"})
         assert "stored" in sensitive["content"][0]["text"].lower()
 
-        found = await services.memory_search({"query": "call me", "limit": 5})
+        found = await services.memory_search({"query": "call me", "limit": 5, "sources": ["profile"]})
         assert "call me" in found["content"][0]["text"].lower()
 
         filtered = await services.memory_search({"query": "bank", "limit": 5, "max_sensitivity": 0.4})
@@ -175,10 +175,10 @@ class TestServicesTools:
         included = await services.memory_search({"query": "bank", "limit": 5, "include_sensitive": True})
         assert "bank" in included["content"][0]["text"].lower()
 
-        status = await services.memory_status({})
+        status = await services.memory_status({"warm": True, "sync": True})
         assert "entries" in status["content"][0]["text"].lower()
 
-        recent = await services.memory_recent({"limit": 1})
+        recent = await services.memory_recent({"limit": 1, "sources": ["secrets"]})
         assert "note" in recent["content"][0]["text"].lower()
 
         summary_added = await services.memory_summary_add({"topic": "preferences", "summary": "User likes coffee."})

@@ -52,6 +52,8 @@ class MemoryStore:
         self._conn.row_factory = sqlite3.Row
         self._fts_enabled = False
         self._memory_enabled = False
+        self._last_warm = None
+        self._last_sync = None
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -172,6 +174,12 @@ class MemoryStore:
         self._conn.commit()
         return memory_id
 
+    def warm(self) -> None:
+        self._last_warm = time.time()
+
+    def sync(self) -> None:
+        self._last_sync = time.time()
+
     def search_v2(
         self,
         query: str,
@@ -183,12 +191,13 @@ class MemoryStore:
         decay_half_life_days: float = 30.0,
         mmr_enabled: bool = False,
         mmr_lambda: float = 0.7,
+        sources: list[str] | None = None,
     ) -> list[MemoryEntry]:
         cleaned = query.strip()
         if not cleaned:
             return []
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
-        keyword_rows = self._search_keyword(cleaned, limit * 4, sensitivity_clause, sensitivity_params)
+        keyword_rows = self._search_keyword(cleaned, limit * 4, sensitivity_clause, sensitivity_params, sources)
         if not keyword_rows:
             return []
         entries = [self._row_to_memory(row) for row in keyword_rows]
@@ -234,18 +243,19 @@ class MemoryStore:
             rows = cur.execute(sql, (like, *sensitivity_params, limit)).fetchall()
         return [self._row_to_memory(row) for row in rows]
 
-    def recent(self, *, limit: int = 5, kind: str | None = None) -> list[MemoryEntry]:
+    def recent(self, *, limit: int = 5, kind: str | None = None, sources: list[str] | None = None) -> list[MemoryEntry]:
         cur = self._conn.cursor()
+        source_clause, source_params = self._source_filter(sources)
         if kind:
-            rows = cur.execute(
-                "SELECT * FROM memory WHERE kind = ? ORDER BY created_at DESC LIMIT ?",
-                (kind, limit),
-            ).fetchall()
+            sql = (
+                "SELECT * FROM memory WHERE kind = ? "
+                f"{source_clause} "
+                "ORDER BY created_at DESC LIMIT ?"
+            )
+            rows = cur.execute(sql, (kind, *source_params, limit)).fetchall()
         else:
-            rows = cur.execute(
-                "SELECT * FROM memory ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            sql = f"SELECT * FROM memory WHERE 1=1 {source_clause} ORDER BY created_at DESC LIMIT ?"
+            rows = cur.execute(sql, (*source_params, limit)).fetchall()
         return [self._row_to_memory(row) for row in rows]
 
     def add_task_plan(self, title: str, steps: list[str]) -> int:
@@ -397,10 +407,15 @@ class MemoryStore:
     def memory_status(self) -> dict[str, Any]:
         cur = self._conn.cursor()
         count = cur.execute("SELECT COUNT(*) as c FROM memory").fetchone()["c"]
+        sources = cur.execute("SELECT source, COUNT(*) as c FROM memory GROUP BY source").fetchall()
+        source_counts = {str(row["source"]): int(row["c"]) for row in sources}
         return {
             "entries": int(count),
             "fts": self._fts_enabled,
             "vector": self._memory_enabled,
+            "sources": source_counts,
+            "last_warm": self._last_warm,
+            "last_sync": self._last_sync,
         }
 
     def _row_to_memory(self, row: sqlite3.Row) -> MemoryEntry:
@@ -516,7 +531,9 @@ class MemoryStore:
         limit: int,
         sensitivity_clause: str,
         sensitivity_params: list[float],
+        sources: list[str] | None,
     ) -> list[sqlite3.Row]:
+        source_clause, source_params = self._source_filter(sources)
         if self._fts_enabled:
             keywords = self._extract_keywords(query)
             fts_query = self._build_fts_query(query)
@@ -527,18 +544,21 @@ class MemoryStore:
                 "SELECT memory.* FROM memory_fts "
                 "JOIN memory ON memory_fts.rowid = memory.id "
                 "WHERE memory_fts MATCH ? "
-                f"{sensitivity_clause} "
+                f"{sensitivity_clause} {source_clause} "
                 "ORDER BY bm25(memory_fts) ASC "
                 "LIMIT ?"
             )
-            return self._conn.cursor().execute(sql, (expanded, *sensitivity_params, limit)).fetchall()
+            return self._conn.cursor().execute(
+                sql,
+                (expanded, *sensitivity_params, *source_params, limit),
+            ).fetchall()
         like = f"%{query}%"
         sql = (
             "SELECT * FROM memory WHERE text LIKE ? "
-            f"{sensitivity_clause} "
+            f"{sensitivity_clause} {source_clause} "
             "ORDER BY created_at DESC LIMIT ?"
         )
-        return self._conn.cursor().execute(sql, (like, *sensitivity_params, limit)).fetchall()
+        return self._conn.cursor().execute(sql, (like, *sensitivity_params, *source_params, limit)).fetchall()
 
     def _apply_hybrid_scoring(self, entries: list[MemoryEntry], query: str, weight: float) -> list[MemoryEntry]:
         tokens = set(re.findall(r"\w+", query.lower()))
@@ -598,6 +618,15 @@ class MemoryStore:
             selected.append(best)
             remaining.remove(best)
         return selected
+
+    def _source_filter(self, sources: list[str] | None) -> tuple[str, list[str]]:
+        if not sources:
+            return "", []
+        cleaned = [source.strip() for source in sources if source and source.strip()]
+        if not cleaned:
+            return "", []
+        placeholders = ",".join(["?"] * len(cleaned))
+        return f"AND source IN ({placeholders})", cleaned
 
     def _sensitivity_filter(self, max_sensitivity: float | None) -> tuple[str, list[float]]:
         if max_sensitivity is None:
