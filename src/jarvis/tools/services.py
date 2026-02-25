@@ -268,7 +268,10 @@ def _format_tool_summaries(items: list[dict[str, object]]) -> str:
     for item in items:
         name = str(item.get("name", "tool"))
         status = str(item.get("status", "unknown"))
-        duration = float(item.get("duration_ms", 0.0))
+        try:
+            duration = float(item.get("duration_ms", 0.0))
+        except (TypeError, ValueError):
+            duration = 0.0
         detail = item.get("detail")
         effect = item.get("effect")
         risk = item.get("risk")
@@ -362,18 +365,25 @@ def _touch_action(domain: str, action: str, entity_id: str) -> None:
 
 
 def _audit_status() -> dict[str, Any]:
-    exists = AUDIT_LOG.exists()
-    size_bytes = AUDIT_LOG.stat().st_size if exists else 0
+    try:
+        exists = AUDIT_LOG.exists()
+        size_bytes = AUDIT_LOG.stat().st_size if exists else 0
+    except OSError:
+        exists = False
+        size_bytes = 0
     backups = []
     for idx in range(1, _audit_log_backups + 1):
         backup_path = AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.{idx}")
-        if backup_path.exists():
-            backups.append(
-                {
-                    "path": str(backup_path),
-                    "size_bytes": int(backup_path.stat().st_size),
-                }
-            )
+        try:
+            if backup_path.exists():
+                backups.append(
+                    {
+                        "path": str(backup_path),
+                        "size_bytes": int(backup_path.stat().st_size),
+                    }
+                )
+        except OSError:
+            continue
     return {
         "path": str(AUDIT_LOG),
         "exists": exists,
@@ -556,6 +566,12 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         except Exception as e:
             memory_status = {"error": str(e)}
 
+    recent_tools: list[dict[str, object]] | dict[str, str]
+    try:
+        recent_tools = list_summaries(limit=5)
+    except Exception as e:
+        recent_tools = {"error": str(e)}
+
     status = {
         "local_time": _now_local(),
         "home_assistant_configured": bool(_config and _config.has_home_assistant),
@@ -570,7 +586,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         },
         "memory": memory_status,
         "audit": _audit_status(),
-        "recent_tools": list_summaries(limit=5),
+        "recent_tools": recent_tools,
     }
     record_summary("system_status", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(status)}]}

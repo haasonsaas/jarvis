@@ -580,6 +580,21 @@ class TestServicesTools:
         assert "audit" in payload
 
     @pytest.mark.asyncio
+    async def test_system_status_handles_recent_tools_failure(self, tmp_path, monkeypatch):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        services.AUDIT_LOG = tmp_path / "audit.jsonl"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        monkeypatch.setattr("jarvis.tools.services.list_summaries", lambda limit=5: (_ for _ in ()).throw(RuntimeError("summary unavailable")))
+
+        result = await services.system_status({})
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["recent_tools"]["error"] == "summary unavailable"
+
+    @pytest.mark.asyncio
     async def test_system_status_denied_by_policy(self):
         from jarvis.config import Config
         from jarvis.tools import services
@@ -675,6 +690,19 @@ class TestServicesTools:
 
         assert services.AUDIT_LOG.exists()
         assert (tmp_path / "audit.jsonl.1").exists()
+
+    @pytest.mark.asyncio
+    async def test_tool_summary_text_handles_bad_duration_value(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr(
+            "jarvis.tools.services.list_summaries",
+            lambda limit=6: [{"name": "tool_x", "status": "ok", "duration_ms": "invalid"}],
+        )
+        result = await services.tool_summary_text({"limit": 1})
+        text = result["content"][0]["text"]
+        assert "tool_x" in text
+        assert "(0ms)" in text
 
     def test_service_schema_runtime_required_fields_parity(self):
         from jarvis.tools import services
