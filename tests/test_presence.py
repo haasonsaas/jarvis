@@ -131,6 +131,18 @@ class TestPresenceLoop:
         # Tilt should push roll toward 10
         assert presence._roll > 2.0
 
+    def test_speaking_sway_uses_speech_energy(self, presence):
+        sig = presence.signals
+        sig.face_detected = False
+        sig.intent_glance_yaw = 0.0
+        sig.intent_tilt = 0.0
+        sig.speech_energy = 1.0
+
+        for i in range(200):
+            presence._do_speaking(float(i) * 0.033, sig)
+
+        assert abs(presence._yaw) > 0.5 or abs(presence._pitch) > 0.5 or abs(presence._roll) > 0.5
+
     def test_muted_looks_down(self, presence):
         presence._yaw = 30.0
         presence._pitch = 10.0

@@ -7,9 +7,12 @@ Outputs raw PCM int16 at 16kHz for direct playback without codec overhead.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import queue
+import threading
 import numpy as np
-from typing import Iterator
+from typing import AsyncIterator, Iterator
 
 from elevenlabs.client import ElevenLabs
 
@@ -53,6 +56,29 @@ class TextToSpeech:
 
         except Exception as e:
             log.error("TTS synthesis failed: %s", e)
+
+    async def stream_chunks_async(self, text: str) -> AsyncIterator[np.ndarray]:
+        """Async wrapper for stream_chunks to avoid blocking the event loop."""
+        if not text or not text.strip():
+            return
+
+        chunk_queue: "queue.Queue[object]" = queue.Queue()
+        sentinel = object()
+
+        def _producer() -> None:
+            try:
+                for chunk in self.stream_chunks(text):
+                    chunk_queue.put(chunk)
+            finally:
+                chunk_queue.put(sentinel)
+
+        threading.Thread(target=_producer, daemon=True).start()
+
+        while True:
+            item = await asyncio.to_thread(chunk_queue.get)
+            if item is sentinel:
+                break
+            yield item  # type: ignore[misc]
 
     def synthesize(self, text: str) -> np.ndarray:
         """Batch synthesize — collects all chunks into one array.

@@ -131,6 +131,9 @@ class Jarvis:
         self._last_doa_angle: float | None = None
         self._last_doa_update: float = 0.0
 
+        self._tts_queue: asyncio.Queue[str] = asyncio.Queue()
+        self._tts_task: asyncio.Task[None] | None = None
+
         self._utterance_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=1)
         self._listen_task: asyncio.Task[None] | None = None
 
@@ -195,6 +198,8 @@ class Jarvis:
     async def run(self) -> None:
         """Main conversation loop."""
         self.start()
+        if self.tts is not None:
+            self._tts_task = asyncio.create_task(self._tts_loop(), name="tts")
         self._listen_task = asyncio.create_task(self._listen_loop(), name="listen")
         print("\n  JARVIS is online. Speak to begin.\n")
         print("  Press Ctrl+C to exit.\n")
@@ -223,6 +228,11 @@ class Jarvis:
                 with suppress(asyncio.CancelledError):
                     await self._listen_task
                 self._listen_task = None
+            if self._tts_task is not None:
+                self._tts_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._tts_task
+                self._tts_task = None
             self.stop()
 
     async def _enqueue_utterance(self, audio: np.ndarray) -> None:
@@ -384,6 +394,7 @@ class Jarvis:
     async def _respond_and_speak(self, text: str) -> None:
         """Get Claude's response and stream TTS with barge-in support."""
         self._barge_in.clear()
+        self._clear_tts_queue()
 
         with self._lock:
             self._speaking = True
@@ -395,15 +406,11 @@ class Jarvis:
                 if self._barge_in.is_set():
                     log.info("Barge-in — stopping response")
                     self._flush_output()
+                    self._clear_tts_queue()
                     break
 
                 if self.tts:
-                    for audio_chunk in self.tts.stream_chunks(sentence):
-                        if self._barge_in.is_set():
-                            self._flush_output()
-                            break
-                        self._play_audio_chunk(audio_chunk)
-                        await asyncio.sleep(0)
+                    await self._tts_queue.put(sentence)
                 else:
                     print(f"  JARVIS: {sentence}")
 
@@ -414,6 +421,35 @@ class Jarvis:
                 self._speaking = False
             if not self._barge_in.is_set():
                 self.presence.signals.state = State.IDLE
+
+    async def _tts_loop(self) -> None:
+        """Consume sentences and play TTS in order, with barge-in support."""
+        assert self.tts is not None
+        while True:
+            sentence = await self._tts_queue.get()
+            if self._barge_in.is_set():
+                self._flush_output()
+                self.presence.signals.speech_energy = 0.0
+                continue
+
+            async for audio_chunk in self.tts.stream_chunks_async(sentence):
+                if self._barge_in.is_set():
+                    self._flush_output()
+                    self.presence.signals.speech_energy = 0.0
+                    break
+                self.presence.signals.speech_energy = float(
+                    max(0.0, min(1.0, float(np.sqrt(np.mean(audio_chunk ** 2)) * 5.0)))
+                )
+                self._play_audio_chunk(audio_chunk)
+                await asyncio.sleep(0)
+            self.presence.signals.speech_energy = 0.0
+
+    def _clear_tts_queue(self) -> None:
+        while not self._tts_queue.empty():
+            try:
+                self._tts_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
 
 
 def main():

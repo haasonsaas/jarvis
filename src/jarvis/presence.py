@@ -59,6 +59,7 @@ class Signals:
     intent_nod: float = 0.0             # 0-1 nod intensity
     intent_tilt: float = 0.0            # degrees of head tilt
     intent_glance_yaw: float = 0.0      # brief glance offset
+    speech_energy: float = 0.0          # 0-1 TTS energy for speech sway
 
 
 class PresenceLoop:
@@ -206,6 +207,11 @@ class PresenceLoop:
         target_yaw += sig.intent_glance_yaw
         target_pitch += sig.intent_nod * math.sin(t * 3.0) * 4.0
         target_roll = sig.intent_tilt
+
+        sway = sig.speech_energy
+        target_yaw += math.sin(t * 0.6) * 4.0 * sway
+        target_pitch += math.sin(t * 2.0) * 2.0 * sway
+        target_roll += math.sin(t * 1.2) * 1.5 * sway
 
         target_yaw = self._clamp(target_yaw, -45.0, 45.0)
         target_pitch = self._clamp(target_pitch, -20.0, 20.0)
