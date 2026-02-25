@@ -272,6 +272,8 @@ def _format_tool_summaries(items: list[dict[str, object]]) -> str:
             duration = float(item.get("duration_ms", 0.0))
         except (TypeError, ValueError):
             duration = 0.0
+        if not math.isfinite(duration):
+            duration = 0.0
         detail = item.get("detail")
         effect = item.get("effect")
         risk = item.get("risk")

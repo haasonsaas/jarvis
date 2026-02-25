@@ -697,11 +697,17 @@ class TestServicesTools:
 
         monkeypatch.setattr(
             "jarvis.tools.services.list_summaries",
-            lambda limit=6: [{"name": "tool_x", "status": "ok", "duration_ms": "invalid"}],
+            lambda limit=6: [
+                {"name": "tool_x", "status": "ok", "duration_ms": "invalid"},
+                {"name": "tool_y", "status": "ok", "duration_ms": float("nan")},
+                {"name": "tool_z", "status": "ok", "duration_ms": float("inf")},
+            ],
         )
-        result = await services.tool_summary_text({"limit": 1})
+        result = await services.tool_summary_text({"limit": 3})
         text = result["content"][0]["text"]
         assert "tool_x" in text
+        assert "tool_y" in text
+        assert "tool_z" in text
         assert "(0ms)" in text
 
     def test_service_schema_runtime_required_fields_parity(self):

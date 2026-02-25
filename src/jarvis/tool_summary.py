@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from collections import deque
 from dataclasses import dataclass, asdict
@@ -23,9 +24,15 @@ class ToolSummaryStore:
     def add(self, summary: ToolSummary) -> None:
         self._items.appendleft(summary)
 
-    def list(self, limit: int = 10) -> list[dict[str, object]]:
-        limit = max(1, min(200, limit))
-        return [asdict(item) for item in list(self._items)[:limit]]
+    def list(self, limit: int | float | str = 10) -> list[dict[str, object]]:
+        try:
+            parsed_limit = int(limit)
+        except (TypeError, ValueError, OverflowError):
+            parsed_limit = 10
+        if isinstance(limit, float) and not math.isfinite(limit):
+            parsed_limit = 10
+        parsed_limit = max(1, min(200, parsed_limit))
+        return [asdict(item) for item in list(self._items)[:parsed_limit]]
 
 
 _store = ToolSummaryStore()
