@@ -42,6 +42,8 @@ class TestPresenceLoop:
         """Idle state should produce non-zero Z (breathing) over time."""
         presence.signals.state = State.IDLE
 
+        presence._idle_choreo_next = time.monotonic() - 0.1
+
         # Simulate several frames
         for _ in range(60):
             presence._do_idle(time.monotonic())

@@ -56,6 +56,9 @@ TOOL_FEEDBACK_START_SCALE = 0.6
 ATTENTION_HOLD_SEC = 1.2
 ATTENTION_TIMEOUT_SEC = 1.5
 
+IDLE_CHOREO_COOLDOWN_SEC = 8.0
+IDLE_CHOREO_WINDOW_SEC = 1.6
+
 
 class State(enum.Enum):
     IDLE = "idle"
@@ -128,6 +131,8 @@ class PresenceLoop:
         self._backchannel_active_until = 0.0
         self._tool_feedback_until = 0.0
         self._tool_feedback_strength = 0.0
+        self._idle_choreo_until = 0.0
+        self._idle_choreo_next = 0.0
 
     def start(self) -> None:
         if self._running:
@@ -198,6 +203,10 @@ class PresenceLoop:
         drift_yaw = math.sin(t * 0.15) * 3.0  # slow wandering gaze
         drift_roll = math.sin(t * 0.3) * 1.5
 
+        choreo_yaw, choreo_pitch = self._idle_choreo(t)
+        drift_yaw += choreo_yaw
+        drift_roll += choreo_pitch * 0.4
+
         self._z = self._blend(self._z, breath)
         self._x = self._blend(self._x, 0.0, 0.05)
         self._y = self._blend(self._y, 0.0, 0.05)
@@ -242,10 +251,13 @@ class PresenceLoop:
         self._z = self._blend(self._z, 0.0, 0.05)
         self._x = self._blend(self._x, 0.0, 0.05)
         self._y = self._blend(self._y, 0.0, 0.05)
+        self._idle_choreo_until = 0.0
 
     def _do_speaking(self, t: float, sig: Signals) -> None:
         now = time.monotonic()
         target_yaw, target_pitch = self._resolve_attention(sig, now)
+
+        self._idle_choreo_until = 0.0
 
         # Add any LLM-requested intent
         target_yaw += sig.intent_glance_yaw
@@ -285,6 +297,7 @@ class PresenceLoop:
         self._z = self._blend(self._z, -3.0, 0.05)
         self._x = self._blend(self._x, 0.0, 0.05)
         self._y = self._blend(self._y, 0.0, 0.05)
+        self._idle_choreo_until = 0.0
 
     def _update_antennas(self, t: float, sig: Signals) -> None:
         if sig.state == State.IDLE:
@@ -347,6 +360,20 @@ class PresenceLoop:
         self._attention_source = best_source
         self._attention_hold_until = now + ATTENTION_HOLD_SEC
         return best_yaw, best_pitch
+
+    def _idle_choreo(self, t: float) -> tuple[float, float]:
+        now = time.monotonic()
+        if now < self._idle_choreo_until:
+            phase = (self._idle_choreo_until - now) / max(0.1, IDLE_CHOREO_WINDOW_SEC)
+            amp = max(0.0, 1.0 - phase)
+            yaw = math.sin(t * 2.2) * 6.0 * amp
+            pitch = math.sin(t * 1.6) * 3.0 * amp
+            return yaw, pitch
+        if now < self._idle_choreo_next:
+            return 0.0, 0.0
+        self._idle_choreo_until = now + IDLE_CHOREO_WINDOW_SEC
+        self._idle_choreo_next = now + IDLE_CHOREO_WINDOW_SEC + IDLE_CHOREO_COOLDOWN_SEC
+        return 0.0, 0.0
 
     def _backchannel_nod(self, t: float, sig: Signals, now: float) -> float:
         if sig.state is not State.LISTENING:

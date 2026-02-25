@@ -2,6 +2,7 @@
 
 import pytest
 import numpy as np
+import time
 from unittest.mock import MagicMock, patch
 
 from jarvis.robot.controller import RobotController, HeadPose, MotionStep
@@ -111,6 +112,12 @@ class TestRobotControllerReal:
         ], blocking=True)
 
         assert mock_mini.goto_target.call_count >= 2
+
+        rc.run_sequence([MotionStep(kind="pause", duration=0.2)])
+        time.sleep(0.05)
+        assert rc.is_sequence_active()
+        rc.stop_sequence()
+        assert not rc.is_sequence_active()
 
     @patch("jarvis.robot.controller.ReachyMini")
     @patch("jarvis.robot.controller.RecordedMoves")

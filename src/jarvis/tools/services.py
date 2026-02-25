@@ -17,6 +17,7 @@ from claude_agent_sdk import tool, create_sdk_mcp_server
 
 from jarvis.config import Config
 from jarvis.tool_policy import is_tool_allowed
+from jarvis.tool_summary import record_summary, list_summaries
 from jarvis.memory import MemoryStore
 
 log = logging.getLogger(__name__)
@@ -89,11 +90,14 @@ def _touch_action(domain: str, action: str, entity_id: str) -> None:
 # ── Home Assistant ────────────────────────────────────────────
 
 async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("smart_home"):
+        record_summary("smart_home", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     from jarvis.tools.robot import tool_feedback
 
     if not _config or not _config.has_home_assistant:
+        record_summary("smart_home", "error", start_time, "missing_config")
         return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
 
     domain = args["domain"]
@@ -105,6 +109,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
 
     if _cooldown_active(domain, action, entity_id):
         tool_feedback("done")
+        record_summary("smart_home", "cooldown", start_time)
         return {"content": [{"type": "text", "text": "Action cooldown active. Try again in a moment."}]}
 
     _audit("smart_home", {
@@ -115,6 +120,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     if dry_run:
         tool_feedback("start")
         _touch_action(domain, action, entity_id)
+        record_summary("smart_home", "dry_run", start_time)
         return {"content": [{"type": "text", "text": (
             f"DRY RUN: Would call {domain}.{action} on {entity_id}"
             f"{' with ' + json.dumps(data) if data else ''}. "
@@ -133,28 +139,36 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                 if resp.status == 200:
                     tool_feedback("done")
                     _touch_action(domain, action, entity_id)
+                    record_summary("smart_home", "ok", start_time)
                     return {"content": [{"type": "text", "text": f"Done: {domain}.{action} on {entity_id}"}]}
                 elif resp.status == 401:
                     tool_feedback("done")
+                    record_summary("smart_home", "error", start_time, "auth")
                     return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
                 elif resp.status == 404:
                     tool_feedback("done")
+                    record_summary("smart_home", "error", start_time, "not_found")
                     return {"content": [{"type": "text", "text": f"Service not found: {domain}.{action}"}]}
                 else:
                     text = await resp.text()
                     tool_feedback("done")
+                    record_summary("smart_home", "error", start_time, f"http_{resp.status}")
                     return {"content": [{"type": "text", "text": f"Home Assistant error ({resp.status}): {text[:200]}"}]}
     except aiohttp.ClientError as e:
         tool_feedback("done")
+        record_summary("smart_home", "error", start_time, str(e))
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
 
 
 async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("smart_home_state"):
+        record_summary("smart_home_state", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     from jarvis.tools.robot import tool_feedback
 
     if not _config or not _config.has_home_assistant:
+        record_summary("smart_home_state", "error", start_time, "missing_config")
         return {"content": [{"type": "text", "text": "Home Assistant not configured."}]}
 
     url = f"{_config.hass_url}/api/states/{args['entity_id']}"
@@ -168,39 +182,50 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
                 if resp.status == 200:
                     data = await resp.json()
                     tool_feedback("done")
+                    record_summary("smart_home_state", "ok", start_time)
                     return {"content": [{"type": "text", "text": json.dumps({
                         "state": data.get("state", "unknown"),
                         "attributes": data.get("attributes", {}),
                     })}]}
                 elif resp.status == 404:
                     tool_feedback("done")
+                    record_summary("smart_home_state", "error", start_time, "not_found")
                     return {"content": [{"type": "text", "text": f"Entity not found: {args['entity_id']}"}]}
                 else:
                     tool_feedback("done")
+                    record_summary("smart_home_state", "error", start_time, f"http_{resp.status}")
                     return {"content": [{"type": "text", "text": f"Error ({resp.status}) fetching entity state"}]}
     except aiohttp.ClientError as e:
         tool_feedback("done")
+        record_summary("smart_home_state", "error", start_time, str(e))
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
 
 
 async def get_time(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("get_time"):
+        record_summary("get_time", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     from jarvis.tools.robot import tool_feedback
     tool_feedback("start")
     tool_feedback("done")
+    record_summary("get_time", "ok", start_time)
     return {"content": [{"type": "text", "text": _now_local()}]}
 
 
 # ── Memory + planning ───────────────────────────────────────
 
 async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("memory_add"):
+        record_summary("memory_add", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("memory_add", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     text = str(args.get("text", "")).strip()
     if not text:
+        record_summary("memory_add", "error", start_time, "missing_text")
         return {"content": [{"type": "text", "text": "Memory text required."}]}
     tags = args.get("tags") or []
     kind = str(args.get("kind", "note"))
@@ -215,16 +240,21 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
         sensitivity=sensitivity,
         source=source,
     )
+    record_summary("memory_add", "ok", start_time)
     return {"content": [{"type": "text", "text": f"Memory stored (id={memory_id})."}]}
 
 
 async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("memory_search"):
+        record_summary("memory_search", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("memory_search", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     query = str(args.get("query", "")).strip()
     if not query:
+        record_summary("memory_search", "error", start_time, "missing_query")
         return {"content": [{"type": "text", "text": "Search query required."}]}
     limit = int(args.get("limit", 5))
     include_sensitive = bool(args.get("include_sensitive", False))
@@ -243,32 +273,41 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
         sources=source_list,
     )
     if not results:
+        record_summary("memory_search", "empty", start_time)
         return {"content": [{"type": "text", "text": "No relevant memories found."}]}
     lines = []
     for entry in results:
         tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
         snippet = entry.text[:200]
         lines.append(f"[{entry.id}] ({entry.kind}) {snippet}{tags}")
+    record_summary("memory_search", "ok", start_time)
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
 
 async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("memory_status"):
+        record_summary("memory_status", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("memory_status", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     if args.get("warm"):
         _memory.warm()
     if args.get("sync"):
         _memory.sync()
     status = _memory.memory_status()
+    record_summary("memory_status", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(status)}]}
 
 
 async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("memory_recent"):
+        record_summary("memory_recent", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("memory_recent", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     limit = int(args.get("limit", 5))
     kind = args.get("kind")
@@ -276,113 +315,163 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
     source_list = [str(source) for source in sources] if isinstance(sources, list) else None
     results = _memory.recent(limit=limit, kind=str(kind) if kind else None, sources=source_list)
     if not results:
+        record_summary("memory_recent", "empty", start_time)
         return {"content": [{"type": "text", "text": "No recent memories found."}]}
     lines = []
     for entry in results:
         tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
         snippet = entry.text[:200]
         lines.append(f"[{entry.id}] ({entry.kind}) {snippet}{tags}")
+    record_summary("memory_recent", "ok", start_time)
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
 
 async def memory_summary_add(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("memory_summary_add"):
+        record_summary("memory_summary_add", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("memory_summary_add", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     topic = str(args.get("topic", "")).strip()
     summary = str(args.get("summary", "")).strip()
     if not topic or not summary:
+        record_summary("memory_summary_add", "error", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Summary topic and text required."}]}
     _memory.upsert_summary(topic, summary)
+    record_summary("memory_summary_add", "ok", start_time)
     return {"content": [{"type": "text", "text": "Summary stored."}]}
 
 
 async def memory_summary_list(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("memory_summary_list"):
+        record_summary("memory_summary_list", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("memory_summary_list", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     limit = int(args.get("limit", 5))
     results = _memory.list_summaries(limit=limit)
     if not results:
+        record_summary("memory_summary_list", "empty", start_time)
         return {"content": [{"type": "text", "text": "No summaries found."}]}
     lines = [f"{summary.topic}: {summary.summary}" for summary in results]
+    record_summary("memory_summary_list", "ok", start_time)
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
 
 async def task_plan_create(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("task_plan_create"):
+        record_summary("task_plan_create", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("task_plan_create", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     title = str(args.get("title", "")).strip()
     steps = args.get("steps") or []
     if not title or not steps:
+        record_summary("task_plan_create", "error", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Plan title and steps required."}]}
     plan_id = _memory.add_task_plan(title, [str(step) for step in steps])
+    record_summary("task_plan_create", "ok", start_time)
     return {"content": [{"type": "text", "text": f"Plan created (id={plan_id})."}]}
 
 
 async def task_plan_list(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("task_plan_list"):
+        record_summary("task_plan_list", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("task_plan_list", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     open_only = bool(args.get("open_only", True))
     plans = _memory.list_task_plans(open_only=open_only)
     if not plans:
+        record_summary("task_plan_list", "empty", start_time)
         return {"content": [{"type": "text", "text": "No task plans found."}]}
     blocks = []
     for plan in plans:
         header = f"Plan {plan.id}: {plan.title} ({plan.status})"
         steps = "\n".join([f"  {step.index + 1}. {step.text} [{step.status}]" for step in plan.steps])
         blocks.append(f"{header}\n{steps}")
+    record_summary("task_plan_list", "ok", start_time)
     return {"content": [{"type": "text", "text": "\n\n".join(blocks)}]}
 
 
 async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("task_plan_update"):
+        record_summary("task_plan_update", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("task_plan_update", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = int(args.get("plan_id", 0))
     step_index = int(args.get("step_index", -1))
     status = str(args.get("status", "pending"))
     if plan_id <= 0 or step_index < 0:
+        record_summary("task_plan_update", "error", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Plan id and step index required."}]}
-    _memory.update_task_step(plan_id, step_index, status)
+    updated = _memory.update_task_step(plan_id, step_index, status)
+    if not updated:
+        record_summary("task_plan_update", "empty", start_time)
+        return {"content": [{"type": "text", "text": "No task step updated."}]}
+    record_summary("task_plan_update", "ok", start_time)
     return {"content": [{"type": "text", "text": "Plan updated."}]}
 
 
 async def task_plan_summary(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("task_plan_summary"):
+        record_summary("task_plan_summary", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("task_plan_summary", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = int(args.get("plan_id", 0))
     if plan_id <= 0:
+        record_summary("task_plan_summary", "error", start_time, "missing_plan")
         return {"content": [{"type": "text", "text": "Plan id required."}]}
     progress = _memory.task_plan_progress(plan_id)
     if not progress:
+        record_summary("task_plan_summary", "empty", start_time)
         return {"content": [{"type": "text", "text": "Plan not found."}]}
     done, total = progress
     text = f"Plan {plan_id}: {done}/{total} steps complete."
+    record_summary("task_plan_summary", "ok", start_time)
     return {"content": [{"type": "text", "text": text}]}
 
 
 async def task_plan_next(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
     if not _tool_permitted("task_plan_next"):
+        record_summary("task_plan_next", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
+        record_summary("task_plan_next", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = args.get("plan_id")
     plan = _memory.next_task_step(int(plan_id)) if plan_id is not None else _memory.next_task_step()
     if not plan:
+        record_summary("task_plan_next", "empty", start_time)
         return {"content": [{"type": "text", "text": "No pending steps found."}]}
     task_plan, step = plan
     text = f"Next step for plan {task_plan.id} ({task_plan.title}): {step.index + 1}. {step.text}"
+    record_summary("task_plan_next", "ok", start_time)
     return {"content": [{"type": "text", "text": text}]}
+
+
+async def tool_summary(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("tool_summary"):
+        record_summary("tool_summary", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    limit = int(args.get("limit", 10))
+    return {"content": [{"type": "text", "text": json.dumps(list_summaries(limit))}]}
 
 
 # ── Build MCP server ──────────────────────────────────────────
@@ -583,6 +672,17 @@ task_plan_next_tool = tool(
     },
 )(task_plan_next)
 
+tool_summary_tool = tool(
+    "tool_summary",
+    "Return recent tool execution summaries (latency/outcome).",
+    {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "number"},
+        },
+    },
+)(tool_summary)
+
 def create_services_server():
     return create_sdk_mcp_server(
         name="jarvis-services",
@@ -591,6 +691,7 @@ def create_services_server():
             smart_home_tool,
             smart_home_state_tool,
             get_time_tool,
+            tool_summary_tool,
             memory_add_tool,
             memory_search_tool,
             memory_recent_tool,

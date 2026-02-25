@@ -494,6 +494,7 @@ class Jarvis:
                     log.info("Barge-in — stopping response")
                     self._flush_output()
                     self._clear_tts_queue()
+                    self.robot.stop_sequence()
                     break
 
                 if not self._response_started:

@@ -157,6 +157,9 @@ class RobotController:
         self._sequence_thread = None
         self._sequence_stop.clear()
 
+    def is_sequence_active(self) -> bool:
+        return bool(self._sequence_thread and self._sequence_thread.is_alive())
+
     def _clamp_pose(self, pose: HeadPose) -> HeadPose:
         return HeadPose(
             x=max(HEAD_LIMITS["x"][0], min(HEAD_LIMITS["x"][1], pose.x)),

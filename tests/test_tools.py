@@ -103,6 +103,13 @@ class TestRobotTools:
         result = await run_macro({"name": "acknowledge", "intensity": 1.0})
         assert "Macro queued" in result["content"][0]["text"]
 
+    @pytest.mark.asyncio
+    async def test_stop_motion_sim(self):
+        from jarvis.tools.robot import stop_motion
+
+        result = await stop_motion({})
+        assert "stopped" in result["content"][0]["text"].lower()
+
 
 class TestServicesTools:
     @pytest.fixture(autouse=True)
@@ -181,6 +188,9 @@ class TestServicesTools:
         recent = await services.memory_recent({"limit": 1, "sources": ["secrets"]})
         assert "note" in recent["content"][0]["text"].lower()
 
+        summary = await services.tool_summary({"limit": 10})
+        assert "memory_add" in summary["content"][0]["text"].lower()
+
         summary_added = await services.memory_summary_add({"topic": "preferences", "summary": "User likes coffee."})
         assert "summary" in summary_added["content"][0]["text"].lower()
 
@@ -212,6 +222,8 @@ class TestServicesTools:
         config.tool_denylist = ["memory_add"]
         memory_path = tmp_path / "memory.sqlite"
         store = MemoryStore(str(memory_path))
+        services.bind(Config(), store)
+        await services.memory_add({"text": "Okay"})
         services.bind(config, store)
 
         denied = await services.memory_add({"text": "Nope"})

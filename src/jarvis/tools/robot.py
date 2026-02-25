@@ -134,6 +134,15 @@ async def run_sequence(args: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": f"Queued {len(steps)} motion steps"}]}
 
 
+async def stop_motion(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("stop_motion"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _robot:
+        return {"content": [{"type": "text", "text": "Robot not connected (simulation mode)"}]}
+    _robot.stop_sequence()
+    return {"content": [{"type": "text", "text": "Motion sequence stopped"}]}
+
+
 async def run_macro(args: dict[str, Any]) -> dict[str, Any]:
     if not _tool_permitted("run_macro"):
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
@@ -253,6 +262,12 @@ run_sequence_tool = tool(
     },
 )(run_sequence)
 
+stop_motion_tool = tool(
+    "stop_motion",
+    "Stop any active motion sequence.",
+    {},
+)(stop_motion)
+
 
 run_macro_tool = tool(
     "run_macro",
@@ -275,5 +290,13 @@ def create_robot_server():
     return create_sdk_mcp_server(
         name="jarvis-robot",
         version="0.1.0",
-        tools=[embody_tool, play_emotion_tool, play_dance_tool, list_animations_tool, run_sequence_tool, run_macro_tool],
+        tools=[
+            embody_tool,
+            play_emotion_tool,
+            play_dance_tool,
+            list_animations_tool,
+            run_sequence_tool,
+            run_macro_tool,
+            stop_motion_tool,
+        ],
     )
