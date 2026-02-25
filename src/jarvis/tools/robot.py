@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any, TYPE_CHECKING
 
 from claude_agent_sdk import tool, create_sdk_mcp_server
@@ -178,9 +179,12 @@ def _as_bool(value: Any, default: bool = False) -> bool:
 
 def _as_float(value: Any, default: float) -> float:
     try:
-        return float(value)
+        parsed = float(value)
     except (TypeError, ValueError):
         return default
+    if not math.isfinite(parsed):
+        return default
+    return parsed
 
 
 def tool_feedback(kind: str) -> None:

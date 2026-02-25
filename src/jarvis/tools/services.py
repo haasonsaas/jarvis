@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from pathlib import Path
 from typing import Any
@@ -321,6 +322,8 @@ def _as_float(
     try:
         parsed = float(value)
     except (TypeError, ValueError):
+        parsed = default
+    if not math.isfinite(parsed):
         parsed = default
     if minimum is not None:
         parsed = max(minimum, parsed)

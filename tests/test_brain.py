@@ -200,6 +200,24 @@ class TestBrain:
         assert "Context (memory)" in captured.get("text", "")
 
     @pytest.mark.asyncio
+    async def test_memory_search_uses_raw_user_query_not_prompt_style(self, brain):
+        if brain._memory is None:
+            pytest.skip("Memory disabled")
+        brain._config.persona_style = "friendly"
+        search_mock = MagicMock(return_value=[])
+
+        with patch.object(brain._client, "query", new=AsyncMock()), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain._memory, "search_v2", search_mock), \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([])
+            async for _ in brain.respond("coffee please"):
+                pass
+
+        assert search_mock.call_args is not None
+        assert search_mock.call_args.args[0] == "coffee please"
+
+    @pytest.mark.asyncio
     async def test_respond_includes_persona_style_instruction(self, brain):
         brain._config.persona_style = "friendly"
         if brain._memory is not None:

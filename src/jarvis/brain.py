@@ -165,14 +165,11 @@ class Brain:
         """
         self._presence.signals.state = State.THINKING
         log.info("User: %s", user_text)
-
-        style_instruction = self._style_instruction_context()
-        if style_instruction:
-            user_text = f"{user_text}\n\nPrompt style:\n{style_instruction}"
+        query_text = user_text
 
         if self._memory:
             memories = self._memory.search_v2(
-                user_text,
+                query_text,
                 limit=self._config.memory_search_limit,
                 max_sensitivity=self._config.memory_max_sensitivity,
                 hybrid_weight=self._config.memory_hybrid_weight,
@@ -184,7 +181,7 @@ class Brain:
             if memories:
                 memory_lines = []
                 for entry in memories:
-                    if not _memory_relevant(user_text, entry):
+                    if not _memory_relevant(query_text, entry):
                         continue
                     tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
                     snippet = entry.text[:180]
@@ -192,6 +189,10 @@ class Brain:
                 memory_context = "\n".join(memory_lines)
                 if memory_context:
                     user_text = f"{user_text}\n\nContext (memory):\n{memory_context}"
+
+        style_instruction = self._style_instruction_context()
+        if style_instruction:
+            user_text = f"{user_text}\n\nPrompt style:\n{style_instruction}"
 
         sentence_buffer = ""
         await self._ensure_connected()

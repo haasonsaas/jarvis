@@ -84,6 +84,22 @@ class TestRobotTools:
         assert presence.signals.intent_glance_yaw == 8.0
 
     @pytest.mark.asyncio
+    async def test_embody_non_finite_numbers_fallback_to_defaults(self, presence):
+        from jarvis.tools.robot import embody
+
+        await embody({
+            "intent": "answer",
+            "prosody": "calm",
+            "nod": "nan",
+            "tilt": "inf",
+            "glance_yaw": "-inf",
+        })
+
+        assert presence.signals.intent_nod == 0.0
+        assert presence.signals.intent_tilt == 0.0
+        assert presence.signals.intent_glance_yaw == 0.0
+
+    @pytest.mark.asyncio
     async def test_play_emotion_sim(self):
         from jarvis.tools.robot import play_emotion
 
@@ -456,6 +472,20 @@ class TestServicesTools:
         await services.memory_add({"text": "Source test", "source": "profile"})
         filtered = await services.memory_search({"query": "source", "sources": "profile"})
         assert "source test" in filtered["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_memory_add_non_finite_sensitivity_uses_default(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        await services.memory_add({"text": "Finite sensitivity", "sensitivity": "nan"})
+        recent = store.recent(limit=1)
+        assert len(recent) == 1
+        assert recent[0].sensitivity == 0.0
 
     @pytest.mark.asyncio
     async def test_task_plan_update_rejects_invalid_status(self, tmp_path):
