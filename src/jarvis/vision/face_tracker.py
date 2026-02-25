@@ -27,6 +27,10 @@ FRAME_CX, FRAME_CY = 0.5, 0.4  # slightly above center for typical face position
 GAIN_YAW = 45.0
 GAIN_PITCH = 30.0
 
+# Deadzone to reduce micro-jitter when face is near center
+DEADZONE_X = 0.03
+DEADZONE_Y = 0.03
+
 # Smoothing: 0 = instant (jittery), 1 = frozen. 0.3 = responsive with mild smoothing
 SMOOTH_ALPHA = 0.25
 
@@ -138,6 +142,11 @@ class FaceTracker:
                 # Compute error from frame center
                 err_x = FRAME_CX - face.cx   # positive = face is to the left of center
                 err_y = FRAME_CY - face.cy   # positive = face is above center
+
+                if abs(err_x) < DEADZONE_X:
+                    err_x = 0.0
+                if abs(err_y) < DEADZONE_Y:
+                    err_y = 0.0
 
                 raw_yaw = err_x * GAIN_YAW
                 raw_pitch = err_y * GAIN_PITCH

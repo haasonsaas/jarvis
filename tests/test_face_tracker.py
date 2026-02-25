@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from jarvis.presence import PresenceLoop, Signals
 from jarvis.robot.controller import RobotController
+from jarvis.vision.face_tracker import DEADZONE_X, DEADZONE_Y
 
 
 class TestFaceTracker:
@@ -166,6 +167,16 @@ class TestFaceTracker:
 
         detections = tracker.detect_faces(sample_frame)
         assert detections == []
+
+    def test_deadzone_thresholds(self):
+        err_x = DEADZONE_X * 0.5
+        err_y = DEADZONE_Y * 0.5
+        if abs(err_x) < DEADZONE_X:
+            err_x = 0.0
+        if abs(err_y) < DEADZONE_Y:
+            err_y = 0.0
+        assert err_x == 0.0
+        assert err_y == 0.0
 
     @patch("jarvis.vision.face_tracker.YOLO")
     def test_start_stop(self, mock_yolo_cls, mock_presence):

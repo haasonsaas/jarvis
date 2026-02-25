@@ -83,6 +83,7 @@ class PresenceLoop:
         self._z = 0.0  # head height
         self._antenna_left = 0.0
         self._antenna_right = 0.0
+        self._speech_energy = 0.0
 
     def start(self) -> None:
         if self._running:
@@ -208,7 +209,8 @@ class PresenceLoop:
         target_pitch += sig.intent_nod * math.sin(t * 3.0) * 4.0
         target_roll = sig.intent_tilt
 
-        sway = sig.speech_energy
+        self._speech_energy = self._blend(self._speech_energy, sig.speech_energy, 0.2)
+        sway = self._speech_energy
         target_yaw += math.sin(t * 0.6) * 4.0 * sway
         target_pitch += math.sin(t * 2.0) * 2.0 * sway
         target_roll += math.sin(t * 1.2) * 1.5 * sway
