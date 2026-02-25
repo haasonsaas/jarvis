@@ -40,6 +40,13 @@ log = logging.getLogger(__name__)
 # Audio constants
 SILENCE_TIMEOUT = 0.8   # seconds of silence before end-of-utterance
 MIN_UTTERANCE = 0.3     # minimum utterance length in seconds
+TURN_TAKING_THRESHOLD = 0.55
+TURN_TAKING_BARGE_IN_THRESHOLD = 0.4
+ATTENTION_RECENCY_SEC = 1.0
+THINKING_FILLER_DELAY = 0.35
+THINKING_FILLER_TEXT = "One moment."
+TTS_TARGET_RMS = 0.08
+TTS_GAIN_SMOOTH = 0.2
 
 
 def _to_mono(audio: np.ndarray) -> np.ndarray:
@@ -134,6 +141,14 @@ class Jarvis:
 
         self._tts_queue: asyncio.Queue[str] = asyncio.Queue()
         self._tts_task: asyncio.Task[None] | None = None
+        self._response_id = 0
+        self._active_response_id = 0
+        self._response_started = False
+        self._first_sentence_at: float | None = None
+        self._first_audio_at: float | None = None
+        self._response_start_at: float | None = None
+        self._filler_task: asyncio.Task[None] | None = None
+        self._tts_gain = 1.0
 
         self._utterance_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=1)
         self._listen_task: asyncio.Task[None] | None = None
@@ -225,6 +240,9 @@ class Jarvis:
                 text = await asyncio.get_event_loop().run_in_executor(
                     None, self.stt.transcribe, utterance
                 )
+                stt_elapsed = time.monotonic() - self._last_doa_update if self._last_doa_update else None
+                if stt_elapsed is not None:
+                    log.info("STT latency: %.0fms", stt_elapsed * 1000.0)
                 if not text.strip():
                     self.presence.signals.state = State.IDLE
                     continue
@@ -294,12 +312,12 @@ class Jarvis:
                 assistant_busy = self._speaking
 
             silero_speech = conf > self.vad.threshold
-            if assistant_busy and doa_speech is not None:
-                is_speech = doa_speech
-            elif doa_speech is not None:
-                is_speech = silero_speech or doa_speech
-            else:
-                is_speech = silero_speech
+            is_speech = self._compute_turn_taking(
+                conf=conf,
+                doa_speech=doa_speech,
+                assistant_busy=assistant_busy,
+                now=now,
+            )
 
             if is_speech:
                 if not recording:
@@ -311,6 +329,9 @@ class Jarvis:
 
                 if assistant_busy and not self._barge_in.is_set():
                     self._barge_in.set()
+                    self._flush_output()
+                    self._clear_tts_queue()
+                    self.presence.signals.state = State.LISTENING
                     log.info("Barge-in detected")
 
             elif recording:
@@ -409,6 +430,18 @@ class Jarvis:
         """Get Claude's response and stream TTS with barge-in support."""
         self._barge_in.clear()
         self._clear_tts_queue()
+        self._response_id += 1
+        self._active_response_id = self._response_id
+        self._response_started = False
+        self._first_sentence_at = None
+        self._first_audio_at = None
+        self._response_start_at = time.monotonic()
+        self._tts_gain = 1.0
+
+        if self._filler_task is not None:
+            self._filler_task.cancel()
+        if self.tts is not None:
+            self._filler_task = asyncio.create_task(self._thinking_filler(), name="thinking-filler")
 
         with self._lock:
             self._speaking = True
@@ -423,8 +456,19 @@ class Jarvis:
                     self._clear_tts_queue()
                     break
 
+                if not self._response_started:
+                    self._response_started = True
+                    self._first_sentence_at = time.monotonic()
+                    if self._response_start_at is not None:
+                        log.info(
+                            "LLM first sentence latency: %.0fms",
+                            (self._first_sentence_at - self._response_start_at) * 1000.0,
+                        )
+                    if self._filler_task is not None:
+                        self._filler_task.cancel()
+
                 if self.tts:
-                    await self._tts_queue.put(sentence)
+                    await self._tts_queue.put((self._active_response_id, sentence, False))
                 else:
                     print(f"  JARVIS: {sentence}")
 
@@ -435,12 +479,14 @@ class Jarvis:
                 self._speaking = False
             if not self._barge_in.is_set():
                 self.presence.signals.state = State.IDLE
+            if self._filler_task is not None:
+                self._filler_task.cancel()
 
     async def _tts_loop(self) -> None:
         """Consume sentences and play TTS in order, with barge-in support."""
         assert self.tts is not None
         while True:
-            sentence = await self._tts_queue.get()
+            response_id, sentence, is_filler = await self._tts_queue.get()
             if self._barge_in.is_set():
                 self._flush_output()
                 self.presence.signals.speech_energy = 0.0
@@ -451,10 +497,18 @@ class Jarvis:
                     self._flush_output()
                     self.presence.signals.speech_energy = 0.0
                     break
+                if not is_filler and response_id == self._active_response_id and self._first_audio_at is None:
+                    self._first_audio_at = time.monotonic()
+                    if self._response_start_at is not None:
+                        log.info(
+                            "TTS first audio latency: %.0fms",
+                            (self._first_audio_at - self._response_start_at) * 1000.0,
+                        )
                 self.presence.signals.speech_energy = float(
                     max(0.0, min(1.0, float(np.sqrt(np.mean(audio_chunk ** 2)) * 5.0)))
                 )
-                self._play_audio_chunk(audio_chunk)
+                normalized = self._normalize_tts_chunk(audio_chunk)
+                self._play_audio_chunk(normalized)
                 await asyncio.sleep(0)
             self.presence.signals.speech_energy = 0.0
 
@@ -464,6 +518,45 @@ class Jarvis:
                 self._tts_queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
+
+    def _compute_turn_taking(
+        self,
+        conf: float,
+        doa_speech: bool | None,
+        assistant_busy: bool,
+        now: float,
+    ) -> bool:
+        attention = 0.0
+        if self.presence.signals.face_last_seen and (now - self.presence.signals.face_last_seen) <= ATTENTION_RECENCY_SEC:
+            attention = 1.0
+        elif self.presence.signals.hand_last_seen and (now - self.presence.signals.hand_last_seen) <= ATTENTION_RECENCY_SEC:
+            attention = 0.8
+        elif self.presence.signals.doa_last_seen and (now - self.presence.signals.doa_last_seen) <= ATTENTION_RECENCY_SEC:
+            attention = 0.5
+
+        doa_score = 1.0 if doa_speech else 0.0
+        score = (0.6 * conf) + (0.3 * doa_score) + (0.1 * attention)
+        threshold = TURN_TAKING_BARGE_IN_THRESHOLD if assistant_busy else TURN_TAKING_THRESHOLD
+        return score >= threshold
+
+    async def _thinking_filler(self) -> None:
+        await asyncio.sleep(THINKING_FILLER_DELAY)
+        if self._barge_in.is_set() or self._response_started:
+            return
+        if self.tts is None:
+            return
+        await self._tts_queue.put((self._active_response_id, THINKING_FILLER_TEXT, True))
+
+    def _normalize_tts_chunk(self, chunk: np.ndarray) -> np.ndarray:
+        if chunk.size == 0:
+            return chunk
+        rms = float(np.sqrt(np.mean(chunk ** 2)))
+        if rms <= 1e-6:
+            return chunk
+        desired_gain = max(0.5, min(2.0, TTS_TARGET_RMS / rms))
+        self._tts_gain += (desired_gain - self._tts_gain) * TTS_GAIN_SMOOTH
+        normalized = chunk * self._tts_gain
+        return np.clip(normalized, -1.0, 1.0)
 
 
 def main():
