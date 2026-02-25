@@ -74,6 +74,15 @@ def test_memory_store_enables_foreign_keys(tmp_path):
         store.close()
 
 
+def test_memory_store_sets_busy_timeout(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        value = store._conn.execute("PRAGMA busy_timeout;").fetchone()[0]
+        assert int(value) == 5000
+    finally:
+        store.close()
+
+
 def test_task_plan_reopens_when_step_marked_not_done(tmp_path):
     store = MemoryStore(str(tmp_path / "memory.sqlite"))
     try:

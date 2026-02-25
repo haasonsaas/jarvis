@@ -33,11 +33,11 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 - [x] TTS loop now isolates per-sentence stream failures.
 
 ### Known Risk Areas Remaining
-- [>] Audio input loop cancellation behavior under blocked stream reads.
-- [>] Startup diagnostics visibility (capability/status printout for operator confidence).
-- [>] Config boundary validation is minimal in some fields.
-- [>] Service network error taxonomy (timeouts, cancellations, unexpected JSON decode errors).
-- [>] Memory storage behavior under extreme volumes and long-running sessions.
+- [>] Service-layer storage/network failures are handled, but long-tail failure classes still need broader simulation coverage.
+- [>] Cooldown/action history state growth now bounded, but still lacks stress/load characterization.
+- [>] Memory/planning reliability needs transactional and lock-contention scenario testing beyond unit happy-paths.
+- [>] Runtime observability is stronger, but there is no operator-grade health rollup test for degraded dependency states.
+- [>] Large test suite is green, but coverage quality still depends on targeted fault-injection and concurrency cases.
 
 ---
 
@@ -338,6 +338,152 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 - [x] Audio listen-loop cancellation improvements.
 - [x] Telemetry counters and periodic status logs.
 - [x] Audit retention policy.
+
+### Wave C (current hardening streak)
+- [x] Tool-summary and service-status resilience to malformed/non-JSON payloads.
+- [x] Memory/planning service handlers wrapped with controlled storage exception envelopes.
+- [x] Expand storage failure-path regression tests across memory/planning tools.
+- [x] Sanitize non-finite summary timing values at record and read stages.
+- [x] Bound action cooldown history growth with retention + cap pruning.
+- [x] Add SQLite `busy_timeout` baseline for lock contention tolerance.
+- [x] Make `ToolSummaryStore` add/list operations thread-safe.
+
+---
+
+## 11) Deep Backlog (active)
+
+This section is the long-horizon execution plan for continued reliability and maintainability work. Items below are intentionally detailed and should be worked top-down unless blocked.
+
+### 11.1 P0 Service Fault Injection Matrix
+- [ ] Build matrix tests for Home Assistant failure classes.
+- Why:
+  - Current tests cover many errors but not full combinations of timeout/cancel/decode/malformed body scenarios.
+- Acceptance criteria:
+  - Deterministic tests for:
+    - request timeout
+    - cancelled request context
+    - invalid JSON payload
+    - slow response body read failures
+  - All return controlled user-facing responses and summary entries.
+- Test plan:
+  - Patch `aiohttp.ClientSession` with scenario-specific fakes.
+- Files likely affected:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
+### 11.2 P0 Memory Transaction Safety
+- [ ] Add targeted transaction tests for partial failures in task-plan writes.
+- Why:
+  - Multi-step operations should never leave half-written plan state.
+- Acceptance criteria:
+  - Simulated DB failures during `add_task_plan` and step updates do not create inconsistent visible state.
+- Test plan:
+  - Fault injection around cursor execute calls.
+- Files likely affected:
+  - `src/jarvis/memory.py`
+  - `tests/test_memory.py`
+
+### 11.3 P1 Runtime Health Rollup
+- [ ] Add compact health-grade score/report for `system_status`.
+- Why:
+  - Operators need at-a-glance triage signal, not only raw fields.
+- Acceptance criteria:
+  - Output includes `health_level` (`ok`, `degraded`, `error`) plus reasons array.
+- Test plan:
+  - Unit tests for each degraded/error trigger combination.
+- Files likely affected:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
+### 11.4 P1 Audio Loop Soak Harness
+- [ ] Add repeatable synthetic soak test for listen/tts barge-in interplay.
+- Why:
+  - Concurrency regressions often appear only over many iterations.
+- Acceptance criteria:
+  - Test utility can run N synthetic turns with barge-ins and report queue/task consistency invariants.
+- Test plan:
+  - New stress-style test module with deterministic fake audio streams.
+- Files likely affected:
+  - `tests/test_main_audio.py`
+  - `tests/test_integration.py`
+
+### 11.5 P1 Structured Error Codes
+- [ ] Standardize service-tool error reasons with machine-readable code fields.
+- Why:
+  - Downstream consumers and future UI layers need stable error categories.
+- Acceptance criteria:
+  - Response text remains user-friendly while internal summary/detail includes normalized code set.
+- Test plan:
+  - Parameterized tests asserting code taxonomy for representative failure paths.
+- Files likely affected:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
+### 11.6 P2 Observability Consistency
+- [ ] Ensure telemetry snapshots include all critical state dimensions under degradation.
+- Why:
+  - Current telemetry omits some failure counters and fallback-path markers.
+- Acceptance criteria:
+  - Snapshot includes counts for storage errors, service errors, and fallback responses.
+- Test plan:
+  - Unit tests for counter increments and snapshot rendering.
+- Files likely affected:
+  - `src/jarvis/__main__.py`
+  - `src/jarvis/tools/services.py`
+  - `tests/test_main_lifecycle.py`
+
+### 11.7 P2 Config and Environment Diagnostics
+- [ ] Add explicit startup warnings for ignored/invalid optional env values.
+- Why:
+  - Silent fallback-to-default can hide bad deployments.
+- Acceptance criteria:
+  - Startup logs enumerate normalized/fallback fields with concise reason strings.
+- Test plan:
+  - Config + startup diagnostics tests for invalid optional env values.
+- Files likely affected:
+  - `src/jarvis/config.py`
+  - `src/jarvis/__main__.py`
+  - `tests/test_config.py`
+
+### 11.8 P2 Tool-Schema Drift Prevention
+- [ ] Add CI-oriented consistency helper for schema/runtime maps.
+- Why:
+  - Prevent accidental additions that bypass parity checks.
+- Acceptance criteria:
+  - One helper verifies schema map keys and runtime validation map keys are identical.
+- Test plan:
+  - Fail-fast test if key sets diverge.
+- Files likely affected:
+  - `src/jarvis/tools/robot.py`
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
+### 11.9 P3 Maintenance and Developer Experience
+- [ ] Add `make`/script entry points for lint + tests + focused suites.
+- Why:
+  - Repeated hardening cycles need stable one-command workflows.
+- Acceptance criteria:
+  - Documented commands for:
+    - full checks
+    - fast checks
+    - fault-injection tests
+- Test plan:
+  - Verify scripts run in clean checkout.
+- Files likely affected:
+  - `README.md`
+  - `pyproject.toml`
+  - `scripts/` (new)
+
+### 11.10 P3 Risk Review Cadence
+- [ ] Add periodic backlog review checklist embedded in TODO.
+- Why:
+  - Long-running hardening work needs explicit revisit rhythm.
+- Acceptance criteria:
+  - Checklist includes stale-test detection, flaky-test audit, and unresolved-risk re-prioritization.
+- Test plan:
+  - N/A (process artifact)
+- Files likely affected:
+  - `TODO.md`
 
 ---
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import time
+import threading
 from collections import deque
 from dataclasses import dataclass, asdict
 
@@ -20,9 +21,11 @@ class ToolSummary:
 class ToolSummaryStore:
     def __init__(self, maxlen: int = 200) -> None:
         self._items: deque[ToolSummary] = deque(maxlen=maxlen)
+        self._lock = threading.Lock()
 
     def add(self, summary: ToolSummary) -> None:
-        self._items.appendleft(summary)
+        with self._lock:
+            self._items.appendleft(summary)
 
     def list(self, limit: int | float | str = 10) -> list[dict[str, object]]:
         try:
@@ -32,8 +35,10 @@ class ToolSummaryStore:
         if isinstance(limit, float) and not math.isfinite(limit):
             parsed_limit = 10
         parsed_limit = max(1, min(200, parsed_limit))
+        with self._lock:
+            snapshot = list(self._items)[:parsed_limit]
         items = []
-        for item in list(self._items)[:parsed_limit]:
+        for item in snapshot:
             payload = asdict(item)
             duration = payload.get("duration_ms")
             if isinstance(duration, (int, float)) and not math.isfinite(float(duration)):

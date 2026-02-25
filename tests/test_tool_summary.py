@@ -2,6 +2,7 @@
 
 import math
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from jarvis.tool_summary import ToolSummaryStore, ToolSummary, record_summary, list_summaries
 
@@ -41,3 +42,16 @@ def test_record_summary_clamps_non_finite_start_time():
     payload = list_summaries(1)[0]
     assert payload["name"] == "nan_case"
     assert payload["duration_ms"] == 0.0
+
+
+def test_store_add_and_list_are_thread_safe():
+    store = ToolSummaryStore(maxlen=500)
+
+    def _add_item(idx: int) -> None:
+        store.add(_summary(f"item_{idx}"))
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        list(ex.map(_add_item, range(120)))
+
+    items = store.list(200)
+    assert len(items) == 120

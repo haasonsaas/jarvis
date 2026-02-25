@@ -71,6 +71,7 @@ class MemoryStore:
         cur.execute("PRAGMA journal_mode=WAL;")
         cur.execute("PRAGMA synchronous=NORMAL;")
         cur.execute("PRAGMA foreign_keys=ON;")
+        cur.execute("PRAGMA busy_timeout=5000;")
         self._conn.commit()
 
     def _init_schema(self) -> None:

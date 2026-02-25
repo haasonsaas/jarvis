@@ -29,6 +29,8 @@ AUDIT_LOG = Path.home() / ".jarvis" / "audit.jsonl"
 # Domains that always default to dry_run
 SENSITIVE_DOMAINS = {"lock", "alarm_control_panel", "cover"}
 ACTION_COOLDOWN_SEC = 2.0
+ACTION_HISTORY_RETENTION_SEC = 3600.0
+ACTION_HISTORY_MAX_ENTRIES = 2000
 
 _config: Config | None = None
 _memory: MemoryStore | None = None
@@ -357,8 +359,25 @@ def _action_key(domain: str, action: str, entity_id: str) -> str:
     return f"{domain}:{action}:{entity_id}"
 
 
+def _prune_action_history(now: float | None = None) -> None:
+    if not _action_last_seen:
+        return
+    current = time.monotonic() if now is None else now
+    cutoff = current - ACTION_HISTORY_RETENTION_SEC
+    stale_keys = [key for key, ts in _action_last_seen.items() if ts < cutoff]
+    for key in stale_keys:
+        _action_last_seen.pop(key, None)
+    if len(_action_last_seen) <= ACTION_HISTORY_MAX_ENTRIES:
+        return
+    over = len(_action_last_seen) - ACTION_HISTORY_MAX_ENTRIES
+    oldest = sorted(_action_last_seen.items(), key=lambda item: item[1])[:over]
+    for key, _ in oldest:
+        _action_last_seen.pop(key, None)
+
+
 def _cooldown_active(domain: str, action: str, entity_id: str) -> bool:
     now = time.monotonic()
+    _prune_action_history(now)
     key = _action_key(domain, action, entity_id)
     last = _action_last_seen.get(key)
     if last is None:
@@ -367,7 +386,9 @@ def _cooldown_active(domain: str, action: str, entity_id: str) -> bool:
 
 
 def _touch_action(domain: str, action: str, entity_id: str) -> None:
-    _action_last_seen[_action_key(domain, action, entity_id)] = time.monotonic()
+    now = time.monotonic()
+    _action_last_seen[_action_key(domain, action, entity_id)] = now
+    _prune_action_history(now)
 
 
 def _audit_status() -> dict[str, Any]:

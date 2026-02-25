@@ -852,6 +852,21 @@ class TestServicesTools:
         assert services.AUDIT_LOG.exists()
         assert (tmp_path / "audit.jsonl.1").exists()
 
+    def test_action_history_prunes_stale_and_caps_size(self):
+        from jarvis.tools import services
+
+        services._action_last_seen.clear()
+        base = 10_000.0
+        for idx in range(2105):
+            services._action_last_seen[f"k{idx}"] = base - 10_000.0  # stale
+        for idx in range(10):
+            services._action_last_seen[f"fresh{idx}"] = base
+
+        services._prune_action_history(base)
+
+        assert len(services._action_last_seen) <= services.ACTION_HISTORY_MAX_ENTRIES
+        assert all(key.startswith("fresh") for key in services._action_last_seen)
+
     @pytest.mark.asyncio
     async def test_tool_summary_text_handles_bad_duration_value(self, monkeypatch):
         from jarvis.tools import services
