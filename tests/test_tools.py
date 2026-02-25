@@ -498,6 +498,19 @@ class TestServicesTools:
         assert "failed" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_memory_add_handles_storage_error(self, tmp_path, monkeypatch):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        monkeypatch.setattr(store, "add_memory", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db down")))
+
+        result = await services.memory_add({"text": "test"})
+        assert "failed" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_memory_add_non_finite_sensitivity_uses_default(self, tmp_path):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
@@ -542,6 +555,32 @@ class TestServicesTools:
         assert "hello" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_memory_status_handles_storage_error(self, tmp_path, monkeypatch):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        monkeypatch.setattr(store, "memory_status", lambda: (_ for _ in ()).throw(RuntimeError("db down")))
+
+        result = await services.memory_status({})
+        assert "failed" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_memory_summary_add_handles_storage_error(self, tmp_path, monkeypatch):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        monkeypatch.setattr(store, "upsert_summary", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db down")))
+
+        result = await services.memory_summary_add({"topic": "prefs", "summary": "x"})
+        assert "failed" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_task_plan_update_rejects_invalid_status(self, tmp_path):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
@@ -565,6 +604,32 @@ class TestServicesTools:
         monkeypatch.setattr(store, "list_task_plans", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db down")))
 
         result = await services.task_plan_list({"open_only": True})
+        assert "failed" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_task_plan_create_handles_storage_error(self, tmp_path, monkeypatch):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        monkeypatch.setattr(store, "add_task_plan", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db down")))
+
+        result = await services.task_plan_create({"title": "Plan", "steps": ["a"]})
+        assert "failed" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_task_plan_next_handles_storage_error(self, tmp_path, monkeypatch):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        monkeypatch.setattr(store, "next_task_step", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("db down")))
+
+        result = await services.task_plan_next({})
         assert "failed" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
