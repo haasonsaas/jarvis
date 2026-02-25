@@ -49,6 +49,11 @@ def _env_list(name: str) -> list[str]:
     return [item.strip() for item in val.split(",") if item.strip()]
 
 
+def _env_is_set(name: str) -> bool:
+    val = os.environ.get(name)
+    return val is not None and bool(val.strip())
+
+
 @dataclass
 class Config:
     # Claude
@@ -106,6 +111,7 @@ class Config:
     motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)
     hand_track_enabled: bool = field(default_factory=lambda: _env_bool("HAND_TRACK_ENABLED") or False)
     home_enabled: bool = field(default_factory=lambda: _env_bool("HOME_ENABLED") is not False)
+    startup_warnings: list[str] = field(default_factory=list)
 
     @property
     def has_home_assistant(self) -> bool:
@@ -136,8 +142,17 @@ class Config:
             raise ValueError("audit_log_max_bytes must be > 0")
         if self.audit_log_backups < 1:
             raise ValueError("audit_log_backups must be >= 1")
+        self.startup_warnings = self._collect_startup_warnings()
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
+        if _env_is_set("BACKCHANNEL_STYLE") and self.backchannel_style == "balanced":
+            raw = os.environ.get("BACKCHANNEL_STYLE", "")
+            if raw.strip().lower() not in {"quiet", "balanced", "expressive"}:
+                self.startup_warnings.append("BACKCHANNEL_STYLE invalid; using balanced.")
+        if _env_is_set("PERSONA_STYLE") and self.persona_style == "composed":
+            raw = os.environ.get("PERSONA_STYLE", "")
+            if raw.strip().lower() not in {"terse", "composed", "friendly"}:
+                self.startup_warnings.append("PERSONA_STYLE invalid; using composed.")
 
     @staticmethod
     def _normalize_backchannel_style(style: str) -> str:
@@ -152,3 +167,25 @@ class Config:
         if normalized in {"terse", "composed", "friendly"}:
             return normalized
         return "composed"
+
+    def _collect_startup_warnings(self) -> list[str]:
+        warnings: list[str] = []
+        checks: list[tuple[str, str, str]] = [
+            ("DOA_CHANGE_THRESHOLD", "float", str(self.doa_change_threshold)),
+            ("DOA_TIMEOUT", "float", str(self.doa_timeout)),
+            ("MEMORY_SEARCH_LIMIT", "int", str(self.memory_search_limit)),
+            ("AUDIT_LOG_MAX_BYTES", "int", str(self.audit_log_max_bytes)),
+            ("AUDIT_LOG_BACKUPS", "int", str(self.audit_log_backups)),
+        ]
+        for name, kind, fallback in checks:
+            raw = os.environ.get(name)
+            if raw is None or not raw.strip():
+                continue
+            try:
+                if kind == "float":
+                    float(raw)
+                else:
+                    int(raw)
+            except ValueError:
+                warnings.append(f"{name} invalid; using {fallback}.")
+        return warnings

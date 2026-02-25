@@ -84,3 +84,18 @@ class TestConfig:
             Config(audit_log_max_bytes=0)
         with pytest.raises(ValueError, match="audit_log_backups"):
             Config(audit_log_backups=0)
+
+    def test_startup_warnings_include_invalid_optional_env_values(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("DOA_TIMEOUT", "abc")
+        monkeypatch.setenv("MEMORY_SEARCH_LIMIT", "oops")
+        monkeypatch.setenv("BACKCHANNEL_STYLE", "LOUD")
+        monkeypatch.setenv("PERSONA_STYLE", "chatty")
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "DOA_TIMEOUT invalid" in text
+        assert "MEMORY_SEARCH_LIMIT invalid" in text
+        assert "BACKCHANNEL_STYLE invalid" in text
+        assert "PERSONA_STYLE invalid" in text

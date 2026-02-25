@@ -396,7 +396,7 @@ This section is the long-horizon execution plan for continued reliability and ma
   - `tests/test_tools.py`
 
 ### 11.4 P1 Audio Loop Soak Harness
-- [ ] Add repeatable synthetic soak test for listen/tts barge-in interplay.
+- [x] Add repeatable synthetic soak test for listen/tts barge-in interplay.
 - Why:
   - Concurrency regressions often appear only over many iterations.
 - Acceptance criteria:
@@ -408,7 +408,7 @@ This section is the long-horizon execution plan for continued reliability and ma
   - `tests/test_integration.py`
 
 ### 11.5 P1 Structured Error Codes
-- [ ] Standardize service-tool error reasons with machine-readable code fields.
+- [x] Standardize service-tool error reasons with machine-readable code fields.
 - Why:
   - Downstream consumers and future UI layers need stable error categories.
 - Acceptance criteria:
@@ -420,7 +420,7 @@ This section is the long-horizon execution plan for continued reliability and ma
   - `tests/test_tools.py`
 
 ### 11.6 P2 Observability Consistency
-- [ ] Ensure telemetry snapshots include all critical state dimensions under degradation.
+- [x] Ensure telemetry snapshots include all critical state dimensions under degradation.
 - Why:
   - Current telemetry omits some failure counters and fallback-path markers.
 - Acceptance criteria:
@@ -433,7 +433,7 @@ This section is the long-horizon execution plan for continued reliability and ma
   - `tests/test_main_lifecycle.py`
 
 ### 11.7 P2 Config and Environment Diagnostics
-- [ ] Add explicit startup warnings for ignored/invalid optional env values.
+- [x] Add explicit startup warnings for ignored/invalid optional env values.
 - Why:
   - Silent fallback-to-default can hide bad deployments.
 - Acceptance criteria:
@@ -459,7 +459,7 @@ This section is the long-horizon execution plan for continued reliability and ma
   - `tests/test_tools.py`
 
 ### 11.9 P3 Maintenance and Developer Experience
-- [ ] Add `make`/script entry points for lint + tests + focused suites.
+- [x] Add `make`/script entry points for lint + tests + focused suites.
 - Why:
   - Repeated hardening cycles need stable one-command workflows.
 - Acceptance criteria:
@@ -475,7 +475,7 @@ This section is the long-horizon execution plan for continued reliability and ma
   - `scripts/` (new)
 
 ### 11.10 P3 Risk Review Cadence
-- [ ] Add periodic backlog review checklist embedded in TODO.
+- [x] Add periodic backlog review checklist embedded in TODO.
 - Why:
   - Long-running hardening work needs explicit revisit rhythm.
 - Acceptance criteria:
@@ -484,6 +484,14 @@ This section is the long-horizon execution plan for continued reliability and ma
   - N/A (process artifact)
 - Files likely affected:
   - `TODO.md`
+
+### 11.10.1 Review Checklist (run weekly or before release)
+- Re-run full checks (`make check`) on a clean checkout.
+- Review new/changed tests for deterministic behavior and no hidden global state coupling.
+- Review flaky candidates: repeated-run failures, timing-sensitive async tests, external dependency mocks.
+- Re-evaluate open TODO priorities against current incident/failure data.
+- Confirm error-code taxonomy still covers newly introduced failure paths.
+- Confirm startup warnings remain concise and actionable (no noisy false positives).
 
 ---
 

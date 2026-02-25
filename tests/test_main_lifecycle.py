@@ -68,6 +68,7 @@ def test_startup_summary_lines_include_core_status():
         memory_enabled=True,
         memory_path="/tmp/memory.sqlite",
         persona_style="composed",
+        startup_warnings=[],
         tool_allowlist=["a"],
         tool_denylist=["b", "c"],
     )
@@ -76,6 +77,7 @@ def test_startup_summary_lines_include_core_status():
     joined = "\n".join(lines)
     assert "Mode: simulation" in joined
     assert "Memory: enabled" in joined
+    assert "Config warnings: 0" in joined
     assert "Tool policy: allow=1 deny=2" in joined
 
 
@@ -90,6 +92,9 @@ def test_telemetry_snapshot_averages():
         "llm_first_sentence_count": 3.0,
         "tts_first_audio_total_ms": 500.0,
         "tts_first_audio_count": 2.0,
+        "service_errors": 3.0,
+        "storage_errors": 1.0,
+        "fallback_responses": 4.0,
     }
     snapshot = Jarvis._telemetry_snapshot(jarvis)
     assert snapshot["turns"] == 10.0
@@ -97,3 +102,22 @@ def test_telemetry_snapshot_averages():
     assert snapshot["avg_stt_latency_ms"] == 250.0
     assert snapshot["avg_llm_first_sentence_ms"] == 400.0
     assert snapshot["avg_tts_first_audio_ms"] == 250.0
+    assert snapshot["service_errors"] == 3.0
+    assert snapshot["storage_errors"] == 1.0
+    assert snapshot["fallback_responses"] == 4.0
+
+
+def test_refresh_tool_error_counters():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._telemetry = {"service_errors": 0.0, "storage_errors": 0.0}
+    from unittest.mock import patch
+
+    with patch("jarvis.__main__.list_summaries", return_value=[
+        {"status": "error", "detail": "timeout"},
+        {"status": "error", "detail": "storage_error"},
+        {"status": "ok", "detail": "noop"},
+    ]):
+        Jarvis._refresh_tool_error_counters(jarvis)
+
+    assert jarvis._telemetry["service_errors"] == 1.0
+    assert jarvis._telemetry["storage_errors"] == 1.0

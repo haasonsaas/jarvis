@@ -207,6 +207,30 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "tool_summary_text": set(),
 }
 
+SERVICE_ERROR_CODES: set[str] = {
+    "policy",
+    "missing_config",
+    "missing_fields",
+    "invalid_data",
+    "timeout",
+    "cancelled",
+    "network_client_error",
+    "invalid_json",
+    "auth",
+    "not_found",
+    "unexpected",
+    "storage_error",
+    "missing_store",
+    "missing_text",
+    "missing_query",
+    "missing_entity",
+    "missing_plan",
+    "invalid_plan",
+    "invalid_status",
+    "invalid_steps",
+    "http_error",
+}
+
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _config, _memory, _audit_log_max_bytes, _audit_log_backups
@@ -528,7 +552,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                     except Exception:
                         text = "<body unavailable>"
                     tool_feedback("done")
-                    record_summary("smart_home", "error", start_time, f"http_{resp.status}")
+                    record_summary("smart_home", "error", start_time, "http_error")
                     return {"content": [{"type": "text", "text": f"Home Assistant error ({resp.status}): {text[:200]}"}]}
     except asyncio.TimeoutError:
         tool_feedback("done")
@@ -540,7 +564,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
     except aiohttp.ClientError as e:
         tool_feedback("done")
-        record_summary("smart_home", "error", start_time, str(e))
+        record_summary("smart_home", "error", start_time, "network_client_error")
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
     except Exception as e:
         tool_feedback("done")
@@ -592,7 +616,7 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
                     return {"content": [{"type": "text", "text": f"Entity not found: {entity_id}"}]}
                 else:
                     tool_feedback("done")
-                    record_summary("smart_home_state", "error", start_time, f"http_{resp.status}")
+                    record_summary("smart_home_state", "error", start_time, "http_error")
                     return {"content": [{"type": "text", "text": f"Error ({resp.status}) fetching entity state"}]}
     except asyncio.TimeoutError:
         tool_feedback("done")
@@ -604,7 +628,7 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
     except aiohttp.ClientError as e:
         tool_feedback("done")
-        record_summary("smart_home_state", "error", start_time, str(e))
+        record_summary("smart_home_state", "error", start_time, "network_client_error")
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
     except Exception as e:
         tool_feedback("done")

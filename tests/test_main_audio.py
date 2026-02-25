@@ -117,3 +117,53 @@ async def test_listen_loop_uses_to_thread_for_input_read():
             await task
 
     assert mock_to_thread.called
+
+
+@pytest.mark.asyncio
+async def test_tts_barge_in_soak_harness_stability():
+    class FakeTTS:
+        async def stream_chunks_async(self, sentence: str):
+            # Deterministic short stream for soak testing.
+            yield np.ones(8, dtype=np.float32)
+
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis.tts = FakeTTS()
+    jarvis._tts_queue = asyncio.Queue()
+    jarvis._barge_in = threading.Event()
+    jarvis._active_response_id = 1
+    jarvis._first_audio_at = None
+    jarvis._response_start_at = None
+    jarvis._flush_output = MagicMock()
+    jarvis._normalize_tts_chunk = lambda x: x
+    jarvis._play_audio_chunk = MagicMock()
+    jarvis.presence = SimpleNamespace(signals=SimpleNamespace(speech_energy=0.0))
+    jarvis._telemetry = {
+        "turns": 0.0,
+        "barge_ins": 0.0,
+        "stt_latency_total_ms": 0.0,
+        "stt_latency_count": 0.0,
+        "llm_first_sentence_total_ms": 0.0,
+        "llm_first_sentence_count": 0.0,
+        "tts_first_audio_total_ms": 0.0,
+        "tts_first_audio_count": 0.0,
+        "service_errors": 0.0,
+        "storage_errors": 0.0,
+        "fallback_responses": 0.0,
+    }
+
+    task = asyncio.create_task(Jarvis._tts_loop(jarvis))
+    turns = 60
+    for idx in range(turns):
+        if idx % 5 == 0:
+            jarvis._barge_in.set()
+        await jarvis._tts_queue.put((1, f"turn-{idx}", False, 0.0))
+        await asyncio.sleep(0.001)
+        jarvis._barge_in.clear()
+
+    await asyncio.sleep(0.05)
+    assert not task.done()
+    assert jarvis._play_audio_chunk.call_count > 0
+    assert jarvis._tts_queue.qsize() < turns
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task

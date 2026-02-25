@@ -35,6 +35,7 @@ from jarvis.audio.stt import SpeechToText
 from jarvis.audio.tts import TextToSpeech
 from jarvis.brain import Brain
 from jarvis.tools.robot import bind as bind_robot_tools
+from jarvis.tool_summary import list_summaries
 
 log = logging.getLogger(__name__)
 
@@ -187,6 +188,9 @@ class Jarvis:
             "llm_first_sentence_count": 0.0,
             "tts_first_audio_total_ms": 0.0,
             "tts_first_audio_count": 0.0,
+            "service_errors": 0.0,
+            "storage_errors": 0.0,
+            "fallback_responses": 0.0,
         }
 
     def start(self) -> None:
@@ -249,6 +253,7 @@ class Jarvis:
         tts_enabled = bool(self.tts is not None)
         tts_reason = "enabled" if tts_enabled else "disabled (no ELEVENLABS_API_KEY or --no-tts)"
         memory_state = "enabled" if self.config.memory_enabled else "disabled"
+        warning_count = len(getattr(self.config, "startup_warnings", []))
         return [
             f"Mode: {'simulation' if self.robot.sim else 'hardware'}",
             f"Motion: {'on' if self.config.motion_enabled else 'off'} | Vision: {'on' if not self.args.no_vision and not self.robot.sim else 'off'} | Hands: {'on' if self.config.hand_track_enabled else 'off'}",
@@ -256,8 +261,42 @@ class Jarvis:
             f"TTS: {tts_reason}",
             f"Memory: {memory_state} ({self.config.memory_path})",
             f"Persona style: {self.config.persona_style}",
+            f"Config warnings: {warning_count}",
             f"Tool policy: allow={len(self.config.tool_allowlist)} deny={len(self.config.tool_denylist)}",
         ]
+
+    def _refresh_tool_error_counters(self) -> None:
+        try:
+            recent = list_summaries(limit=200)
+        except Exception:
+            return
+        service_errors = 0
+        storage_errors = 0
+        for item in recent:
+            if not isinstance(item, dict):
+                continue
+            status = str(item.get("status", ""))
+            detail = str(item.get("detail", ""))
+            if status != "error":
+                continue
+            if detail == "storage_error":
+                storage_errors += 1
+                continue
+            if detail in {
+                "timeout",
+                "cancelled",
+                "invalid_json",
+                "missing_config",
+                "missing_fields",
+                "missing_entity",
+                "auth",
+                "not_found",
+                "network_client_error",
+                "unexpected",
+            } or detail.startswith("http_"):
+                service_errors += 1
+        self._telemetry["service_errors"] = float(service_errors)
+        self._telemetry["storage_errors"] = float(storage_errors)
 
     def _telemetry_snapshot(self) -> dict[str, float]:
         def avg(total_key: str, count_key: str) -> float:
@@ -272,6 +311,9 @@ class Jarvis:
             "avg_stt_latency_ms": avg("stt_latency_total_ms", "stt_latency_count"),
             "avg_llm_first_sentence_ms": avg("llm_first_sentence_total_ms", "llm_first_sentence_count"),
             "avg_tts_first_audio_ms": avg("tts_first_audio_total_ms", "tts_first_audio_count"),
+            "service_errors": self._telemetry.get("service_errors", 0.0),
+            "storage_errors": self._telemetry.get("storage_errors", 0.0),
+            "fallback_responses": self._telemetry.get("fallback_responses", 0.0),
         }
 
     def stop(self) -> None:
@@ -314,6 +356,8 @@ class Jarvis:
             print("  Press Ctrl+C to exit.\n")
             for line in self._startup_summary_lines():
                 print(f"  {line}")
+            for warning in getattr(self.config, "startup_warnings", []):
+                print(f"  WARNING: {warning}")
             print("")
 
             while True:
@@ -355,6 +399,7 @@ class Jarvis:
                 if self._requires_confirmation(time.monotonic()):
                     self._awaiting_confirmation = True
                     self._pending_text = text
+                    self._telemetry["fallback_responses"] += 1.0
                     if self.tts:
                         await self._tts_queue.put((self._active_response_id, CONFIRMATION_PHRASE, True, 0.0))
                     else:
@@ -366,15 +411,19 @@ class Jarvis:
                 self._telemetry["turns"] += 1.0
                 await self._respond_and_speak(text)
                 if int(self._telemetry["turns"]) % TELEMETRY_LOG_EVERY_TURNS == 0:
+                    self._refresh_tool_error_counters()
                     snapshot = self._telemetry_snapshot()
                     attention_source = self.presence.attention_source()
                     log.info(
-                        "Telemetry turns=%d barge_ins=%d stt=%.0fms llm=%.0fms tts=%.0fms attention=%s",
+                        "Telemetry turns=%d barge_ins=%d stt=%.0fms llm=%.0fms tts=%.0fms service_errors=%d storage_errors=%d fallbacks=%d attention=%s",
                         int(snapshot["turns"]),
                         int(snapshot["barge_ins"]),
                         snapshot["avg_stt_latency_ms"],
                         snapshot["avg_llm_first_sentence_ms"],
                         snapshot["avg_tts_first_audio_ms"],
+                        int(snapshot["service_errors"]),
+                        int(snapshot["storage_errors"]),
+                        int(snapshot["fallback_responses"]),
                         attention_source,
                     )
 

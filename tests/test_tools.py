@@ -437,6 +437,9 @@ class TestServicesTools:
                 "dry_run": False,
             })
         assert "timed out" in result["content"][0]["text"].lower()
+        from jarvis.tool_summary import list_summaries
+        summaries = list_summaries(20)
+        assert any(item.get("name") == "smart_home" and item.get("detail") == "timeout" for item in summaries)
 
     @pytest.mark.asyncio
     async def test_smart_home_handles_cancelled_request(self):
@@ -527,6 +530,9 @@ class TestServicesTools:
 
             result = await smart_home_state({"entity_id": "light.kitchen"})
         assert "invalid response" in result["content"][0]["text"].lower()
+        from jarvis.tool_summary import list_summaries
+        summaries = list_summaries(20)
+        assert any(item.get("name") == "smart_home_state" and item.get("detail") == "invalid_json" for item in summaries)
 
     @pytest.mark.asyncio
     async def test_smart_home_validates_data_object(self):
