@@ -240,6 +240,28 @@ class TestBrain:
 
         assert "Mode=terse" in captured.get("text", "")
 
+    @pytest.mark.asyncio
+    async def test_persona_style_lookup_not_limited_to_recent_summaries(self, brain):
+        if brain._memory is None:
+            pytest.skip("Memory disabled")
+        brain._config.persona_style = "composed"
+        brain._memory.upsert_summary("persona_style", "friendly")
+        for idx in range(20):
+            brain._memory.upsert_summary(f"topic_{idx}", f"note {idx}")
+        captured = {}
+
+        async def fake_query(text: str, session_id: str):
+            captured["text"] = text
+
+        with patch.object(brain._client, "query", new=AsyncMock(side_effect=fake_query)), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([])
+            async for _ in brain.respond("hello"):
+                pass
+
+        assert "Mode=friendly" in captured.get("text", "")
+
 
 # ── Helpers ──────────────────────────────────────────────────
 

@@ -111,3 +111,14 @@ def test_memory_optimize_and_vacuum_update_status(tmp_path):
         assert status["last_vacuum"] is not None
     finally:
         store.close()
+
+
+def test_get_summary_returns_topic_case_insensitive(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        store.upsert_summary("Persona_Style", "friendly")
+        summary = store.get_summary("persona_style")
+        assert summary is not None
+        assert summary.summary == "friendly"
+    finally:
+        store.close()

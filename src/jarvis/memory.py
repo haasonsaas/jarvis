@@ -436,6 +436,22 @@ class MemoryStore:
             for row in rows
         ]
 
+    def get_summary(self, topic: str) -> MemorySummary | None:
+        clean_topic = topic.strip().lower()
+        if not clean_topic:
+            return None
+        row = self._conn.cursor().execute(
+            "SELECT * FROM memory_summaries WHERE topic = ? LIMIT 1",
+            (clean_topic,),
+        ).fetchone()
+        if not row:
+            return None
+        return MemorySummary(
+            topic=str(row["topic"]),
+            summary=str(row["summary"]),
+            updated_at=float(row["updated_at"]),
+        )
+
     def close(self) -> None:
         if self._closed:
             return

@@ -144,8 +144,9 @@ class Brain:
         if not self._memory:
             return style
         try:
-            for summary in self._memory.list_summaries(limit=10):
-                if summary.topic in {"persona_style", "response_style", "style_mode"}:
+            for topic in ("persona_style", "response_style", "style_mode"):
+                summary = self._memory.get_summary(topic)
+                if summary is not None:
                     return _normalize_persona_style(summary.summary)
         except Exception:
             return style
