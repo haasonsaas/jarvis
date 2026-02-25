@@ -205,6 +205,7 @@ class TestRobotTools:
     def test_robot_schema_runtime_required_fields_parity(self):
         from jarvis.tools import robot as robot_tools
 
+        assert set(robot_tools.ROBOT_TOOL_SCHEMAS) == set(robot_tools.ROBOT_RUNTIME_REQUIRED_FIELDS)
         for name, schema in robot_tools.ROBOT_TOOL_SCHEMAS.items():
             assert _schema_required_fields(schema) == robot_tools.ROBOT_RUNTIME_REQUIRED_FIELDS[name]
 
@@ -722,6 +723,7 @@ class TestServicesTools:
         assert "tool_policy" in payload
         assert "memory" in payload
         assert "audit" in payload
+        assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
 
     @pytest.mark.asyncio
     async def test_system_status_handles_recent_tools_failure(self, tmp_path, monkeypatch):
@@ -737,6 +739,18 @@ class TestServicesTools:
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
         assert payload["recent_tools"]["error"] == "summary unavailable"
+        assert payload["health"]["health_level"] == "degraded"
+        assert "tool_summary_error" in payload["health"]["reasons"]
+
+    @pytest.mark.asyncio
+    async def test_system_status_reports_error_when_unbound(self):
+        from jarvis.tools import services
+
+        services._config = None
+        result = await services.system_status({})
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["health"]["health_level"] == "error"
+        assert "config_unbound" in payload["health"]["reasons"]
 
     @pytest.mark.asyncio
     async def test_system_status_serializes_non_json_recent_tools(self, tmp_path, monkeypatch):
@@ -924,5 +938,6 @@ class TestServicesTools:
     def test_service_schema_runtime_required_fields_parity(self):
         from jarvis.tools import services
 
+        assert set(services.SERVICE_TOOL_SCHEMAS) == set(services.SERVICE_RUNTIME_REQUIRED_FIELDS)
         for name, schema in services.SERVICE_TOOL_SCHEMAS.items():
             assert _schema_required_fields(schema) == services.SERVICE_RUNTIME_REQUIRED_FIELDS[name]

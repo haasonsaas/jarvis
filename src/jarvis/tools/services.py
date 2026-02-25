@@ -420,6 +420,26 @@ def _audit_status() -> dict[str, Any]:
     }
 
 
+def _health_rollup(
+    *,
+    config_present: bool,
+    memory_status: dict[str, Any] | None,
+    recent_tools: list[dict[str, object]] | dict[str, str],
+) -> dict[str, Any]:
+    reasons: list[str] = []
+    level = "ok"
+    if not config_present:
+        level = "error"
+        reasons.append("config_unbound")
+    if isinstance(memory_status, dict) and "error" in memory_status:
+        reasons.append("memory_error")
+    if isinstance(recent_tools, dict) and "error" in recent_tools:
+        reasons.append("tool_summary_error")
+    if reasons and level != "error":
+        level = "degraded"
+    return {"health_level": level, "reasons": reasons}
+
+
 # ── Home Assistant ────────────────────────────────────────────
 
 async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
@@ -598,6 +618,11 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         recent_tools = list_summaries(limit=5)
     except Exception as e:
         recent_tools = {"error": str(e)}
+    health = _health_rollup(
+        config_present=(_config is not None),
+        memory_status=memory_status if isinstance(memory_status, dict) else None,
+        recent_tools=recent_tools,
+    )
 
     status = {
         "local_time": _now_local(),
@@ -614,6 +639,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         "memory": memory_status,
         "audit": _audit_status(),
         "recent_tools": recent_tools,
+        "health": health,
     }
     record_summary("system_status", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(status, default=str)}]}

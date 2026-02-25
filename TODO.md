@@ -384,7 +384,7 @@ This section is the long-horizon execution plan for continued reliability and ma
   - `tests/test_memory.py`
 
 ### 11.3 P1 Runtime Health Rollup
-- [ ] Add compact health-grade score/report for `system_status`.
+- [x] Add compact health-grade score/report for `system_status`.
 - Why:
   - Operators need at-a-glance triage signal, not only raw fields.
 - Acceptance criteria:
@@ -446,7 +446,7 @@ This section is the long-horizon execution plan for continued reliability and ma
   - `tests/test_config.py`
 
 ### 11.8 P2 Tool-Schema Drift Prevention
-- [ ] Add CI-oriented consistency helper for schema/runtime maps.
+- [x] Add CI-oriented consistency helper for schema/runtime maps.
 - Why:
   - Prevent accidental additions that bypass parity checks.
 - Acceptance criteria:
