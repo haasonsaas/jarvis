@@ -87,6 +87,53 @@ def _now_local() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
 
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+def _as_int(value: Any, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    if minimum is not None:
+        parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
+def _as_float(
+    value: Any,
+    default: float,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = default
+    if minimum is not None:
+        parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
 def _action_key(domain: str, action: str, entity_id: str) -> str:
     return f"{domain}:{action}:{entity_id}"
 
@@ -122,7 +169,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     entity_id = args["entity_id"]
     data = args.get("data", {})
     # Force dry_run for sensitive domains unless explicitly set to false
-    dry_run = args.get("dry_run", domain in SENSITIVE_DOMAINS)
+    dry_run = _as_bool(args.get("dry_run"), default=domain in SENSITIVE_DOMAINS)
 
     if _cooldown_active(domain, action, entity_id):
         tool_feedback("done")
@@ -246,8 +293,8 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Memory text required."}]}
     tags = args.get("tags") or []
     kind = str(args.get("kind", "note"))
-    importance = float(args.get("importance", 0.5))
-    sensitivity = float(args.get("sensitivity", 0.0))
+    importance = _as_float(args.get("importance", 0.5), 0.5, minimum=0.0, maximum=1.0)
+    sensitivity = _as_float(args.get("sensitivity", 0.0), 0.0, minimum=0.0, maximum=1.0)
     source = str(args.get("source", "user"))
     memory_id = _memory.add_memory(
         text,
@@ -273,20 +320,20 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
     if not query:
         record_summary("memory_search", "error", start_time, "missing_query")
         return {"content": [{"type": "text", "text": "Search query required."}]}
-    limit = int(args.get("limit", 5))
-    include_sensitive = bool(args.get("include_sensitive", False))
-    max_sensitivity = None if include_sensitive else float(args.get("max_sensitivity", 0.4))
+    limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
+    include_sensitive = _as_bool(args.get("include_sensitive"), default=False)
+    max_sensitivity = None if include_sensitive else _as_float(args.get("max_sensitivity", 0.4), 0.4, minimum=0.0, maximum=1.0)
     sources = args.get("sources")
     source_list = [str(source) for source in sources] if isinstance(sources, list) else None
     results = _memory.search_v2(
         query,
         limit=limit,
         max_sensitivity=max_sensitivity,
-        hybrid_weight=float(args.get("hybrid_weight", 0.7)),
-        decay_enabled=bool(args.get("decay_enabled", False)),
-        decay_half_life_days=float(args.get("decay_half_life_days", 30.0)),
-        mmr_enabled=bool(args.get("mmr_enabled", False)),
-        mmr_lambda=float(args.get("mmr_lambda", 0.7)),
+        hybrid_weight=_as_float(args.get("hybrid_weight", 0.7), 0.7, minimum=0.0, maximum=1.0),
+        decay_enabled=_as_bool(args.get("decay_enabled"), default=False),
+        decay_half_life_days=_as_float(args.get("decay_half_life_days", 30.0), 30.0, minimum=0.1),
+        mmr_enabled=_as_bool(args.get("mmr_enabled"), default=False),
+        mmr_lambda=_as_float(args.get("mmr_lambda", 0.7), 0.7, minimum=0.0, maximum=1.0),
         sources=source_list,
     )
     if not results:
@@ -309,9 +356,9 @@ async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
     if not _memory:
         record_summary("memory_status", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
-    if args.get("warm"):
+    if _as_bool(args.get("warm"), default=False):
         _memory.warm()
-    if args.get("sync"):
+    if _as_bool(args.get("sync"), default=False):
         _memory.sync()
     status = _memory.memory_status()
     record_summary("memory_status", "ok", start_time)
@@ -326,7 +373,7 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
     if not _memory:
         record_summary("memory_recent", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
-    limit = int(args.get("limit", 5))
+    limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
     kind = args.get("kind")
     sources = args.get("sources")
     source_list = [str(source) for source in sources] if isinstance(sources, list) else None
@@ -369,7 +416,7 @@ async def memory_summary_list(args: dict[str, Any]) -> dict[str, Any]:
     if not _memory:
         record_summary("memory_summary_list", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
-    limit = int(args.get("limit", 5))
+    limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
     results = _memory.list_summaries(limit=limit)
     if not results:
         record_summary("memory_summary_list", "empty", start_time)
@@ -392,7 +439,11 @@ async def task_plan_create(args: dict[str, Any]) -> dict[str, Any]:
     if not title or not steps:
         record_summary("task_plan_create", "error", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Plan title and steps required."}]}
-    plan_id = _memory.add_task_plan(title, [str(step) for step in steps])
+    try:
+        plan_id = _memory.add_task_plan(title, [str(step) for step in steps])
+    except ValueError:
+        record_summary("task_plan_create", "error", start_time, "invalid_steps")
+        return {"content": [{"type": "text", "text": "Plan requires at least one non-empty step."}]}
     record_summary("task_plan_create", "ok", start_time)
     return {"content": [{"type": "text", "text": f"Plan created (id={plan_id})."}]}
 
@@ -405,7 +456,7 @@ async def task_plan_list(args: dict[str, Any]) -> dict[str, Any]:
     if not _memory:
         record_summary("task_plan_list", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
-    open_only = bool(args.get("open_only", True))
+    open_only = _as_bool(args.get("open_only"), default=True)
     plans = _memory.list_task_plans(open_only=open_only)
     if not plans:
         record_summary("task_plan_list", "empty", start_time)
@@ -427,8 +478,8 @@ async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
     if not _memory:
         record_summary("task_plan_update", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
-    plan_id = int(args.get("plan_id", 0))
-    step_index = int(args.get("step_index", -1))
+    plan_id = _as_int(args.get("plan_id", 0), 0)
+    step_index = _as_int(args.get("step_index", -1), -1)
     status = str(args.get("status", "pending"))
     if plan_id <= 0 or step_index < 0:
         record_summary("task_plan_update", "error", start_time, "missing_fields")
@@ -449,7 +500,7 @@ async def task_plan_summary(args: dict[str, Any]) -> dict[str, Any]:
     if not _memory:
         record_summary("task_plan_summary", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
-    plan_id = int(args.get("plan_id", 0))
+    plan_id = _as_int(args.get("plan_id", 0), 0)
     if plan_id <= 0:
         record_summary("task_plan_summary", "error", start_time, "missing_plan")
         return {"content": [{"type": "text", "text": "Plan id required."}]}
@@ -472,7 +523,8 @@ async def task_plan_next(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("task_plan_next", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = args.get("plan_id")
-    plan = _memory.next_task_step(int(plan_id)) if plan_id is not None else _memory.next_task_step()
+    parsed_plan_id = _as_int(plan_id, 0) if plan_id is not None else None
+    plan = _memory.next_task_step(parsed_plan_id) if parsed_plan_id else _memory.next_task_step()
     if not plan:
         record_summary("task_plan_next", "empty", start_time)
         return {"content": [{"type": "text", "text": "No pending steps found."}]}
@@ -487,7 +539,7 @@ async def tool_summary(args: dict[str, Any]) -> dict[str, Any]:
     if not _tool_permitted("tool_summary"):
         record_summary("tool_summary", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
-    limit = int(args.get("limit", 10))
+    limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=100)
     summaries = list_summaries(limit)
     record_summary("tool_summary", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(summaries)}]}
@@ -498,7 +550,7 @@ async def tool_summary_text(args: dict[str, Any]) -> dict[str, Any]:
     if not _tool_permitted("tool_summary_text"):
         record_summary("tool_summary_text", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
-    limit = int(args.get("limit", 6))
+    limit = _as_int(args.get("limit", 6), 6, minimum=1, maximum=100)
     summaries = list_summaries(limit)
     text = _format_tool_summaries(summaries)
     record_summary("tool_summary_text", "ok", start_time)

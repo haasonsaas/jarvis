@@ -60,6 +60,22 @@ class TestRobotTools:
         assert presence.signals.intent_tilt == 0.0
 
     @pytest.mark.asyncio
+    async def test_embody_handles_string_numbers(self, presence):
+        from jarvis.tools.robot import embody
+
+        await embody({
+            "intent": "answer",
+            "prosody": "calm",
+            "nod": "0.6",
+            "tilt": "-4.5",
+            "glance_yaw": "8",
+        })
+
+        assert presence.signals.intent_nod == 0.6
+        assert presence.signals.intent_tilt == -4.5
+        assert presence.signals.intent_glance_yaw == 8.0
+
+    @pytest.mark.asyncio
     async def test_play_emotion_sim(self):
         from jarvis.tools.robot import play_emotion
 
@@ -102,6 +118,19 @@ class TestRobotTools:
 
         result = await run_macro({"name": "acknowledge", "intensity": 1.0})
         assert "Macro queued" in result["content"][0]["text"]
+
+    @pytest.mark.asyncio
+    async def test_run_sequence_parses_blocking_string(self, mock_robot):
+        from jarvis.tools.robot import run_sequence
+        mock_runner = MagicMock()
+        mock_robot.run_sequence = mock_runner
+
+        await run_sequence({
+            "blocking": "false",
+            "steps": [{"kind": "head", "yaw": "5", "duration": "0.2"}],
+        })
+        _, kwargs = mock_runner.call_args
+        assert kwargs["blocking"] is False
 
     @pytest.mark.asyncio
     async def test_stop_motion_sim(self):
@@ -214,6 +243,43 @@ class TestServicesTools:
 
         next_step = await services.task_plan_next({"plan_id": 1})
         assert "next step" in next_step["content"][0]["text"].lower()
+
+        filtered_str_false = await services.memory_search({
+            "query": "bank",
+            "include_sensitive": "false",
+            "max_sensitivity": 0.4,
+        })
+        assert "no relevant" in filtered_str_false["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_task_plan_create_rejects_empty_steps(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        result = await services.task_plan_create({"title": "Bad plan", "steps": [" ", "\n"]})
+        assert "non-empty step" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_task_plan_list_parses_open_only_string(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        await services.task_plan_create({"title": "Closable", "steps": ["Only step"]})
+        await services.task_plan_update({"plan_id": 1, "step_index": 0, "status": "done"})
+
+        open_only = await services.task_plan_list({"open_only": "true"})
+        assert "no task plans found" in open_only["content"][0]["text"].lower()
+
+        include_closed = await services.task_plan_list({"open_only": "false"})
+        assert "closable" in include_closed["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_tool_policy_denies(self, tmp_path):

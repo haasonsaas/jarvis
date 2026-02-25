@@ -47,7 +47,10 @@ class MemorySummary:
 
 class MemoryStore:
     def __init__(self, path: str) -> None:
-        os.makedirs(os.path.dirname(path), exist_ok=True) if path not in {":memory:", ""} else None
+        if path not in {":memory:", ""}:
+            parent = os.path.dirname(path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._fts_enabled = False
@@ -262,7 +265,8 @@ class MemoryStore:
         clean_title = title.strip()
         if not clean_title:
             raise ValueError("title required")
-        if not steps:
+        clean_steps = [step.strip() for step in steps if step.strip()]
+        if not clean_steps:
             raise ValueError("steps required")
         created_at = time.time()
         cur = self._conn.cursor()
@@ -271,10 +275,7 @@ class MemoryStore:
             (created_at, clean_title, "open"),
         )
         plan_id = int(cur.lastrowid)
-        for idx, step in enumerate(steps):
-            clean_step = step.strip()
-            if not clean_step:
-                continue
+        for idx, clean_step in enumerate(clean_steps):
             cur.execute(
                 "INSERT INTO task_steps(plan_id, idx, text, status) VALUES (?, ?, ?, ?)",
                 (plan_id, idx, clean_step, "pending"),
@@ -323,12 +324,13 @@ class MemoryStore:
         ).fetchone()
         return int(done["done"]), int(total["total"])
 
-    def update_task_step(self, plan_id: int, step_index: int, status: str) -> None:
+    def update_task_step(self, plan_id: int, step_index: int, status: str) -> bool:
         cur = self._conn.cursor()
         cur.execute(
             "UPDATE task_steps SET status = ? WHERE plan_id = ? AND idx = ?",
             (status, plan_id, step_index),
         )
+        updated = cur.rowcount > 0
         steps = cur.execute(
             "SELECT status FROM task_steps WHERE plan_id = ?",
             (plan_id,),
@@ -339,6 +341,7 @@ class MemoryStore:
                 (plan_id,),
             )
         self._conn.commit()
+        return updated
 
     def next_task_step(self, plan_id: int | None = None) -> tuple[TaskPlan, TaskStep] | None:
         cur = self._conn.cursor()

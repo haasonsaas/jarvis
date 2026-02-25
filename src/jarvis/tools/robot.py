@@ -41,6 +41,30 @@ def _tool_permitted(name: str) -> bool:
     return is_tool_allowed(name, _tool_allowlist, _tool_denylist)
 
 
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+def _as_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def tool_feedback(kind: str) -> None:
     if _presence:
         _presence.tool_feedback(kind)
@@ -53,10 +77,10 @@ async def embody(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if _presence:
         # Clamp values to schema bounds
-        _presence.signals.intent_nod = max(0.0, min(1.0, args.get("nod", 0.0)))
-        _presence.signals.intent_bow = max(0.0, min(1.0, args.get("bow", 0.0)))
-        _presence.signals.intent_tilt = max(-15.0, min(15.0, args.get("tilt", 0.0)))
-        _presence.signals.intent_glance_yaw = max(-30.0, min(30.0, args.get("glance_yaw", 0.0)))
+        _presence.signals.intent_nod = max(0.0, min(1.0, _as_float(args.get("nod"), 0.0)))
+        _presence.signals.intent_bow = max(0.0, min(1.0, _as_float(args.get("bow"), 0.0)))
+        _presence.signals.intent_tilt = max(-15.0, min(15.0, _as_float(args.get("tilt"), 0.0)))
+        _presence.signals.intent_glance_yaw = max(-30.0, min(30.0, _as_float(args.get("glance_yaw"), 0.0)))
         _presence.signals.intent_nod_style = str(args.get("nod_style", "single"))
     return {"content": [{"type": "text", "text": f"Embodiment set: {args['intent']}/{args['prosody']}"}]}
 
@@ -100,26 +124,26 @@ async def run_sequence(args: dict[str, Any]) -> dict[str, Any]:
     steps = []
     for raw in args.get("steps", []):
         kind = raw.get("kind")
-        duration = float(raw.get("duration", 0.8))
-        wait = float(raw.get("wait", 0.0))
+        duration = _as_float(raw.get("duration"), 0.8)
+        wait = _as_float(raw.get("wait"), 0.0)
         if kind == "head":
             pose = HeadPose(
-                yaw=float(raw.get("yaw", 0.0)),
-                pitch=float(raw.get("pitch", 0.0)),
-                roll=float(raw.get("roll", 0.0)),
-                x=float(raw.get("x", 0.0)),
-                y=float(raw.get("y", 0.0)),
-                z=float(raw.get("z", 0.0)),
+                yaw=_as_float(raw.get("yaw"), 0.0),
+                pitch=_as_float(raw.get("pitch"), 0.0),
+                roll=_as_float(raw.get("roll"), 0.0),
+                x=_as_float(raw.get("x"), 0.0),
+                y=_as_float(raw.get("y"), 0.0),
+                z=_as_float(raw.get("z"), 0.0),
             )
             steps.append(MotionStep(kind="head", duration=duration, pose=pose, wait=wait))
         elif kind == "body":
-            steps.append(MotionStep(kind="body", duration=duration, body_yaw=float(raw.get("yaw", 0.0)), wait=wait))
+            steps.append(MotionStep(kind="body", duration=duration, body_yaw=_as_float(raw.get("yaw"), 0.0), wait=wait))
         elif kind == "antennas":
             steps.append(MotionStep(
                 kind="antennas",
                 duration=duration,
-                antenna_left=float(raw.get("left", 0.0)),
-                antenna_right=float(raw.get("right", 0.0)),
+                antenna_left=_as_float(raw.get("left"), 0.0),
+                antenna_right=_as_float(raw.get("right"), 0.0),
                 wait=wait,
             ))
         elif kind in {"emotion", "dance"}:
@@ -132,7 +156,7 @@ async def run_sequence(args: dict[str, Any]) -> dict[str, Any]:
     if not steps:
         return {"content": [{"type": "text", "text": "No valid steps provided"}]}
 
-    _robot.run_sequence(steps, blocking=bool(args.get("blocking", False)))
+    _robot.run_sequence(steps, blocking=_as_bool(args.get("blocking"), default=False))
     return {"content": [{"type": "text", "text": f"Queued {len(steps)} motion steps"}]}
 
 
@@ -153,8 +177,8 @@ async def run_macro(args: dict[str, Any]) -> dict[str, Any]:
     name = str(args.get("name", ""))
     if not name:
         return {"content": [{"type": "text", "text": "Macro name required"}]}
-    intensity = float(args.get("intensity", 1.0))
-    _robot.run_macro(name, intensity=intensity, blocking=bool(args.get("blocking", False)))
+    intensity = _as_float(args.get("intensity"), 1.0)
+    _robot.run_macro(name, intensity=intensity, blocking=_as_bool(args.get("blocking"), default=False))
     return {"content": [{"type": "text", "text": f"Macro queued: {name}"}]}
 
 
