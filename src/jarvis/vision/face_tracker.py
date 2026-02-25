@@ -24,11 +24,14 @@ log = logging.getLogger(__name__)
 FRAME_CX, FRAME_CY = 0.5, 0.4  # slightly above center for typical face position
 
 # Degrees of head movement per unit of offset from center
-GAIN_YAW = 50.0
-GAIN_PITCH = 35.0
+GAIN_YAW = 45.0
+GAIN_PITCH = 30.0
 
 # Smoothing: 0 = instant (jittery), 1 = frozen. 0.3 = responsive with mild smoothing
-SMOOTH_ALPHA = 0.3
+SMOOTH_ALPHA = 0.25
+
+# Confidence filtering to reduce jitter
+MIN_CONF = 0.5
 
 
 @dataclass
@@ -96,12 +99,16 @@ class FaceTracker:
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                 h_frame, w_frame = frame.shape[:2]
 
+                conf = float(box.conf[0])
+                if conf < MIN_CONF:
+                    continue
+
                 detections.append(Detection(
                     cx=float(((x1 + x2) / 2) / w_frame),
                     cy=float(((y1 + y2) / 2) / h_frame),
                     w=float((x2 - x1) / w_frame),
                     h=float((y2 - y1) / h_frame),
-                    confidence=float(box.conf[0]),
+                    confidence=conf,
                 ))
 
         # Sort by size (closest face first)

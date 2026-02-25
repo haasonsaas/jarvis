@@ -135,6 +135,9 @@ class PresenceLoop:
         """Exponential smoothing toward target. Rate = weight on NEW value."""
         return current + (target - current) * rate
 
+    def _clamp(self, value: float, lo: float, hi: float) -> float:
+        return max(lo, min(hi, value))
+
     # ── State behaviors ──────────────────────────────────────
 
     def _do_idle(self, t: float) -> None:
@@ -168,8 +171,10 @@ class PresenceLoop:
         # Micro-nods correlated with VAD energy
         nod = math.sin(t * 4.0) * sig.vad_energy * 3.0
 
+        target_yaw = self._clamp(target_yaw, -45.0, 45.0)
+        target_pitch = self._clamp(target_pitch + nod, -20.0, 20.0)
         self._yaw = self._blend(self._yaw, target_yaw, 0.15)
-        self._pitch = self._blend(self._pitch, target_pitch + nod, 0.15)
+        self._pitch = self._blend(self._pitch, target_pitch, 0.15)
         self._z = self._blend(self._z, lean, 0.1)
         self._roll = self._blend(self._roll, 0.0, 0.1)
 
@@ -197,6 +202,10 @@ class PresenceLoop:
         target_yaw += sig.intent_glance_yaw
         target_pitch += sig.intent_nod * math.sin(t * 3.0) * 4.0
         target_roll = sig.intent_tilt
+
+        target_yaw = self._clamp(target_yaw, -45.0, 45.0)
+        target_pitch = self._clamp(target_pitch, -20.0, 20.0)
+        target_roll = self._clamp(target_roll, -15.0, 15.0)
 
         self._yaw = self._blend(self._yaw, target_yaw, 0.12)
         self._pitch = self._blend(self._pitch, target_pitch, 0.12)

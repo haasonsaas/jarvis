@@ -50,6 +50,10 @@ def _audit(action: str, details: dict) -> None:
     log.info("AUDIT: %s — %s", action, json.dumps(details))
 
 
+def _now_local() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+
 # ── Home Assistant ────────────────────────────────────────────
 
 async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
@@ -121,6 +125,10 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
 
 
+async def get_time(args: dict[str, Any]) -> dict[str, Any]:
+    return {"content": [{"type": "text", "text": _now_local()}]}
+
+
 # ── Build MCP server ──────────────────────────────────────────
 
 smart_home_tool = tool(
@@ -164,9 +172,16 @@ smart_home_state_tool = tool(
     {"entity_id": str},
 )(smart_home_state)
 
+
+get_time_tool = tool(
+    "get_time",
+    "Get the current local time (device clock).",
+    {},
+)(get_time)
+
 def create_services_server():
     return create_sdk_mcp_server(
         name="jarvis-services",
         version="0.1.0",
-        tools=[smart_home_tool, smart_home_state_tool],
+        tools=[smart_home_tool, smart_home_state_tool, get_time_tool],
     )

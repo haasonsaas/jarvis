@@ -33,6 +33,9 @@ class TextToSpeech:
             float32 numpy arrays of PCM audio at self._sample_rate.
             Each chunk is variable-sized (typically 100-500ms of audio).
         """
+        if not text or not text.strip():
+            return
+
         try:
             audio_stream = self._client.text_to_speech.stream(
                 voice_id=self._voice_id,
@@ -57,6 +60,9 @@ class TextToSpeech:
         Returns:
             float32 numpy array at sample_rate. Empty array on failure.
         """
+        if not text or not text.strip():
+            return np.array([], dtype=np.float32)
+
         chunks = list(self.stream_chunks(text))
         if not chunks:
             return np.array([], dtype=np.float32)

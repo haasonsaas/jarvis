@@ -26,11 +26,18 @@ class SpeechToText:
         Returns:
             Transcribed text string.
         """
+        if audio.size == 0:
+            return ""
+
         if audio.ndim == 2:
             audio = audio.mean(axis=1)  # stereo -> mono
 
-        segments, info = self._model.transcribe(audio, beam_size=5)
-        text = " ".join(seg.text.strip() for seg in segments)
+        try:
+            segments, info = self._model.transcribe(audio, beam_size=5)
+            text = " ".join(seg.text.strip() for seg in segments)
+        except Exception as e:
+            log.error("Transcription failed: %s", e)
+            return ""
 
         if text:
             log.debug("Transcribed: %s", text)

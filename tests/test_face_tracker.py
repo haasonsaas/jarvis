@@ -145,6 +145,29 @@ class TestFaceTracker:
         assert mock_presence.signals.face_detected is False
 
     @patch("jarvis.vision.face_tracker.YOLO")
+    def test_low_confidence_ignored(self, mock_yolo_cls, mock_presence, sample_frame):
+        import torch
+        mock_model = MagicMock()
+        mock_yolo_cls.return_value = mock_model
+
+        low_box = MagicMock()
+        low_box.xyxy = [torch.tensor([200.0, 200.0, 260.0, 260.0])]
+        low_box.conf = [torch.tensor(0.2)]
+
+        mock_result = MagicMock()
+        mock_result.boxes = [low_box]
+        mock_model.return_value = [mock_result]
+
+        from jarvis.vision.face_tracker import FaceTracker
+        tracker = FaceTracker(
+            presence=mock_presence,
+            get_frame=lambda: sample_frame,
+        )
+
+        detections = tracker.detect_faces(sample_frame)
+        assert detections == []
+
+    @patch("jarvis.vision.face_tracker.YOLO")
     def test_start_stop(self, mock_yolo_cls, mock_presence):
         mock_yolo_cls.return_value = MagicMock()
 

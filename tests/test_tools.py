@@ -158,6 +158,14 @@ class TestServicesTools:
         assert "not configured" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_get_time(self):
+        from jarvis.tools.services import get_time
+
+        result = await get_time({})
+        text = result["content"][0]["text"]
+        assert len(text) >= 10
+
+    @pytest.mark.asyncio
     async def test_audit_log_written(self, tmp_path):
         from jarvis.tools import services
 

@@ -15,6 +15,16 @@ log = logging.getLogger(__name__)
 EMOTIONS_REPO = "pollen-robotics/reachy-mini-emotions-library"
 DANCES_REPO = "pollen-robotics/reachy-mini-dances-library"
 
+# Conservative safety limits (degrees / mm) to avoid mechanical extremes.
+HEAD_LIMITS = {
+    "x": (-10.0, 10.0),
+    "y": (-10.0, 10.0),
+    "z": (-10.0, 10.0),
+    "roll": (-20.0, 20.0),
+    "pitch": (-25.0, 25.0),
+    "yaw": (-50.0, 50.0),
+}
+
 
 @dataclass
 class HeadPose:
@@ -111,6 +121,16 @@ class RobotController:
                 self._connected = False
                 log.info("Disconnected from Reachy Mini")
 
+    def _clamp_pose(self, pose: HeadPose) -> HeadPose:
+        return HeadPose(
+            x=max(HEAD_LIMITS["x"][0], min(HEAD_LIMITS["x"][1], pose.x)),
+            y=max(HEAD_LIMITS["y"][0], min(HEAD_LIMITS["y"][1], pose.y)),
+            z=max(HEAD_LIMITS["z"][0], min(HEAD_LIMITS["z"][1], pose.z)),
+            roll=max(HEAD_LIMITS["roll"][0], min(HEAD_LIMITS["roll"][1], pose.roll)),
+            pitch=max(HEAD_LIMITS["pitch"][0], min(HEAD_LIMITS["pitch"][1], pose.pitch)),
+            yaw=max(HEAD_LIMITS["yaw"][0], min(HEAD_LIMITS["yaw"][1], pose.yaw)),
+        )
+
     # ── Movement ──────────────────────────────────────────────
 
     def move_head(self, pose: HeadPose, duration: float = 1.0) -> None:
@@ -118,6 +138,7 @@ class RobotController:
         if not self._mini:
             log.debug("SIM: move_head %s", pose)
             return
+        pose = self._clamp_pose(pose)
         head = create_head_pose(
             x=pose.x, y=pose.y, z=pose.z,
             roll=pose.roll, pitch=pose.pitch, yaw=pose.yaw,
@@ -129,6 +150,7 @@ class RobotController:
         """Instant head position update for tracking loops."""
         if not self._mini:
             return
+        pose = self._clamp_pose(pose)
         head = create_head_pose(
             x=pose.x, y=pose.y, z=pose.z,
             roll=pose.roll, pitch=pose.pitch, yaw=pose.yaw,

@@ -86,6 +86,7 @@ class Brain:
                 "mcp__jarvis-robot__list_animations",
                 "mcp__jarvis-services__smart_home",
                 "mcp__jarvis-services__smart_home_state",
+                "mcp__jarvis-services__get_time",
             ],
             permission_mode="bypassPermissions",
             max_turns=5,
