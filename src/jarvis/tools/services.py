@@ -6,6 +6,7 @@ Everything is audit-logged.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -522,10 +523,21 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                     record_summary("smart_home", "error", start_time, "not_found")
                     return {"content": [{"type": "text", "text": f"Service not found: {domain}.{action}"}]}
                 else:
-                    text = await resp.text()
+                    try:
+                        text = await resp.text()
+                    except Exception:
+                        text = "<body unavailable>"
                     tool_feedback("done")
                     record_summary("smart_home", "error", start_time, f"http_{resp.status}")
                     return {"content": [{"type": "text", "text": f"Home Assistant error ({resp.status}): {text[:200]}"}]}
+    except asyncio.TimeoutError:
+        tool_feedback("done")
+        record_summary("smart_home", "error", start_time, "timeout")
+        return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
+    except asyncio.CancelledError:
+        tool_feedback("done")
+        record_summary("smart_home", "error", start_time, "cancelled")
+        return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
     except aiohttp.ClientError as e:
         tool_feedback("done")
         record_summary("smart_home", "error", start_time, str(e))
@@ -562,7 +574,12 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, headers=headers) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        tool_feedback("done")
+                        record_summary("smart_home_state", "error", start_time, "invalid_json")
+                        return {"content": [{"type": "text", "text": "Invalid response from Home Assistant."}]}
                     tool_feedback("done")
                     record_summary("smart_home_state", "ok", start_time)
                     return {"content": [{"type": "text", "text": json.dumps({
@@ -577,6 +594,14 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
                     tool_feedback("done")
                     record_summary("smart_home_state", "error", start_time, f"http_{resp.status}")
                     return {"content": [{"type": "text", "text": f"Error ({resp.status}) fetching entity state"}]}
+    except asyncio.TimeoutError:
+        tool_feedback("done")
+        record_summary("smart_home_state", "error", start_time, "timeout")
+        return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
+    except asyncio.CancelledError:
+        tool_feedback("done")
+        record_summary("smart_home_state", "error", start_time, "cancelled")
+        return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
     except aiohttp.ClientError as e:
         tool_feedback("done")
         record_summary("smart_home_state", "error", start_time, str(e))

@@ -1,5 +1,6 @@
 """Tests for jarvis.tools (robot + services)."""
 
+import asyncio
 import json
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
@@ -425,6 +426,57 @@ class TestServicesTools:
         assert "unexpected home assistant error" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_smart_home_handles_timeout(self):
+        from jarvis.tools.services import smart_home
+
+        with patch("aiohttp.ClientSession", side_effect=asyncio.TimeoutError()):
+            result = await smart_home({
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": "light.kitchen",
+                "dry_run": False,
+            })
+        assert "timed out" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_handles_cancelled_request(self):
+        from jarvis.tools.services import smart_home
+
+        with patch("aiohttp.ClientSession", side_effect=asyncio.CancelledError()):
+            result = await smart_home({
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": "light.kitchen",
+                "dry_run": False,
+            })
+        assert "cancelled" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_handles_error_body_read_failure(self):
+        from jarvis.tools.services import smart_home
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = AsyncMock()
+            mock_resp.status = 500
+            mock_resp.text = AsyncMock(side_effect=RuntimeError("read failed"))
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.post = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
+
+            result = await smart_home({
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": "light.kitchen",
+                "dry_run": False,
+            })
+        assert "<body unavailable>" in result["content"][0]["text"]
+
+    @pytest.mark.asyncio
     async def test_smart_home_state_not_configured(self):
         from jarvis.tools import services
         services._config = None
@@ -439,6 +491,42 @@ class TestServicesTools:
         with patch("aiohttp.ClientSession", side_effect=RuntimeError("boom")):
             result = await smart_home_state({"entity_id": "light.kitchen"})
         assert "unexpected home assistant error" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_state_handles_timeout(self):
+        from jarvis.tools.services import smart_home_state
+
+        with patch("aiohttp.ClientSession", side_effect=asyncio.TimeoutError()):
+            result = await smart_home_state({"entity_id": "light.kitchen"})
+        assert "timed out" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_state_handles_cancelled_request(self):
+        from jarvis.tools.services import smart_home_state
+
+        with patch("aiohttp.ClientSession", side_effect=asyncio.CancelledError()):
+            result = await smart_home_state({"entity_id": "light.kitchen"})
+        assert "cancelled" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_state_handles_invalid_json_response(self):
+        from jarvis.tools.services import smart_home_state
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = AsyncMock()
+            mock_resp.status = 200
+            mock_resp.json = AsyncMock(side_effect=ValueError("bad json"))
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
+
+            result = await smart_home_state({"entity_id": "light.kitchen"})
+        assert "invalid response" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_smart_home_validates_data_object(self):

@@ -355,7 +355,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 This section is the long-horizon execution plan for continued reliability and maintainability work. Items below are intentionally detailed and should be worked top-down unless blocked.
 
 ### 11.1 P0 Service Fault Injection Matrix
-- [ ] Build matrix tests for Home Assistant failure classes.
+- [x] Build matrix tests for Home Assistant failure classes.
 - Why:
   - Current tests cover many errors but not full combinations of timeout/cancel/decode/malformed body scenarios.
 - Acceptance criteria:
