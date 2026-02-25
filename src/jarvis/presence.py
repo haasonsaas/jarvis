@@ -54,6 +54,13 @@ BACKCHANNEL_STYLE_SCALE = {
     "balanced": 1.0,
     "expressive": 1.35,
 }
+BACKCHANNEL_INTENSITY_SCALE = {
+    "low": 0.7,
+    "medium": 1.0,
+    "high": 1.3,
+}
+TURN_YIELD_COOLDOWN_SEC = 2.0
+TURN_YIELD_GLANCE_YAW = 12.0
 
 TOOL_FEEDBACK_DURATION_SEC = 0.4
 TOOL_FEEDBACK_NOD_DEG = 4.0
@@ -143,6 +150,8 @@ class PresenceLoop:
         self._idle_choreo_next = 0.0
         self._attention_history: deque[float] = deque(maxlen=ATTENTION_SMOOTH_WINDOW)
         self._backchannel_scale = 1.0
+        self._turn_yield_next_allowed = 0.0
+        self._prev_vad_energy = 0.0
 
     def set_backchannel_style(self, style: str) -> None:
         normalized = (style or "balanced").strip().lower()
@@ -239,6 +248,9 @@ class PresenceLoop:
         nod += self._backchannel_nod(t, sig, now)
         nod += self._tool_feedback_nod(t, now)
 
+        yield_glance = self._turn_yield_glance(sig, now)
+        target_yaw += yield_glance
+
         target_yaw = self._clamp(target_yaw, -45.0, 45.0)
         target_pitch = self._clamp(target_pitch + nod, -20.0, 20.0)
         loop_yaw, loop_pitch, loop_roll = self._listening_loop(t, sig)
@@ -251,6 +263,7 @@ class PresenceLoop:
         self._x = self._blend(self._x, 0.0, 0.08)
         self._y = self._blend(self._y, 0.0, 0.08)
         self._roll = self._blend(self._roll, loop_roll, 0.1)
+        self._prev_vad_energy = sig.vad_energy
 
     def _do_thinking(self, t: float) -> None:
         # Look slightly away and up — the "pondering" pose
@@ -401,14 +414,35 @@ class PresenceLoop:
         attention = self._attention_strength(sig, now)
         if attention < BACKCHANNEL_MIN_ATTENTION:
             return 0.0
+        intensity = self._backchannel_intensity(attention)
         scale = self._backchannel_scale
         if now < self._backchannel_next_allowed:
             if now <= self._backchannel_active_until:
-                return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0 * attention * scale
+                return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0 * attention * scale * intensity
             return 0.0
         self._backchannel_active_until = now + BACKCHANNEL_WINDOW_SEC
         self._backchannel_next_allowed = now + (BACKCHANNEL_COOLDOWN_SEC / scale)
-        return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0 * attention * scale
+        return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0 * attention * scale * intensity
+
+    def _backchannel_intensity(self, attention: float) -> float:
+        if attention >= 0.85:
+            return BACKCHANNEL_INTENSITY_SCALE["high"]
+        if attention >= 0.55:
+            return BACKCHANNEL_INTENSITY_SCALE["medium"]
+        return BACKCHANNEL_INTENSITY_SCALE["low"]
+
+    def _turn_yield_glance(self, sig: Signals, now: float) -> float:
+        if sig.vad_energy > 0.2:
+            return 0.0
+        if self._prev_vad_energy < 0.4:
+            return 0.0
+        if now < self._turn_yield_next_allowed:
+            return 0.0
+        if not (sig.face_last_seen or sig.hand_last_seen or sig.doa_last_seen):
+            return 0.0
+        self._turn_yield_next_allowed = now + TURN_YIELD_COOLDOWN_SEC
+        direction = 1.0 if int(now * 10.0) % 2 == 0 else -1.0
+        return TURN_YIELD_GLANCE_YAW * direction
 
     def _attention_strength(self, sig: Signals, now: float) -> float:
         if sig.face_last_seen and (now - sig.face_last_seen) <= ATTENTION_TIMEOUT_SEC:

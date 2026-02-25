@@ -41,3 +41,20 @@ def test_backchannel_requires_attention(mock_robot):
 
     nod = presence._backchannel_nod(time.monotonic(), sig, time.monotonic())
     assert nod == 0.0
+
+
+def test_backchannel_intensity_scales_with_attention(mock_robot):
+    presence = PresenceLoop(mock_robot)
+    sig = presence.signals
+    sig.state = State.LISTENING
+    sig.vad_energy = 0.4
+
+    now = time.monotonic()
+    sig.doa_last_seen = now
+    low = abs(presence._backchannel_nod(now, sig, now))
+
+    sig.doa_last_seen = None
+    sig.face_last_seen = time.monotonic()
+    mid = abs(presence._backchannel_nod(time.monotonic(), sig, time.monotonic()))
+
+    assert mid >= low

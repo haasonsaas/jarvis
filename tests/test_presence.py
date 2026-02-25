@@ -69,6 +69,20 @@ class TestPresenceLoop:
         assert presence._yaw > 5.0  # should be approaching 20
         assert presence._pitch > 2.0  # should be approaching 10
 
+    def test_turn_yield_glance_triggers_on_drop(self, presence):
+        sig = presence.signals
+        sig.state = State.LISTENING
+        sig.face_detected = True
+        sig.face_last_seen = time.monotonic()
+
+        sig.vad_energy = 0.6
+        presence._do_listening(0.0, sig)
+
+        sig.vad_energy = 0.05
+        presence._do_listening(0.2, sig)
+
+        assert abs(presence._yaw) > 1.0
+
     def test_listening_loop_adds_motion(self, presence):
         sig = presence.signals
         sig.state = State.LISTENING
