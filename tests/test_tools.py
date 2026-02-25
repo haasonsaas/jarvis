@@ -710,6 +710,30 @@ class TestServicesTools:
         assert "tool_z" in text
         assert "(0ms)" in text
 
+    @pytest.mark.asyncio
+    async def test_tool_summary_handles_summary_store_failure(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr("jarvis.tools.services.list_summaries", lambda limit=10: (_ for _ in ()).throw(RuntimeError("store down")))
+        result = await services.tool_summary({"limit": 5})
+        assert "unavailable" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_tool_summary_text_handles_summary_store_failure(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr("jarvis.tools.services.list_summaries", lambda limit=6: (_ for _ in ()).throw(RuntimeError("store down")))
+        result = await services.tool_summary_text({"limit": 5})
+        assert "unavailable" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_tool_summary_text_skips_malformed_summary_items(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr("jarvis.tools.services.list_summaries", lambda limit=6: ["bad", 123, None])
+        result = await services.tool_summary_text({"limit": 5})
+        assert "no recent tool activity" in result["content"][0]["text"].lower()
+
     def test_service_schema_runtime_required_fields_parity(self):
         from jarvis.tools import services
 

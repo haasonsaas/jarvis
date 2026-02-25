@@ -266,6 +266,8 @@ def _format_tool_summaries(items: list[dict[str, object]]) -> str:
         return "No recent tool activity."
     lines = []
     for item in items:
+        if not isinstance(item, dict):
+            continue
         name = str(item.get("name", "tool"))
         status = str(item.get("status", "unknown"))
         try:
@@ -281,6 +283,8 @@ def _format_tool_summaries(items: list[dict[str, object]]) -> str:
         effect_text = f" effect={effect}" if effect else ""
         risk_text = f" risk={risk}" if risk else ""
         lines.append(f"- {name}: {status} ({duration:.0f}ms){detail_text}{effect_text}{risk_text}")
+    if not lines:
+        return "No recent tool activity."
     return "\n".join(lines)
 
 
@@ -867,7 +871,11 @@ async def tool_summary(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("tool_summary", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=100)
-    summaries = list_summaries(limit)
+    try:
+        summaries = list_summaries(limit)
+    except Exception as e:
+        record_summary("tool_summary", "error", start_time, "summary_unavailable")
+        return {"content": [{"type": "text", "text": f"Tool summaries unavailable: {e}"}]}
     record_summary("tool_summary", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(summaries)}]}
 
@@ -878,8 +886,12 @@ async def tool_summary_text(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("tool_summary_text", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     limit = _as_int(args.get("limit", 6), 6, minimum=1, maximum=100)
-    summaries = list_summaries(limit)
-    text = _format_tool_summaries(summaries)
+    try:
+        summaries = list_summaries(limit)
+        text = _format_tool_summaries(summaries)
+    except Exception as e:
+        record_summary("tool_summary_text", "error", start_time, "summary_unavailable")
+        return {"content": [{"type": "text", "text": f"Tool summaries unavailable: {e}"}]}
     record_summary("tool_summary_text", "ok", start_time)
     return {"content": [{"type": "text", "text": text}]}
 
