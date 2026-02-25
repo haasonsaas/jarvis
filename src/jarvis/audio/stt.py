@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import math
 import numpy as np
+from scipy.signal import resample_poly
 from faster_whisper import WhisperModel
 
 log = logging.getLogger(__name__)
@@ -31,6 +33,16 @@ class SpeechToText:
 
         if audio.ndim == 2:
             audio = audio.mean(axis=1)  # stereo -> mono
+
+        if sample_rate <= 0:
+            log.error("Invalid sample rate for STT: %s", sample_rate)
+            return ""
+
+        if sample_rate != 16000:
+            g = math.gcd(int(sample_rate), 16000)
+            up = 16000 // g
+            down = int(sample_rate) // g
+            audio = resample_poly(audio.astype(np.float32, copy=False), up=up, down=down).astype(np.float32, copy=False)
 
         try:
             segments, info = self._model.transcribe(audio, beam_size=5)

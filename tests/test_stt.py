@@ -57,3 +57,30 @@ class TestSpeechToText:
         # Should have been called with 1D mono audio
         call_audio = mock_model.transcribe.call_args[0][0]
         assert call_audio.ndim == 1
+
+    @patch("jarvis.audio.stt.WhisperModel")
+    def test_transcribe_resamples_non_16k(self, mock_whisper_cls):
+        mock_model = MagicMock()
+        mock_whisper_cls.return_value = mock_model
+        mock_model.transcribe.return_value = (iter([]), MagicMock())
+
+        from jarvis.audio.stt import SpeechToText
+        stt = SpeechToText()
+
+        audio = np.zeros(8000, dtype=np.float32)  # 1s at 8kHz
+        stt.transcribe(audio, sample_rate=8000)
+
+        call_audio = mock_model.transcribe.call_args[0][0]
+        assert len(call_audio) == 16000
+
+    @patch("jarvis.audio.stt.WhisperModel")
+    def test_transcribe_rejects_invalid_sample_rate(self, mock_whisper_cls):
+        mock_model = MagicMock()
+        mock_whisper_cls.return_value = mock_model
+
+        from jarvis.audio.stt import SpeechToText
+        stt = SpeechToText()
+
+        result = stt.transcribe(np.zeros(100, dtype=np.float32), sample_rate=0)
+        assert result == ""
+        mock_model.transcribe.assert_not_called()

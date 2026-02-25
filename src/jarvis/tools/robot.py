@@ -75,6 +75,10 @@ def tool_feedback(kind: str) -> None:
 async def embody(args: dict[str, Any]) -> dict[str, Any]:
     if not _tool_permitted("embody"):
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    intent = str(args.get("intent", "")).strip()
+    prosody = str(args.get("prosody", "")).strip()
+    if not intent or not prosody:
+        return {"content": [{"type": "text", "text": "Intent and prosody are required."}]}
     if _presence:
         # Clamp values to schema bounds
         _presence.signals.intent_nod = max(0.0, min(1.0, _as_float(args.get("nod"), 0.0)))
@@ -82,7 +86,7 @@ async def embody(args: dict[str, Any]) -> dict[str, Any]:
         _presence.signals.intent_tilt = max(-15.0, min(15.0, _as_float(args.get("tilt"), 0.0)))
         _presence.signals.intent_glance_yaw = max(-30.0, min(30.0, _as_float(args.get("glance_yaw"), 0.0)))
         _presence.signals.intent_nod_style = str(args.get("nod_style", "single"))
-    return {"content": [{"type": "text", "text": f"Embodiment set: {args['intent']}/{args['prosody']}"}]}
+    return {"content": [{"type": "text", "text": f"Embodiment set: {intent}/{prosody}"}]}
 
 
 # ── Direct robot actions (used sparingly) ─────────────────────
@@ -121,8 +125,14 @@ async def run_sequence(args: dict[str, Any]) -> dict[str, Any]:
 
     from jarvis.robot.controller import HeadPose, MotionStep
 
+    raw_steps = args.get("steps")
+    if not isinstance(raw_steps, list):
+        return {"content": [{"type": "text", "text": "Steps must be a list."}]}
+
     steps = []
-    for raw in args.get("steps", []):
+    for raw in raw_steps:
+        if not isinstance(raw, dict):
+            continue
         kind = raw.get("kind")
         duration = _as_float(raw.get("duration"), 0.8)
         wait = _as_float(raw.get("wait"), 0.0)

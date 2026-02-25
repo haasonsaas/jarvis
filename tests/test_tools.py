@@ -133,6 +133,20 @@ class TestRobotTools:
         assert kwargs["blocking"] is False
 
     @pytest.mark.asyncio
+    async def test_run_sequence_rejects_non_list_steps(self):
+        from jarvis.tools.robot import run_sequence
+
+        result = await run_sequence({"steps": "not-a-list"})
+        assert "must be a list" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_embody_requires_intent_and_prosody(self):
+        from jarvis.tools.robot import embody
+
+        result = await embody({"nod": 0.5})
+        assert "required" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_stop_motion_sim(self):
         from jarvis.tools.robot import stop_motion
 
@@ -345,6 +359,76 @@ class TestServicesTools:
 
         result = await services.smart_home_state({"entity_id": "light.kitchen"})
         assert "not configured" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_validates_data_object(self):
+        from jarvis.tools.services import smart_home
+
+        result = await smart_home({
+            "domain": "light",
+            "action": "turn_on",
+            "entity_id": "light.kitchen",
+            "data": "brightness=50",
+        })
+        assert "must be an object" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_state_requires_entity_id(self):
+        from jarvis.tools.services import smart_home_state
+
+        result = await smart_home_state({})
+        assert "entity id required" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_memory_add_ignores_non_list_tags(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        await services.memory_add({"text": "Tagged note", "tags": "not-a-list"})
+        recent = await services.memory_recent({"limit": 1})
+        assert "tags=" not in recent["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_memory_search_accepts_string_source(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        await services.memory_add({"text": "Source test", "source": "profile"})
+        filtered = await services.memory_search({"query": "source", "sources": "profile"})
+        assert "source test" in filtered["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_task_plan_update_rejects_invalid_status(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        await services.task_plan_create({"title": "Plan", "steps": ["step"]})
+        result = await services.task_plan_update({"plan_id": 1, "step_index": 0, "status": "finished"})
+        assert "must be one of" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_task_plan_next_rejects_invalid_plan_id(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        result = await services.task_plan_next({"plan_id": "abc"})
+        assert "positive integer" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_get_time(self):

@@ -134,6 +134,16 @@ def _as_float(
     return parsed
 
 
+def _as_str_list(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        cleaned = [str(item).strip() for item in value if str(item).strip()]
+        return cleaned or None
+    text = str(value).strip()
+    return [text] if text else None
+
+
 def _action_key(domain: str, action: str, entity_id: str) -> str:
     return f"{domain}:{action}:{entity_id}"
 
@@ -164,10 +174,16 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("smart_home", "error", start_time, "missing_config")
         return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
 
-    domain = args["domain"]
-    action = args["action"]
-    entity_id = args["entity_id"]
+    domain = str(args.get("domain", "")).strip()
+    action = str(args.get("action", "")).strip()
+    entity_id = str(args.get("entity_id", "")).strip()
     data = args.get("data", {})
+    if not domain or not action or not entity_id:
+        record_summary("smart_home", "error", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "Domain, action, and entity_id are required."}]}
+    if not isinstance(data, dict):
+        record_summary("smart_home", "error", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "Service data must be an object."}]}
     # Force dry_run for sensitive domains unless explicitly set to false
     dry_run = _as_bool(args.get("dry_run"), default=domain in SENSITIVE_DOMAINS)
 
@@ -235,7 +251,12 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("smart_home_state", "error", start_time, "missing_config")
         return {"content": [{"type": "text", "text": "Home Assistant not configured."}]}
 
-    url = f"{_config.hass_url}/api/states/{args['entity_id']}"
+    entity_id = str(args.get("entity_id", "")).strip()
+    if not entity_id:
+        record_summary("smart_home_state", "error", start_time, "missing_entity")
+        return {"content": [{"type": "text", "text": "Entity id required."}]}
+
+    url = f"{_config.hass_url}/api/states/{entity_id}"
     headers = {"Authorization": f"Bearer {_config.hass_token}"}
     timeout = aiohttp.ClientTimeout(total=10)
 
@@ -254,7 +275,7 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
                 elif resp.status == 404:
                     tool_feedback("done")
                     record_summary("smart_home_state", "error", start_time, "not_found")
-                    return {"content": [{"type": "text", "text": f"Entity not found: {args['entity_id']}"}]}
+                    return {"content": [{"type": "text", "text": f"Entity not found: {entity_id}"}]}
                 else:
                     tool_feedback("done")
                     record_summary("smart_home_state", "error", start_time, f"http_{resp.status}")
@@ -291,7 +312,8 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
     if not text:
         record_summary("memory_add", "error", start_time, "missing_text")
         return {"content": [{"type": "text", "text": "Memory text required."}]}
-    tags = args.get("tags") or []
+    tags_raw = args.get("tags")
+    tags = [str(tag) for tag in tags_raw] if isinstance(tags_raw, list) else []
     kind = str(args.get("kind", "note"))
     importance = _as_float(args.get("importance", 0.5), 0.5, minimum=0.0, maximum=1.0)
     sensitivity = _as_float(args.get("sensitivity", 0.0), 0.0, minimum=0.0, maximum=1.0)
@@ -299,7 +321,7 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
     memory_id = _memory.add_memory(
         text,
         kind=kind,
-        tags=[str(tag) for tag in tags],
+        tags=tags,
         importance=importance,
         sensitivity=sensitivity,
         source=source,
@@ -323,8 +345,7 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
     limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
     include_sensitive = _as_bool(args.get("include_sensitive"), default=False)
     max_sensitivity = None if include_sensitive else _as_float(args.get("max_sensitivity", 0.4), 0.4, minimum=0.0, maximum=1.0)
-    sources = args.get("sources")
-    source_list = [str(source) for source in sources] if isinstance(sources, list) else None
+    source_list = _as_str_list(args.get("sources"))
     results = _memory.search_v2(
         query,
         limit=limit,
@@ -375,8 +396,7 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
     kind = args.get("kind")
-    sources = args.get("sources")
-    source_list = [str(source) for source in sources] if isinstance(sources, list) else None
+    source_list = _as_str_list(args.get("sources"))
     results = _memory.recent(limit=limit, kind=str(kind) if kind else None, sources=source_list)
     if not results:
         record_summary("memory_recent", "empty", start_time)
@@ -435,8 +455,8 @@ async def task_plan_create(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("task_plan_create", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     title = str(args.get("title", "")).strip()
-    steps = args.get("steps") or []
-    if not title or not steps:
+    steps = args.get("steps")
+    if not title or not isinstance(steps, list) or not steps:
         record_summary("task_plan_create", "error", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Plan title and steps required."}]}
     try:
@@ -480,10 +500,14 @@ async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = _as_int(args.get("plan_id", 0), 0)
     step_index = _as_int(args.get("step_index", -1), -1)
-    status = str(args.get("status", "pending"))
+    status = str(args.get("status", "pending")).strip()
+    allowed_status = {"pending", "in_progress", "blocked", "done"}
     if plan_id <= 0 or step_index < 0:
         record_summary("task_plan_update", "error", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Plan id and step index required."}]}
+    if status not in allowed_status:
+        record_summary("task_plan_update", "error", start_time, "invalid_status")
+        return {"content": [{"type": "text", "text": "Status must be one of: pending, in_progress, blocked, done."}]}
     updated = _memory.update_task_step(plan_id, step_index, status)
     if not updated:
         record_summary("task_plan_update", "empty", start_time)
@@ -523,6 +547,9 @@ async def task_plan_next(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("task_plan_next", "error", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = args.get("plan_id")
+    if plan_id is not None and _as_int(plan_id, 0) <= 0:
+        record_summary("task_plan_next", "error", start_time, "invalid_plan")
+        return {"content": [{"type": "text", "text": "Plan id must be a positive integer."}]}
     parsed_plan_id = _as_int(plan_id, 0) if plan_id is not None else None
     plan = _memory.next_task_step(parsed_plan_id) if parsed_plan_id else _memory.next_task_step()
     if not plan:
