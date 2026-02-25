@@ -1,0 +1,38 @@
+"""Speech-to-Text using faster-whisper."""
+
+from __future__ import annotations
+
+import logging
+import numpy as np
+from faster_whisper import WhisperModel
+
+log = logging.getLogger(__name__)
+
+
+class SpeechToText:
+    """Local Whisper-based speech recognition."""
+
+    def __init__(self, model_size: str = "base.en"):
+        self._model = WhisperModel(model_size, compute_type="int8")
+        log.info("Whisper model loaded: %s", model_size)
+
+    def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> str:
+        """Transcribe audio to text.
+
+        Args:
+            audio: float32 array of shape (samples,) or (samples, channels).
+            sample_rate: Audio sample rate (default 16kHz).
+
+        Returns:
+            Transcribed text string.
+        """
+        if audio.ndim == 2:
+            audio = audio.mean(axis=1)  # stereo -> mono
+
+        segments, info = self._model.transcribe(audio, beam_size=5)
+        text = " ".join(seg.text.strip() for seg in segments)
+
+        if text:
+            log.debug("Transcribed: %s", text)
+
+        return text
