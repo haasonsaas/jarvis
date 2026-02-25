@@ -57,6 +57,7 @@ class TestPresenceLoop:
         sig.face_yaw = 20.0
         sig.face_pitch = 10.0
         sig.face_last_seen = time.monotonic()
+        sig.vad_energy = 0.4
 
         # Run several frames
         for i in range(100):
@@ -72,6 +73,7 @@ class TestPresenceLoop:
         sig.face_detected = False
         sig.doa_angle = 0.0  # left side
         sig.doa_last_seen = time.monotonic()
+        sig.vad_energy = 0.4
 
         for i in range(100):
             presence._do_listening(float(i) * 0.033, sig)
@@ -84,6 +86,7 @@ class TestPresenceLoop:
         sig.face_detected = False
         sig.doa_angle = math.pi / 2  # front
         sig.doa_last_seen = time.monotonic()
+        sig.vad_energy = 0.4
 
         for i in range(100):
             presence._do_listening(float(i) * 0.033, sig)
@@ -109,6 +112,7 @@ class TestPresenceLoop:
         sig.intent_nod = 0.0
         sig.intent_tilt = 0.0
         sig.intent_glance_yaw = 0.0
+        sig.vad_energy = 0.4
 
         # First, look away (thinking)
         presence._yaw = 30.0
@@ -128,6 +132,7 @@ class TestPresenceLoop:
         sig.hand_x = 12.0
         sig.hand_y = -6.0
         sig.hand_last_seen = time.monotonic()
+        sig.vad_energy = 0.4
 
         for i in range(100):
             presence._do_speaking(float(i) * 0.033, sig)

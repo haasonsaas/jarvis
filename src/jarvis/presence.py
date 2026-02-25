@@ -42,6 +42,12 @@ SPEECH_SWAY_FREQ_X = 0.35
 SPEECH_SWAY_FREQ_Y = 0.45
 SPEECH_SWAY_FREQ_Z = 0.25
 
+BACKCHANNEL_COOLDOWN_SEC = 2.4
+BACKCHANNEL_WINDOW_SEC = 0.35
+BACKCHANNEL_ENERGY_MIN = 0.25
+BACKCHANNEL_ENERGY_MAX = 0.85
+BACKCHANNEL_NOD_SCALE = 0.35
+
 ATTENTION_HOLD_SEC = 1.2
 ATTENTION_TIMEOUT_SEC = 1.5
 
@@ -113,6 +119,8 @@ class PresenceLoop:
         self._attention_hold_until = 0.0
         self._nod_active_until = 0.0
         self._nod_next_allowed = 0.0
+        self._backchannel_next_allowed = 0.0
+        self._backchannel_active_until = 0.0
 
     def start(self) -> None:
         if self._running:
@@ -198,6 +206,7 @@ class PresenceLoop:
         lean = 2.0
         # Micro-nods correlated with VAD energy
         nod = math.sin(t * 4.0) * sig.vad_energy * 3.0
+        nod += self._backchannel_nod(t, sig, now)
 
         target_yaw = self._clamp(target_yaw, -45.0, 45.0)
         target_pitch = self._clamp(target_pitch + nod, -20.0, 20.0)
@@ -327,3 +336,16 @@ class PresenceLoop:
         self._attention_source = best_source
         self._attention_hold_until = now + ATTENTION_HOLD_SEC
         return best_yaw, best_pitch
+
+    def _backchannel_nod(self, t: float, sig: Signals, now: float) -> float:
+        if sig.state is not State.LISTENING:
+            return 0.0
+        if sig.vad_energy < BACKCHANNEL_ENERGY_MIN or sig.vad_energy > BACKCHANNEL_ENERGY_MAX:
+            return 0.0
+        if now < self._backchannel_next_allowed:
+            if now <= self._backchannel_active_until:
+                return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0
+            return 0.0
+        self._backchannel_active_until = now + BACKCHANNEL_WINDOW_SEC
+        self._backchannel_next_allowed = now + BACKCHANNEL_COOLDOWN_SEC
+        return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0
