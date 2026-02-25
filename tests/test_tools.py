@@ -178,6 +178,12 @@ class TestServicesTools:
         recent = await services.memory_recent({"limit": 1})
         assert "note" in recent["content"][0]["text"].lower()
 
+        summary_added = await services.memory_summary_add({"topic": "preferences", "summary": "User likes coffee."})
+        assert "summary" in summary_added["content"][0]["text"].lower()
+
+        summary_list = await services.memory_summary_list({"limit": 2})
+        assert "preferences" in summary_list["content"][0]["text"].lower()
+
         plan = await services.task_plan_create({"title": "Morning routine", "steps": ["Check calendar", "Summarize news"]})
         assert "plan created" in plan["content"][0]["text"].lower()
 
@@ -186,6 +192,9 @@ class TestServicesTools:
 
         updated = await services.task_plan_update({"plan_id": 1, "step_index": 0, "status": "done"})
         assert "updated" in updated["content"][0]["text"].lower()
+
+        summary = await services.task_plan_summary({"plan_id": 1})
+        assert "steps complete" in summary["content"][0]["text"].lower()
 
         next_step = await services.task_plan_next({"plan_id": 1})
         assert "next step" in next_step["content"][0]["text"].lower()

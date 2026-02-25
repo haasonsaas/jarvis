@@ -68,6 +68,7 @@
 - [ ] Add recall rules: use memory only when relevant and confirm before using sensitive data.
   - Implemented: basic SQLite memory store + retrieval hook + memory tools.
   - Implemented: sensitivity filtering + relevance gating for recall.
+  - Implemented: memory summary store tools (topics + summaries).
 
 ### 7b) Task Orchestration
 - [ ] Add explicit planner (multi-step tasks, retries, status).
@@ -75,6 +76,7 @@
 - [ ] Provide task progress summaries.
   - Implemented: lightweight task plan storage + status updates.
   - Implemented: next-step helper for orchestration.
+  - Implemented: task progress summary tool.
 
 ### 8) Reliability + Telemetry
 - [ ] Add watchdog for presence loop + perception threads (auto-restart on failure).

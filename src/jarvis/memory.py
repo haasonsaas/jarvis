@@ -37,6 +37,13 @@ class TaskPlan:
     steps: list[TaskStep]
 
 
+@dataclass
+class MemorySummary:
+    topic: str
+    summary: str
+    updated_at: float
+
+
 class MemoryStore:
     def __init__(self, path: str) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True) if path not in {":memory:", ""} else None
@@ -86,6 +93,16 @@ class MemoryStore:
             """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_task_steps_plan ON task_steps(plan_id, idx);")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memory_summaries (
+                topic TEXT PRIMARY KEY,
+                summary TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_memory_summaries_updated ON memory_summaries(updated_at DESC);")
         try:
             cur.execute(
                 """
@@ -230,6 +247,20 @@ class MemoryStore:
             )
         return results
 
+    def task_plan_progress(self, plan_id: int) -> tuple[int, int] | None:
+        cur = self._conn.cursor()
+        total = cur.execute(
+            "SELECT COUNT(*) AS total FROM task_steps WHERE plan_id = ?",
+            (plan_id,),
+        ).fetchone()
+        if not total or total["total"] == 0:
+            return None
+        done = cur.execute(
+            "SELECT COUNT(*) AS done FROM task_steps WHERE plan_id = ? AND status = 'done'",
+            (plan_id,),
+        ).fetchone()
+        return int(done["done"]), int(total["total"])
+
     def update_task_step(self, plan_id: int, step_index: int, status: str) -> None:
         cur = self._conn.cursor()
         cur.execute(
@@ -279,6 +310,34 @@ class MemoryStore:
         )
         step = TaskStep(index=int(step_row["idx"]), text=str(step_row["text"]), status=str(step_row["status"]))
         return plan, step
+
+    def upsert_summary(self, topic: str, summary: str) -> None:
+        clean_topic = topic.strip().lower()
+        clean_summary = summary.strip()
+        if not clean_topic or not clean_summary:
+            raise ValueError("topic and summary required")
+        updated_at = time.time()
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO memory_summaries(topic, summary, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(topic) DO UPDATE SET summary = excluded.summary, updated_at = excluded.updated_at
+            """,
+            (clean_topic, clean_summary, updated_at),
+        )
+        self._conn.commit()
+
+    def list_summaries(self, *, limit: int = 5) -> list[MemorySummary]:
+        cur = self._conn.cursor()
+        rows = cur.execute(
+            "SELECT * FROM memory_summaries ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            MemorySummary(topic=str(row["topic"]), summary=str(row["summary"]), updated_at=float(row["updated_at"]))
+            for row in rows
+        ]
 
     def close(self) -> None:
         self._conn.close()

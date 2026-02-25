@@ -236,6 +236,28 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
 
+async def memory_summary_add(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    topic = str(args.get("topic", "")).strip()
+    summary = str(args.get("summary", "")).strip()
+    if not topic or not summary:
+        return {"content": [{"type": "text", "text": "Summary topic and text required."}]}
+    _memory.upsert_summary(topic, summary)
+    return {"content": [{"type": "text", "text": "Summary stored."}]}
+
+
+async def memory_summary_list(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    limit = int(args.get("limit", 5))
+    results = _memory.list_summaries(limit=limit)
+    if not results:
+        return {"content": [{"type": "text", "text": "No summaries found."}]}
+    lines = [f"{summary.topic}: {summary.summary}" for summary in results]
+    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+
 async def task_plan_create(args: dict[str, Any]) -> dict[str, Any]:
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
@@ -272,6 +294,20 @@ async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Plan id and step index required."}]}
     _memory.update_task_step(plan_id, step_index, status)
     return {"content": [{"type": "text", "text": "Plan updated."}]}
+
+
+async def task_plan_summary(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    plan_id = int(args.get("plan_id", 0))
+    if plan_id <= 0:
+        return {"content": [{"type": "text", "text": "Plan id required."}]}
+    progress = _memory.task_plan_progress(plan_id)
+    if not progress:
+        return {"content": [{"type": "text", "text": "Plan not found."}]}
+    done, total = progress
+    text = f"Plan {plan_id}: {done}/{total} steps complete."
+    return {"content": [{"type": "text", "text": text}]}
 
 
 async def task_plan_next(args: dict[str, Any]) -> dict[str, Any]:
@@ -380,6 +416,30 @@ memory_recent_tool = tool(
     },
 )(memory_recent)
 
+memory_summary_add_tool = tool(
+    "memory_summary_add",
+    "Store or update a short memory summary for a topic.",
+    {
+        "type": "object",
+        "properties": {
+            "topic": {"type": "string"},
+            "summary": {"type": "string"},
+        },
+        "required": ["topic", "summary"],
+    },
+)(memory_summary_add)
+
+memory_summary_list_tool = tool(
+    "memory_summary_list",
+    "List recent memory summaries.",
+    {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "number"},
+        },
+    },
+)(memory_summary_list)
+
 task_plan_create_tool = tool(
     "task_plan_create",
     "Create a multi-step task plan and store it.",
@@ -418,6 +478,18 @@ task_plan_update_tool = tool(
     },
 )(task_plan_update)
 
+task_plan_summary_tool = tool(
+    "task_plan_summary",
+    "Summarize progress for a task plan.",
+    {
+        "type": "object",
+        "properties": {
+            "plan_id": {"type": "number"},
+        },
+        "required": ["plan_id"],
+    },
+)(task_plan_summary)
+
 task_plan_next_tool = tool(
     "task_plan_next",
     "Get the next pending step in a task plan.",
@@ -440,9 +512,12 @@ def create_services_server():
             memory_add_tool,
             memory_search_tool,
             memory_recent_tool,
+            memory_summary_add_tool,
+            memory_summary_list_tool,
             task_plan_create_tool,
             task_plan_list_tool,
             task_plan_update_tool,
+            task_plan_summary_tool,
             task_plan_next_tool,
         ],
     )
