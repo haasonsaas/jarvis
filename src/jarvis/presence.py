@@ -104,6 +104,7 @@ class Signals:
     # Set by the embodiment plan from the LLM
     intent_nod: float = 0.0             # 0-1 nod intensity
     intent_nod_style: str = "single"    # single, double, slow
+    intent_bow: float = 0.0             # 0-1 polite bow intensity
     intent_tilt: float = 0.0            # degrees of head tilt
     intent_glance_yaw: float = 0.0      # brief glance offset
     speech_energy: float = 0.0          # 0-1 TTS energy for speech sway
@@ -152,6 +153,7 @@ class PresenceLoop:
         self._backchannel_scale = 1.0
         self._turn_yield_next_allowed = 0.0
         self._prev_vad_energy = 0.0
+        self._bow_active_until = 0.0
 
     def set_backchannel_style(self, style: str) -> None:
         normalized = (style or "balanced").strip().lower()
@@ -270,7 +272,7 @@ class PresenceLoop:
         now = time.monotonic()
         think_yaw = 15.0 + math.sin(t * 0.5) * 5.0
         think_pitch = 5.0 + math.sin(t * 0.7) * 2.0
-        think_roll = math.sin(t * 0.4) * 3.0
+        think_roll = math.sin(t * 0.4) * 3.0 + math.sin(t * 1.6) * 1.2
         if t - self._t0 > 1.0:
             think_yaw += math.sin(t * 0.9) * 6.0
             think_pitch += math.sin(t * 0.5) * 2.5
@@ -292,11 +294,15 @@ class PresenceLoop:
 
         # Add any LLM-requested intent
         target_yaw += sig.intent_glance_yaw
+        if sig.intent_bow > 0.0 and t >= self._bow_active_until:
+            self._bow_active_until = t + 0.7
         if sig.intent_nod > 0.0 and t >= self._nod_next_allowed:
             self._nod_active_until = t + self._nod_duration(sig.intent_nod_style)
             self._nod_next_allowed = t + 2.0
         if t <= self._nod_active_until:
             target_pitch += self._intent_nod_offset(t, sig.intent_nod, sig.intent_nod_style)
+        if t <= self._bow_active_until:
+            target_pitch += (1.0 - math.cos(t * 3.2)) * 3.0 * sig.intent_bow
         target_roll = sig.intent_tilt
         target_pitch += self._tool_feedback_nod(t, now)
 

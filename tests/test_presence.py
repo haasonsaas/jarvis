@@ -182,6 +182,16 @@ class TestPresenceLoop:
         # Tilt should push roll toward 10
         assert presence._roll > 2.0
 
+    def test_speaking_bow_increases_pitch(self, presence):
+        sig = presence.signals
+        sig.face_detected = False
+        sig.intent_bow = 1.0
+
+        for i in range(80):
+            presence._do_speaking(float(i) * 0.033, sig)
+
+        assert presence._pitch > 2.0
+
     def test_speaking_sway_uses_speech_energy(self, presence):
         sig = presence.signals
         sig.face_detected = False

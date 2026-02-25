@@ -54,6 +54,7 @@ async def embody(args: dict[str, Any]) -> dict[str, Any]:
     if _presence:
         # Clamp values to schema bounds
         _presence.signals.intent_nod = max(0.0, min(1.0, args.get("nod", 0.0)))
+        _presence.signals.intent_bow = max(0.0, min(1.0, args.get("bow", 0.0)))
         _presence.signals.intent_tilt = max(-15.0, min(15.0, args.get("tilt", 0.0)))
         _presence.signals.intent_glance_yaw = max(-30.0, min(30.0, args.get("glance_yaw", 0.0)))
         _presence.signals.intent_nod_style = str(args.get("nod_style", "single"))
@@ -187,6 +188,12 @@ embody_tool = tool(
                 "type": "string",
                 "enum": ["single", "double", "slow"],
                 "description": "Nod shape to use when nodding.",
+            },
+            "bow": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "description": "Polite bow intensity (0 = none, 1 = full bow).",
             },
             "tilt": {
                 "type": "number",
