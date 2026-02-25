@@ -80,6 +80,8 @@ class PresenceLoop:
         self._pitch = 0.0
         self._roll = 0.0
         self._z = 0.0  # head height
+        self._antenna_left = 0.0
+        self._antenna_right = 0.0
 
     def start(self) -> None:
         if self._running:
@@ -125,6 +127,8 @@ class PresenceLoop:
                 roll=self._roll,
                 z=self._z,
             ))
+
+            self._update_antennas(elapsed, sig)
 
             # Maintain loop rate
             actual_dt = time.monotonic() - t
@@ -218,3 +222,26 @@ class PresenceLoop:
         self._pitch = self._blend(self._pitch, -10.0, 0.05)
         self._roll = self._blend(self._roll, 0.0, 0.05)
         self._z = self._blend(self._z, -3.0, 0.05)
+
+    def _update_antennas(self, t: float, sig: Signals) -> None:
+        if sig.state == State.IDLE:
+            wave = math.sin(t * 0.6) * 8.0
+            target_left = wave
+            target_right = -wave
+        elif sig.state == State.LISTENING:
+            target_left = 0.0
+            target_right = 0.0
+        elif sig.state == State.THINKING:
+            target_left = 5.0
+            target_right = 5.0
+        elif sig.state == State.SPEAKING:
+            wave = math.sin(t * 1.2) * 4.0
+            target_left = wave
+            target_right = wave
+        else:  # MUTED
+            target_left = -8.0
+            target_right = -8.0
+
+        self._antenna_left = self._blend(self._antenna_left, target_left, 0.1)
+        self._antenna_right = self._blend(self._antenna_right, target_right, 0.1)
+        self._robot.set_antennas_realtime(self._antenna_left, self._antenna_right)

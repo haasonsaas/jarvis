@@ -87,7 +87,13 @@ class Jarvis:
         self.args = args
 
         # Robot
-        self.robot = RobotController(host=self.config.reachy_host, sim=args.sim)
+        self.robot = RobotController(
+            host=self.config.reachy_host,
+            sim=args.sim,
+            connection_mode=self.config.reachy_connection_mode,
+            media_backend=self.config.reachy_media_backend,
+            automatic_body_yaw=self.config.reachy_automatic_body_yaw,
+        )
 
         # Presence loop (the soul)
         self.presence = PresenceLoop(self.robot)
@@ -121,6 +127,9 @@ class Jarvis:
         self._use_robot_audio = False
         self._robot_input_sr = self.config.sample_rate
         self._robot_output_sr = self.config.sample_rate
+
+        self._last_doa_angle: float | None = None
+        self._last_doa_update: float = 0.0
 
         self._utterance_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=1)
         self._listen_task: asyncio.Task[None] | None = None
@@ -241,8 +250,21 @@ class Jarvis:
             conf = self.vad.confidence(chunk_16k)
             self.presence.signals.vad_energy = max(0.0, min(1.0, conf))
             doa_angle, doa_speech = self.robot.get_doa()
+            now = time.monotonic()
             if doa_angle is not None:
-                self.presence.signals.doa_angle = doa_angle
+                if doa_speech is None or doa_speech:
+                    if self._last_doa_angle is None or abs(doa_angle - self._last_doa_angle) >= self.config.doa_change_threshold:
+                        self._last_doa_angle = doa_angle
+                        self._last_doa_update = now
+                        self.presence.signals.doa_angle = doa_angle
+                else:
+                    if self._last_doa_update and (now - self._last_doa_update) > self.config.doa_timeout:
+                        self.presence.signals.doa_angle = None
+                        self._last_doa_angle = None
+            else:
+                if self._last_doa_update and (now - self._last_doa_update) > self.config.doa_timeout:
+                    self.presence.signals.doa_angle = None
+                    self._last_doa_angle = None
 
             with self._lock:
                 assistant_busy = self._speaking

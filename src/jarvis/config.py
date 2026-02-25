@@ -15,6 +15,23 @@ def _require_env(name: str) -> str:
     return val
 
 
+def _env_bool(name: str) -> bool | None:
+    val = os.environ.get(name)
+    if val is None:
+        return None
+    return val.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    val = os.environ.get(name)
+    if val is None or not val.strip():
+        return default
+    try:
+        return float(val)
+    except ValueError:
+        return default
+
+
 @dataclass
 class Config:
     # Claude
@@ -30,11 +47,16 @@ class Config:
 
     # Reachy Mini
     reachy_host: str | None = field(default_factory=lambda: os.environ.get("REACHY_MINI_HOST"))
+    reachy_connection_mode: str | None = field(default_factory=lambda: os.environ.get("REACHY_CONNECTION_MODE"))
+    reachy_media_backend: str | None = field(default_factory=lambda: os.environ.get("REACHY_MEDIA_BACKEND"))
+    reachy_automatic_body_yaw: bool | None = field(default_factory=lambda: _env_bool("REACHY_AUTOMATIC_BODY_YAW"))
 
     # Audio — 16kHz is required by Silero VAD (fixed chunk size of 512 samples)
     vad_threshold: float = 0.5
     whisper_model: str = "base.en"
     sample_rate: int = 16000
+    doa_change_threshold: float = field(default_factory=lambda: _env_float("DOA_CHANGE_THRESHOLD", 0.04))
+    doa_timeout: float = field(default_factory=lambda: _env_float("DOA_TIMEOUT", 1.0))
 
     # Vision
     yolo_model: str = "yolov8n-face.pt"

@@ -46,11 +46,13 @@ class RobotController:
         sim: bool = False,
         connection_mode: str | None = None,
         media_backend: str | None = None,
+        automatic_body_yaw: bool | None = None,
     ):
         self._host = host
         self._sim = sim
         self._connection_mode = connection_mode
         self._media_backend = media_backend
+        self._automatic_body_yaw = automatic_body_yaw
         self._mini: ReachyMini | None = None
         self._emotions: RecordedMoves | None = None
         self._dances: RecordedMoves | None = None
@@ -79,12 +81,21 @@ class RobotController:
                 kwargs["connection_mode"] = self._connection_mode
             if self._media_backend:
                 kwargs["media_backend"] = self._media_backend
+            if self._automatic_body_yaw is not None:
+                kwargs["automatic_body_yaw"] = self._automatic_body_yaw
 
+            self._mini = None
             try:
                 self._mini = ReachyMini(**kwargs) if kwargs else ReachyMini()
             except TypeError:
-                # Backward/forward compatibility with SDK constructor kwargs.
-                self._mini = ReachyMini()
+                try:
+                    if self._host:
+                        self._mini = ReachyMini(host=self._host)
+                    else:
+                        self._mini = ReachyMini()
+                except TypeError:
+                    # Backward/forward compatibility with SDK constructor kwargs.
+                    self._mini = ReachyMini()
 
             self._mini.__enter__()
             self._connected = True
@@ -177,6 +188,15 @@ class RobotController:
             antennas=np.deg2rad([left, right]),
             duration=max(0.1, duration),
         )
+
+    def set_antennas_realtime(self, left: float = 0.0, right: float = 0.0) -> None:
+        """Instant antenna update in degrees (for real-time loops)."""
+        if not self._mini:
+            return
+        try:
+            self._mini.set_target(antennas=np.deg2rad([left, right]))
+        except Exception as e:
+            log.debug("Failed to set antennas realtime: %s", e)
 
     # ── Expressions ───────────────────────────────────────────
 
