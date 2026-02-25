@@ -26,6 +26,7 @@
 - [ ] Add gaze aversion on long delays (as delay grows, increase aversion to reduce “stare”).
 - [ ] Add micro-confirmation gestures (small nod/tilt) when tool actions start/finish.
   - Implemented: nod cadence guardrails + attention hold/timeout for face/hand/DoA.
+  - Implemented: tool feedback micro-nods on tool start/finish.
 
 ### 3) Perception Stack
 - [ ] Prioritized attention mux: face > hand > DoA, with confidence decay + timeout.
@@ -48,6 +49,7 @@
 - [ ] Add “latency budget” logging for STT → LLM → TTS stages to identify slow hops.
 - [ ] Implement progressive prosody controls (speech rate or pauses based on response confidence).
   - Implemented: TTS RMS normalization + latency logging.
+  - Implemented: confidence-based sentence pauses.
 
 ### 11) Backchannel + Feedback
 - [ ] Add lightweight backchannel scheduler (subtle nod/tilt on user pauses).

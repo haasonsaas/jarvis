@@ -31,6 +31,11 @@ def bind(robot: RobotController, presence: PresenceLoop) -> None:
     _presence = presence
 
 
+def tool_feedback(kind: str) -> None:
+    if _presence:
+        _presence.tool_feedback(kind)
+
+
 # ── Embodiment plan tool ─────────────────────────────────────
 
 async def embody(args: dict[str, Any]) -> dict[str, Any]:

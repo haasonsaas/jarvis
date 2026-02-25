@@ -27,3 +27,7 @@ def test_turn_taking_threshold_barge_in(jarvis_instance):
         assistant_busy=True,
         now=now,
     )
+
+
+def test_confidence_pause(jarvis_instance):
+    assert jarvis_instance._confidence_pause("I think it might work") > 0

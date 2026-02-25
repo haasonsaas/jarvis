@@ -187,6 +187,19 @@ class TestServicesTools:
         assert len(text) >= 10
 
     @pytest.mark.asyncio
+    async def test_tool_feedback_called(self, monkeypatch):
+        from jarvis.tools import services
+        calls = []
+
+        def _feedback(kind: str) -> None:
+            calls.append(kind)
+
+        monkeypatch.setattr("jarvis.tools.robot.tool_feedback", _feedback)
+
+        await services.get_time({})
+        assert calls == ["start", "done"]
+
+    @pytest.mark.asyncio
     async def test_audit_log_written(self, tmp_path):
         from jarvis.tools import services
 

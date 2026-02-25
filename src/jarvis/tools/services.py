@@ -57,6 +57,8 @@ def _now_local() -> str:
 # ── Home Assistant ────────────────────────────────────────────
 
 async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
+    from jarvis.tools.robot import tool_feedback
+
     if not _config or not _config.has_home_assistant:
         return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
 
@@ -73,6 +75,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     })
 
     if dry_run:
+        tool_feedback("start")
         return {"content": [{"type": "text", "text": (
             f"DRY RUN: Would call {domain}.{action} on {entity_id}"
             f"{' with ' + json.dumps(data) if data else ''}. "
@@ -85,22 +88,30 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=10)
 
     try:
+        tool_feedback("start")
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, headers=headers, json=payload) as resp:
                 if resp.status == 200:
+                    tool_feedback("done")
                     return {"content": [{"type": "text", "text": f"Done: {domain}.{action} on {entity_id}"}]}
                 elif resp.status == 401:
+                    tool_feedback("done")
                     return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
                 elif resp.status == 404:
+                    tool_feedback("done")
                     return {"content": [{"type": "text", "text": f"Service not found: {domain}.{action}"}]}
                 else:
                     text = await resp.text()
+                    tool_feedback("done")
                     return {"content": [{"type": "text", "text": f"Home Assistant error ({resp.status}): {text[:200]}"}]}
     except aiohttp.ClientError as e:
+        tool_feedback("done")
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
 
 
 async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
+    from jarvis.tools.robot import tool_feedback
+
     if not _config or not _config.has_home_assistant:
         return {"content": [{"type": "text", "text": "Home Assistant not configured."}]}
 
@@ -109,23 +120,31 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=10)
 
     try:
+        tool_feedback("start")
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, headers=headers) as resp:
                 if resp.status == 200:
                     data = await resp.json()
+                    tool_feedback("done")
                     return {"content": [{"type": "text", "text": json.dumps({
                         "state": data.get("state", "unknown"),
                         "attributes": data.get("attributes", {}),
                     })}]}
                 elif resp.status == 404:
+                    tool_feedback("done")
                     return {"content": [{"type": "text", "text": f"Entity not found: {args['entity_id']}"}]}
                 else:
+                    tool_feedback("done")
                     return {"content": [{"type": "text", "text": f"Error ({resp.status}) fetching entity state"}]}
     except aiohttp.ClientError as e:
+        tool_feedback("done")
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
 
 
 async def get_time(args: dict[str, Any]) -> dict[str, Any]:
+    from jarvis.tools.robot import tool_feedback
+    tool_feedback("start")
+    tool_feedback("done")
     return {"content": [{"type": "text", "text": _now_local()}]}
 
 

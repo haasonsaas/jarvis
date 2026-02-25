@@ -49,6 +49,10 @@ BACKCHANNEL_ENERGY_MAX = 0.85
 BACKCHANNEL_NOD_SCALE = 0.35
 BACKCHANNEL_MIN_ATTENTION = 0.35
 
+TOOL_FEEDBACK_DURATION_SEC = 0.4
+TOOL_FEEDBACK_NOD_DEG = 4.0
+TOOL_FEEDBACK_START_SCALE = 0.6
+
 ATTENTION_HOLD_SEC = 1.2
 ATTENTION_TIMEOUT_SEC = 1.5
 
@@ -122,6 +126,8 @@ class PresenceLoop:
         self._nod_next_allowed = 0.0
         self._backchannel_next_allowed = 0.0
         self._backchannel_active_until = 0.0
+        self._tool_feedback_until = 0.0
+        self._tool_feedback_strength = 0.0
 
     def start(self) -> None:
         if self._running:
@@ -208,6 +214,7 @@ class PresenceLoop:
         # Micro-nods correlated with VAD energy
         nod = math.sin(t * 4.0) * sig.vad_energy * 3.0
         nod += self._backchannel_nod(t, sig, now)
+        nod += self._tool_feedback_nod(t, now)
 
         target_yaw = self._clamp(target_yaw, -45.0, 45.0)
         target_pitch = self._clamp(target_pitch + nod, -20.0, 20.0)
@@ -220,6 +227,7 @@ class PresenceLoop:
 
     def _do_thinking(self, t: float) -> None:
         # Look slightly away and up — the "pondering" pose
+        now = time.monotonic()
         think_yaw = 15.0 + math.sin(t * 0.5) * 5.0
         think_pitch = 5.0 + math.sin(t * 0.7) * 2.0
         think_roll = math.sin(t * 0.4) * 3.0
@@ -228,6 +236,7 @@ class PresenceLoop:
             think_pitch += math.sin(t * 0.5) * 2.5
 
         self._yaw = self._blend(self._yaw, think_yaw, 0.08)
+        think_pitch += self._tool_feedback_nod(t, now)
         self._pitch = self._blend(self._pitch, think_pitch, 0.08)
         self._roll = self._blend(self._roll, think_roll, 0.05)
         self._z = self._blend(self._z, 0.0, 0.05)
@@ -246,6 +255,7 @@ class PresenceLoop:
         if t <= self._nod_active_until:
             target_pitch += sig.intent_nod * math.sin(t * 3.0) * 4.0
         target_roll = sig.intent_tilt
+        target_pitch += self._tool_feedback_nod(t, now)
 
         self._speech_energy = self._blend(self._speech_energy, sig.speech_energy, 0.2)
         sway = self._speech_energy
@@ -362,3 +372,16 @@ class PresenceLoop:
         if sig.doa_last_seen and (now - sig.doa_last_seen) <= ATTENTION_TIMEOUT_SEC:
             return 0.6
         return 0.0
+
+    def tool_feedback(self, kind: str) -> None:
+        now = time.monotonic()
+        if kind == "start":
+            self._tool_feedback_strength = TOOL_FEEDBACK_START_SCALE
+        else:
+            self._tool_feedback_strength = 1.0
+        self._tool_feedback_until = now + TOOL_FEEDBACK_DURATION_SEC
+
+    def _tool_feedback_nod(self, t: float, now: float) -> float:
+        if now > self._tool_feedback_until:
+            return 0.0
+        return math.sin(t * 6.0) * TOOL_FEEDBACK_NOD_DEG * self._tool_feedback_strength

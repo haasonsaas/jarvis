@@ -47,6 +47,9 @@ THINKING_FILLER_DELAY = 0.35
 THINKING_FILLER_TEXT = "One moment."
 TTS_TARGET_RMS = 0.08
 TTS_GAIN_SMOOTH = 0.2
+TTS_SENTENCE_PAUSE_SEC = 0.12
+TTS_CONFIDENCE_PAUSE_SEC = 0.18
+TTS_LOW_CONFIDENCE_WORDS = {"maybe", "probably", "might", "not sure", "uncertain", "I think", "I believe"}
 INTENDED_QUERY_MIN_ATTENTION = 0.35
 CONFIRMATION_PHRASE = "Did you mean me?"
 AFFIRMATIONS = {"yes", "yeah", "yep", "yup", "correct", "affirmative", "sure", "please"}
@@ -146,7 +149,7 @@ class Jarvis:
         self._awaiting_confirmation = False
         self._pending_text: str | None = None
 
-        self._tts_queue: asyncio.Queue[str] = asyncio.Queue()
+        self._tts_queue: asyncio.Queue[tuple[int, str, bool, float]] = asyncio.Queue()
         self._tts_task: asyncio.Task[None] | None = None
         self._response_id = 0
         self._active_response_id = 0
@@ -264,7 +267,7 @@ class Jarvis:
                         self._awaiting_confirmation = False
                         self._pending_text = None
                         if self.tts:
-                            await self._tts_queue.put((self._active_response_id, "Understood.", True))
+                            await self._tts_queue.put((self._active_response_id, "Understood.", True, 0.0))
                         else:
                             print("  JARVIS: Understood.")
                         self.presence.signals.state = State.IDLE
@@ -277,7 +280,7 @@ class Jarvis:
                     self._awaiting_confirmation = True
                     self._pending_text = text
                     if self.tts:
-                        await self._tts_queue.put((self._active_response_id, CONFIRMATION_PHRASE, True))
+                        await self._tts_queue.put((self._active_response_id, CONFIRMATION_PHRASE, True, 0.0))
                     else:
                         print(f"  JARVIS: {CONFIRMATION_PHRASE}")
                     self.presence.signals.state = State.LISTENING
@@ -505,7 +508,8 @@ class Jarvis:
                         self._filler_task.cancel()
 
                 if self.tts:
-                    await self._tts_queue.put((self._active_response_id, sentence, False))
+                    pause = self._confidence_pause(sentence)
+                    await self._tts_queue.put((self._active_response_id, sentence, False, pause))
                 else:
                     print(f"  JARVIS: {sentence}")
 
@@ -523,7 +527,7 @@ class Jarvis:
         """Consume sentences and play TTS in order, with barge-in support."""
         assert self.tts is not None
         while True:
-            response_id, sentence, is_filler = await self._tts_queue.get()
+            response_id, sentence, is_filler, pause = await self._tts_queue.get()
             if self._barge_in.is_set():
                 self._flush_output()
                 self.presence.signals.speech_energy = 0.0
@@ -548,6 +552,8 @@ class Jarvis:
                 self._play_audio_chunk(normalized)
                 await asyncio.sleep(0)
             self.presence.signals.speech_energy = 0.0
+            if pause > 0:
+                await asyncio.sleep(pause)
 
     def _clear_tts_queue(self) -> None:
         while not self._tts_queue.empty():
@@ -599,7 +605,7 @@ class Jarvis:
             return
         if self.tts is None:
             return
-        await self._tts_queue.put((self._active_response_id, THINKING_FILLER_TEXT, True))
+        await self._tts_queue.put((self._active_response_id, THINKING_FILLER_TEXT, True, 0.0))
 
     def _normalize_tts_chunk(self, chunk: np.ndarray) -> np.ndarray:
         if chunk.size == 0:
@@ -611,6 +617,12 @@ class Jarvis:
         self._tts_gain += (desired_gain - self._tts_gain) * TTS_GAIN_SMOOTH
         normalized = chunk * self._tts_gain
         return np.clip(normalized, -1.0, 1.0)
+
+    def _confidence_pause(self, sentence: str) -> float:
+        lowered = sentence.lower()
+        if any(token in lowered for token in TTS_LOW_CONFIDENCE_WORDS):
+            return TTS_CONFIDENCE_PAUSE_SEC
+        return TTS_SENTENCE_PAUSE_SEC
 
 
 def main():
