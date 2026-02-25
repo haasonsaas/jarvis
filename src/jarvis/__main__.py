@@ -111,6 +111,7 @@ class Jarvis:
 
         # Presence loop (the soul)
         self.presence = PresenceLoop(self.robot)
+        self.presence.set_backchannel_style(self.config.backchannel_style)
 
         # Bind tools to robot + presence
         bind_robot_tools(self.robot, self.presence, self.config)
@@ -579,8 +580,21 @@ class Jarvis:
             attention = 0.5
 
         doa_score = 1.0 if doa_speech else 0.0
-        score = (0.6 * conf) + (0.3 * doa_score) + (0.1 * attention)
+        score = (0.55 * conf) + (0.3 * doa_score) + (0.15 * attention)
         threshold = TURN_TAKING_BARGE_IN_THRESHOLD if assistant_busy else TURN_TAKING_THRESHOLD
+
+        if assistant_busy:
+            if doa_speech is True:
+                return score >= (threshold - 0.05)
+            if conf >= 0.8 and attention >= 0.8:
+                return True
+            if conf < 0.35 and attention < 0.6 and doa_speech is False:
+                return False
+
+        if conf >= 0.9 and attention >= 0.8:
+            return True
+        if conf < 0.25 and attention < 0.5 and doa_speech is False:
+            return False
         return score >= threshold
 
     def _attention_confidence(self, now: float) -> float:

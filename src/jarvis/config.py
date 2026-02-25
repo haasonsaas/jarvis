@@ -95,6 +95,9 @@ class Config:
     tool_allowlist: list[str] = field(default_factory=lambda: _env_list("TOOL_ALLOWLIST"))
     tool_denylist: list[str] = field(default_factory=lambda: _env_list("TOOL_DENYLIST"))
 
+    # Backchannel preferences
+    backchannel_style: str = field(default_factory=lambda: os.environ.get("BACKCHANNEL_STYLE", "balanced"))
+
     @property
     def has_home_assistant(self) -> bool:
         return bool(self.hass_url and self.hass_token)

@@ -49,6 +49,11 @@ BACKCHANNEL_ENERGY_MIN = 0.25
 BACKCHANNEL_ENERGY_MAX = 0.85
 BACKCHANNEL_NOD_SCALE = 0.35
 BACKCHANNEL_MIN_ATTENTION = 0.35
+BACKCHANNEL_STYLE_SCALE = {
+    "quiet": 0.55,
+    "balanced": 1.0,
+    "expressive": 1.35,
+}
 
 TOOL_FEEDBACK_DURATION_SEC = 0.4
 TOOL_FEEDBACK_NOD_DEG = 4.0
@@ -137,6 +142,11 @@ class PresenceLoop:
         self._idle_choreo_until = 0.0
         self._idle_choreo_next = 0.0
         self._attention_history: deque[float] = deque(maxlen=ATTENTION_SMOOTH_WINDOW)
+        self._backchannel_scale = 1.0
+
+    def set_backchannel_style(self, style: str) -> None:
+        normalized = (style or "balanced").strip().lower()
+        self._backchannel_scale = BACKCHANNEL_STYLE_SCALE.get(normalized, 1.0)
 
     def start(self) -> None:
         if self._running:
@@ -391,13 +401,14 @@ class PresenceLoop:
         attention = self._attention_strength(sig, now)
         if attention < BACKCHANNEL_MIN_ATTENTION:
             return 0.0
+        scale = self._backchannel_scale
         if now < self._backchannel_next_allowed:
             if now <= self._backchannel_active_until:
-                return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0 * attention
+                return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0 * attention * scale
             return 0.0
         self._backchannel_active_until = now + BACKCHANNEL_WINDOW_SEC
-        self._backchannel_next_allowed = now + BACKCHANNEL_COOLDOWN_SEC
-        return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0 * attention
+        self._backchannel_next_allowed = now + (BACKCHANNEL_COOLDOWN_SEC / scale)
+        return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0 * attention * scale
 
     def _attention_strength(self, sig: Signals, now: float) -> float:
         if sig.face_last_seen and (now - sig.face_last_seen) <= ATTENTION_TIMEOUT_SEC:

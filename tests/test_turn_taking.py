@@ -18,6 +18,12 @@ def test_turn_taking_threshold_regular(jarvis_instance):
     assert jarvis_instance._compute_turn_taking(conf=0.8, doa_speech=False, assistant_busy=False, now=now)
 
 
+def test_turn_taking_high_confidence_no_doa(jarvis_instance):
+    now = 200.0
+    jarvis_instance.presence.signals.face_last_seen = now
+    assert jarvis_instance._compute_turn_taking(conf=0.95, doa_speech=False, assistant_busy=False, now=now)
+
+
 def test_turn_taking_threshold_barge_in(jarvis_instance):
     now = 100.0
     jarvis_instance.presence.signals.doa_last_seen = now
