@@ -595,6 +595,23 @@ class TestServicesTools:
         assert payload["recent_tools"]["error"] == "summary unavailable"
 
     @pytest.mark.asyncio
+    async def test_system_status_serializes_non_json_recent_tools(self, tmp_path, monkeypatch):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        services.AUDIT_LOG = tmp_path / "audit.jsonl"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        monkeypatch.setattr("jarvis.tools.services.list_summaries", lambda limit=5: [{"name": "x", "meta": {1, 2}}])
+
+        result = await services.system_status({})
+        payload = json.loads(result["content"][0]["text"])
+        meta = payload["recent_tools"][0]["meta"]
+        assert meta.startswith("{") and meta.endswith("}")
+        assert "1" in meta and "2" in meta
+
+    @pytest.mark.asyncio
     async def test_system_status_denied_by_policy(self):
         from jarvis.config import Config
         from jarvis.tools import services
@@ -717,6 +734,17 @@ class TestServicesTools:
         monkeypatch.setattr("jarvis.tools.services.list_summaries", lambda limit=10: (_ for _ in ()).throw(RuntimeError("store down")))
         result = await services.tool_summary({"limit": 5})
         assert "unavailable" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_tool_summary_serializes_non_json_values(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr("jarvis.tools.services.list_summaries", lambda limit=10: [{"name": "x", "extra": {1, 2}}])
+        result = await services.tool_summary({"limit": 5})
+        payload = json.loads(result["content"][0]["text"])
+        extra = payload[0]["extra"]
+        assert extra.startswith("{") and extra.endswith("}")
+        assert "1" in extra and "2" in extra
 
     @pytest.mark.asyncio
     async def test_tool_summary_text_handles_summary_store_failure(self, monkeypatch):

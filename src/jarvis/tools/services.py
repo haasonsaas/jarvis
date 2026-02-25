@@ -595,7 +595,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         "recent_tools": recent_tools,
     }
     record_summary("system_status", "ok", start_time)
-    return {"content": [{"type": "text", "text": json.dumps(status)}]}
+    return {"content": [{"type": "text", "text": json.dumps(status, default=str)}]}
 
 
 # ── Memory + planning ───────────────────────────────────────
@@ -877,7 +877,7 @@ async def tool_summary(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("tool_summary", "error", start_time, "summary_unavailable")
         return {"content": [{"type": "text", "text": f"Tool summaries unavailable: {e}"}]}
     record_summary("tool_summary", "ok", start_time)
-    return {"content": [{"type": "text", "text": json.dumps(summaries)}]}
+    return {"content": [{"type": "text", "text": json.dumps(summaries, default=str)}]}
 
 
 async def tool_summary_text(args: dict[str, Any]) -> dict[str, Any]:
