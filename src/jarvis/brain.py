@@ -103,6 +103,7 @@ class Brain:
                 "mcp__jarvis-services__task_plan_next",
                 "mcp__jarvis-services__memory_summary_add",
                 "mcp__jarvis-services__memory_summary_list",
+                "mcp__jarvis-services__memory_status",
             ],
             permission_mode="bypassPermissions",
             max_turns=5,
@@ -132,10 +133,15 @@ class Brain:
         log.info("User: %s", user_text)
 
         if self._memory:
-            memories = self._memory.search(
+            memories = self._memory.search_v2(
                 user_text,
                 limit=self._config.memory_search_limit,
                 max_sensitivity=self._config.memory_max_sensitivity,
+                hybrid_weight=self._config.memory_hybrid_weight,
+                decay_enabled=self._config.memory_decay_enabled,
+                decay_half_life_days=self._config.memory_decay_half_life_days,
+                mmr_enabled=self._config.memory_mmr_enabled,
+                mmr_lambda=self._config.memory_mmr_lambda,
             )
             if memories:
                 memory_lines = []

@@ -69,6 +69,13 @@
   - Implemented: basic SQLite memory store + retrieval hook + memory tools.
   - Implemented: sensitivity filtering + relevance gating for recall.
   - Implemented: memory summary store tools (topics + summaries).
+- [ ] Add hybrid memory search (keyword + vector blending) with configurable weights.
+- [ ] Add query expansion for conversational memory search (keyword extraction fallback).
+- [ ] Add temporal decay for stale memories (half-life config; no decay for evergreen).
+- [ ] Add MMR re-ranking for diversity in memory search results.
+- [ ] Add memory sources + scope filtering (session memory vs evergreen memory).
+- [ ] Add memory sync cadence + warm-on-session-start behavior.
+- [ ] Add memory status/probe endpoints (counts, provider status, FTS availability).
 
 ### 7b) Task Orchestration
 - [ ] Add explicit planner (multi-step tasks, retries, status).
@@ -77,15 +84,37 @@
   - Implemented: lightweight task plan storage + status updates.
   - Implemented: next-step helper for orchestration.
   - Implemented: task progress summary tool.
+- [ ] Add task plan retries + failure reasons per step.
+- [ ] Add plan-level metadata (owner, created_from, tags) for routing.
+- [ ] Add orchestration memory snapshots per plan (context pack).
 
 ### 8) Reliability + Telemetry
 - [ ] Add watchdog for presence loop + perception threads (auto-restart on failure).
 - [ ] Add health endpoint or log snapshot for quick diagnostics.
+- [ ] Add memory/indexer health status (provider, FTS-only mode, last sync, errors).
+- [ ] Add structured tool execution logs + summary rollups (success/fail/latency).
+- [ ] Add session telemetry (turn count, latency breakdown, barge-in rate).
 
 ### 9) Content + Personality
 - [ ] Add “short answer by default” gate; require user intent for longer responses.
 - [ ] Add sarcasm/irony guardrails for sensitive topics.
+- [ ] Add persona mode flags (JARVIS terse/composed vs friendly verbose).
 
 ### 10) UX + Setup
 - [ ] Provide a one-time calibration flow for head limits, audio level, and face/hand thresholds.
 - [ ] Add quick toggles: `--no-motion`, `--no-hands`, `--no-home`.
+- [ ] Add session bootstrap summary (capabilities, connected providers, memory state).
+
+### 13) Tool Policy + Execution Guardrails (OpenClaw-inspired)
+- [ ] Add tool policy profiles (global + per-agent allow/deny lists).
+- [ ] Add provider-specific tool policies (per model/provider allowlist).
+- [ ] Add subagent depth limits + always-deny tool list for subagents.
+- [ ] Add tool policy matching with glob patterns and alias normalization.
+- [ ] Add tool summary capture (reason + effect + external side-effects).
+- [ ] Add tool result sanitization before memory storage.
+
+### 14) Sessions + Memory Lifecycle
+- [ ] Add session-level memory buffers (short-term memory separate from long-term).
+- [ ] Add session transcript compaction + guardrails to avoid tool loops.
+- [ ] Add session-scoped memory read permissions (workspace/path filters).
+- [ ] Add memory import/export hooks (per-session and per-user snapshots).

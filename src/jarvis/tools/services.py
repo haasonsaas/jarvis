@@ -209,7 +209,16 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
     limit = int(args.get("limit", 5))
     include_sensitive = bool(args.get("include_sensitive", False))
     max_sensitivity = None if include_sensitive else float(args.get("max_sensitivity", 0.4))
-    results = _memory.search(query, limit=limit, max_sensitivity=max_sensitivity)
+    results = _memory.search_v2(
+        query,
+        limit=limit,
+        max_sensitivity=max_sensitivity,
+        hybrid_weight=float(args.get("hybrid_weight", 0.7)),
+        decay_enabled=bool(args.get("decay_enabled", False)),
+        decay_half_life_days=float(args.get("decay_half_life_days", 30.0)),
+        mmr_enabled=bool(args.get("mmr_enabled", False)),
+        mmr_lambda=float(args.get("mmr_lambda", 0.7)),
+    )
     if not results:
         return {"content": [{"type": "text", "text": "No relevant memories found."}]}
     lines = []
@@ -218,6 +227,13 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
         snippet = entry.text[:200]
         lines.append(f"[{entry.id}] ({entry.kind}) {snippet}{tags}")
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+
+async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
+    if not _memory:
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    status = _memory.memory_status()
+    return {"content": [{"type": "text", "text": json.dumps(status)}]}
 
 
 async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
@@ -399,10 +415,21 @@ memory_search_tool = tool(
             "limit": {"type": "number"},
             "max_sensitivity": {"type": "number"},
             "include_sensitive": {"type": "boolean"},
+            "hybrid_weight": {"type": "number"},
+            "decay_enabled": {"type": "boolean"},
+            "decay_half_life_days": {"type": "number"},
+            "mmr_enabled": {"type": "boolean"},
+            "mmr_lambda": {"type": "number"},
         },
         "required": ["query"],
     },
 )(memory_search)
+
+memory_status_tool = tool(
+    "memory_status",
+    "Report memory index status and availability.",
+    {"type": "object", "properties": {}},
+)(memory_status)
 
 memory_recent_tool = tool(
     "memory_recent",
@@ -512,6 +539,7 @@ def create_services_server():
             memory_add_tool,
             memory_search_tool,
             memory_recent_tool,
+            memory_status_tool,
             memory_summary_add_tool,
             memory_summary_list_tool,
             task_plan_create_tool,

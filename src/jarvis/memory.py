@@ -19,6 +19,7 @@ class MemoryEntry:
     importance: float
     sensitivity: float
     source: str
+    score: float = 0.0
 
 
 @dataclass
@@ -50,6 +51,7 @@ class MemoryStore:
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._fts_enabled = False
+        self._memory_enabled = False
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -70,6 +72,14 @@ class MemoryStore:
         )
         self._ensure_column(cur, "memory", "sensitivity", "REAL NOT NULL DEFAULT 0.0")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memory_created_at ON memory(created_at DESC);")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memory_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            """
+        )
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS task_plans (
@@ -116,6 +126,19 @@ class MemoryStore:
             self._fts_enabled = True
         except sqlite3.OperationalError:
             self._fts_enabled = False
+        try:
+            cur.execute(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING fts5(
+                    text,
+                    content='memory',
+                    content_rowid='id'
+                );
+                """
+            )
+            self._memory_enabled = True
+        except sqlite3.OperationalError:
+            self._memory_enabled = False
         self._conn.commit()
 
     def add_memory(
@@ -144,8 +167,37 @@ class MemoryStore:
         memory_id = int(cur.lastrowid)
         if self._fts_enabled:
             cur.execute("INSERT INTO memory_fts(rowid, text) VALUES (?, ?)", (memory_id, clean))
+        if self._memory_enabled:
+            cur.execute("INSERT INTO memory_vec(rowid, text) VALUES (?, ?)", (memory_id, clean))
         self._conn.commit()
         return memory_id
+
+    def search_v2(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        max_sensitivity: float | None = None,
+        hybrid_weight: float = 0.7,
+        decay_enabled: bool = False,
+        decay_half_life_days: float = 30.0,
+        mmr_enabled: bool = False,
+        mmr_lambda: float = 0.7,
+    ) -> list[MemoryEntry]:
+        cleaned = query.strip()
+        if not cleaned:
+            return []
+        sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
+        keyword_rows = self._search_keyword(cleaned, limit * 4, sensitivity_clause, sensitivity_params)
+        if not keyword_rows:
+            return []
+        entries = [self._row_to_memory(row) for row in keyword_rows]
+        entries = self._apply_hybrid_scoring(entries, cleaned, hybrid_weight)
+        if decay_enabled:
+            entries = self._apply_temporal_decay(entries, decay_half_life_days)
+        if mmr_enabled:
+            entries = self._apply_mmr(entries, mmr_lambda)
+        return sorted(entries, key=lambda e: e.score, reverse=True)[:limit]
 
     def search(
         self,
@@ -342,6 +394,15 @@ class MemoryStore:
     def close(self) -> None:
         self._conn.close()
 
+    def memory_status(self) -> dict[str, Any]:
+        cur = self._conn.cursor()
+        count = cur.execute("SELECT COUNT(*) as c FROM memory").fetchone()["c"]
+        return {
+            "entries": int(count),
+            "fts": self._fts_enabled,
+            "vector": self._memory_enabled,
+        }
+
     def _row_to_memory(self, row: sqlite3.Row) -> MemoryEntry:
         tags = json.loads(row["tags"]) if row["tags"] else []
         return MemoryEntry(
@@ -358,6 +419,185 @@ class MemoryStore:
     def _build_fts_query(self, text: str) -> str:
         tokens = re.findall(r"\w+", text.lower())
         return " OR ".join(tokens[:12])
+
+    def _extract_keywords(self, text: str) -> list[str]:
+        tokens = re.findall(r"\w+", text.lower())
+        stop = {
+            "a",
+            "an",
+            "the",
+            "this",
+            "that",
+            "these",
+            "those",
+            "i",
+            "me",
+            "my",
+            "we",
+            "our",
+            "you",
+            "your",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "will",
+            "would",
+            "could",
+            "should",
+            "can",
+            "may",
+            "might",
+            "in",
+            "on",
+            "at",
+            "to",
+            "for",
+            "of",
+            "with",
+            "by",
+            "from",
+            "about",
+            "into",
+            "through",
+            "during",
+            "before",
+            "after",
+            "above",
+            "below",
+            "between",
+            "under",
+            "over",
+            "and",
+            "or",
+            "but",
+            "if",
+            "then",
+            "because",
+            "as",
+            "while",
+            "when",
+            "where",
+            "what",
+            "which",
+            "who",
+            "how",
+            "why",
+            "please",
+            "help",
+            "find",
+            "show",
+            "get",
+            "tell",
+            "give",
+        }
+        keywords: list[str] = []
+        seen = set()
+        for token in tokens:
+            if token in stop or len(token) < 3:
+                continue
+            if token not in seen:
+                seen.add(token)
+                keywords.append(token)
+        return keywords
+
+    def _search_keyword(
+        self,
+        query: str,
+        limit: int,
+        sensitivity_clause: str,
+        sensitivity_params: list[float],
+    ) -> list[sqlite3.Row]:
+        if self._fts_enabled:
+            keywords = self._extract_keywords(query)
+            fts_query = self._build_fts_query(query)
+            expanded = " OR ".join([fts_query, *keywords]) if keywords else fts_query
+            if not expanded:
+                return []
+            sql = (
+                "SELECT memory.* FROM memory_fts "
+                "JOIN memory ON memory_fts.rowid = memory.id "
+                "WHERE memory_fts MATCH ? "
+                f"{sensitivity_clause} "
+                "ORDER BY bm25(memory_fts) ASC "
+                "LIMIT ?"
+            )
+            return self._conn.cursor().execute(sql, (expanded, *sensitivity_params, limit)).fetchall()
+        like = f"%{query}%"
+        sql = (
+            "SELECT * FROM memory WHERE text LIKE ? "
+            f"{sensitivity_clause} "
+            "ORDER BY created_at DESC LIMIT ?"
+        )
+        return self._conn.cursor().execute(sql, (like, *sensitivity_params, limit)).fetchall()
+
+    def _apply_hybrid_scoring(self, entries: list[MemoryEntry], query: str, weight: float) -> list[MemoryEntry]:
+        tokens = set(re.findall(r"\w+", query.lower()))
+        for entry in entries:
+            entry_tokens = set(re.findall(r"\w+", entry.text.lower()))
+            overlap = len(tokens & entry_tokens)
+            text_score = overlap / max(1, len(tokens))
+            entry.score = (weight * entry.importance) + ((1 - weight) * text_score)
+        return entries
+
+    def _apply_temporal_decay(self, entries: list[MemoryEntry], half_life_days: float) -> list[MemoryEntry]:
+        if half_life_days <= 0:
+            return entries
+        decay_lambda = 0.69314718056 / half_life_days
+        now = time.time()
+        for entry in entries:
+            age_days = max(0.0, (now - entry.created_at) / 86400.0)
+            multiplier = pow(2.0, -(age_days / half_life_days)) if decay_lambda > 0 else 1.0
+            entry.score *= multiplier
+        return entries
+
+    def _apply_mmr(self, entries: list[MemoryEntry], lambda_weight: float) -> list[MemoryEntry]:
+        if not entries:
+            return entries
+        lambda_weight = max(0.0, min(1.0, lambda_weight))
+        selected: list[MemoryEntry] = []
+        remaining = entries[:]
+        max_score = max(e.score for e in remaining) or 1.0
+        min_score = min(e.score for e in remaining)
+        range_score = max_score - min_score
+
+        def normalize(score: float) -> float:
+            if range_score == 0:
+                return 1.0
+            return (score - min_score) / range_score
+
+        while remaining:
+            best = None
+            best_score = -1e9
+            for entry in remaining:
+                relevance = normalize(entry.score)
+                max_sim = 0.0
+                entry_tokens = set(re.findall(r"\w+", entry.text.lower()))
+                for chosen in selected:
+                    chosen_tokens = set(re.findall(r"\w+", chosen.text.lower()))
+                    intersection = len(entry_tokens & chosen_tokens)
+                    union = len(entry_tokens | chosen_tokens)
+                    sim = intersection / union if union else 0.0
+                    if sim > max_sim:
+                        max_sim = sim
+                mmr_score = (lambda_weight * relevance) - ((1 - lambda_weight) * max_sim)
+                if mmr_score > best_score:
+                    best_score = mmr_score
+                    best = entry
+            if best is None:
+                break
+            selected.append(best)
+            remaining.remove(best)
+        return selected
 
     def _sensitivity_filter(self, max_sensitivity: float | None) -> tuple[str, list[float]]:
         if max_sensitivity is None:
