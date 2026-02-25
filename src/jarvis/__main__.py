@@ -292,8 +292,11 @@ class Jarvis:
                 "auth",
                 "not_found",
                 "network_client_error",
+                "http_error",
+                "summary_unavailable",
+                "unknown_error",
                 "unexpected",
-            } or detail.startswith("http_"):
+            }:
                 service_errors += 1
         self._telemetry["service_errors"] = float(service_errors)
         self._telemetry["storage_errors"] = float(storage_errors)

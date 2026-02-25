@@ -135,5 +135,5 @@ def test_refresh_tool_error_counters_includes_network_taxonomy():
     ]):
         Jarvis._refresh_tool_error_counters(jarvis)
 
-    assert jarvis._telemetry["service_errors"] == 2.0
+    assert jarvis._telemetry["service_errors"] == 3.0
     assert jarvis._telemetry["storage_errors"] == 0.0

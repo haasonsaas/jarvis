@@ -709,11 +709,11 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("memory_add", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("memory_add", "error", start_time, "missing_store")
+        _record_service_error("memory_add", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     text = str(args.get("text", "")).strip()
     if not text:
-        record_summary("memory_add", "error", start_time, "missing_text")
+        _record_service_error("memory_add", start_time, "missing_text")
         return {"content": [{"type": "text", "text": "Memory text required."}]}
     tags_raw = args.get("tags")
     tags = [str(tag) for tag in tags_raw] if isinstance(tags_raw, list) else []
@@ -731,7 +731,7 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
             source=source,
         )
     except Exception as e:
-        record_summary("memory_add", "error", start_time, "storage_error")
+        _record_service_error("memory_add", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory add failed: {e}"}]}
     record_summary("memory_add", "ok", start_time)
     return {"content": [{"type": "text", "text": f"Memory stored (id={memory_id})."}]}
@@ -743,11 +743,11 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("memory_search", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("memory_search", "error", start_time, "missing_store")
+        _record_service_error("memory_search", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     query = str(args.get("query", "")).strip()
     if not query:
-        record_summary("memory_search", "error", start_time, "missing_query")
+        _record_service_error("memory_search", start_time, "missing_query")
         return {"content": [{"type": "text", "text": "Search query required."}]}
     limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
     include_sensitive = _as_bool(args.get("include_sensitive"), default=False)
@@ -766,7 +766,7 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
             sources=source_list,
         )
     except Exception as e:
-        record_summary("memory_search", "error", start_time, "storage_error")
+        _record_service_error("memory_search", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory search failed: {e}"}]}
     if not results:
         record_summary("memory_search", "empty", start_time)
@@ -786,7 +786,7 @@ async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("memory_status", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("memory_status", "error", start_time, "missing_store")
+        _record_service_error("memory_status", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     try:
         if _as_bool(args.get("warm"), default=False):
@@ -799,7 +799,7 @@ async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
             _memory.vacuum()
         status = _memory.memory_status()
     except Exception as e:
-        record_summary("memory_status", "error", start_time, "storage_error")
+        _record_service_error("memory_status", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory status failed: {e}"}]}
     record_summary("memory_status", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(status)}]}
@@ -811,7 +811,7 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("memory_recent", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("memory_recent", "error", start_time, "missing_store")
+        _record_service_error("memory_recent", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
     kind = args.get("kind")
@@ -819,7 +819,7 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
     try:
         results = _memory.recent(limit=limit, kind=str(kind) if kind else None, sources=source_list)
     except Exception as e:
-        record_summary("memory_recent", "error", start_time, "storage_error")
+        _record_service_error("memory_recent", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory recent failed: {e}"}]}
     if not results:
         record_summary("memory_recent", "empty", start_time)
@@ -839,17 +839,17 @@ async def memory_summary_add(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("memory_summary_add", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("memory_summary_add", "error", start_time, "missing_store")
+        _record_service_error("memory_summary_add", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     topic = str(args.get("topic", "")).strip()
     summary = str(args.get("summary", "")).strip()
     if not topic or not summary:
-        record_summary("memory_summary_add", "error", start_time, "missing_fields")
+        _record_service_error("memory_summary_add", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Summary topic and text required."}]}
     try:
         _memory.upsert_summary(topic, summary)
     except Exception as e:
-        record_summary("memory_summary_add", "error", start_time, "storage_error")
+        _record_service_error("memory_summary_add", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory summary add failed: {e}"}]}
     record_summary("memory_summary_add", "ok", start_time)
     return {"content": [{"type": "text", "text": "Summary stored."}]}
@@ -861,13 +861,13 @@ async def memory_summary_list(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("memory_summary_list", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("memory_summary_list", "error", start_time, "missing_store")
+        _record_service_error("memory_summary_list", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
     try:
         results = _memory.list_summaries(limit=limit)
     except Exception as e:
-        record_summary("memory_summary_list", "error", start_time, "storage_error")
+        _record_service_error("memory_summary_list", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory summary list failed: {e}"}]}
     if not results:
         record_summary("memory_summary_list", "empty", start_time)
@@ -883,20 +883,20 @@ async def task_plan_create(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("task_plan_create", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("task_plan_create", "error", start_time, "missing_store")
+        _record_service_error("task_plan_create", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     title = str(args.get("title", "")).strip()
     steps = args.get("steps")
     if not title or not isinstance(steps, list) or not steps:
-        record_summary("task_plan_create", "error", start_time, "missing_fields")
+        _record_service_error("task_plan_create", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Plan title and steps required."}]}
     try:
         plan_id = _memory.add_task_plan(title, [str(step) for step in steps])
     except ValueError:
-        record_summary("task_plan_create", "error", start_time, "invalid_steps")
+        _record_service_error("task_plan_create", start_time, "invalid_steps")
         return {"content": [{"type": "text", "text": "Plan requires at least one non-empty step."}]}
     except Exception as e:
-        record_summary("task_plan_create", "error", start_time, "storage_error")
+        _record_service_error("task_plan_create", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Task plan create failed: {e}"}]}
     record_summary("task_plan_create", "ok", start_time)
     return {"content": [{"type": "text", "text": f"Plan created (id={plan_id})."}]}
@@ -908,13 +908,13 @@ async def task_plan_list(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("task_plan_list", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("task_plan_list", "error", start_time, "missing_store")
+        _record_service_error("task_plan_list", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     open_only = _as_bool(args.get("open_only"), default=True)
     try:
         plans = _memory.list_task_plans(open_only=open_only)
     except Exception as e:
-        record_summary("task_plan_list", "error", start_time, "storage_error")
+        _record_service_error("task_plan_list", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Task plan list failed: {e}"}]}
     if not plans:
         record_summary("task_plan_list", "empty", start_time)
@@ -934,22 +934,22 @@ async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("task_plan_update", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("task_plan_update", "error", start_time, "missing_store")
+        _record_service_error("task_plan_update", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = _as_int(args.get("plan_id", 0), 0)
     step_index = _as_int(args.get("step_index", -1), -1)
     status = str(args.get("status", "pending")).strip()
     allowed_status = {"pending", "in_progress", "blocked", "done"}
     if plan_id <= 0 or step_index < 0:
-        record_summary("task_plan_update", "error", start_time, "missing_fields")
+        _record_service_error("task_plan_update", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Plan id and step index required."}]}
     if status not in allowed_status:
-        record_summary("task_plan_update", "error", start_time, "invalid_status")
+        _record_service_error("task_plan_update", start_time, "invalid_status")
         return {"content": [{"type": "text", "text": "Status must be one of: pending, in_progress, blocked, done."}]}
     try:
         updated = _memory.update_task_step(plan_id, step_index, status)
     except Exception as e:
-        record_summary("task_plan_update", "error", start_time, "storage_error")
+        _record_service_error("task_plan_update", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Task plan update failed: {e}"}]}
     if not updated:
         record_summary("task_plan_update", "empty", start_time)
@@ -964,16 +964,16 @@ async def task_plan_summary(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("task_plan_summary", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("task_plan_summary", "error", start_time, "missing_store")
+        _record_service_error("task_plan_summary", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = _as_int(args.get("plan_id", 0), 0)
     if plan_id <= 0:
-        record_summary("task_plan_summary", "error", start_time, "missing_plan")
+        _record_service_error("task_plan_summary", start_time, "missing_plan")
         return {"content": [{"type": "text", "text": "Plan id required."}]}
     try:
         progress = _memory.task_plan_progress(plan_id)
     except Exception as e:
-        record_summary("task_plan_summary", "error", start_time, "storage_error")
+        _record_service_error("task_plan_summary", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Task plan summary failed: {e}"}]}
     if not progress:
         record_summary("task_plan_summary", "empty", start_time)
@@ -990,17 +990,17 @@ async def task_plan_next(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("task_plan_next", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
-        record_summary("task_plan_next", "error", start_time, "missing_store")
+        _record_service_error("task_plan_next", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = args.get("plan_id")
     if plan_id is not None and _as_int(plan_id, 0) <= 0:
-        record_summary("task_plan_next", "error", start_time, "invalid_plan")
+        _record_service_error("task_plan_next", start_time, "invalid_plan")
         return {"content": [{"type": "text", "text": "Plan id must be a positive integer."}]}
     parsed_plan_id = _as_int(plan_id, 0) if plan_id is not None else None
     try:
         plan = _memory.next_task_step(parsed_plan_id) if parsed_plan_id else _memory.next_task_step()
     except Exception as e:
-        record_summary("task_plan_next", "error", start_time, "storage_error")
+        _record_service_error("task_plan_next", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Task plan next failed: {e}"}]}
     if not plan:
         record_summary("task_plan_next", "empty", start_time)
