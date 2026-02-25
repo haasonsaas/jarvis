@@ -47,6 +47,7 @@ BACKCHANNEL_WINDOW_SEC = 0.35
 BACKCHANNEL_ENERGY_MIN = 0.25
 BACKCHANNEL_ENERGY_MAX = 0.85
 BACKCHANNEL_NOD_SCALE = 0.35
+BACKCHANNEL_MIN_ATTENTION = 0.35
 
 ATTENTION_HOLD_SEC = 1.2
 ATTENTION_TIMEOUT_SEC = 1.5
@@ -342,10 +343,22 @@ class PresenceLoop:
             return 0.0
         if sig.vad_energy < BACKCHANNEL_ENERGY_MIN or sig.vad_energy > BACKCHANNEL_ENERGY_MAX:
             return 0.0
+        attention = self._attention_strength(sig, now)
+        if attention < BACKCHANNEL_MIN_ATTENTION:
+            return 0.0
         if now < self._backchannel_next_allowed:
             if now <= self._backchannel_active_until:
-                return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0
+                return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0 * attention
             return 0.0
         self._backchannel_active_until = now + BACKCHANNEL_WINDOW_SEC
         self._backchannel_next_allowed = now + BACKCHANNEL_COOLDOWN_SEC
-        return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0
+        return math.sin(t * 5.0) * BACKCHANNEL_NOD_SCALE * 6.0 * attention
+
+    def _attention_strength(self, sig: Signals, now: float) -> float:
+        if sig.face_last_seen and (now - sig.face_last_seen) <= ATTENTION_TIMEOUT_SEC:
+            return 1.0
+        if sig.hand_last_seen and (now - sig.hand_last_seen) <= ATTENTION_TIMEOUT_SEC:
+            return 0.8
+        if sig.doa_last_seen and (now - sig.doa_last_seen) <= ATTENTION_TIMEOUT_SEC:
+            return 0.6
+        return 0.0

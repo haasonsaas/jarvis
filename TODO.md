@@ -53,6 +53,7 @@
 - [ ] Add lightweight backchannel scheduler (subtle nod/tilt on user pauses).
 - [ ] Use DoA/face confidence to bias backchannel timing.
   - Implemented: backchannel nod scheduler in listening state.
+  - Implemented: attention-weighted backchannel gating.
 
 ### 12) Multimodal Intent
 - [ ] Add intended-query gate to ignore off-axis chatter (ASR intent detection or simple heuristic).
