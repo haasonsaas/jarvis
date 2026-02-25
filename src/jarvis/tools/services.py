@@ -48,6 +48,9 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
 
 
 def _tool_permitted(name: str) -> bool:
+    if _config is not None and not _config.home_enabled:
+        if name in {"smart_home", "smart_home_state"}:
+            return False
     return is_tool_allowed(name, _tool_allowlist, _tool_denylist)
 
 

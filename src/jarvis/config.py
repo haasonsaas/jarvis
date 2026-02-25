@@ -78,7 +78,6 @@ class Config:
     # Vision
     yolo_model: str = "yolov8n-face.pt"
     face_track_fps: int = 10
-    hand_track_enabled: bool = field(default_factory=lambda: _env_bool("HAND_TRACK_ENABLED") or False)
 
     # Memory + planning
     memory_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_ENABLED") is not False)
@@ -97,6 +96,11 @@ class Config:
 
     # Backchannel preferences
     backchannel_style: str = field(default_factory=lambda: os.environ.get("BACKCHANNEL_STYLE", "balanced"))
+
+    # Quick toggles
+    motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)
+    hand_track_enabled: bool = field(default_factory=lambda: _env_bool("HAND_TRACK_ENABLED") or False)
+    home_enabled: bool = field(default_factory=lambda: _env_bool("HOME_ENABLED") is not False)
 
     @property
     def has_home_assistant(self) -> bool:

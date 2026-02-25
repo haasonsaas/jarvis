@@ -30,6 +30,8 @@ class TestConfig:
         assert config.vad_threshold == 0.5
         assert config.whisper_model == "base.en"
         assert config.yolo_model == "yolov8n-face.pt"
+        assert config.motion_enabled is True
+        assert config.home_enabled is True
 
     def test_invalid_sample_rate_raises(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

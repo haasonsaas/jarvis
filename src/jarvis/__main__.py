@@ -88,6 +88,9 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Jarvis AI Assistant on Reachy Mini")
     p.add_argument("--sim", action="store_true", help="Simulation mode (no robot)")
     p.add_argument("--no-vision", action="store_true", help="Disable face tracking")
+    p.add_argument("--no-motion", action="store_true", help="Disable robot motion")
+    p.add_argument("--no-hands", action="store_true", help="Disable hand tracking")
+    p.add_argument("--no-home", action="store_true", help="Disable smart home tools")
     p.add_argument("--no-tts", action="store_true", help="Print responses instead of speaking")
     p.add_argument("--debug", action="store_true", help="Verbose logging")
     return p.parse_args()
@@ -112,6 +115,12 @@ class Jarvis:
         # Presence loop (the soul)
         self.presence = PresenceLoop(self.robot)
         self.presence.set_backchannel_style(self.config.backchannel_style)
+        if getattr(args, "no_motion", False):
+            self.config.motion_enabled = False
+        if getattr(args, "no_home", False):
+            self.config.home_enabled = False
+        if getattr(args, "no_hands", False):
+            self.config.hand_track_enabled = False
 
         # Bind tools to robot + presence
         bind_robot_tools(self.robot, self.presence, self.config)
@@ -170,7 +179,8 @@ class Jarvis:
     def start(self) -> None:
         """Initialize all subsystems."""
         self.robot.connect()
-        self.presence.start()
+        if self.config.motion_enabled:
+            self.presence.start()
 
         self._use_robot_audio = not self.robot.sim
 
@@ -221,15 +231,14 @@ class Jarvis:
             self._output_stream.stop()
             self._output_stream.close()
             self._output_stream = None
-
-        if self._use_robot_audio:
-            self.robot.stop_audio(recording=True, playing=True)
-
         if self.face_tracker:
             self.face_tracker.stop()
+        if self._use_robot_audio:
+            self.robot.stop_audio(recording=True, playing=True)
         if self.hand_tracker:
             self.hand_tracker.stop()
-        self.presence.stop()
+        if self.config.motion_enabled:
+            self.presence.stop()
         self.robot.disconnect()
         log.info("Jarvis offline.")
 
