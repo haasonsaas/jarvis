@@ -113,7 +113,7 @@ class Jarvis:
         self.presence = PresenceLoop(self.robot)
 
         # Bind tools to robot + presence
-        bind_robot_tools(self.robot, self.presence)
+        bind_robot_tools(self.robot, self.presence, self.config)
 
         # Audio
         self.vad = VoiceActivityDetector(

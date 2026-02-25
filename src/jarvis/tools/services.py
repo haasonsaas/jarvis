@@ -16,6 +16,7 @@ import aiohttp
 from claude_agent_sdk import tool, create_sdk_mcp_server
 
 from jarvis.config import Config
+from jarvis.tool_policy import is_tool_allowed
 from jarvis.memory import MemoryStore
 
 log = logging.getLogger(__name__)
@@ -30,14 +31,23 @@ ACTION_COOLDOWN_SEC = 2.0
 _config: Config | None = None
 _memory: MemoryStore | None = None
 _action_last_seen: dict[str, float] = {}
+_tool_allowlist: list[str] = []
+_tool_denylist: list[str] = []
 
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _config, _memory
     _config = config
     _memory = memory_store
+    global _tool_allowlist, _tool_denylist
+    _tool_allowlist = list(config.tool_allowlist)
+    _tool_denylist = list(config.tool_denylist)
     # Ensure audit dir exists
     AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _tool_permitted(name: str) -> bool:
+    return is_tool_allowed(name, _tool_allowlist, _tool_denylist)
 
 
 def _audit(action: str, details: dict) -> None:
@@ -79,6 +89,8 @@ def _touch_action(domain: str, action: str, entity_id: str) -> None:
 # ── Home Assistant ────────────────────────────────────────────
 
 async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("smart_home"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     from jarvis.tools.robot import tool_feedback
 
     if not _config or not _config.has_home_assistant:
@@ -138,6 +150,8 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("smart_home_state"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     from jarvis.tools.robot import tool_feedback
 
     if not _config or not _config.has_home_assistant:
@@ -170,6 +184,8 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def get_time(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("get_time"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     from jarvis.tools.robot import tool_feedback
     tool_feedback("start")
     tool_feedback("done")
@@ -179,6 +195,8 @@ async def get_time(args: dict[str, Any]) -> dict[str, Any]:
 # ── Memory + planning ───────────────────────────────────────
 
 async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("memory_add"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     text = str(args.get("text", "")).strip()
@@ -201,6 +219,8 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("memory_search"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     query = str(args.get("query", "")).strip()
@@ -233,6 +253,8 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("memory_status"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     if args.get("warm"):
@@ -244,6 +266,8 @@ async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("memory_recent"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     limit = int(args.get("limit", 5))
@@ -262,6 +286,8 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def memory_summary_add(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("memory_summary_add"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     topic = str(args.get("topic", "")).strip()
@@ -273,6 +299,8 @@ async def memory_summary_add(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def memory_summary_list(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("memory_summary_list"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     limit = int(args.get("limit", 5))
@@ -284,6 +312,8 @@ async def memory_summary_list(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def task_plan_create(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("task_plan_create"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     title = str(args.get("title", "")).strip()
@@ -295,6 +325,8 @@ async def task_plan_create(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def task_plan_list(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("task_plan_list"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     open_only = bool(args.get("open_only", True))
@@ -310,6 +342,8 @@ async def task_plan_list(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("task_plan_update"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = int(args.get("plan_id", 0))
@@ -322,6 +356,8 @@ async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def task_plan_summary(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("task_plan_summary"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = int(args.get("plan_id", 0))
@@ -336,6 +372,8 @@ async def task_plan_summary(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def task_plan_next(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("task_plan_next"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _memory:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = args.get("plan_id")

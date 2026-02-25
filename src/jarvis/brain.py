@@ -28,6 +28,7 @@ from jarvis.memory import MemoryStore
 from jarvis.presence import PresenceLoop, State
 from jarvis.tools.robot import create_robot_server, bind as bind_robot
 from jarvis.tools.services import create_services_server, bind as bind_services
+from jarvis.tool_policy import filter_allowed_tools
 
 log = logging.getLogger(__name__)
 
@@ -77,13 +78,8 @@ class Brain:
         bind_services(config, self._memory)
 
     def _build_options(self) -> ClaudeAgentOptions:
-        opts = ClaudeAgentOptions(
-            system_prompt=SYSTEM_PROMPT,
-            mcp_servers={
-                "jarvis-robot": self._robot_server,
-                "jarvis-services": self._services_server,
-            },
-            allowed_tools=[
+        self._allowed_tools = filter_allowed_tools(
+            [
                 "mcp__jarvis-robot__embody",
                 "mcp__jarvis-robot__play_emotion",
                 "mcp__jarvis-robot__play_dance",
@@ -105,6 +101,16 @@ class Brain:
                 "mcp__jarvis-services__memory_summary_list",
                 "mcp__jarvis-services__memory_status",
             ],
+            self._config.tool_allowlist,
+            self._config.tool_denylist,
+        )
+        opts = ClaudeAgentOptions(
+            system_prompt=SYSTEM_PROMPT,
+            mcp_servers={
+                "jarvis-robot": self._robot_server,
+                "jarvis-services": self._services_server,
+            },
+            allowed_tools=self._allowed_tools,
             permission_mode="bypassPermissions",
             max_turns=5,
             include_partial_messages=True,

@@ -203,6 +203,21 @@ class TestServicesTools:
         assert "next step" in next_step["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_tool_policy_denies(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        config = Config()
+        config.tool_denylist = ["memory_add"]
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(config, store)
+
+        denied = await services.memory_add({"text": "Nope"})
+        assert "not permitted" in denied["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_smart_home_dry_run_explicit_false(self):
         from jarvis.tools.services import smart_home
 

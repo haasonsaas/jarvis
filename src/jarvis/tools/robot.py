@@ -12,6 +12,7 @@ import logging
 from typing import Any, TYPE_CHECKING
 
 from claude_agent_sdk import tool, create_sdk_mcp_server
+from jarvis.tool_policy import is_tool_allowed
 
 if TYPE_CHECKING:
     from jarvis.robot.controller import RobotController
@@ -23,12 +24,21 @@ log = logging.getLogger(__name__)
 # These get bound at startup — avoids circular imports
 _robot: RobotController | None = None
 _presence: PresenceLoop | None = None
+_tool_allowlist: list[str] = []
+_tool_denylist: list[str] = []
 
 
-def bind(robot: RobotController, presence: PresenceLoop) -> None:
-    global _robot, _presence
+def bind(robot: RobotController, presence: PresenceLoop, config: Any | None = None) -> None:
+    global _robot, _presence, _tool_allowlist, _tool_denylist
     _robot = robot
     _presence = presence
+    if config is not None:
+        _tool_allowlist = list(getattr(config, "tool_allowlist", []))
+        _tool_denylist = list(getattr(config, "tool_denylist", []))
+
+
+def _tool_permitted(name: str) -> bool:
+    return is_tool_allowed(name, _tool_allowlist, _tool_denylist)
 
 
 def tool_feedback(kind: str) -> None:
@@ -39,6 +49,8 @@ def tool_feedback(kind: str) -> None:
 # ── Embodiment plan tool ─────────────────────────────────────
 
 async def embody(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("embody"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if _presence:
         # Clamp values to schema bounds
         _presence.signals.intent_nod = max(0.0, min(1.0, args.get("nod", 0.0)))
@@ -50,6 +62,8 @@ async def embody(args: dict[str, Any]) -> dict[str, Any]:
 # ── Direct robot actions (used sparingly) ─────────────────────
 
 async def play_emotion(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("play_emotion"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if _robot:
         _robot.play_emotion(args["name"])
         return {"content": [{"type": "text", "text": f"Playing emotion: {args['name']}"}]}
@@ -57,6 +71,8 @@ async def play_emotion(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def play_dance(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("play_dance"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if _robot:
         _robot.play_dance(args["name"])
         return {"content": [{"type": "text", "text": f"Dancing: {args['name']}"}]}
@@ -64,12 +80,16 @@ async def play_dance(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def list_animations(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("list_animations"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     emotions = _robot.list_emotions() if _robot else []
     dances = _robot.list_dances() if _robot else []
     return {"content": [{"type": "text", "text": json.dumps({"emotions": emotions, "dances": dances})}]}
 
 
 async def run_sequence(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("run_sequence"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _robot:
         return {"content": [{"type": "text", "text": "Robot not connected (simulation mode)"}]}
 
@@ -115,6 +135,8 @@ async def run_sequence(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def run_macro(args: dict[str, Any]) -> dict[str, Any]:
+    if not _tool_permitted("run_macro"):
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _robot:
         return {"content": [{"type": "text", "text": "Robot not connected (simulation mode)"}]}
     name = str(args.get("name", ""))

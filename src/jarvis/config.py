@@ -42,6 +42,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_list(name: str) -> list[str]:
+    val = os.environ.get(name)
+    if not val:
+        return []
+    return [item.strip() for item in val.split(",") if item.strip()]
+
+
 @dataclass
 class Config:
     # Claude
@@ -83,6 +90,10 @@ class Config:
     memory_decay_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_DECAY_ENABLED") or False)
     memory_mmr_lambda: float = field(default_factory=lambda: _env_float("MEMORY_MMR_LAMBDA", 0.7))
     memory_mmr_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_MMR_ENABLED") or False)
+
+    # Tool policy
+    tool_allowlist: list[str] = field(default_factory=lambda: _env_list("TOOL_ALLOWLIST"))
+    tool_denylist: list[str] = field(default_factory=lambda: _env_list("TOOL_DENYLIST"))
 
     @property
     def has_home_assistant(self) -> bool:

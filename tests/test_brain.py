@@ -57,6 +57,17 @@ class TestBrain:
             b = Brain(config, presence)
         return b
 
+    def test_allowed_tools_respects_policy(self, config, mock_robot):
+        presence = PresenceLoop(mock_robot)
+        config.tool_denylist = ["mcp__jarvis-services__memory_add"]
+        with patch("jarvis.brain.create_robot_server") as mock_rs, \
+             patch("jarvis.brain.create_services_server") as mock_ss, \
+             patch("jarvis.brain.bind_services"):
+            mock_rs.return_value = MagicMock()
+            mock_ss.return_value = MagicMock()
+            brain = Brain(config, presence)
+        assert "mcp__jarvis-services__memory_add" not in brain._client.options.allowed_tools
+
     @pytest.mark.asyncio
     async def test_respond_sets_thinking_state(self, brain):
         """Brain should set THINKING state when processing begins."""
