@@ -4,8 +4,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from jarvis.brain import Brain, _find_sentence_boundary
-from jarvis.presence import PresenceLoop, State, Signals
-from jarvis.robot.controller import RobotController
+from jarvis.presence import PresenceLoop, State
 
 
 class TestFindSentenceBoundary:
@@ -78,7 +77,7 @@ class TestBrain:
         mock_msg.subtype = "init"
         mock_msg.data = {"session_id": "test-session"}
 
-        with patch.object(brain._client, "query", new=AsyncMock()) as mock_query, \
+        with patch.object(brain._client, "query", new=AsyncMock()), \
              patch.object(brain._client, "receive_response") as mock_recv, \
              patch.object(brain, "_ensure_connected", new=AsyncMock()):
             mock_recv.return_value = _async_iter([mock_msg])
@@ -292,4 +291,5 @@ async def _async_iter(items):
 async def _async_iter_error(exc):
     """Async iterator that raises an exception."""
     raise exc
-    yield  # make it a generator  # noqa: unreachable
+    if False:
+        yield None

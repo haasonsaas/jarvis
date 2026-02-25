@@ -1,6 +1,6 @@
 import pytest
 
-from jarvis.__main__ import Jarvis, TURN_TAKING_THRESHOLD, TURN_TAKING_BARGE_IN_THRESHOLD
+from jarvis.__main__ import Jarvis, TURN_TAKING_BARGE_IN_THRESHOLD
 from jarvis.presence import Signals
 
 

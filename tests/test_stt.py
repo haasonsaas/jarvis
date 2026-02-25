@@ -1,6 +1,5 @@
 """Tests for jarvis.audio.stt."""
 
-import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +8,7 @@ class TestSpeechToText:
     @patch("jarvis.audio.stt.WhisperModel")
     def test_init(self, mock_whisper_cls):
         from jarvis.audio.stt import SpeechToText
-        stt = SpeechToText(model_size="tiny.en")
+        SpeechToText(model_size="tiny.en")
         mock_whisper_cls.assert_called_once_with("tiny.en", compute_type="int8")
 
     @patch("jarvis.audio.stt.WhisperModel")

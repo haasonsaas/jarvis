@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 import pytest
 import numpy as np
-from unittest.mock import MagicMock, AsyncMock, patch
 
 # Set required env vars before any imports touch Config
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key-not-real")

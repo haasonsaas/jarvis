@@ -1,6 +1,5 @@
 """Tests for jarvis.robot.controller."""
 
-import pytest
 import numpy as np
 import time
 from unittest.mock import MagicMock, patch

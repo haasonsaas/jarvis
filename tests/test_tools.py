@@ -4,8 +4,6 @@ import json
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 
-from jarvis.robot.controller import RobotController
-from jarvis.presence import PresenceLoop
 
 
 def _schema_required_fields(schema: object) -> set[str]:
@@ -588,7 +586,7 @@ class TestServicesTools:
 
         services.AUDIT_LOG = tmp_path / "audit.jsonl"
 
-        result = await services.smart_home({
+        await services.smart_home({
             "domain": "light",
             "action": "turn_on",
             "entity_id": "light.test",

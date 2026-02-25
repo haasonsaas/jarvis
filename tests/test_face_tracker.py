@@ -2,10 +2,9 @@
 
 import time
 import pytest
-import numpy as np
 from unittest.mock import MagicMock, patch
 
-from jarvis.presence import PresenceLoop, Signals
+from jarvis.presence import PresenceLoop
 from jarvis.robot.controller import RobotController
 from jarvis.vision.face_tracker import DEADZONE_X, DEADZONE_Y
 

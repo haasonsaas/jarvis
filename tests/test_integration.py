@@ -5,12 +5,11 @@ dependencies (hardware, APIs) but real internal logic.
 """
 
 import time
-import pytest
 import numpy as np
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
 from jarvis.presence import PresenceLoop, State
-from jarvis.robot.controller import RobotController, HeadPose
+from jarvis.robot.controller import RobotController
 
 
 class TestPresenceWithFaceTracker:
@@ -76,8 +75,7 @@ class TestEmbodyIntegration:
     """Test that embody tool properly affects presence loop behavior."""
 
     def test_nod_affects_speaking_state(self, mock_robot):
-        from jarvis.tools.robot import bind, embody
-        import asyncio
+        from jarvis.tools.robot import bind
 
         presence = PresenceLoop(mock_robot)
         bind(mock_robot, presence)

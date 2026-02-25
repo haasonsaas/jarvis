@@ -2,11 +2,8 @@
 
 import math
 import time
-import pytest
-from unittest.mock import MagicMock, call
 
-from jarvis.presence import PresenceLoop, State, Signals, ATTENTION_TIMEOUT_SEC
-from jarvis.robot.controller import RobotController, HeadPose
+from jarvis.presence import State, Signals, ATTENTION_TIMEOUT_SEC
 
 
 class TestSignals:

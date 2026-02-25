@@ -1,7 +1,6 @@
 import time
 import numpy as np
 import pytest
-from unittest.mock import MagicMock
 
 from jarvis.presence import PresenceLoop
 from jarvis.robot.controller import RobotController

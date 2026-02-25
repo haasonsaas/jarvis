@@ -1,6 +1,5 @@
 """Tests for jarvis.config."""
 
-import os
 import pytest
 
 
