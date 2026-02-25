@@ -19,7 +19,7 @@ import logging
 import math
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from collections import deque
 
 from jarvis.robot.controller import RobotController, HeadPose
@@ -184,7 +184,6 @@ class PresenceLoop:
         while self._running:
             t = time.monotonic()
             elapsed = t - self._t0
-            dt = LOOP_INTERVAL  # use fixed dt for consistent smoothing
             sig = self.signals
 
             match sig.state:

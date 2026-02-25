@@ -26,7 +26,7 @@ from claude_agent_sdk import (
 from jarvis.config import Config
 from jarvis.memory import MemoryStore
 from jarvis.presence import PresenceLoop, State
-from jarvis.tools.robot import create_robot_server, bind as bind_robot
+from jarvis.tools.robot import create_robot_server
 from jarvis.tools.services import create_services_server, bind as bind_services
 from jarvis.tool_policy import filter_allowed_tools
 

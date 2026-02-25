@@ -18,7 +18,6 @@ from jarvis.tool_policy import is_tool_allowed
 if TYPE_CHECKING:
     from jarvis.robot.controller import RobotController
     from jarvis.presence import PresenceLoop
-    from jarvis.robot.controller import HeadPose, MotionStep
 
 log = logging.getLogger(__name__)
 
