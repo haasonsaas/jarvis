@@ -1,5 +1,6 @@
 import time
 import numpy as np
+import pytest
 from unittest.mock import MagicMock
 
 from jarvis.presence import PresenceLoop
@@ -42,4 +43,23 @@ def test_loop_updates_presence_signals():
     time.sleep(0.1)
     tracker.stop()
 
-    assert presence.signals.hand_present is True
+    assert presence.signals.hand_last_seen is not None
+
+
+def test_stop_clears_hand_present():
+    robot = RobotController(sim=True)
+    robot.connect()
+    presence = PresenceLoop(robot)
+    tracker = HandTracker(presence=presence, get_frame=lambda: None, fps=100)
+
+    presence.signals.hand_present = True
+    tracker.stop()
+    assert presence.signals.hand_present is False
+
+
+def test_invalid_fps_raises():
+    robot = RobotController(sim=True)
+    robot.connect()
+    presence = PresenceLoop(robot)
+    with pytest.raises(ValueError):
+        HandTracker(presence=presence, get_frame=lambda: None, fps=0)

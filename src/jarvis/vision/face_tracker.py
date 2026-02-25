@@ -8,7 +8,6 @@ face tracking with other behaviors (breathing, listening, etc.).
 from __future__ import annotations
 
 import logging
-import math
 import time
 import threading
 import numpy as np
@@ -63,6 +62,9 @@ class FaceTracker:
             model_path: Path to YOLOv8 model. Use a face-specific model for best results.
             fps: Target detection frequency.
         """
+        if fps <= 0:
+            raise ValueError("fps must be > 0")
+
         self._presence = presence
         self._get_frame = get_frame
         self._model = YOLO(model_path)
@@ -73,7 +75,6 @@ class FaceTracker:
         # Smoothed output
         self._smooth_yaw = 0.0
         self._smooth_pitch = 0.0
-        self._smooth_roll = 0.0
 
     def start(self) -> None:
         """Start the face tracking loop in a background thread."""
@@ -92,6 +93,7 @@ class FaceTracker:
             if self._thread.is_alive():
                 log.warning("Face tracker thread did not stop within timeout")
             self._thread = None
+        self._presence.signals.face_detected = False
         log.info("Face tracking stopped")
 
     def detect_faces(self, frame: np.ndarray) -> list[Detection]:
@@ -151,18 +153,14 @@ class FaceTracker:
 
                 raw_yaw = err_x * GAIN_YAW
                 raw_pitch = err_y * GAIN_PITCH
-                raw_roll = -raw_yaw * 0.25
-
                 # Exponential smoothing — SMOOTH_ALPHA is the weight on NEW values
                 self._smooth_yaw += SMOOTH_ALPHA * (raw_yaw - self._smooth_yaw)
                 self._smooth_pitch += SMOOTH_ALPHA * (raw_pitch - self._smooth_pitch)
-                self._smooth_roll += SMOOTH_ALPHA * (raw_roll - self._smooth_roll)
 
                 # Feed into presence loop signals (not robot directly)
                 self._presence.signals.face_detected = True
                 self._presence.signals.face_yaw = self._smooth_yaw
                 self._presence.signals.face_pitch = self._smooth_pitch
-                self._presence.signals.intent_tilt = self._smooth_roll
                 self._presence.signals.face_last_seen = time.monotonic()
             else:
                 self._presence.signals.face_detected = False

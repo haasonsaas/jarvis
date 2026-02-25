@@ -175,9 +175,12 @@ class Jarvis:
 
         # Audio output stream (persistent, avoids open/close per chunk)
         self._output_stream: sd.OutputStream | None = None
+        self._started = False
 
     def start(self) -> None:
         """Initialize all subsystems."""
+        if self._started:
+            return
         self.robot.connect()
         if self.config.motion_enabled:
             self.presence.start()
@@ -223,23 +226,36 @@ class Jarvis:
                 )
                 self._output_stream.start()
 
+        self._started = True
         log.info("Jarvis is online.")
 
     def stop(self) -> None:
         """Shut down all subsystems."""
+        if not self._started:
+            return
         if self._output_stream:
-            self._output_stream.stop()
-            self._output_stream.close()
+            with suppress(Exception):
+                self._output_stream.stop()
+            with suppress(Exception):
+                self._output_stream.close()
             self._output_stream = None
         if self.face_tracker:
-            self.face_tracker.stop()
+            with suppress(Exception):
+                self.face_tracker.stop()
+            self.face_tracker = None
         if self._use_robot_audio:
-            self.robot.stop_audio(recording=True, playing=True)
+            with suppress(Exception):
+                self.robot.stop_audio(recording=True, playing=True)
         if self.hand_tracker:
-            self.hand_tracker.stop()
+            with suppress(Exception):
+                self.hand_tracker.stop()
+            self.hand_tracker = None
         if self.config.motion_enabled:
-            self.presence.stop()
-        self.robot.disconnect()
+            with suppress(Exception):
+                self.presence.stop()
+        with suppress(Exception):
+            self.robot.disconnect()
+        self._started = False
         log.info("Jarvis offline.")
 
     async def run(self) -> None:
@@ -312,7 +328,13 @@ class Jarvis:
                 with suppress(asyncio.CancelledError):
                     await self._tts_task
                 self._tts_task = None
-            await self.brain.close()
+            if self._filler_task is not None:
+                self._filler_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._filler_task
+                self._filler_task = None
+            with suppress(Exception):
+                await self.brain.close()
             self.stop()
 
     async def _enqueue_utterance(self, audio: np.ndarray) -> None:
@@ -361,7 +383,6 @@ class Jarvis:
             with self._lock:
                 assistant_busy = self._speaking
 
-            silero_speech = conf > self.vad.threshold
             is_speech = self._compute_turn_taking(
                 conf=conf,
                 doa_speech=doa_speech,
@@ -668,10 +689,16 @@ def main():
         task.cancel()
 
     signal.signal(signal.SIGINT, shutdown)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, shutdown)
 
     try:
         loop.run_until_complete(task)
     finally:
+        with suppress(Exception):
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        with suppress(Exception):
+            loop.run_until_complete(loop.shutdown_default_executor())
         loop.close()
 
 

@@ -120,9 +120,9 @@ class TestFaceTracker:
         time.sleep(0.2)
         tracker.stop()
 
-        # Should have set face_detected and face position
-        assert mock_presence.signals.face_detected is True
-        assert abs(mock_presence.signals.intent_tilt) <= 15.0
+        # Should have fed face position signals while running.
+        assert mock_presence.signals.face_last_seen is not None
+        assert abs(mock_presence.signals.face_yaw) <= 45.0
 
     @patch("jarvis.vision.face_tracker.YOLO")
     def test_no_face_clears_signal(self, mock_yolo_cls, mock_presence):
@@ -193,3 +193,24 @@ class TestFaceTracker:
         assert tracker._running
         tracker.stop()
         assert not tracker._running
+
+    @patch("jarvis.vision.face_tracker.YOLO")
+    def test_stop_clears_face_detected(self, mock_yolo_cls, mock_presence):
+        mock_yolo_cls.return_value = MagicMock()
+
+        from jarvis.vision.face_tracker import FaceTracker
+        tracker = FaceTracker(
+            presence=mock_presence,
+            get_frame=lambda: None,
+            fps=100,
+        )
+        mock_presence.signals.face_detected = True
+        tracker.stop()
+        assert mock_presence.signals.face_detected is False
+
+    @patch("jarvis.vision.face_tracker.YOLO")
+    def test_invalid_fps_raises(self, mock_yolo_cls, mock_presence):
+        mock_yolo_cls.return_value = MagicMock()
+        from jarvis.vision.face_tracker import FaceTracker
+        with pytest.raises(ValueError):
+            FaceTracker(presence=mock_presence, get_frame=lambda: None, fps=0)

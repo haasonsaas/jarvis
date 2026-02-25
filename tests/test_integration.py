@@ -51,8 +51,8 @@ class TestPresenceWithFaceTracker:
         tracker.stop()
         presence.stop()
 
-        # Face was on the left → face_detected should be True
-        assert presence.signals.face_detected is True
+        # Face was on the left -> tracker should have produced recent face signals.
+        assert presence.signals.face_last_seen is not None
 
 
 class TestPresenceStateTransitions:

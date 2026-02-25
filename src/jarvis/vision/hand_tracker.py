@@ -38,6 +38,8 @@ class HandTracker:
     """Finds a bright hand-like blob and feeds presence loop signals."""
 
     def __init__(self, presence: PresenceLoop, get_frame, fps: int = 10):
+        if fps <= 0:
+            raise ValueError("fps must be > 0")
         self._presence = presence
         self._get_frame = get_frame
         self._interval = 1.0 / fps
@@ -62,6 +64,7 @@ class HandTracker:
             if self._thread.is_alive():
                 log.warning("Hand tracker thread did not stop within timeout")
             self._thread = None
+        self._presence.signals.hand_present = False
         log.info("Hand tracking stopped")
 
     def detect_hand(self, frame: np.ndarray) -> HandDetection | None:
