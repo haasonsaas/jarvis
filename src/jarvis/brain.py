@@ -102,6 +102,7 @@ class Brain:
                 "mcp__jarvis-services__memory_summary_list",
                 "mcp__jarvis-services__memory_status",
                 "mcp__jarvis-services__tool_summary",
+                "mcp__jarvis-services__tool_summary_text",
             ],
             self._config.tool_allowlist,
             self._config.tool_denylist,

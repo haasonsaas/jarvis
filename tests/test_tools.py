@@ -191,6 +191,9 @@ class TestServicesTools:
         summary = await services.tool_summary({"limit": 10})
         assert "memory_add" in summary["content"][0]["text"].lower()
 
+        summary_text = await services.tool_summary_text({"limit": 10})
+        assert "memory_add" in summary_text["content"][0]["text"].lower()
+
         summary_added = await services.memory_summary_add({"topic": "preferences", "summary": "User likes coffee."})
         assert "summary" in summary_added["content"][0]["text"].lower()
 

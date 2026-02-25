@@ -66,6 +66,20 @@ def _audit(action: str, details: dict) -> None:
     log.info("AUDIT: %s — %s", action, json.dumps(details))
 
 
+def _format_tool_summaries(items: list[dict[str, object]]) -> str:
+    if not items:
+        return "No recent tool activity."
+    lines = []
+    for item in items:
+        name = str(item.get("name", "tool"))
+        status = str(item.get("status", "unknown"))
+        duration = float(item.get("duration_ms", 0.0))
+        detail = item.get("detail")
+        detail_text = f" ({detail})" if detail else ""
+        lines.append(f"- {name}: {status} ({duration:.0f}ms){detail_text}")
+    return "\n".join(lines)
+
+
 def _now_local() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
@@ -471,7 +485,21 @@ async def tool_summary(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("tool_summary", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     limit = int(args.get("limit", 10))
-    return {"content": [{"type": "text", "text": json.dumps(list_summaries(limit))}]}
+    summaries = list_summaries(limit)
+    record_summary("tool_summary", "ok", start_time)
+    return {"content": [{"type": "text", "text": json.dumps(summaries)}]}
+
+
+async def tool_summary_text(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("tool_summary_text"):
+        record_summary("tool_summary_text", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    limit = int(args.get("limit", 6))
+    summaries = list_summaries(limit)
+    text = _format_tool_summaries(summaries)
+    record_summary("tool_summary_text", "ok", start_time)
+    return {"content": [{"type": "text", "text": text}]}
 
 
 # ── Build MCP server ──────────────────────────────────────────
@@ -683,6 +711,17 @@ tool_summary_tool = tool(
     },
 )(tool_summary)
 
+tool_summary_text_tool = tool(
+    "tool_summary_text",
+    "Summarize recent tool executions for the user.",
+    {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "number"},
+        },
+    },
+)(tool_summary_text)
+
 def create_services_server():
     return create_sdk_mcp_server(
         name="jarvis-services",
@@ -692,6 +731,7 @@ def create_services_server():
             smart_home_state_tool,
             get_time_tool,
             tool_summary_tool,
+            tool_summary_text_tool,
             memory_add_tool,
             memory_search_tool,
             memory_recent_tool,
