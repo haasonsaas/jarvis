@@ -171,3 +171,31 @@ class TestRobotControllerReal:
         call_args = mock_mini.goto_target.call_args
         body_yaw = call_args.kwargs.get("body_yaw", call_args[1].get("body_yaw"))
         assert body_yaw <= np.deg2rad(160.0)
+
+    @patch("jarvis.robot.controller.ReachyMini")
+    @patch("jarvis.robot.controller.RecordedMoves")
+    def test_get_doa_preserves_none_speech_flag(self, mock_moves_cls, mock_mini_cls):
+        mock_mini = MagicMock()
+        mock_mini.media.get_DoA.return_value = (0.42, None)
+        mock_mini_cls.return_value = mock_mini
+
+        rc = RobotController(sim=False)
+        rc.connect()
+
+        doa, is_speech = rc.get_doa()
+        assert doa == 0.42
+        assert is_speech is None
+
+    @patch("jarvis.robot.controller.ReachyMini")
+    @patch("jarvis.robot.controller.RecordedMoves")
+    def test_get_doa_handles_invalid_angle_with_speech_flag(self, mock_moves_cls, mock_mini_cls):
+        mock_mini = MagicMock()
+        mock_mini.media.get_DoA.return_value = ("not-a-number", True)
+        mock_mini_cls.return_value = mock_mini
+
+        rc = RobotController(sim=False)
+        rc.connect()
+
+        doa, is_speech = rc.get_doa()
+        assert doa is None
+        assert is_speech is True

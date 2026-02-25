@@ -445,6 +445,12 @@ class RobotController:
             return None, None
         try:
             doa, is_speech = self._mini.media.get_DoA()
-            return float(doa), bool(is_speech)
+            speech_flag = None if is_speech is None else bool(is_speech)
+            if doa is None:
+                return None, speech_flag
+            try:
+                return float(doa), speech_flag
+            except (TypeError, ValueError):
+                return None, speech_flag
         except Exception:
             return None, None

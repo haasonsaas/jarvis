@@ -213,10 +213,10 @@ class Brain:
 
 
 def _find_sentence_boundary(text: str) -> int:
-    """Find the last sentence-ending punctuation followed by a space or end."""
+    """Find the last sentence-ending punctuation followed by whitespace or end."""
     best = -1
     for i, ch in enumerate(text):
-        if ch in ".!?" and (i + 1 == len(text) or text[i + 1] == " "):
+        if ch in ".!?" and (i + 1 == len(text) or text[i + 1].isspace()):
             best = i
     return best
 

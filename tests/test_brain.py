@@ -43,6 +43,9 @@ class TestFindSentenceBoundary:
     def test_end_of_string(self):
         assert _find_sentence_boundary("Done.") == 4
 
+    def test_newline_after_sentence(self):
+        assert _find_sentence_boundary("First line.\nSecond line") == 10
+
 
 class TestBrain:
     @pytest.fixture
