@@ -57,6 +57,12 @@ Audio behavior:
 - Use natural speech patterns. No bullet points, no markdown.
 """
 
+STYLE_INSTRUCTIONS = {
+    "terse": "Keep responses extremely brief and direct. Default to one sentence unless detail is explicitly requested.",
+    "composed": "Use calm, precise phrasing with concise structure and restrained wit.",
+    "friendly": "Use warm, approachable phrasing while keeping answers short and practical.",
+}
+
 
 class Brain:
     """Manages conversation with Claude using ClaudeSDKClient for multi-turn."""
@@ -133,6 +139,23 @@ class Brain:
         if self._memory:
             self._memory.close()
 
+    def _resolve_persona_style(self) -> str:
+        style = _normalize_persona_style(self._config.persona_style)
+        if not self._memory:
+            return style
+        try:
+            for summary in self._memory.list_summaries(limit=10):
+                if summary.topic in {"persona_style", "response_style", "style_mode"}:
+                    return _normalize_persona_style(summary.summary)
+        except Exception:
+            return style
+        return style
+
+    def _style_instruction_context(self) -> str:
+        style = self._resolve_persona_style()
+        instruction = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["composed"])
+        return f"Mode={style}. {instruction}"
+
     async def respond(self, user_text: str) -> AsyncIterator[str]:
         """Send user text to Claude and yield response text chunks.
 
@@ -141,6 +164,10 @@ class Brain:
         """
         self._presence.signals.state = State.THINKING
         log.info("User: %s", user_text)
+
+        style_instruction = self._style_instruction_context()
+        if style_instruction:
+            user_text = f"{user_text}\n\nPrompt style:\n{style_instruction}"
 
         if self._memory:
             memories = self._memory.search_v2(
@@ -233,3 +260,10 @@ def _memory_relevant(query: str, entry: Any) -> bool:
     overlap = len(tokens & entry_tokens)
     ratio = overlap / max(1, len(tokens))
     return ratio >= 0.25 or entry.importance >= 0.7
+
+
+def _normalize_persona_style(style: str) -> str:
+    normalized = (style or "composed").strip().lower()
+    if normalized in STYLE_INSTRUCTIONS:
+        return normalized
+    return "composed"

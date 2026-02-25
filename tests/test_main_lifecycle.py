@@ -67,6 +67,7 @@ def test_startup_summary_lines_include_core_status():
         home_enabled=True,
         memory_enabled=True,
         memory_path="/tmp/memory.sqlite",
+        persona_style="composed",
         tool_allowlist=["a"],
         tool_denylist=["b", "c"],
     )

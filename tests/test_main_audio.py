@@ -21,6 +21,16 @@ def test_play_audio_chunk_suppresses_output_write_errors():
     Jarvis._play_audio_chunk(jarvis, np.ones(32, dtype=np.float32))
 
 
+def test_normalize_tts_chunk_handles_non_finite_values():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._tts_gain = 1.0
+
+    chunk = np.array([0.1, np.nan, np.inf, -np.inf], dtype=np.float32)
+    normalized = Jarvis._normalize_tts_chunk(jarvis, chunk)
+    assert np.isfinite(normalized).all()
+    assert np.max(np.abs(normalized)) <= 1.0
+
+
 @pytest.mark.asyncio
 async def test_tts_loop_recovers_after_stream_error():
     class FakeTTS:

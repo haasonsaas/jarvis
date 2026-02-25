@@ -129,7 +129,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
   - `tests/test_integration.py`
 
 ### 2.3 Tool summary enrichment (`P1`)
-- [ ] Add optional structured “effect” and “risk” fields to summary records.
+- [x] Add optional structured “effect” and “risk” fields to summary records.
 - Why:
   - Better post-action explainability.
 - Acceptance criteria:
@@ -192,7 +192,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 ## 4) P2 Audio/Realtime Performance
 
 ### 4.1 Reduce allocations in robot-audio listen loop (`P2`)
-- [ ] Avoid repeated `np.concatenate` for pending buffers.
+- [x] Avoid repeated `np.concatenate` for pending buffers.
 - Why:
   - Continuous allocation pressure in long-running sessions.
 - Acceptance criteria:
@@ -203,7 +203,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
   - `src/jarvis/__main__.py`
 
 ### 4.2 TTS gain controller guardrails (`P2`)
-- [ ] Validate gain smoothing against pathological chunks.
+- [x] Validate gain smoothing against pathological chunks.
 - Why:
   - Prevent clipping/pumping in unusual audio content.
 - Acceptance criteria:
@@ -219,7 +219,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 ## 5) P2 Perception and Embodiment
 
 ### 5.1 Face/hand signal decay and handoff (`P2`)
-- [ ] Add explicit decay behavior when trackers lose target.
+- [x] Add explicit decay behavior when trackers lose target.
 - Why:
   - Smoother behavioral transitions.
 - Acceptance criteria:
@@ -233,7 +233,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
   - `tests/test_presence.py`
 
 ### 5.2 Attention-source observability (`P2`)
-- [ ] Expose current attention source for debugging.
+- [x] Expose current attention source for debugging.
 - Why:
   - Easier to diagnose turn-taking behavior in real rooms.
 - Acceptance criteria:
@@ -249,7 +249,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 ## 6) P2 Tooling and Policy
 
 ### 6.1 Tool payload schema consistency checks (`P2`)
-- [ ] Enforce parity between MCP schema and runtime validation.
+- [x] Enforce parity between MCP schema and runtime validation.
 - Why:
   - Avoid drift where schema claims allowed fields not actually accepted.
 - Acceptance criteria:
@@ -262,7 +262,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
   - `tests/test_tools.py`
 
 ### 6.2 Audit retention policy (`P2`)
-- [ ] Introduce bounded audit log retention or rotation.
+- [x] Introduce bounded audit log retention or rotation.
 - Why:
   - Prevent unbounded disk growth.
 - Acceptance criteria:
@@ -291,7 +291,7 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
   - `tests/test_tools.py`
 
 ### 7.2 Persona style toggles (`P3`)
-- [ ] Support runtime style modes (terse/composed/friendly).
+- [x] Support runtime style modes (terse/composed/friendly).
 - Why:
   - Better user preference alignment.
 - Acceptance criteria:
@@ -342,8 +342,8 @@ This is the execution backlog for turning the current Jarvis codebase into a pro
 ---
 
 ## 10) Definition of Done for this roadmap
-- [ ] No known P0 bugs open.
+- [x] No known P0 bugs open.
 - [x] `pytest -q` remains green with added hardening tests.
 - [x] Startup prints deterministic capability summary.
 - [x] Operator can request status and see core health indicators.
-- [ ] Memory and tooling layers are resilient to malformed inputs and I/O errors.
+- [x] Memory and tooling layers are resilient to malformed inputs and I/O errors.

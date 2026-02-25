@@ -20,6 +20,7 @@ import logging
 import signal
 import time
 import threading
+from collections import deque
 from contextlib import suppress
 
 import numpy as np
@@ -254,6 +255,7 @@ class Jarvis:
             f"Home tools: {'on' if self.config.home_enabled else 'off'}",
             f"TTS: {tts_reason}",
             f"Memory: {memory_state} ({self.config.memory_path})",
+            f"Persona style: {self.config.persona_style}",
             f"Tool policy: allow={len(self.config.tool_allowlist)} deny={len(self.config.tool_denylist)}",
         ]
 
@@ -365,13 +367,15 @@ class Jarvis:
                 await self._respond_and_speak(text)
                 if int(self._telemetry["turns"]) % TELEMETRY_LOG_EVERY_TURNS == 0:
                     snapshot = self._telemetry_snapshot()
+                    attention_source = self.presence.attention_source()
                     log.info(
-                        "Telemetry turns=%d barge_ins=%d stt=%.0fms llm=%.0fms tts=%.0fms",
+                        "Telemetry turns=%d barge_ins=%d stt=%.0fms llm=%.0fms tts=%.0fms attention=%s",
                         int(snapshot["turns"]),
                         int(snapshot["barge_ins"]),
                         snapshot["avg_stt_latency_ms"],
                         snapshot["avg_llm_first_sentence_ms"],
                         snapshot["avg_tts_first_audio_ms"],
+                        attention_source,
                     )
 
         except asyncio.CancelledError:
@@ -501,7 +505,8 @@ class Jarvis:
                     await asyncio.sleep(0)
 
         else:
-            pending = np.array([], dtype=np.float32)
+            pending_chunks: deque[np.ndarray] = deque()
+            pending_len = 0
             while True:
                 raw = self.robot.get_audio_sample()
                 if raw is None:
@@ -514,10 +519,26 @@ class Jarvis:
                     await asyncio.sleep(0)
                     continue
 
-                pending = np.concatenate([pending, mono_16k])
-                while pending.size >= CHUNK_SAMPLES:
-                    chunk = pending[:CHUNK_SAMPLES]
-                    pending = pending[CHUNK_SAMPLES:]
+                pending_chunks.append(mono_16k)
+                pending_len += int(mono_16k.size)
+
+                while pending_len >= CHUNK_SAMPLES:
+                    needed = CHUNK_SAMPLES
+                    parts: list[np.ndarray] = []
+                    while needed > 0 and pending_chunks:
+                        head = pending_chunks[0]
+                        if head.size <= needed:
+                            parts.append(head)
+                            pending_chunks.popleft()
+                            needed -= int(head.size)
+                        else:
+                            parts.append(head[:needed])
+                            pending_chunks[0] = head[needed:]
+                            needed = 0
+                    if not parts:
+                        break
+                    chunk = parts[0] if len(parts) == 1 else np.concatenate(parts)
+                    pending_len -= CHUNK_SAMPLES
                     await process_chunk(chunk)
 
                 await asyncio.sleep(0)
@@ -727,10 +748,14 @@ class Jarvis:
     def _normalize_tts_chunk(self, chunk: np.ndarray) -> np.ndarray:
         if chunk.size == 0:
             return chunk
+        if not np.isfinite(chunk).all():
+            chunk = np.nan_to_num(chunk, nan=0.0, posinf=1.0, neginf=-1.0)
         rms = float(np.sqrt(np.mean(chunk ** 2)))
-        if rms <= 1e-6:
+        if not np.isfinite(rms) or rms <= 1e-6:
             return chunk
         desired_gain = max(0.5, min(2.0, TTS_TARGET_RMS / rms))
+        if not np.isfinite(desired_gain):
+            desired_gain = 1.0
         self._tts_gain += (desired_gain - self._tts_gain) * TTS_GAIN_SMOOTH
         normalized = chunk * self._tts_gain
         return np.clip(normalized, -1.0, 1.0)

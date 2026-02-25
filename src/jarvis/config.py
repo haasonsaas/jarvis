@@ -96,6 +96,7 @@ class Config:
 
     # Backchannel preferences
     backchannel_style: str = field(default_factory=lambda: os.environ.get("BACKCHANNEL_STYLE", "balanced"))
+    persona_style: str = field(default_factory=lambda: os.environ.get("PERSONA_STYLE", "composed"))
 
     # Service audit retention
     audit_log_max_bytes: int = field(default_factory=lambda: _env_int("AUDIT_LOG_MAX_BYTES", 1_000_000))
@@ -136,6 +137,7 @@ class Config:
         if self.audit_log_backups < 1:
             raise ValueError("audit_log_backups must be >= 1")
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
+        self.persona_style = self._normalize_persona_style(self.persona_style)
 
     @staticmethod
     def _normalize_backchannel_style(style: str) -> str:
@@ -143,3 +145,10 @@ class Config:
         if normalized in {"quiet", "balanced", "expressive"}:
             return normalized
         return "balanced"
+
+    @staticmethod
+    def _normalize_persona_style(style: str) -> str:
+        normalized = (style or "composed").strip().lower()
+        if normalized in {"terse", "composed", "friendly"}:
+            return normalized
+        return "composed"

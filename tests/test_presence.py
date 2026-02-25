@@ -5,7 +5,7 @@ import time
 import pytest
 from unittest.mock import MagicMock, call
 
-from jarvis.presence import PresenceLoop, State, Signals
+from jarvis.presence import PresenceLoop, State, Signals, ATTENTION_TIMEOUT_SEC
 from jarvis.robot.controller import RobotController, HeadPose
 
 
@@ -166,6 +166,50 @@ class TestPresenceLoop:
 
         assert presence._yaw > 2.0
         assert presence._pitch < -1.0
+
+    def test_attention_source_reports_current_source(self, presence):
+        sig = presence.signals
+        now = time.monotonic()
+        sig.face_detected = True
+        sig.face_yaw = 15.0
+        sig.face_pitch = 4.0
+        sig.face_last_seen = now
+        sig.hand_present = True
+        sig.hand_last_seen = now
+        sig.hand_x = -20.0
+        sig.hand_y = 3.0
+
+        yaw, _ = presence._resolve_attention(sig, now)
+        assert yaw > 0.0
+        assert presence.attention_source() == "face"
+
+    def test_attention_fades_toward_neutral_when_signal_gets_stale(self, presence):
+        sig = presence.signals
+        now = time.monotonic()
+        sig.face_detected = True
+        sig.face_yaw = 30.0
+        sig.face_pitch = 10.0
+        sig.face_last_seen = now - (ATTENTION_TIMEOUT_SEC * 0.9)
+
+        yaw, pitch = presence._resolve_attention(sig, now)
+        assert 0.0 < yaw < 10.0
+        assert 0.0 < pitch < 5.0
+
+    def test_attention_source_resets_after_timeout(self, presence):
+        sig = presence.signals
+        now = time.monotonic()
+        sig.face_detected = True
+        sig.face_yaw = 20.0
+        sig.face_pitch = 2.0
+        sig.face_last_seen = now
+        presence._resolve_attention(sig, now)
+        assert presence.attention_source() == "face"
+
+        sig.face_last_seen = now - (ATTENTION_TIMEOUT_SEC + 0.1)
+        yaw, pitch = presence._resolve_attention(sig, now)
+        assert yaw == 0.0
+        assert pitch == 0.0
+        assert presence.attention_source() == "none"
 
     def test_speaking_applies_intent(self, presence):
         sig = presence.signals

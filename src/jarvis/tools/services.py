@@ -37,6 +37,172 @@ _tool_denylist: list[str] = []
 _audit_log_max_bytes: int = 1_000_000
 _audit_log_backups: int = 3
 
+SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "smart_home": {
+        "type": "object",
+        "properties": {
+            "domain": {
+                "type": "string",
+                "description": "HA domain: light, switch, climate, media_player, lock, cover, etc.",
+            },
+            "action": {
+                "type": "string",
+                "description": "Service to call: turn_on, turn_off, toggle, set_temperature, etc.",
+            },
+            "entity_id": {
+                "type": "string",
+                "description": "Entity ID, e.g. light.living_room, climate.thermostat.",
+            },
+            "data": {
+                "type": "object",
+                "description": "Optional service data (brightness, temperature, etc.).",
+            },
+            "dry_run": {
+                "type": "boolean",
+                "description": "If true, describe what would happen without executing. "
+                "Always true for locks/alarms/covers unless user explicitly confirms.",
+            },
+        },
+        "required": ["domain", "action", "entity_id"],
+    },
+    "smart_home_state": {
+        "type": "object",
+        "properties": {
+            "entity_id": {"type": "string"},
+        },
+        "required": ["entity_id"],
+    },
+    "get_time": {},
+    "system_status": {},
+    "memory_add": {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string"},
+            "kind": {"type": "string", "description": "note, profile, summary, task, etc."},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "importance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "sensitivity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "source": {"type": "string"},
+        },
+        "required": ["text"],
+    },
+    "memory_search": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "limit": {"type": "number"},
+            "max_sensitivity": {"type": "number"},
+            "include_sensitive": {"type": "boolean"},
+            "hybrid_weight": {"type": "number"},
+            "decay_enabled": {"type": "boolean"},
+            "decay_half_life_days": {"type": "number"},
+            "mmr_enabled": {"type": "boolean"},
+            "mmr_lambda": {"type": "number"},
+            "sources": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["query"],
+    },
+    "memory_status": {
+        "type": "object",
+        "properties": {
+            "warm": {"type": "boolean"},
+            "sync": {"type": "boolean"},
+            "optimize": {"type": "boolean"},
+            "vacuum": {"type": "boolean"},
+        },
+    },
+    "memory_recent": {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "number"},
+            "kind": {"type": "string"},
+            "sources": {"type": "array", "items": {"type": "string"}},
+        },
+    },
+    "memory_summary_add": {
+        "type": "object",
+        "properties": {
+            "topic": {"type": "string"},
+            "summary": {"type": "string"},
+        },
+        "required": ["topic", "summary"],
+    },
+    "memory_summary_list": {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "number"},
+        },
+    },
+    "task_plan_create": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "steps": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["title", "steps"],
+    },
+    "task_plan_list": {
+        "type": "object",
+        "properties": {
+            "open_only": {"type": "boolean"},
+        },
+    },
+    "task_plan_update": {
+        "type": "object",
+        "properties": {
+            "plan_id": {"type": "number"},
+            "step_index": {"type": "number", "description": "0-based index"},
+            "status": {"type": "string", "description": "pending, in_progress, blocked, done"},
+        },
+        "required": ["plan_id", "step_index", "status"],
+    },
+    "task_plan_summary": {
+        "type": "object",
+        "properties": {
+            "plan_id": {"type": "number"},
+        },
+        "required": ["plan_id"],
+    },
+    "task_plan_next": {
+        "type": "object",
+        "properties": {
+            "plan_id": {"type": "number"},
+        },
+    },
+    "tool_summary": {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "number"},
+        },
+    },
+    "tool_summary_text": {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "number"},
+        },
+    },
+}
+
+SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
+    "smart_home": {"domain", "action", "entity_id"},
+    "smart_home_state": {"entity_id"},
+    "get_time": set(),
+    "system_status": set(),
+    "memory_add": {"text"},
+    "memory_search": {"query"},
+    "memory_status": set(),
+    "memory_recent": set(),
+    "memory_summary_add": {"topic", "summary"},
+    "memory_summary_list": set(),
+    "task_plan_create": {"title", "steps"},
+    "task_plan_list": set(),
+    "task_plan_update": {"plan_id", "step_index", "status"},
+    "task_plan_summary": {"plan_id"},
+    "task_plan_next": set(),
+    "tool_summary": set(),
+    "tool_summary_text": set(),
+}
+
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _config, _memory, _audit_log_max_bytes, _audit_log_backups
@@ -103,8 +269,12 @@ def _format_tool_summaries(items: list[dict[str, object]]) -> str:
         status = str(item.get("status", "unknown"))
         duration = float(item.get("duration_ms", 0.0))
         detail = item.get("detail")
+        effect = item.get("effect")
+        risk = item.get("risk")
         detail_text = f" ({detail})" if detail else ""
-        lines.append(f"- {name}: {status} ({duration:.0f}ms){detail_text}")
+        effect_text = f" effect={effect}" if effect else ""
+        risk_text = f" risk={risk}" if risk else ""
+        lines.append(f"- {name}: {status} ({duration:.0f}ms){detail_text}{effect_text}{risk_text}")
     return "\n".join(lines)
 
 
@@ -248,7 +418,13 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         tool_feedback("start")
         tool_feedback("done")
         _touch_action(domain, action, entity_id)
-        record_summary("smart_home", "dry_run", start_time)
+        record_summary(
+            "smart_home",
+            "dry_run",
+            start_time,
+            effect=f"no-op {domain}.{action} {entity_id}",
+            risk="low",
+        )
         return {"content": [{"type": "text", "text": (
             f"DRY RUN: Would call {domain}.{action} on {entity_id}"
             f"{' with ' + json.dumps(data, default=str) if data else ''}. "
@@ -267,7 +443,13 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                 if resp.status == 200:
                     tool_feedback("done")
                     _touch_action(domain, action, entity_id)
-                    record_summary("smart_home", "ok", start_time)
+                    record_summary(
+                        "smart_home",
+                        "ok",
+                        start_time,
+                        effect=f"executed {domain}.{action} {entity_id}",
+                        risk="medium" if domain in SENSITIVE_DOMAINS else "low",
+                    )
                     return {"content": [{"type": "text", "text": f"Done: {domain}.{action} on {entity_id}"}]}
                 elif resp.status == 401:
                     tool_feedback("done")
@@ -376,6 +558,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         "home_tools_enabled": bool(_config and _config.home_enabled),
         "memory_enabled": bool(_config and _config.memory_enabled),
         "backchannel_style": _config.backchannel_style if _config else "unknown",
+        "persona_style": _config.persona_style if _config else "unknown",
         "tool_policy": {
             "allow_count": len(_tool_allowlist),
             "deny_count": len(_tool_denylist),
@@ -685,225 +868,105 @@ smart_home_tool = tool(
     "Control smart home devices via Home Assistant. "
     "For destructive actions (unlock doors, disable alarms, open covers), set dry_run=true first. "
     "Always explain what you're about to do before executing.",
-    {
-        "type": "object",
-        "properties": {
-            "domain": {
-                "type": "string",
-                "description": "HA domain: light, switch, climate, media_player, lock, cover, etc.",
-            },
-            "action": {
-                "type": "string",
-                "description": "Service to call: turn_on, turn_off, toggle, set_temperature, etc.",
-            },
-            "entity_id": {
-                "type": "string",
-                "description": "Entity ID, e.g. light.living_room, climate.thermostat.",
-            },
-            "data": {
-                "type": "object",
-                "description": "Optional service data (brightness, temperature, etc.).",
-            },
-            "dry_run": {
-                "type": "boolean",
-                "description": "If true, describe what would happen without executing. "
-                "Always true for locks/alarms/covers unless user explicitly confirms.",
-            },
-        },
-        "required": ["domain", "action", "entity_id"],
-    },
+    SERVICE_TOOL_SCHEMAS["smart_home"],
 )(smart_home)
 
 
 smart_home_state_tool = tool(
     "smart_home_state",
     "Get the current state of a Home Assistant entity.",
-    {"entity_id": str},
+    SERVICE_TOOL_SCHEMAS["smart_home_state"],
 )(smart_home_state)
 
 
 get_time_tool = tool(
     "get_time",
     "Get the current local time (device clock).",
-    {},
+    SERVICE_TOOL_SCHEMAS["get_time"],
 )(get_time)
 
 system_status_tool = tool(
     "system_status",
     "Report current runtime capabilities and health snapshot.",
-    {},
+    SERVICE_TOOL_SCHEMAS["system_status"],
 )(system_status)
 
 memory_add_tool = tool(
     "memory_add",
     "Store a long-term memory (facts, preferences, summaries).",
-    {
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"},
-            "kind": {"type": "string", "description": "note, profile, summary, task, etc."},
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "importance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "sensitivity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "source": {"type": "string"},
-        },
-        "required": ["text"],
-    },
+    SERVICE_TOOL_SCHEMAS["memory_add"],
 )(memory_add)
 
 memory_search_tool = tool(
     "memory_search",
     "Search long-term memory for relevant entries.",
-    {
-        "type": "object",
-        "properties": {
-            "query": {"type": "string"},
-            "limit": {"type": "number"},
-            "max_sensitivity": {"type": "number"},
-            "include_sensitive": {"type": "boolean"},
-            "hybrid_weight": {"type": "number"},
-            "decay_enabled": {"type": "boolean"},
-            "decay_half_life_days": {"type": "number"},
-            "mmr_enabled": {"type": "boolean"},
-            "mmr_lambda": {"type": "number"},
-            "sources": {"type": "array", "items": {"type": "string"}},
-        },
-        "required": ["query"],
-    },
+    SERVICE_TOOL_SCHEMAS["memory_search"],
 )(memory_search)
 
 memory_status_tool = tool(
     "memory_status",
     "Report memory index status and availability.",
-    {
-        "type": "object",
-        "properties": {
-            "warm": {"type": "boolean"},
-            "sync": {"type": "boolean"},
-            "optimize": {"type": "boolean"},
-            "vacuum": {"type": "boolean"},
-        },
-    },
+    SERVICE_TOOL_SCHEMAS["memory_status"],
 )(memory_status)
 
 memory_recent_tool = tool(
     "memory_recent",
     "List recent memory entries.",
-    {
-        "type": "object",
-        "properties": {
-            "limit": {"type": "number"},
-            "kind": {"type": "string"},
-            "sources": {"type": "array", "items": {"type": "string"}},
-        },
-    },
+    SERVICE_TOOL_SCHEMAS["memory_recent"],
 )(memory_recent)
 
 memory_summary_add_tool = tool(
     "memory_summary_add",
     "Store or update a short memory summary for a topic.",
-    {
-        "type": "object",
-        "properties": {
-            "topic": {"type": "string"},
-            "summary": {"type": "string"},
-        },
-        "required": ["topic", "summary"],
-    },
+    SERVICE_TOOL_SCHEMAS["memory_summary_add"],
 )(memory_summary_add)
 
 memory_summary_list_tool = tool(
     "memory_summary_list",
     "List recent memory summaries.",
-    {
-        "type": "object",
-        "properties": {
-            "limit": {"type": "number"},
-        },
-    },
+    SERVICE_TOOL_SCHEMAS["memory_summary_list"],
 )(memory_summary_list)
 
 task_plan_create_tool = tool(
     "task_plan_create",
     "Create a multi-step task plan and store it.",
-    {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string"},
-            "steps": {"type": "array", "items": {"type": "string"}},
-        },
-        "required": ["title", "steps"],
-    },
+    SERVICE_TOOL_SCHEMAS["task_plan_create"],
 )(task_plan_create)
 
 task_plan_list_tool = tool(
     "task_plan_list",
     "List stored task plans (optionally open only).",
-    {
-        "type": "object",
-        "properties": {
-            "open_only": {"type": "boolean"},
-        },
-    },
+    SERVICE_TOOL_SCHEMAS["task_plan_list"],
 )(task_plan_list)
 
 task_plan_update_tool = tool(
     "task_plan_update",
     "Update a task plan step status.",
-    {
-        "type": "object",
-        "properties": {
-            "plan_id": {"type": "number"},
-            "step_index": {"type": "number", "description": "0-based index"},
-            "status": {"type": "string", "description": "pending, in_progress, blocked, done"},
-        },
-        "required": ["plan_id", "step_index", "status"],
-    },
+    SERVICE_TOOL_SCHEMAS["task_plan_update"],
 )(task_plan_update)
 
 task_plan_summary_tool = tool(
     "task_plan_summary",
     "Summarize progress for a task plan.",
-    {
-        "type": "object",
-        "properties": {
-            "plan_id": {"type": "number"},
-        },
-        "required": ["plan_id"],
-    },
+    SERVICE_TOOL_SCHEMAS["task_plan_summary"],
 )(task_plan_summary)
 
 task_plan_next_tool = tool(
     "task_plan_next",
     "Get the next pending step in a task plan.",
-    {
-        "type": "object",
-        "properties": {
-            "plan_id": {"type": "number"},
-        },
-    },
+    SERVICE_TOOL_SCHEMAS["task_plan_next"],
 )(task_plan_next)
 
 tool_summary_tool = tool(
     "tool_summary",
     "Return recent tool execution summaries (latency/outcome).",
-    {
-        "type": "object",
-        "properties": {
-            "limit": {"type": "number"},
-        },
-    },
+    SERVICE_TOOL_SCHEMAS["tool_summary"],
 )(tool_summary)
 
 tool_summary_text_tool = tool(
     "tool_summary_text",
     "Summarize recent tool executions for the user.",
-    {
-        "type": "object",
-        "properties": {
-            "limit": {"type": "number"},
-        },
-    },
+    SERVICE_TOOL_SCHEMAS["tool_summary_text"],
 )(tool_summary_text)
 
 def create_services_server():

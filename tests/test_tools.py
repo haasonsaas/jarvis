@@ -8,6 +8,14 @@ from jarvis.robot.controller import RobotController
 from jarvis.presence import PresenceLoop
 
 
+def _schema_required_fields(schema: object) -> set[str]:
+    if isinstance(schema, dict):
+        required = schema.get("required")
+        if isinstance(required, list):
+            return {str(item) for item in required}
+    return set()
+
+
 class TestRobotTools:
     @pytest.fixture(autouse=True)
     def setup_tools(self, mock_robot, presence):
@@ -167,6 +175,12 @@ class TestRobotTools:
         result = await stop_motion({})
         assert "stopped" in result["content"][0]["text"].lower()
 
+    def test_robot_schema_runtime_required_fields_parity(self):
+        from jarvis.tools import robot as robot_tools
+
+        for name, schema in robot_tools.ROBOT_TOOL_SCHEMAS.items():
+            assert _schema_required_fields(schema) == robot_tools.ROBOT_RUNTIME_REQUIRED_FIELDS[name]
+
 
 class TestServicesTools:
     @pytest.fixture(autouse=True)
@@ -247,6 +261,9 @@ class TestServicesTools:
 
         summary = await services.tool_summary({"limit": 10})
         assert "memory_add" in summary["content"][0]["text"].lower()
+        summary_payload = json.loads(summary["content"][0]["text"])
+        assert all("effect" in item for item in summary_payload)
+        assert all("risk" in item for item in summary_payload)
 
         summary_text = await services.tool_summary_text({"limit": 10})
         assert "memory_add" in summary_text["content"][0]["text"].lower()
@@ -587,3 +604,9 @@ class TestServicesTools:
 
         assert services.AUDIT_LOG.exists()
         assert (tmp_path / "audit.jsonl.1").exists()
+
+    def test_service_schema_runtime_required_fields_parity(self):
+        from jarvis.tools import services
+
+        for name, schema in services.SERVICE_TOOL_SCHEMAS.items():
+            assert _schema_required_fields(schema) == services.SERVICE_RUNTIME_REQUIRED_FIELDS[name]

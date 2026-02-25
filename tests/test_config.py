@@ -72,6 +72,12 @@ class TestConfig:
         c = Config(backchannel_style="LOUD")
         assert c.backchannel_style == "balanced"
 
+    def test_persona_style_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(persona_style="chatty")
+        assert c.persona_style == "composed"
+
     def test_invalid_audit_retention_raises(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         from jarvis.config import Config

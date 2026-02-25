@@ -159,6 +159,9 @@ class PresenceLoop:
         normalized = (style or "balanced").strip().lower()
         self._backchannel_scale = BACKCHANNEL_STYLE_SCALE.get(normalized, 1.0)
 
+    def attention_source(self) -> str:
+        return self._attention_source or "none"
+
     def start(self) -> None:
         if self._running:
             return
@@ -363,18 +366,24 @@ class PresenceLoop:
         candidates: list[tuple[int, str, float, float]] = []
 
         if sig.face_detected and sig.face_last_seen is not None:
-            if now - sig.face_last_seen <= ATTENTION_TIMEOUT_SEC:
-                candidates.append((3, "face", sig.face_yaw, sig.face_pitch))
+            age = now - sig.face_last_seen
+            if age <= ATTENTION_TIMEOUT_SEC:
+                fade = self._attention_fade(age)
+                candidates.append((3, "face", sig.face_yaw * fade, sig.face_pitch * fade))
 
         if sig.hand_present and sig.hand_last_seen is not None:
-            if now - sig.hand_last_seen <= ATTENTION_TIMEOUT_SEC:
-                candidates.append((2, "hand", sig.hand_x, sig.hand_y))
+            age = now - sig.hand_last_seen
+            if age <= ATTENTION_TIMEOUT_SEC:
+                fade = self._attention_fade(age)
+                candidates.append((2, "hand", sig.hand_x * fade, sig.hand_y * fade))
 
         if sig.doa_angle is not None and sig.doa_last_seen is not None:
-            if now - sig.doa_last_seen <= ATTENTION_TIMEOUT_SEC:
+            age = now - sig.doa_last_seen
+            if age <= ATTENTION_TIMEOUT_SEC:
                 angle = max(0.0, min(math.pi, sig.doa_angle))
                 doa_yaw = -((angle - math.pi / 2) / (math.pi / 2)) * 40.0
-                candidates.append((1, "doa", doa_yaw, 0.0))
+                fade = self._attention_fade(age)
+                candidates.append((1, "doa", doa_yaw * fade, 0.0))
 
         if not candidates:
             self._attention_source = None
@@ -397,6 +406,11 @@ class PresenceLoop:
         self._attention_source = best_source
         self._attention_hold_until = now + ATTENTION_HOLD_SEC
         return best_yaw, best_pitch
+
+    def _attention_fade(self, age: float) -> float:
+        if age <= 0.0:
+            return 1.0
+        return self._clamp(1.0 - (age / ATTENTION_TIMEOUT_SEC), 0.0, 1.0)
 
     def _idle_choreo(self, t: float) -> tuple[float, float]:
         now = time.monotonic()

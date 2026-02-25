@@ -27,6 +27,124 @@ _presence: PresenceLoop | None = None
 _tool_allowlist: list[str] = []
 _tool_denylist: list[str] = []
 
+ROBOT_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "embody": {
+        "type": "object",
+        "properties": {
+            "intent": {
+                "type": "string",
+                "enum": ["acknowledge", "clarify", "answer", "decline", "greet", "alert", "amused"],
+                "description": "The conversational intent driving the physical behavior.",
+            },
+            "prosody": {
+                "type": "string",
+                "enum": ["calm", "energetic", "terse", "warm", "serious"],
+                "description": "The emotional tone — affects motion amplitude and speed.",
+            },
+            "nod": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "description": "Nod intensity (0 = none, 1 = emphatic). Use for agreement/acknowledgment.",
+            },
+            "nod_style": {
+                "type": "string",
+                "enum": ["single", "double", "slow"],
+                "description": "Nod shape to use when nodding.",
+            },
+            "bow": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "description": "Polite bow intensity (0 = none, 1 = full bow).",
+            },
+            "tilt": {
+                "type": "number",
+                "minimum": -15.0,
+                "maximum": 15.0,
+                "description": "Head tilt in degrees. Positive = right ear toward shoulder. Use for curiosity/empathy.",
+            },
+            "glance_yaw": {
+                "type": "number",
+                "minimum": -30.0,
+                "maximum": 30.0,
+                "description": "Brief gaze offset in degrees. Use sparingly for 'looking at something' or 'recalling'.",
+            },
+        },
+        "required": ["intent", "prosody"],
+    },
+    "play_emotion": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "required": ["name"],
+    },
+    "play_dance": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "required": ["name"],
+    },
+    "list_animations": {},
+    "run_sequence": {
+        "type": "object",
+        "properties": {
+            "blocking": {
+                "type": "boolean",
+                "description": "If true, execute synchronously (use sparingly).",
+            },
+            "steps": {
+                "type": "array",
+                "description": "Sequence steps in order.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": ["head", "body", "antennas", "emotion", "dance", "pause"],
+                        },
+                        "duration": {"type": "number"},
+                        "wait": {"type": "number"},
+                        "yaw": {"type": "number"},
+                        "pitch": {"type": "number"},
+                        "roll": {"type": "number"},
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "z": {"type": "number"},
+                        "left": {"type": "number"},
+                        "right": {"type": "number"},
+                        "name": {"type": "string"},
+                    },
+                    "required": ["kind"],
+                },
+            },
+        },
+        "required": ["steps"],
+    },
+    "run_macro": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "intensity": {"type": "number"},
+            "blocking": {"type": "boolean"},
+        },
+        "required": ["name"],
+    },
+    "stop_motion": {},
+}
+
+ROBOT_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
+    "embody": {"intent", "prosody"},
+    "play_emotion": {"name"},
+    "play_dance": {"name"},
+    "list_animations": set(),
+    "run_sequence": {"steps"},
+    "run_macro": {"name"},
+    "stop_motion": set(),
+}
+
 
 def bind(robot: RobotController, presence: PresenceLoop, config: Any | None = None) -> None:
     global _robot, _presence, _tool_allowlist, _tool_denylist
@@ -205,51 +323,7 @@ embody_tool = tool(
     "Express physical behavior. Call this alongside your verbal response to control "
     "how Jarvis physically behaves while speaking. This is NOT for emotions library "
     "playback — it sets continuous parameters for the presence loop.",
-    {
-        "type": "object",
-        "properties": {
-            "intent": {
-                "type": "string",
-                "enum": ["acknowledge", "clarify", "answer", "decline", "greet", "alert", "amused"],
-                "description": "The conversational intent driving the physical behavior.",
-            },
-            "prosody": {
-                "type": "string",
-                "enum": ["calm", "energetic", "terse", "warm", "serious"],
-                "description": "The emotional tone — affects motion amplitude and speed.",
-            },
-            "nod": {
-                "type": "number",
-                "minimum": 0.0,
-                "maximum": 1.0,
-                "description": "Nod intensity (0 = none, 1 = emphatic). Use for agreement/acknowledgment.",
-            },
-            "nod_style": {
-                "type": "string",
-                "enum": ["single", "double", "slow"],
-                "description": "Nod shape to use when nodding.",
-            },
-            "bow": {
-                "type": "number",
-                "minimum": 0.0,
-                "maximum": 1.0,
-                "description": "Polite bow intensity (0 = none, 1 = full bow).",
-            },
-            "tilt": {
-                "type": "number",
-                "minimum": -15.0,
-                "maximum": 15.0,
-                "description": "Head tilt in degrees. Positive = right ear toward shoulder. Use for curiosity/empathy.",
-            },
-            "glance_yaw": {
-                "type": "number",
-                "minimum": -30.0,
-                "maximum": 30.0,
-                "description": "Brief gaze offset in degrees. Use sparingly for 'looking at something' or 'recalling'.",
-            },
-        },
-        "required": ["intent", "prosody"],
-    },
+    ROBOT_TOOL_SCHEMAS["embody"],
 )(embody)
 
 
@@ -257,83 +331,41 @@ play_emotion_tool = tool(
     "play_emotion",
     "Play a pre-recorded emotion animation from the library. Use this for strong, "
     "specific emotional moments (celebration, surprise) — not for subtle conversational cues.",
-    {"name": str},
+    ROBOT_TOOL_SCHEMAS["play_emotion"],
 )(play_emotion)
 
 
 play_dance_tool = tool(
     "play_dance",
     "Play a pre-recorded dance. Use when the user asks for entertainment or celebration.",
-    {"name": str},
+    ROBOT_TOOL_SCHEMAS["play_dance"],
 )(play_dance)
 
 
 list_animations_tool = tool(
     "list_animations",
     "List available emotions and dances.",
-    {},
+    ROBOT_TOOL_SCHEMAS["list_animations"],
 )(list_animations)
 
 
 run_sequence_tool = tool(
     "run_sequence",
     "Run a short motion sequence (head/body/antennas/emotion/dance/pause).",
-    {
-        "type": "object",
-        "properties": {
-            "blocking": {
-                "type": "boolean",
-                "description": "If true, execute synchronously (use sparingly).",
-            },
-            "steps": {
-                "type": "array",
-                "description": "Sequence steps in order.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "kind": {
-                            "type": "string",
-                            "enum": ["head", "body", "antennas", "emotion", "dance", "pause"],
-                        },
-                        "duration": {"type": "number"},
-                        "wait": {"type": "number"},
-                        "yaw": {"type": "number"},
-                        "pitch": {"type": "number"},
-                        "roll": {"type": "number"},
-                        "x": {"type": "number"},
-                        "y": {"type": "number"},
-                        "z": {"type": "number"},
-                        "left": {"type": "number"},
-                        "right": {"type": "number"},
-                        "name": {"type": "string"},
-                    },
-                    "required": ["kind"],
-                },
-            },
-        },
-        "required": ["steps"],
-    },
+    ROBOT_TOOL_SCHEMAS["run_sequence"],
 )(run_sequence)
 
 stop_motion_tool = tool(
     "stop_motion",
     "Stop any active motion sequence.",
-    {},
+    ROBOT_TOOL_SCHEMAS["stop_motion"],
 )(stop_motion)
 
 
 run_macro_tool = tool(
     "run_macro",
     "Run a named gesture macro (acknowledge, affirm, curious, shrug).",
-    {
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"},
-            "intensity": {"type": "number"},
-            "blocking": {"type": "boolean"},
-        },
-        "required": ["name"],
-    },
+    ROBOT_TOOL_SCHEMAS["run_macro"],
 )(run_macro)
 
 

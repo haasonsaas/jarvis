@@ -11,6 +11,8 @@ class ToolSummary:
     status: str
     duration_ms: float
     detail: str | None
+    effect: str | None
+    risk: str | None
     timestamp: float
 
 
@@ -29,13 +31,22 @@ class ToolSummaryStore:
 _store = ToolSummaryStore()
 
 
-def record_summary(name: str, status: str, start_time: float, detail: str | None = None) -> None:
+def record_summary(
+    name: str,
+    status: str,
+    start_time: float,
+    detail: str | None = None,
+    effect: str | None = None,
+    risk: str | None = None,
+) -> None:
     duration_ms = max(0.0, (time.monotonic() - start_time) * 1000.0)
     _store.add(ToolSummary(
         name=name,
         status=status,
         duration_ms=duration_ms,
         detail=detail,
+        effect=effect,
+        risk=risk,
         timestamp=time.time(),
     ))
 
