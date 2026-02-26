@@ -346,10 +346,13 @@ def _as_bool(value: Any, default: bool = False) -> bool:
 
 
 def _as_int(value: Any, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError, OverflowError):
+    if isinstance(value, bool):
         parsed = default
+    else:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError, OverflowError):
+            parsed = default
     if minimum is not None:
         parsed = max(minimum, parsed)
     if maximum is not None:
@@ -386,10 +389,13 @@ def _as_float(
     minimum: float | None = None,
     maximum: float | None = None,
 ) -> float:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
         parsed = default
+    else:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = default
     if not math.isfinite(parsed):
         parsed = default
     if minimum is not None:

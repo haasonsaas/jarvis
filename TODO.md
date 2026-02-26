@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-26
 
-This cycle focuses on config strictness, telemetry taxonomy consistency, task-plan validation, CI enforcement, and brain memory-failure resilience.
+This cycle focuses on config strictness, telemetry taxonomy consistency, task-plan validation, CI enforcement, brain memory-failure resilience, and numeric input safety.
 
 ## Status legend
 - `[ ]` Not started
@@ -42,21 +42,24 @@ This cycle focuses on config strictness, telemetry taxonomy consistency, task-pl
 ### 3.1 Exact integer validation for task-plan identifiers (`P1`)
 - [x] Reject fractional plan IDs and step indices (no implicit truncation).
 
+### 3.2 Reject boolean coercion in numeric parsers (`P1`)
+- [x] Prevent `True/False` from being implicitly accepted as numeric values for service tool params.
+- Why:
+  - Python bools are ints; `True` can silently become `1` and alter limits/weights unexpectedly.
+- Acceptance criteria:
+  - `_as_int` and `_as_float` treat booleans as invalid and use defaults.
+- Test plan:
+  - Add tests for `memory_add(sensitivity=True)` and `memory_recent(limit=True)` fallback behavior.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
 ---
 
 ## 4) Brain Reliability
 
 ### 4.1 Memory context lookup fault tolerance (`P1`)
 - [x] Prevent memory lookup failures from aborting response generation.
-- Why:
-  - Pre-query memory enrichment is optional and should degrade gracefully when storage is unavailable.
-- Acceptance criteria:
-  - `Brain.respond` continues to query Claude when `search_v2` raises.
-- Test plan:
-  - Add brain test with `search_v2` raising runtime error and assert query still executes.
-- Files:
-  - `src/jarvis/brain.py`
-  - `tests/test_brain.py`
 
 ---
 

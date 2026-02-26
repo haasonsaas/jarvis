@@ -638,6 +638,20 @@ class TestServicesTools:
         assert recent[0].sensitivity == 0.0
 
     @pytest.mark.asyncio
+    async def test_memory_add_bool_sensitivity_uses_default(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        await services.memory_add({"text": "Bool sensitivity", "sensitivity": True})
+        recent = store.recent(limit=1)
+        assert len(recent) == 1
+        assert recent[0].sensitivity == 0.0
+
+    @pytest.mark.asyncio
     async def test_memory_search_non_finite_include_sensitive_uses_default_false(self, tmp_path):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
@@ -666,6 +680,26 @@ class TestServicesTools:
         await services.memory_add({"text": "hello"})
         result = await services.memory_recent({"limit": float("inf")})
         assert "hello" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_memory_recent_bool_limit_uses_default(self, tmp_path, monkeypatch):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        captured: dict[str, int] = {}
+        original_recent = store.recent
+
+        def wrapped_recent(*, limit: int = 5, kind=None, sources=None):
+            captured["limit"] = limit
+            return original_recent(limit=limit, kind=kind, sources=sources)
+
+        monkeypatch.setattr(store, "recent", wrapped_recent)
+        await services.memory_add({"text": "hello"})
+        await services.memory_recent({"limit": True})
+        assert captured["limit"] == 5
 
     @pytest.mark.asyncio
     async def test_memory_status_handles_storage_error(self, tmp_path, monkeypatch):
