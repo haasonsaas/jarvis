@@ -1,8 +1,11 @@
-# Jarvis Engineering TODO (Next Reliability and Scale Wave)
+# Jarvis Engineering TODO (Research-Grounded Execution Backlog)
 
 Last updated: 2026-02-26
 
-This backlog is intentionally broader and longer so we can iterate through multiple passes without running out of high-value engineering work. Focus areas: safety, observability, CI confidence, and maintainability.
+This backlog is intentionally extensive (50+ items) and is based on a fresh research pass of:
+- `openclaw/openclaw` workflow patterns (`ci.yml`, `workflow-sanity.yml`)
+- `home-assistant/core` CI orchestration patterns (`ci.yaml`)
+- current local repo architecture, tests, and CI layout
 
 ## Status legend
 - `[ ]` Not started
@@ -11,186 +14,136 @@ This backlog is intentionally broader and longer so we can iterate through multi
 
 ---
 
-## 1) Home Assistant Safety and Correctness
+## 1) Safety and Policy Layer (10 items)
 
-### 1.1 Domain/action validation tightening (`P0`)
-- [ ] Restrict unknown Home Assistant domains to readonly state checks by default (explicit allowlist for mutating actions).
-- [ ] Add tests proving unsupported domain/action pairs are denied before transport.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
+- [ ] `S01` Restrict mutating `smart_home` to an explicit domain allowlist; deny unknown domains by default.
+- [ ] `S02` Add tests that unknown mutating domains are rejected before any HTTP request.
+- [ ] `S03` Expand sensitive-domain set with policy rationale and tests.
+- [ ] `S04` Normalize `domain` and `entity_id` inputs (trim/lower) before comparisons.
+- [ ] `S05` Add tests for mixed-case + whitespace domain/entity inputs.
+- [ ] `S06` Add explicit validation for empty/invalid `action` strings with normalized `invalid_data`.
+- [ ] `S07` Add optional stricter mode for requiring `confirm=true` on all non-dry-run actions.
+- [ ] `S08` Add tests for stricter confirm mode branches.
+- [ ] `S09` Add policy diagnostics in `system_status` for strict-confirm mode.
+- [ ] `S10` Add a policy decision trace field in audit records (`allowed|denied|dry_run`).
 
-### 1.2 Sensitive-domain policy expansion (`P0`)
-- [ ] Evaluate and add additional sensitive domains (e.g. `vacuum`, `scene`, `script`) where execute confirmation should be stricter.
-- [ ] Add tests for sensitive confirmation enforcement.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
-### 1.3 Entity/domain normalization (`P1`)
-- [ ] Normalize whitespace/case in `domain` and `entity_id` handling for deterministic comparisons.
-- [ ] Add tests for mixed-case and trailing-space inputs.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
-### 1.4 Smart-home result semantics (`P1`)
-- [ ] Return more structured outcome categories (`noop`, `executed`, `preflight_failed`) in tool text for downstream reasoning consistency.
-- [ ] Add tests covering each category branch.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
+Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools.py`, `tests/test_config.py`
 
 ---
 
-## 2) External Integration Hardening
+## 2) External Integration Reliability (10 items)
 
-### 2.1 Todoist timeout/backoff posture (`P1`)
-- [ ] Add bounded retry (idempotent-safe) for transient Todoist list failures (`timeout`, `network_client_error`).
-- [ ] Keep add-task mutation non-retried by default unless explicit idempotency token is introduced.
-- [ ] Add tests proving retry policy boundaries.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
+- [ ] `I01` Add bounded retry for `todoist_list_tasks` on transient network/timeout errors.
+- [ ] `I02` Add jitter/backoff helper and tests for retry timing logic (unit-level, not sleep-heavy).
+- [ ] `I03` Add explicit invalid-data checks for Todoist `labels` type/entries.
+- [ ] `I04` Add explicit invalid-data checks for Todoist `priority` type/range before HTTP.
+- [ ] `I05` Add explicit invalid-data checks for Pushover `priority` type/range before HTTP.
+- [ ] `I06` Add optional default timeout env vars for Todoist/Pushover requests.
+- [ ] `I07` Add config normalization and warnings for invalid timeout env var values.
+- [ ] `I08` Add tests for timeout env var fallback behavior.
+- [ ] `I09` Add richer list output formatting option (short vs verbose) for Todoist task listing.
+- [ ] `I10` Add tests for short/verbose list formatting modes.
 
-### 2.2 Pushover payload validation (`P1`)
-- [ ] Validate `priority` type/range earlier and return `invalid_data` on malformed inputs.
-- [ ] Add tests for malformed/overflow priority values.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
-### 2.3 Permission profile diagnostics (`P1`)
-- [ ] Extend `system_status` with per-integration “mutation enabled” booleans for quick operator checks.
-- [ ] Add tests for profile combinations (`readonly`, `off`, `control`, `allow`).
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
+Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools.py`, `tests/test_config.py`
 
 ---
 
-## 3) Audit and Privacy
+## 3) Audit and Privacy Hardening (8 items)
 
-### 3.1 Smart-home payload redaction coverage (`P0`)
-- [ ] Expand sensitive-key detection list with common HA service fields (e.g. `alarm_code`, `passcode`, `webhook_id`).
-- [ ] Add regression tests for newly redacted aliases.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
+- [ ] `A01` Expand sensitive key redaction aliases (`alarm_code`, `passcode`, `webhook_id`, `oauth_token`).
+- [ ] `A02` Add regression tests for all new redaction aliases across nested objects/lists.
+- [ ] `A03` Add audit schema helper to enforce metadata-only fields for notification/task integrations.
+- [ ] `A04` Add cross-tool test verifying no raw message/content/title fields leak into audits.
+- [ ] `A05` Add tests for audit rotation when existing backups already exist at max count.
+- [ ] `A06` Add tests for rotation error handling when backup rename/unlink fails.
+- [ ] `A07` Add system_status field exposing audit redaction mode enabled/disabled.
+- [ ] `A08` Add doc update with redaction examples in runbooks.
 
-### 3.2 Audit event consistency (`P1`)
-- [ ] Ensure every external-facing tool has explicit audit records on denied/config/error/success branches.
-- [ ] Add a cross-tool test table verifying audit coverage.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
-### 3.3 Audit size management validation (`P2`)
-- [ ] Add tests for multi-rotation behavior and backup retention boundaries.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
+Files: `src/jarvis/tools/services.py`, `tests/test_tools.py`, `docs/operations/home-control-policy.md`, `docs/operations/integration-policy.md`
 
 ---
 
-## 4) Taxonomy and Telemetry
+## 4) Telemetry and Taxonomy (8 items)
 
-### 4.1 Taxonomy docs and contracts (`P1`)
-- [ ] Document taxonomy definitions and intended usage in a short developer reference doc.
-- [ ] Add tests ensuring docs/examples stay aligned with constants.
-- Files:
-  - `docs/operations/error-taxonomy.md`
-  - `src/jarvis/tool_errors.py`
-  - `tests/test_main_lifecycle.py`
+- [ ] `T01` Add taxonomy reference doc with each error code and owning tool families.
+- [ ] `T02` Add test asserting taxonomy doc examples stay in sync with constants.
+- [ ] `T03` Track unknown summary detail count in telemetry snapshot.
+- [ ] `T04` Add tests for unknown summary detail accounting.
+- [ ] `T05` Add explicit counter for per-code service error totals in telemetry snapshot.
+- [ ] `T06` Add tests for per-code aggregation stability.
+- [ ] `T07` Add NaN/inf guard tests for telemetry averages.
+- [ ] `T08` Add startup log line summarizing taxonomy sizes (service/storage subsets).
 
-### 4.2 Unknown detail accounting (`P1`)
-- [ ] Track and surface unexpected summary details in telemetry snapshot for debugging taxonomy misses.
-- [ ] Add tests proving unknown details are counted/surfaced.
-- Files:
-  - `src/jarvis/__main__.py`
-  - `tests/test_main_lifecycle.py`
-
-### 4.3 Metrics snapshot stability (`P2`)
-- [ ] Add tests for telemetry averaging under zero/NaN edge cases to avoid runtime regressions.
-- Files:
-  - `src/jarvis/__main__.py`
-  - `tests/test_main_lifecycle.py`
+Files: `src/jarvis/tool_errors.py`, `src/jarvis/__main__.py`, `tests/test_main_lifecycle.py`, `docs/operations/error-taxonomy.md`
 
 ---
 
-## 5) CI and Workflow Quality
+## 5) CI and Workflow Evolution (12 items)
 
-### 5.1 CI lane decomposition (`P1`)
-- [x] Split CI into separate jobs (`lint`, `tests`, `faults`) for clearer failure locality.
-- [x] Keep shared dependency setup efficient.
-- Files:
-  - `.github/workflows/ci.yml`
+- [ ] `C01` Add docs-only change detection gate to skip test/fault jobs when safe.
+- [ ] `C02` Add changed-scope filtering for path groups (services/tests/docs/workflows).
+- [x] `C03` Add `workflow_dispatch` inputs to CI for `lint-only`, `faults-only`, and `full`.
+- [ ] `C04` Add optional coverage XML generation in CI (non-blocking artifact).
+- [x] `C05` Upload junit/pytest artifacts for easier failure triage.
+- [x] `C06` Add job-level timeout values for CI jobs to prevent hangs.
+- [x] `C07` Pin `actions/*` usages to full commit SHA (supply-chain hardening).
+- [ ] `C08` Add a lightweight workflow to validate shell scripts (`shellcheck`) on PRs.
+- [ ] `C09` Add a security workflow (`codeql` or equivalent) with weekly schedule.
+- [ ] `C10` Add dependency update automation (`dependabot` config) for Python and GitHub Actions.
+- [ ] `C11` Add a CI summary step that reports slowest tests.
+- [ ] `C12` Add explicit CI check for executable bit + shebang consistency in scripts.
 
-### 5.2 Workflow shell hardening (`P2`)
-- [ ] Standardize `set -euo pipefail` in bash run blocks where appropriate.
-- [x] Add checks for script executable bits in CI.
-- Files:
-  - `.github/workflows/ci.yml`
-  - `.github/workflows/workflow-sanity.yml`
-
-### 5.3 Optional coverage artifact (`P2`)
-- [ ] Add optional coverage XML generation/upload on CI (non-blocking initially).
-- Files:
-  - `.github/workflows/ci.yml`
+Files: `.github/workflows/ci.yml`, `.github/workflows/workflow-sanity.yml`, `.github/dependabot.yml`, `scripts/`
 
 ---
 
-## 6) Test Suite Maintainability
+## 6) Test Architecture and Maintainability (8 items)
 
-### 6.1 Shared HTTP mock helpers (`P1`)
-- [x] Introduce reusable mock helpers for `aiohttp.ClientSession` patterns to reduce test duplication.
-- [x] Refactor service tests to use helper utilities.
-- Files:
-  - `tests/test_tools.py`
-  - `tests/conftest.py`
+- [x] `Q01` Introduce shared `aiohttp` mock helpers in `tests/conftest.py`.
+- [x] `Q02` Refactor representative service tests to use shared HTTP helpers.
+- [x] `Q03` Refactor remaining duplicated HTTP mock blocks to shared helpers.
+- [ ] `Q04` Parametrize timeout/cancelled/network error tests across integrations.
+- [x] `Q05` Add taxonomy-to-fault-selector contract test.
+- [ ] `Q06` Add helper assertions for audit payload structure to reduce repeated code.
+- [ ] `Q07` Split very long `tests/test_tools.py` into thematic modules.
+- [ ] `Q08` Add marker strategy for fast/slow/fault tests and document usage.
 
-### 6.2 Parametrize repetitive service cases (`P2`)
-- [ ] Parametrize common failure-mode tests (timeout/cancelled/network) across integrations.
-- Files:
-  - `tests/test_tools.py`
-
-### 6.3 Fault test taxonomy coverage map (`P2`)
-- [ ] Add test that ensures every critical taxonomy code is represented in the fault subset selection.
-- Files:
-  - `tests/test_tools.py`
-  - `scripts/test_faults.sh`
-  - `Makefile`
+Files: `tests/conftest.py`, `tests/test_tools.py`, `tests/test_*.py`
 
 ---
 
-## 7) Documentation and Runbooks
+## 7) Documentation and Runbooks (8 items)
 
-### 7.1 Home Assistant runbook updates (`P1`)
-- [x] Document current redaction behavior and examples in home-control runbook.
-- [x] Document cooldown semantics (`dry_run` vs execute).
-- Files:
-  - `docs/operations/home-control-policy.md`
+- [x] `D01` Create external integrations runbook (Todoist/Pushover policy + troubleshooting).
+- [x] `D02` Update home-control runbook with redaction and cooldown semantics.
+- [x] `D03` Reconcile architecture diagram MCP/tool labels with current capabilities.
+- [ ] `D04` Add runbook section for CI workflow intent and failure routing.
+- [ ] `D05` Add operator checklist for first-time env setup validation.
+- [ ] `D06` Add troubleshooting matrix mapping common errors to likely fixes.
+- [ ] `D07` Add short section on audit location/rotation/redaction guarantees.
+- [ ] `D08` Add release checklist doc for safe rollout of policy changes.
 
-### 7.2 Integration runbook (`P1`)
-- [x] Create runbook for Todoist/Pushover operational setup, profile modes, and troubleshooting.
-- Files:
-  - `docs/operations/integration-policy.md`
-  - `README.md`
-
-### 7.3 README architecture sync (`P2`)
-- [ ] Reconcile architecture diagram text with current tool list (Todoist, Pushover, memory/planning).
-- Files:
-  - `README.md`
+Files: `README.md`, `docs/operations/home-control-policy.md`, `docs/operations/integration-policy.md`, `docs/operations/release-checklist.md`
 
 ---
 
-## 8) Immediate Execution Queue
+## 8) Security and Dependency Hygiene (6 items)
 
-### 8.1 Start now (`P0`)
-- [x] Begin with **6.1 Shared HTTP mock helpers** to reduce service-test maintenance overhead.
+- [ ] `H01` Add `pip-audit` (or equivalent) CI step on schedule and PR.
+- [ ] `H02` Add secret scanning pre-commit/CI step and baseline handling.
+- [ ] `H03` Add provenance notes for third-party actions/tools in workflows.
+- [ ] `H04` Add policy for minimum pinned versions of critical dependencies.
+- [ ] `H05` Add tests for config warnings on insecure/empty auth-like env combinations.
+- [ ] `H06` Add monthly maintenance task list for dependency and workflow pin refresh.
 
-### 8.2 Next after 6.1 (`P1`)
-- [x] Continue with **5.1 CI lane decomposition**.
+Files: `.github/workflows/*.yml`, `pyproject.toml`, `README.md`, `docs/operations/security-maintenance.md`, `tests/test_config.py`
 
-### 8.3 Then (`P1`)
-- [x] Continue with **7.2 Integration runbook**.
+---
+
+## 9) Immediate Execution Queue
+
+- [x] `E01` Execute `C03` (manual workflow dispatch inputs and branch-safe toggles).
+- [x] `E02` Execute `Q03` (finish HTTP helper refactor sweep).
+- [x] `E03` Execute `Q05` (fault selector taxonomy contract test).
+- [x] `E04` Execute `D03` (README architecture sync).
+- [x] `E05` Execute `C07` (pin GitHub actions by SHA).

@@ -45,17 +45,17 @@ An embodied AI assistant inspired by Jarvis from Iron Man, running on the
 │                  │     │                  │     │                  │
 │  Mic → VAD ──────┼────►│  Agent SDK       │────►│  Stream TTS     │
 │       ↓          │     │  + MCP tools:    │     │  (ElevenLabs)   │
-│  Whisper STT ────┼────►│    embody        │     │                  │
-│                  │     │    smart_home    │     │  Barge-in:      │
-│  Barge-in: ◄─────┼─────│    play_emotion │◄────│  VAD interrupts │
-│  stop TTS        │     │    play_dance   │     │  playback       │
+│  Whisper STT ────┼────►│    embody/robot │     │                  │
+│                  │     │    smart_home/* │     │  Barge-in:      │
+│  Barge-in: ◄─────┼─────│    todoist/*    │◄────│  VAD interrupts │
+│  stop TTS        │     │    memory/*     │     │  playback       │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
 
 ┌──────────────────┐     ┌──────────────────┐
 │  Face Tracker    │     │   Audit Log      │
-│  YOLOv8 → face   │────►│   jarvis_audit   │
-│  position signal │     │ ~/.jarvis/audit  │
-│                  │     │   .jsonl         │
+│  YOLOv8 → face   │────►│ ~/.jarvis/audit  │
+│  position signal │     │   .jsonl         │
+│                  │     │ (rotating)       │
 └──────────────────┘     └──────────────────┘
 ```
 

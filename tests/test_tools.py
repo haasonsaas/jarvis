@@ -2,8 +2,9 @@
 
 import asyncio
 import json
+from pathlib import Path
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
 
 
@@ -688,27 +689,13 @@ class TestServicesTools:
         assert "preflight was cancelled" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
-    async def test_smart_home_handles_error_body_read_failure(self):
+    async def test_smart_home_handles_error_body_read_failure(self, aiohttp_response, aiohttp_session_mock):
         from jarvis.tools.services import smart_home
 
         with patch("aiohttp.ClientSession") as mock_session_cls:
-            state_resp = AsyncMock()
-            state_resp.status = 200
-            state_resp.json = AsyncMock(return_value={"state": "off", "attributes": {}})
-            mock_resp = AsyncMock()
-            mock_resp.status = 500
-            mock_resp.text = AsyncMock(side_effect=RuntimeError("read failed"))
-            mock_session = AsyncMock()
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=False)
-            mock_session.get = MagicMock(return_value=AsyncMock(
-                __aenter__=AsyncMock(return_value=state_resp),
-                __aexit__=AsyncMock(return_value=False),
-            ))
-            mock_session.post = MagicMock(return_value=AsyncMock(
-                __aenter__=AsyncMock(return_value=mock_resp),
-                __aexit__=AsyncMock(return_value=False),
-            ))
+            state_resp = aiohttp_response(status=200, json_data={"state": "off", "attributes": {}})
+            post_resp = aiohttp_response(status=500, text_side_effect=RuntimeError("read failed"))
+            mock_session = aiohttp_session_mock(get=state_resp, post=post_resp)
             mock_session_cls.return_value = mock_session
 
             result = await smart_home({
@@ -752,20 +739,12 @@ class TestServicesTools:
         assert "cancelled" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
-    async def test_smart_home_state_handles_invalid_json_response(self):
+    async def test_smart_home_state_handles_invalid_json_response(self, aiohttp_response, aiohttp_session_mock):
         from jarvis.tools.services import smart_home_state
 
         with patch("aiohttp.ClientSession") as mock_session_cls:
-            mock_resp = AsyncMock()
-            mock_resp.status = 200
-            mock_resp.json = AsyncMock(side_effect=ValueError("bad json"))
-            mock_session = AsyncMock()
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=False)
-            mock_session.get = MagicMock(return_value=AsyncMock(
-                __aenter__=AsyncMock(return_value=mock_resp),
-                __aexit__=AsyncMock(return_value=False),
-            ))
+            mock_resp = aiohttp_response(status=200, json_side_effect=ValueError("bad json"))
+            mock_session = aiohttp_session_mock(get=mock_resp)
             mock_session_cls.return_value = mock_session
 
             result = await smart_home_state({"entity_id": "light.kitchen"})
@@ -1009,7 +988,7 @@ class TestServicesTools:
         assert any(item.get("name") == "pushover_notify" and item.get("detail") == "invalid_json" for item in summaries)
 
     @pytest.mark.asyncio
-    async def test_todoist_and_pushover_tools_audit_on_success(self, tmp_path, monkeypatch):
+    async def test_todoist_and_pushover_tools_audit_on_success(self, tmp_path, monkeypatch, aiohttp_response, aiohttp_session_mock):
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
@@ -1026,19 +1005,9 @@ class TestServicesTools:
         monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
 
         with patch("aiohttp.ClientSession") as mock_session_cls:
-            mock_post_resp = AsyncMock()
-            mock_post_resp.status = 200
-            mock_post_resp.json = AsyncMock(return_value={"id": "a1"})
-            mock_notify_resp = AsyncMock()
-            mock_notify_resp.status = 200
-            mock_notify_resp.json = AsyncMock(return_value={"status": 1})
-            mock_session = AsyncMock()
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=False)
-            mock_session.post = MagicMock(side_effect=[
-                AsyncMock(__aenter__=AsyncMock(return_value=mock_post_resp), __aexit__=AsyncMock(return_value=False)),
-                AsyncMock(__aenter__=AsyncMock(return_value=mock_notify_resp), __aexit__=AsyncMock(return_value=False)),
-            ])
+            mock_post_resp = aiohttp_response(status=200, json_data={"id": "a1"})
+            mock_notify_resp = aiohttp_response(status=200, json_data={"status": 1})
+            mock_session = aiohttp_session_mock(post=[mock_post_resp, mock_notify_resp])
             mock_session_cls.return_value = mock_session
 
             await services.todoist_add_task({"content": "Buy coffee"})
@@ -1049,7 +1018,9 @@ class TestServicesTools:
         assert "pushover_notify" in actions
 
     @pytest.mark.asyncio
-    async def test_todoist_and_pushover_audit_does_not_log_raw_content(self, tmp_path, monkeypatch):
+    async def test_todoist_and_pushover_audit_does_not_log_raw_content(
+        self, tmp_path, monkeypatch, aiohttp_response, aiohttp_session_mock
+    ):
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
@@ -1066,19 +1037,9 @@ class TestServicesTools:
         monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
 
         with patch("aiohttp.ClientSession") as mock_session_cls:
-            mock_add_resp = AsyncMock()
-            mock_add_resp.status = 200
-            mock_add_resp.json = AsyncMock(return_value={"id": "t1"})
-            mock_notify_resp = AsyncMock()
-            mock_notify_resp.status = 200
-            mock_notify_resp.json = AsyncMock(return_value={"status": 1})
-            mock_session = AsyncMock()
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=False)
-            mock_session.post = MagicMock(side_effect=[
-                AsyncMock(__aenter__=AsyncMock(return_value=mock_add_resp), __aexit__=AsyncMock(return_value=False)),
-                AsyncMock(__aenter__=AsyncMock(return_value=mock_notify_resp), __aexit__=AsyncMock(return_value=False)),
-            ])
+            mock_add_resp = aiohttp_response(status=200, json_data={"id": "t1"})
+            mock_notify_resp = aiohttp_response(status=200, json_data={"status": 1})
+            mock_session = aiohttp_session_mock(post=[mock_add_resp, mock_notify_resp])
             mock_session_cls.return_value = mock_session
 
             await services.todoist_add_task({"content": "my password is swordfish"})
@@ -1715,3 +1676,26 @@ class TestServicesTools:
         services.bind(config)
 
         assert services._action_last_seen == {}
+
+    def test_fault_subset_selector_covers_critical_taxonomy_codes(self):
+        project_root = Path(__file__).resolve().parents[1]
+        script_text = (project_root / "scripts" / "test_faults.sh").read_text()
+        makefile_text = (project_root / "Makefile").read_text()
+
+        # Keep Makefile and script contract coupled through delegation.
+        assert "./scripts/test_faults.sh" in makefile_text
+
+        critical_codes = {
+            "timeout",
+            "cancelled",
+            "invalid_json",
+            "api_error",
+            "storage_error",
+            "missing_store",
+            "unknown_error",
+            "summary_unavailable",
+            "http_error",
+            "network_client_error",
+        }
+        for code in critical_codes:
+            assert code in script_text

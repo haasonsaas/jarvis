@@ -5,6 +5,20 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Run all jobs (overrides lane toggles)"
+        type: boolean
+        default: false
+      lint_only:
+        description: "Run only lint"
+        type: boolean
+        default: false
+      faults_only:
+        description: "Run lint + faults, skip full pytest"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -13,17 +27,18 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
 
       - name: Sync dependencies
         run: uv sync --extra dev
@@ -32,38 +47,52 @@ jobs:
         run: uv run ruff check src tests
 
   tests:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.full == 'true' || (github.event.inputs.lint_only != 'true' && github.event.inputs.faults_only != 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
 
       - name: Sync dependencies
         run: uv sync --extra dev
 
       - name: Pytest
-        run: uv run pytest -q
+        run: |
+          mkdir -p .artifacts/pytest
+          uv run pytest -q --junitxml=.artifacts/pytest/junit.xml
+
+      - name: Upload pytest junit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pytest-junit-${{ github.run_id }}
+          path: .artifacts/pytest/junit.xml
+          if-no-files-found: warn
 
   faults:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.full == 'true' || github.event.inputs.lint_only != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
 
       - name: Sync dependencies
         run: uv sync --extra dev
