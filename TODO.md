@@ -222,3 +222,13 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
+
+---
+
+## 17) Fault Test Coverage Alignment
+
+### 17.1 Fault selector taxonomy sync (`P1`)
+- [x] Include `api_error` in `test-faults` selectors (Makefile and script) so API-level rejects stay in fast fault regressions.
+- Files:
+  - `Makefile`
+  - `scripts/test_faults.sh`
