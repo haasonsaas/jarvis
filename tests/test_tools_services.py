@@ -844,6 +844,25 @@ class TestServicesTools:
         assert "invalid todoist response" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_todoist_add_task_unexpected_error_hides_exception_details(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession", side_effect=RuntimeError("secret token leak")):
+            result = await services.todoist_add_task({"content": "Buy coffee"})
+
+        text = result["content"][0]["text"]
+        assert "unexpected todoist error" in text.lower()
+        assert "secret token leak" not in text.lower()
+
+    @pytest.mark.asyncio
     async def test_todoist_list_tasks_invalid_json_records_audit(
         self,
         tmp_path,
@@ -876,6 +895,25 @@ class TestServicesTools:
         assert action == "todoist_list_tasks"
         _assert_audit_payload(details, required={"result"})
         assert details["result"] == "invalid_json"
+
+    @pytest.mark.asyncio
+    async def test_todoist_list_tasks_unexpected_error_hides_exception_details(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession", side_effect=RuntimeError("secret token leak")):
+            result = await services.todoist_list_tasks({"limit": 1})
+
+        text = result["content"][0]["text"]
+        assert "unexpected todoist error" in text.lower()
+        assert "secret token leak" not in text.lower()
 
     @pytest.mark.asyncio
     async def test_todoist_list_tasks_non_list_payload_records_audit(
@@ -1177,6 +1215,26 @@ class TestServicesTools:
 
         assert "priority must be an integer between -2 and 2" in result["content"][0]["text"].lower()
         mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pushover_notify_unexpected_error_hides_exception_details(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.pushover_api_token = "app-token"
+        cfg.pushover_user_key = "user-key"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession", side_effect=RuntimeError("secret token leak")):
+            result = await services.pushover_notify({"message": "hello"})
+
+        text = result["content"][0]["text"]
+        assert "unexpected pushover error" in text.lower()
+        assert "secret token leak" not in text.lower()
 
     @pytest.mark.asyncio
     async def test_pushover_notify_uses_configured_timeout(self, tmp_path, aiohttp_response, aiohttp_session_mock):

@@ -875,11 +875,11 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         tool_feedback("done")
         _record_service_error("smart_home", start_time, "network_client_error")
         return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
-    except Exception as e:
+    except Exception:
         tool_feedback("done")
         _record_service_error("smart_home", start_time, "unexpected")
         log.exception("Unexpected smart_home failure")
-        return {"content": [{"type": "text", "text": f"Unexpected Home Assistant error: {e}"}]}
+        return {"content": [{"type": "text", "text": "Unexpected Home Assistant error."}]}
 
 
 async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
@@ -1037,10 +1037,11 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("todoist_add_task", start_time, "network_client_error")
         _audit("todoist_add_task", {"result": "network_client_error"})
         return {"content": [{"type": "text", "text": f"Failed to reach Todoist: {e}"}]}
-    except Exception as e:
+    except Exception:
         _record_service_error("todoist_add_task", start_time, "unexpected")
         _audit("todoist_add_task", {"result": "unexpected"})
-        return {"content": [{"type": "text", "text": f"Unexpected Todoist error: {e}"}]}
+        log.exception("Unexpected todoist_add_task failure")
+        return {"content": [{"type": "text", "text": "Unexpected Todoist error."}]}
 
 
 async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
@@ -1169,10 +1170,11 @@ async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
             _record_service_error("todoist_list_tasks", start_time, "network_client_error")
             _audit("todoist_list_tasks", {"result": "network_client_error"})
             return {"content": [{"type": "text", "text": f"Failed to reach Todoist: {e}"}]}
-        except Exception as e:
+        except Exception:
             _record_service_error("todoist_list_tasks", start_time, "unexpected")
             _audit("todoist_list_tasks", {"result": "unexpected"})
-            return {"content": [{"type": "text", "text": f"Unexpected Todoist error: {e}"}]}
+            log.exception("Unexpected todoist_list_tasks failure")
+            return {"content": [{"type": "text", "text": "Unexpected Todoist error."}]}
 
 
 async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
@@ -1262,10 +1264,11 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("pushover_notify", start_time, "network_client_error")
         _audit("pushover_notify", {"result": "network_client_error"})
         return {"content": [{"type": "text", "text": f"Failed to reach Pushover: {e}"}]}
-    except Exception as e:
+    except Exception:
         _record_service_error("pushover_notify", start_time, "unexpected")
         _audit("pushover_notify", {"result": "unexpected"})
-        return {"content": [{"type": "text", "text": f"Unexpected Pushover error: {e}"}]}
+        log.exception("Unexpected pushover_notify failure")
+        return {"content": [{"type": "text", "text": "Unexpected Pushover error."}]}
 
 
 async def get_time(args: dict[str, Any]) -> dict[str, Any]:
