@@ -34,6 +34,7 @@ from jarvis.audio.vad import VoiceActivityDetector, CHUNK_SAMPLES
 from jarvis.audio.stt import SpeechToText
 from jarvis.audio.tts import TextToSpeech
 from jarvis.brain import Brain
+from jarvis.tools.services import SERVICE_ERROR_CODES
 from jarvis.tools.robot import bind as bind_robot_tools
 from jarvis.tool_summary import list_summaries
 
@@ -61,30 +62,7 @@ TELEMETRY_STORAGE_ERROR_DETAILS = {
     "storage_error",
     "missing_store",
 }
-TELEMETRY_SERVICE_ERROR_DETAILS = {
-    "policy",
-    "missing_config",
-    "missing_fields",
-    "invalid_data",
-    "timeout",
-    "cancelled",
-    "network_client_error",
-    "invalid_json",
-    "api_error",
-    "auth",
-    "not_found",
-    "unexpected",
-    "missing_text",
-    "missing_query",
-    "missing_entity",
-    "missing_plan",
-    "invalid_plan",
-    "invalid_status",
-    "invalid_steps",
-    "http_error",
-    "summary_unavailable",
-    "unknown_error",
-}
+TELEMETRY_SERVICE_ERROR_DETAILS = SERVICE_ERROR_CODES - TELEMETRY_STORAGE_ERROR_DETAILS
 
 
 def _to_mono(audio: np.ndarray) -> np.ndarray:

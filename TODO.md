@@ -182,3 +182,13 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
+
+---
+
+## 14) Taxonomy Drift Prevention
+
+### 14.1 Telemetry/service taxonomy single-source (`P1`)
+- [x] Derive telemetry service-error set from `SERVICE_ERROR_CODES` instead of duplicating literals.
+- [x] Keep storage-error subset separation for split counters.
+- Files:
+  - `src/jarvis/__main__.py`
