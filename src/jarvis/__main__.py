@@ -15,13 +15,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import math
 import logging
 import signal
 import time
 import threading
+from pathlib import Path
 from collections import deque
 from contextlib import suppress
+from typing import Any
 
 import numpy as np
 from scipy.signal import resample_poly
@@ -33,9 +36,17 @@ from jarvis.audio.vad import VoiceActivityDetector, CHUNK_SAMPLES
 from jarvis.audio.stt import SpeechToText
 from jarvis.audio.tts import TextToSpeech
 from jarvis.brain import Brain
+from jarvis.observability import ObservabilityStore
+from jarvis.operator_server import OperatorServer
+from jarvis.skills import SkillRegistry
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, TOOL_STORAGE_ERROR_DETAILS
 from jarvis.tools.robot import bind as bind_robot_tools
-from jarvis.tools.services import set_runtime_voice_state
+from jarvis.tools import services as service_tools
+from jarvis.tools.services import (
+    set_runtime_observability_state,
+    set_runtime_skills_state,
+    set_runtime_voice_state,
+)
 from jarvis.tool_summary import list_summaries
 from jarvis.voice_attention import VoiceAttentionConfig, VoiceAttentionController
 
@@ -68,6 +79,7 @@ NEGATIONS = {"no", "nope", "nah", "negative"}
 TELEMETRY_LOG_EVERY_TURNS = 5
 TELEMETRY_STORAGE_ERROR_DETAILS = TOOL_STORAGE_ERROR_DETAILS
 TELEMETRY_SERVICE_ERROR_DETAILS = TOOL_SERVICE_ERROR_CODES - TELEMETRY_STORAGE_ERROR_DETAILS
+WATCHDOG_POLL_SEC = 0.05
 
 
 def _require_sounddevice(feature: str) -> None:
@@ -162,6 +174,19 @@ class Jarvis:
                 room_default=self.config.voice_room_default,
             )
         )
+        self._runtime_state_path = Path(self.config.runtime_state_path).expanduser()
+
+        self._skills = SkillRegistry(
+            skills_dir=self.config.skills_dir,
+            allowlist=self.config.skills_allowlist,
+            require_signature=self.config.skills_require_signature,
+            signature_key=self.config.skills_signature_key,
+            enabled=self.config.skills_enabled,
+            state_path=self.config.skills_state_path,
+        )
+        self._skills.discover()
+        service_tools.set_skill_registry(self._skills)
+        set_runtime_skills_state(self._skills.status_snapshot())
 
         # Bind tools to robot + presence
         bind_robot_tools(self.robot, self.presence, self.config)
@@ -172,14 +197,30 @@ class Jarvis:
             sample_rate=self.config.sample_rate,
         )
         self.stt = SpeechToText(model_size=self.config.whisper_model)
+        self._stt_secondary: SpeechToText | None = None
+        if self.config.stt_fallback_enabled:
+            fallback_model = (self.config.whisper_model_fallback or "").strip()
+            if fallback_model and fallback_model != self.config.whisper_model:
+                self._stt_secondary = SpeechToText(model_size=fallback_model)
         self.tts = TextToSpeech(
             api_key=self.config.elevenlabs_api_key,
             voice_id=self.config.elevenlabs_voice_id,
             sample_rate=self.config.sample_rate,
         ) if not args.no_tts and self.config.elevenlabs_api_key else None
+        self._tts_output_enabled = True
 
         # Brain
         self.brain = Brain(self.config, self.presence)
+
+        self._observability: ObservabilityStore | None = None
+        if self.config.observability_enabled:
+            self._observability = ObservabilityStore(
+                db_path=self.config.observability_db_path,
+                state_path=self.config.observability_state_path,
+                event_log_path=self.config.observability_event_log_path,
+                failure_burst_threshold=self.config.observability_failure_burst_threshold,
+            )
+        self._last_observability_snapshot_at = 0.0
 
         # Face tracker (lazy init)
         self.face_tracker = None
@@ -202,6 +243,7 @@ class Jarvis:
 
         self._tts_queue: asyncio.Queue[tuple[int, str, bool, float]] = asyncio.Queue()
         self._tts_task: asyncio.Task[None] | None = None
+        self._watchdog_task: asyncio.Task[None] | None = None
         self._response_id = 0
         self._active_response_id = 0
         self._response_started = False
@@ -213,6 +255,7 @@ class Jarvis:
 
         self._utterance_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=1)
         self._listen_task: asyncio.Task[None] | None = None
+        self._operator_server: OperatorServer | None = None
 
         # Audio output stream (persistent, avoids open/close per chunk)
         self._output_stream: sd.OutputStream | None = None
@@ -232,7 +275,10 @@ class Jarvis:
             "fallback_responses": 0.0,
         }
         self._telemetry_error_counts: dict[str, float] = {}
+        self._load_runtime_state()
         self._publish_voice_status()
+        self._publish_skills_status()
+        self._publish_observability_status()
 
     def start(self) -> None:
         """Initialize all subsystems."""
@@ -240,6 +286,20 @@ class Jarvis:
             return
         self._started = True
         try:
+            blockers = self._startup_blockers()
+            if blockers:
+                raise RuntimeError("; ".join(blockers))
+
+            with suppress(Exception):
+                self._skills.discover()
+            self._publish_skills_status()
+
+            observability = getattr(self, "_observability", None)
+            if observability is not None:
+                observability.start()
+                observability.record_event("startup", {"mode": "simulation" if self.robot.sim else "hardware"})
+                self._publish_observability_status()
+
             self.robot.connect()
             if self.config.motion_enabled:
                 self.presence.start()
@@ -288,6 +348,7 @@ class Jarvis:
 
             log.info("Jarvis is online.")
             self._publish_voice_status()
+            self._publish_observability_status()
         except Exception:
             self.stop()
             raise
@@ -300,6 +361,9 @@ class Jarvis:
         voice = getattr(self, "_voice_attention", None)
         wake_mode = getattr(voice, "mode", "always_listening")
         timeout_profile = getattr(voice, "timeout_profile", "normal")
+        skills = getattr(self, "_skills", None)
+        skills_enabled = bool(skills.enabled) if skills is not None else False
+        observability = getattr(self, "_observability", None)
         return [
             f"Mode: {'simulation' if self.robot.sim else 'hardware'}",
             f"Motion: {'on' if self.config.motion_enabled else 'off'} | Vision: {'on' if not self.args.no_vision and not self.robot.sim else 'off'} | Hands: {'on' if self.config.hand_track_enabled else 'off'}",
@@ -308,6 +372,9 @@ class Jarvis:
             f"Wake mode: {wake_mode} | timeout profile: {timeout_profile}",
             f"TTS: {tts_reason}",
             f"Memory: {memory_state} ({self.config.memory_path})",
+            f"Skills: {'on' if skills_enabled else 'off'} ({getattr(self.config, 'skills_dir', 'n/a')})",
+            f"Operator server: {'on' if getattr(self.config, 'operator_server_enabled', False) else 'off'} ({getattr(self.config, 'operator_server_host', '127.0.0.1')}:{getattr(self.config, 'operator_server_port', 0)})",
+            f"Observability: {'on' if observability is not None else 'off'} ({getattr(self.config, 'observability_db_path', 'n/a')})",
             f"Persona style: {self.config.persona_style}",
             f"Config warnings: {warning_count}",
             f"Tool policy: allow={len(self.config.tool_allowlist)} deny={len(self.config.tool_denylist)}",
@@ -322,6 +389,94 @@ class Jarvis:
         except Exception:
             status["presence_state"] = "unknown"
         set_runtime_voice_state(status)
+        observability = getattr(self, "_observability", None)
+        if observability is not None:
+            with suppress(Exception):
+                observability.record_state_transition(status.get("presence_state", "unknown"), reason="presence_state")
+
+    def _publish_skills_status(self) -> None:
+        skills = getattr(self, "_skills", None)
+        if skills is None:
+            set_runtime_skills_state({"enabled": False, "loaded_count": 0, "enabled_count": 0, "skills": []})
+            return
+        set_runtime_skills_state(skills.status_snapshot())
+
+    def _publish_observability_status(self) -> None:
+        observability = getattr(self, "_observability", None)
+        if observability is None:
+            set_runtime_observability_state({"enabled": False, "uptime_sec": 0.0, "restart_count": 0, "alerts": []})
+            return
+        try:
+            snapshot = observability.status_snapshot()
+        except Exception:
+            snapshot = {"enabled": False, "uptime_sec": 0.0, "restart_count": 0, "alerts": []}
+        set_runtime_observability_state(snapshot)
+
+    def _startup_blockers(self) -> list[str]:
+        blockers: list[str] = []
+        if not bool(getattr(self.config, "startup_strict", False)):
+            return blockers
+        if not bool(getattr(self.args, "no_tts", False)) and not str(getattr(self.config, "elevenlabs_api_key", "")):
+            blockers.append("STARTUP_STRICT: ELEVENLABS_API_KEY is required when TTS is enabled.")
+        if bool(getattr(self.config, "operator_server_enabled", False)) and not str(
+            getattr(self.config, "operator_server_host", "")
+        ).strip():
+            blockers.append("STARTUP_STRICT: OPERATOR_SERVER_HOST cannot be empty.")
+        if bool(getattr(self.config, "skills_require_signature", False)) and not str(
+            getattr(self.config, "skills_signature_key", "")
+        ).strip():
+            blockers.append("STARTUP_STRICT: SKILLS_SIGNATURE_KEY required when SKILLS_REQUIRE_SIGNATURE=true.")
+        if (
+            bool(getattr(self.config, "memory_encryption_enabled", False))
+            or bool(getattr(self.config, "audit_encryption_enabled", False))
+        ) and not str(getattr(self.config, "data_encryption_key", "")).strip():
+            blockers.append("STARTUP_STRICT: JARVIS_DATA_KEY required when encryption is enabled.")
+        return blockers
+
+    def _load_runtime_state(self) -> None:
+        path = getattr(self, "_runtime_state_path", None)
+        if path is None or not isinstance(path, Path):
+            return
+        if not path.exists():
+            return
+        try:
+            payload = json.loads(path.read_text())
+        except Exception:
+            return
+        if not isinstance(payload, dict):
+            return
+        voice = self._voice_controller()
+        voice_state = payload.get("voice")
+        if isinstance(voice_state, dict):
+            if "mode" in voice_state:
+                voice.set_mode(str(voice_state.get("mode", voice.mode)))
+            if "timeout_profile" in voice_state:
+                voice.set_timeout_profile(str(voice_state.get("timeout_profile", voice.timeout_profile)))
+            voice.set_push_to_talk_active(bool(voice_state.get("push_to_talk_active", False)))
+            voice.sleeping = bool(voice_state.get("sleeping", False))
+        self._awaiting_confirmation = bool(payload.get("awaiting_confirmation", False))
+        pending = payload.get("pending_text")
+        self._pending_text = str(pending) if isinstance(pending, str) else None
+
+    def _save_runtime_state(self) -> None:
+        path = getattr(self, "_runtime_state_path", None)
+        if path is None or not isinstance(path, Path):
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        voice = self._voice_controller()
+        payload = {
+            "saved_at": time.time(),
+            "voice": {
+                "mode": voice.mode,
+                "timeout_profile": voice.timeout_profile,
+                "push_to_talk_active": voice.push_to_talk_active,
+                "sleeping": voice.sleeping,
+            },
+            "awaiting_confirmation": bool(getattr(self, "_awaiting_confirmation", False)),
+            "pending_text": getattr(self, "_pending_text", None),
+        }
+        with suppress(OSError):
+            path.write_text(json.dumps(payload, indent=2))
 
     def _voice_controller(self) -> VoiceAttentionController:
         voice = getattr(self, "_voice_attention", None)
@@ -396,10 +551,230 @@ class Jarvis:
             "fallback_responses": metric("fallback_responses"),
         }
 
+    def _transcribe_with_fallback(self, audio: np.ndarray) -> str:
+        text = self.stt.transcribe(audio)
+        if text.strip():
+            return text
+        fallback = getattr(self, "_stt_secondary", None)
+        if fallback is None:
+            return text
+        recovered = fallback.transcribe(audio)
+        if recovered.strip():
+            self._telemetry["fallback_responses"] += 1.0
+            observability = getattr(self, "_observability", None)
+            if observability is not None:
+                with suppress(Exception):
+                    observability.record_event("stt_fallback", {"reason": "primary_empty"})
+        return recovered
+
+    def _publish_observability_snapshot(self, *, force: bool = False) -> None:
+        observability = getattr(self, "_observability", None)
+        if observability is None:
+            return
+        now = time.monotonic()
+        if not force and (now - self._last_observability_snapshot_at) < self.config.observability_snapshot_interval_sec:
+            return
+        self._last_observability_snapshot_at = now
+        snapshot = self._telemetry_snapshot()
+        with suppress(Exception):
+            observability.record_snapshot(snapshot)
+        with suppress(Exception):
+            observability.record_tool_summaries(list_summaries(limit=100))
+        alerts = []
+        with suppress(Exception):
+            alerts = observability.detect_failure_burst(window_sec=300.0)
+        if alerts:
+            log.warning("Observability alerts: %s", alerts)
+        self._publish_observability_status()
+
+    async def _watchdog_loop(self) -> None:
+        state_name = str(getattr(self.presence.signals.state, "value", "unknown")).lower()
+        state_since = time.monotonic()
+        while True:
+            now = time.monotonic()
+            current = str(getattr(self.presence.signals.state, "value", "unknown")).lower()
+            if current != state_name:
+                state_name = current
+                state_since = now
+            timeout = None
+            if current == str(State.LISTENING.value):
+                timeout = self.config.watchdog_listening_timeout_sec
+            elif current == str(State.THINKING.value):
+                timeout = self.config.watchdog_thinking_timeout_sec
+            elif current == str(State.SPEAKING.value):
+                timeout = self.config.watchdog_speaking_timeout_sec
+            if timeout is not None and (now - state_since) > timeout:
+                log.warning("Watchdog reset triggered for state=%s", current)
+                self.presence.signals.state = State.IDLE
+                self._barge_in.set()
+                self._flush_output()
+                self._clear_tts_queue()
+                self._barge_in.clear()
+                self._telemetry["fallback_responses"] += 1.0
+                observability = getattr(self, "_observability", None)
+                if observability is not None:
+                    with suppress(Exception):
+                        observability.record_event(
+                            "watchdog_reset",
+                            {"state": current, "timeout_sec": timeout},
+                        )
+                state_name = str(State.IDLE.value)
+                state_since = now
+            await asyncio.sleep(WATCHDOG_POLL_SEC)
+
+    async def _operator_status_provider(self) -> dict[str, Any]:
+        try:
+            payload = await service_tools.system_status({})
+            text = payload.get("content", [{}])[0].get("text", "{}")
+            status = json.loads(text) if isinstance(text, str) else {}
+            if not isinstance(status, dict):
+                status = {}
+        except Exception as exc:
+            status = {"error": str(exc)}
+        status["operator"] = {
+            "enabled": bool(self.config.operator_server_enabled),
+            "host": self.config.operator_server_host,
+            "port": int(self.config.operator_server_port),
+        }
+        return status
+
+    def _startup_diagnostics_provider(self) -> list[str]:
+        warnings = list(getattr(self.config, "startup_warnings", []))
+        blockers = self._startup_blockers()
+        return [*warnings, *[f"BLOCKER: {item}" for item in blockers]]
+
+    def _operator_metrics_provider(self) -> str:
+        observability = getattr(self, "_observability", None)
+        if observability is None:
+            return ""
+        with suppress(Exception):
+            return observability.prometheus_metrics()
+        return ""
+
+    def _operator_events_provider(self) -> list[dict[str, Any]]:
+        observability = getattr(self, "_observability", None)
+        if observability is None:
+            return []
+        with suppress(Exception):
+            return observability.recent_events(limit=100)
+        return []
+
+    async def _operator_control_handler(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+        voice = self._voice_controller()
+        command = str(action or "").strip().lower()
+        data = payload if isinstance(payload, dict) else {}
+        if command == "set_wake_mode":
+            mode = voice.set_mode(str(data.get("mode", "")))
+            self._publish_voice_status()
+            return {"ok": True, "mode": mode}
+        if command == "set_timeout_profile":
+            profile = voice.set_timeout_profile(str(data.get("profile", "")))
+            self._publish_voice_status()
+            return {"ok": True, "timeout_profile": profile}
+        if command == "set_push_to_talk":
+            active = bool(data.get("active"))
+            voice.set_push_to_talk_active(active)
+            self._publish_voice_status()
+            return {"ok": True, "push_to_talk_active": active}
+        if command == "set_motion_enabled":
+            enabled = bool(data.get("enabled"))
+            self.config.motion_enabled = enabled
+            if enabled:
+                with suppress(Exception):
+                    self.presence.start()
+            else:
+                with suppress(Exception):
+                    self.presence.stop()
+            return {"ok": True, "motion_enabled": enabled}
+        if command == "set_home_enabled":
+            enabled = bool(data.get("enabled"))
+            self.config.home_enabled = enabled
+            return {"ok": True, "home_enabled": enabled}
+        if command == "set_tts_enabled":
+            enabled = bool(data.get("enabled"))
+            self._tts_output_enabled = enabled
+            return {"ok": True, "tts_enabled": enabled}
+        if command == "clear_inbound_webhooks":
+            result = await service_tools.webhook_inbound_clear({})
+            text = result.get("content", [{}])[0].get("text", "")
+            return {"ok": True, "message": text}
+        if command == "skills_reload":
+            self._skills.discover()
+            self._publish_skills_status()
+            return {"ok": True, "skills": self._skills.status_snapshot()}
+        if command == "skills_enable":
+            name = str(data.get("name", "")).strip().lower()
+            ok, detail = self._skills.enable_skill(name)
+            self._publish_skills_status()
+            return {"ok": ok, "detail": detail, "name": name}
+        if command == "skills_disable":
+            name = str(data.get("name", "")).strip().lower()
+            ok, detail = self._skills.disable_skill(name)
+            self._publish_skills_status()
+            return {"ok": ok, "detail": detail, "name": name}
+        return {"ok": False, "error": "unknown_action"}
+
+    async def _start_operator_server(self) -> None:
+        if not self.config.operator_server_enabled:
+            return
+        if self._operator_server is not None:
+            return
+        server = OperatorServer(
+            host=self.config.operator_server_host,
+            port=self.config.operator_server_port,
+            status_provider=self._operator_status_provider,
+            diagnostics_provider=self._startup_diagnostics_provider,
+            control_handler=self._operator_control_handler,
+            metrics_provider=self._operator_metrics_provider,
+            events_provider=self._operator_events_provider,
+            inbound_callback=lambda payload, headers, path, source: service_tools.record_inbound_webhook_event(
+                payload=payload,
+                headers=headers,
+                path=path,
+                source=source,
+            ),
+            inbound_enabled=self.config.webhook_inbound_enabled,
+            inbound_token=self.config.webhook_inbound_token or self.config.webhook_auth_token,
+        )
+        try:
+            await server.start()
+        except Exception as exc:
+            log.warning("Operator server failed to start: %s", exc)
+            return
+        self._operator_server = server
+        observability = getattr(self, "_observability", None)
+        if observability is not None:
+            with suppress(Exception):
+                observability.record_event(
+                    "operator_server_started",
+                    {
+                        "host": self.config.operator_server_host,
+                        "port": self.config.operator_server_port,
+                    },
+                )
+
+    async def _stop_operator_server(self) -> None:
+        server = getattr(self, "_operator_server", None)
+        if server is None:
+            return
+        with suppress(Exception):
+            await server.stop()
+        self._operator_server = None
+
     def stop(self) -> None:
         """Shut down all subsystems."""
         if not self._started:
             return
+        self._save_runtime_state()
+        observability = getattr(self, "_observability", None)
+        if observability is not None:
+            self._publish_observability_snapshot(force=True)
+            with suppress(Exception):
+                observability.record_event("shutdown", {"reason": "stop_called"})
+            with suppress(Exception):
+                observability.stop()
+            with suppress(Exception):
+                observability.close()
         if self._output_stream:
             with suppress(Exception):
                 self._output_stream.stop()
@@ -424,6 +799,8 @@ class Jarvis:
             self.robot.disconnect()
         self._started = False
         set_runtime_voice_state({"mode": "offline", "followup_active": False, "sleeping": False, "active_room": "unknown"})
+        self._publish_observability_status()
+        self._publish_skills_status()
         log.info("Jarvis offline.")
 
     async def run(self) -> None:
@@ -433,6 +810,9 @@ class Jarvis:
             if self.tts is not None:
                 self._tts_task = asyncio.create_task(self._tts_loop(), name="tts")
             self._listen_task = asyncio.create_task(self._listen_loop(), name="listen")
+            if self.config.watchdog_enabled:
+                self._watchdog_task = asyncio.create_task(self._watchdog_loop(), name="watchdog")
+            await self._start_operator_server()
             print("\n  JARVIS is online. Speak to begin.\n")
             print("  Press Ctrl+C to exit.\n")
             for line in self._startup_summary_lines():
@@ -447,7 +827,7 @@ class Jarvis:
                 # Transcribe (run in executor to not block event loop)
                 self.presence.signals.state = State.THINKING
                 text = await asyncio.get_event_loop().run_in_executor(
-                    None, self.stt.transcribe, utterance
+                    None, self._transcribe_with_fallback, utterance
                 )
                 stt_elapsed = time.monotonic() - self._last_doa_update if self._last_doa_update else None
                 if stt_elapsed is not None:
@@ -539,15 +919,22 @@ class Jarvis:
                         int(snapshot["fallback_responses"]),
                         attention_source,
                     )
+                self._publish_observability_snapshot()
 
         except asyncio.CancelledError:
             pass
         finally:
+            await self._stop_operator_server()
             if self._listen_task is not None:
                 self._listen_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await self._listen_task
                 self._listen_task = None
+            if getattr(self, "_watchdog_task", None) is not None:
+                self._watchdog_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._watchdog_task
+                self._watchdog_task = None
             if self._tts_task is not None:
                 self._tts_task.cancel()
                 with suppress(asyncio.CancelledError):
@@ -820,6 +1207,13 @@ class Jarvis:
                 self.presence.signals.speech_energy = 0.0
                 continue
 
+            if not getattr(self, "_tts_output_enabled", True):
+                if not is_filler:
+                    print(f"  JARVIS: {sentence}")
+                if pause > 0:
+                    await asyncio.sleep(pause)
+                continue
+
             try:
                 async for audio_chunk in self.tts.stream_chunks_async(sentence):
                     if self._barge_in.is_set():
@@ -844,6 +1238,19 @@ class Jarvis:
                     await asyncio.sleep(0)
             except Exception as e:
                 log.warning("TTS loop failed for sentence chunk: %s", e)
+                config = getattr(self, "config", None)
+                if bool(getattr(config, "tts_fallback_text_only", True)) and not is_filler:
+                    print(f"  JARVIS: {sentence}")
+                    telemetry = getattr(self, "_telemetry", None)
+                    if isinstance(telemetry, dict):
+                        telemetry["fallback_responses"] = float(telemetry.get("fallback_responses", 0.0) or 0.0) + 1.0
+                    observability = getattr(self, "_observability", None)
+                    if observability is not None:
+                        with suppress(Exception):
+                            observability.record_event(
+                                "tts_fallback_text_only",
+                                {"sentence_len": len(sentence)},
+                            )
             self.presence.signals.speech_energy = 0.0
             if pause > 0:
                 await asyncio.sleep(pause)

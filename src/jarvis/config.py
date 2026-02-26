@@ -135,6 +135,57 @@ class Config:
     barge_threshold_push_to_talk: float = field(default_factory=lambda: _env_float("BARGE_THRESHOLD_PUSH_TO_TALK", 0.5))
     voice_min_post_wake_chars: int = field(default_factory=lambda: _env_int("VOICE_MIN_POST_WAKE_CHARS", 4))
     voice_room_default: str = field(default_factory=lambda: os.environ.get("VOICE_ROOM_DEFAULT", "main"))
+    stt_fallback_enabled: bool = field(default_factory=lambda: _env_bool("STT_FALLBACK_ENABLED") is not False)
+    whisper_model_fallback: str = field(default_factory=lambda: os.environ.get("WHISPER_MODEL_FALLBACK", "tiny.en"))
+    tts_fallback_text_only: bool = field(default_factory=lambda: _env_bool("TTS_FALLBACK_TEXT_ONLY") is not False)
+    model_failover_enabled: bool = field(default_factory=lambda: _env_bool("MODEL_FAILOVER_ENABLED") is not False)
+    model_secondary_mode: str = field(default_factory=lambda: os.environ.get("MODEL_SECONDARY_MODE", "offline_stub"))
+    startup_strict: bool = field(default_factory=lambda: _env_bool("STARTUP_STRICT") or False)
+    runtime_state_path: str = field(
+        default_factory=lambda: os.environ.get("RUNTIME_STATE_PATH", os.path.expanduser("~/.jarvis/runtime-state.json"))
+    )
+    watchdog_enabled: bool = field(default_factory=lambda: _env_bool("WATCHDOG_ENABLED") is not False)
+    watchdog_listening_timeout_sec: float = field(
+        default_factory=lambda: _env_positive_float("WATCHDOG_LISTENING_TIMEOUT_SEC", 30.0)
+    )
+    watchdog_thinking_timeout_sec: float = field(
+        default_factory=lambda: _env_positive_float("WATCHDOG_THINKING_TIMEOUT_SEC", 60.0)
+    )
+    watchdog_speaking_timeout_sec: float = field(
+        default_factory=lambda: _env_positive_float("WATCHDOG_SPEAKING_TIMEOUT_SEC", 45.0)
+    )
+    operator_server_enabled: bool = field(default_factory=lambda: _env_bool("OPERATOR_SERVER_ENABLED") is not False)
+    operator_server_host: str = field(default_factory=lambda: os.environ.get("OPERATOR_SERVER_HOST", "127.0.0.1"))
+    operator_server_port: int = field(default_factory=lambda: _env_int("OPERATOR_SERVER_PORT", 8765))
+    webhook_inbound_enabled: bool = field(default_factory=lambda: _env_bool("WEBHOOK_INBOUND_ENABLED") or False)
+    webhook_inbound_token: str = field(default_factory=lambda: os.environ.get("WEBHOOK_INBOUND_TOKEN", ""))
+    observability_enabled: bool = field(default_factory=lambda: _env_bool("OBSERVABILITY_ENABLED") is not False)
+    observability_db_path: str = field(
+        default_factory=lambda: os.environ.get("OBSERVABILITY_DB_PATH", os.path.expanduser("~/.jarvis/telemetry.sqlite"))
+    )
+    observability_state_path: str = field(
+        default_factory=lambda: os.environ.get("OBSERVABILITY_STATE_PATH", os.path.expanduser("~/.jarvis/observability-state.json"))
+    )
+    observability_event_log_path: str = field(
+        default_factory=lambda: os.environ.get("OBSERVABILITY_EVENT_LOG_PATH", os.path.expanduser("~/.jarvis/events.jsonl"))
+    )
+    observability_failure_burst_threshold: int = field(
+        default_factory=lambda: _env_int("OBSERVABILITY_FAILURE_BURST_THRESHOLD", 5)
+    )
+    observability_snapshot_interval_sec: float = field(
+        default_factory=lambda: _env_positive_float("OBSERVABILITY_SNAPSHOT_INTERVAL_SEC", 30.0)
+    )
+    skills_enabled: bool = field(default_factory=lambda: _env_bool("SKILLS_ENABLED") is not False)
+    skills_dir: str = field(default_factory=lambda: os.environ.get("SKILLS_DIR", os.path.expanduser("~/.jarvis/skills")))
+    skills_state_path: str = field(
+        default_factory=lambda: os.environ.get("SKILLS_STATE_PATH", os.path.expanduser("~/.jarvis/skills/.state.json"))
+    )
+    skills_allowlist: list[str] = field(default_factory=lambda: _env_list("SKILLS_ALLOWLIST"))
+    skills_require_signature: bool = field(default_factory=lambda: _env_bool("SKILLS_REQUIRE_SIGNATURE") or False)
+    skills_signature_key: str = field(default_factory=lambda: os.environ.get("SKILLS_SIGNATURE_KEY", ""))
+    memory_encryption_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_ENCRYPTION_ENABLED") or False)
+    audit_encryption_enabled: bool = field(default_factory=lambda: _env_bool("AUDIT_ENCRYPTION_ENABLED") or False)
+    data_encryption_key: str = field(default_factory=lambda: os.environ.get("JARVIS_DATA_KEY", ""))
 
     # Vision
     yolo_model: str = "yolov8n-face.pt"
@@ -241,6 +292,18 @@ class Config:
                 raise ValueError(f"{label} must be between 0.05 and 0.95")
         if self.voice_min_post_wake_chars < 1:
             raise ValueError("voice_min_post_wake_chars must be >= 1")
+        if self.operator_server_port <= 0 or self.operator_server_port > 65535:
+            raise ValueError("operator_server_port must be between 1 and 65535")
+        if self.observability_failure_burst_threshold < 1:
+            raise ValueError("observability_failure_burst_threshold must be >= 1")
+        if self.observability_snapshot_interval_sec <= 0.0:
+            raise ValueError("observability_snapshot_interval_sec must be > 0")
+        if self.watchdog_listening_timeout_sec <= 0.0:
+            raise ValueError("watchdog_listening_timeout_sec must be > 0")
+        if self.watchdog_thinking_timeout_sec <= 0.0:
+            raise ValueError("watchdog_thinking_timeout_sec must be > 0")
+        if self.watchdog_speaking_timeout_sec <= 0.0:
+            raise ValueError("watchdog_speaking_timeout_sec must be > 0")
         if self.face_track_fps <= 0:
             raise ValueError("face_track_fps must be > 0")
         if self.memory_search_limit < 1:
@@ -278,6 +341,7 @@ class Config:
         self.persona_style = self._normalize_persona_style(self.persona_style)
         self.wake_mode = self._normalize_wake_mode(self.wake_mode)
         self.voice_timeout_profile = self._normalize_voice_timeout_profile(self.voice_timeout_profile)
+        self.model_secondary_mode = self._normalize_model_secondary_mode(self.model_secondary_mode)
         self.home_permission_profile = self._normalize_home_permission_profile(self.home_permission_profile)
         self.home_conversation_permission_profile = self._normalize_home_conversation_permission_profile(
             self.home_conversation_permission_profile
@@ -306,6 +370,10 @@ class Config:
             raw = os.environ.get("VOICE_TIMEOUT_PROFILE", "")
             if raw.strip().lower() not in {"short", "normal", "long"}:
                 self.startup_warnings.append("VOICE_TIMEOUT_PROFILE invalid; using normal.")
+        if _env_is_set("MODEL_SECONDARY_MODE") and self.model_secondary_mode == "offline_stub":
+            raw = os.environ.get("MODEL_SECONDARY_MODE", "")
+            if raw.strip().lower() not in {"offline_stub", "retry_once"}:
+                self.startup_warnings.append("MODEL_SECONDARY_MODE invalid; using offline_stub.")
         if _env_is_set("HOME_PERMISSION_PROFILE") and self.home_permission_profile == "control":
             raw = os.environ.get("HOME_PERMISSION_PROFILE", "")
             if raw.strip().lower() not in {"readonly", "control"}:
@@ -382,6 +450,13 @@ class Config:
         if normalized in {"short", "normal", "long"}:
             return normalized
         return "normal"
+
+    @staticmethod
+    def _normalize_model_secondary_mode(mode: str) -> str:
+        normalized = (mode or "offline_stub").strip().lower()
+        if normalized in {"offline_stub", "retry_once"}:
+            return normalized
+        return "offline_stub"
 
     @staticmethod
     def _normalize_home_permission_profile(profile: str) -> str:
@@ -528,6 +603,10 @@ class Config:
             warnings.append(
                 "IDENTITY_REQUIRE_APPROVAL is enabled without IDENTITY_APPROVAL_CODE or IDENTITY_TRUSTED_USERS."
             )
+        if self.skills_require_signature and not self.skills_signature_key.strip():
+            warnings.append("SKILLS_REQUIRE_SIGNATURE enabled without SKILLS_SIGNATURE_KEY; non-signed skills will remain blocked.")
+        if (self.memory_encryption_enabled or self.audit_encryption_enabled) and not self.data_encryption_key.strip():
+            warnings.append("Encryption enabled without JARVIS_DATA_KEY; encrypted storage features will be disabled.")
         checks: list[tuple[str, str, str]] = [
             ("DOA_CHANGE_THRESHOLD", "float", str(self.doa_change_threshold)),
             ("DOA_TIMEOUT", "float", str(self.doa_timeout)),
@@ -540,6 +619,20 @@ class Config:
             ("BARGE_THRESHOLD_WAKE_WORD", "float", str(self.barge_threshold_wake_word)),
             ("BARGE_THRESHOLD_PUSH_TO_TALK", "float", str(self.barge_threshold_push_to_talk)),
             ("VOICE_MIN_POST_WAKE_CHARS", "int", str(self.voice_min_post_wake_chars)),
+            ("WATCHDOG_LISTENING_TIMEOUT_SEC", "positive_float", str(self.watchdog_listening_timeout_sec)),
+            ("WATCHDOG_THINKING_TIMEOUT_SEC", "positive_float", str(self.watchdog_thinking_timeout_sec)),
+            ("WATCHDOG_SPEAKING_TIMEOUT_SEC", "positive_float", str(self.watchdog_speaking_timeout_sec)),
+            ("OPERATOR_SERVER_PORT", "int", str(self.operator_server_port)),
+            (
+                "OBSERVABILITY_FAILURE_BURST_THRESHOLD",
+                "int",
+                str(self.observability_failure_burst_threshold),
+            ),
+            (
+                "OBSERVABILITY_SNAPSHOT_INTERVAL_SEC",
+                "positive_float",
+                str(self.observability_snapshot_interval_sec),
+            ),
             ("MEMORY_SEARCH_LIMIT", "int", str(self.memory_search_limit)),
             ("AUDIT_LOG_MAX_BYTES", "int", str(self.audit_log_max_bytes)),
             ("AUDIT_LOG_BACKUPS", "int", str(self.audit_log_backups)),
@@ -574,6 +667,18 @@ class Config:
             "MEMORY_DECAY_ENABLED",
             "MEMORY_MMR_ENABLED",
             "MEMORY_PII_GUARDRAILS_ENABLED",
+            "STT_FALLBACK_ENABLED",
+            "TTS_FALLBACK_TEXT_ONLY",
+            "MODEL_FAILOVER_ENABLED",
+            "STARTUP_STRICT",
+            "WATCHDOG_ENABLED",
+            "OPERATOR_SERVER_ENABLED",
+            "WEBHOOK_INBOUND_ENABLED",
+            "OBSERVABILITY_ENABLED",
+            "SKILLS_ENABLED",
+            "SKILLS_REQUIRE_SIGNATURE",
+            "MEMORY_ENCRYPTION_ENABLED",
+            "AUDIT_ENCRYPTION_ENABLED",
             "MOTION_ENABLED",
             "HAND_TRACK_ENABLED",
             "HOME_ENABLED",

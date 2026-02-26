@@ -71,7 +71,8 @@ class Brain:
         self._config = config
         self._presence = presence
         self._session_id = "jarvis"
-        self._memory = MemoryStore(config.memory_path) if config.memory_enabled else None
+        memory_key = config.data_encryption_key if config.memory_encryption_enabled else ""
+        self._memory = MemoryStore(config.memory_path, encryption_key=memory_key) if config.memory_enabled else None
 
         # Build MCP tool servers
         self._robot_server = create_robot_server()
@@ -137,6 +138,10 @@ class Brain:
                 "mcp__jarvis-services__memory_status",
                 "mcp__jarvis-services__tool_summary",
                 "mcp__jarvis-services__tool_summary_text",
+                "mcp__jarvis-services__skills_list",
+                "mcp__jarvis-services__skills_enable",
+                "mcp__jarvis-services__skills_disable",
+                "mcp__jarvis-services__skills_version",
             ],
             self._config.tool_allowlist,
             self._config.tool_denylist,
@@ -183,6 +188,18 @@ class Brain:
         style = self._resolve_persona_style()
         instruction = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["composed"])
         return f"Mode={style}. {instruction}"
+
+    def _secondary_failover_response(self, error: Exception) -> str:
+        mode = _normalize_secondary_mode(self._config.model_secondary_mode)
+        if mode == "retry_once":
+            return (
+                "I hit an internal error and switched to degraded mode after a retry. "
+                "Please repeat that request in one short sentence."
+            )
+        return (
+            "I hit an internal error and switched to degraded mode. "
+            "I can still help with a short fallback answer if you retry."
+        )
 
     async def respond(self, user_text: str) -> AsyncIterator[str]:
         """Send user text to Claude and yield response text chunks.
@@ -261,7 +278,10 @@ class Brain:
 
             except Exception as e:
                 log.error("Brain error: %s", e)
-                yield "I'm sorry, I encountered an error. Could you repeat that?"
+                if self._config.model_failover_enabled:
+                    yield self._secondary_failover_response(e)
+                else:
+                    yield "I'm sorry, I encountered an error. Could you repeat that?"
 
             # Flush remaining text
             if sentence_buffer.strip():
@@ -300,3 +320,10 @@ def _normalize_persona_style(style: str) -> str:
     if normalized in STYLE_INSTRUCTIONS:
         return normalized
     return "composed"
+
+
+def _normalize_secondary_mode(mode: str) -> str:
+    normalized = (mode or "offline_stub").strip().lower()
+    if normalized in {"offline_stub", "retry_once"}:
+        return normalized
+    return "offline_stub"

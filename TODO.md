@@ -18,16 +18,16 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 
 ## 1) Voice Attention and Conversation Control (10 items)
 
-- [ ] `VA01` Add local wake-word support with configurable hotwords.
-- [ ] `VA02` Add wake-word sensitivity tuning and false-positive suppression.
-- [ ] `VA03` Add explicit sleep/wake modes (`always_listening`, `wake_word`, `push_to_talk`).
-- [ ] `VA04` Add interruption policy controls (barge-in thresholds per mode).
-- [ ] `VA05` Add per-room attention routing signals (when satellites are introduced).
-- [ ] `VA06` Add configurable end-of-turn timeout profiles (short/normal/long).
-- [ ] `VA07` Add “continue listening” follow-up window for multi-turn voice sessions.
-- [ ] `VA08` Add spoken confirmation grammar for dangerous actions (`confirm/deny/repeat`).
-- [ ] `VA09` Add wake-word and attention state visibility to `system_status`.
-- [ ] `VA10` Add voice state regression tests for wake/sleep/listen transitions.
+- [x] `VA01` Add local wake-word support with configurable hotwords.
+- [x] `VA02` Add wake-word sensitivity tuning and false-positive suppression.
+- [x] `VA03` Add explicit sleep/wake modes (`always_listening`, `wake_word`, `push_to_talk`).
+- [x] `VA04` Add interruption policy controls (barge-in thresholds per mode).
+- [x] `VA05` Add per-room attention routing signals (when satellites are introduced).
+- [x] `VA06` Add configurable end-of-turn timeout profiles (short/normal/long).
+- [x] `VA07` Add “continue listening” follow-up window for multi-turn voice sessions.
+- [x] `VA08` Add spoken confirmation grammar for dangerous actions (`confirm/deny/repeat`).
+- [x] `VA09` Add wake-word and attention state visibility to `system_status`.
+- [x] `VA10` Add voice state regression tests for wake/sleep/listen transitions.
 
 ---
 
@@ -80,7 +80,7 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 - [x] `IN02` Add email summary/send integration with strict safety policy.
 - [x] `IN03` Add Slack/Discord notification hooks (opt-in).
 - [x] `IN04` Add webhook trigger tool with domain allowlist and auth controls.
-- [ ] `IN05` Add webhook inbound receiver for automation callbacks.
+- [x] `IN05` Add webhook inbound receiver for automation callbacks.
 - [x] `IN06` Add media-control abstraction helper over HA media player actions.
 - [x] `IN07` Add integration health probes surfaced in `system_status`.
 - [x] `IN08` Add integration contract tests for each external service.
@@ -89,66 +89,66 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 
 ## 6) Skills and Extensibility Architecture (8 items)
 
-- [ ] `SK01` Add local skill/plugin discovery mechanism for service tools.
-- [ ] `SK02` Add signed/allowlisted skill loading policy.
-- [ ] `SK03` Add skill lifecycle commands (`enable`, `disable`, `list`, `version`).
-- [ ] `SK04` Add stable tool namespace conventions for third-party skills.
-- [ ] `SK05` Add skill capability metadata surfacing in `system_status`.
-- [ ] `SK06` Add skill sandboxing constraints for network/file access.
-- [ ] `SK07` Add integration tests for plugin load failures and graceful degradation.
-- [ ] `SK08` Add developer docs for writing and validating custom skills.
+- [x] `SK01` Add local skill/plugin discovery mechanism for service tools.
+- [x] `SK02` Add signed/allowlisted skill loading policy.
+- [x] `SK03` Add skill lifecycle commands (`enable`, `disable`, `list`, `version`).
+- [x] `SK04` Add stable tool namespace conventions for third-party skills.
+- [x] `SK05` Add skill capability metadata surfacing in `system_status`.
+- [x] `SK06` Add skill sandboxing constraints for network/file access.
+- [x] `SK07` Add integration tests for plugin load failures and graceful degradation.
+- [x] `SK08` Add developer docs for writing and validating custom skills.
 
 ---
 
 ## 7) Operator UX and Control Surfaces (8 items)
 
-- [ ] `UX01` Add minimal local web dashboard for runtime health and mode toggles.
-- [ ] `UX02` Add live view of recent tool executions and policy outcomes.
-- [ ] `UX03` Add audit viewer with server-side redaction guarantees.
-- [ ] `UX04` Add quick controls for motion/tts/home tools/wake mode.
-- [ ] `UX05` Add startup diagnostics page for missing/invalid config.
+- [x] `UX01` Add minimal local web dashboard for runtime health and mode toggles.
+- [x] `UX02` Add live view of recent tool executions and policy outcomes.
+- [x] `UX03` Add audit viewer with server-side redaction guarantees.
+- [x] `UX04` Add quick controls for motion/tts/home tools/wake mode.
+- [x] `UX05` Add startup diagnostics page for missing/invalid config.
 - [x] `UX06` Add structured JSON status endpoint for automation consumers.
-- [ ] `UX07` Add operator actions log in dashboard (who changed what, when).
-- [ ] `UX08` Add dashboard responsiveness tests (desktop/mobile).
+- [x] `UX07` Add operator actions log in dashboard (who changed what, when).
+- [x] `UX08` Add dashboard responsiveness tests (desktop/mobile).
 
 ---
 
 ## 8) Observability and Diagnostics (8 items)
 
-- [ ] `OB01` Add persistent telemetry storage for long-range trend analysis.
-- [ ] `OB02` Add metrics export endpoint (Prometheus/OpenMetrics format).
-- [ ] `OB03` Add percentile latency tracking (P50/P95/P99) for STT/LLM/TTS.
-- [ ] `OB04` Add structured event stream for state transitions.
-- [ ] `OB05` Add per-tool success/error rate snapshots over rolling windows.
-- [ ] `OB06` Add crash-restart counters and uptime tracking.
-- [ ] `OB07` Add anomaly detection hooks for repeated failure bursts.
-- [ ] `OB08` Add observability runbook for triage and SLO tuning.
+- [x] `OB01` Add persistent telemetry storage for long-range trend analysis.
+- [x] `OB02` Add metrics export endpoint (Prometheus/OpenMetrics format).
+- [x] `OB03` Add percentile latency tracking (P50/P95/P99) for STT/LLM/TTS.
+- [x] `OB04` Add structured event stream for state transitions.
+- [x] `OB05` Add per-tool success/error rate snapshots over rolling windows.
+- [x] `OB06` Add crash-restart counters and uptime tracking.
+- [x] `OB07` Add anomaly detection hooks for repeated failure bursts.
+- [x] `OB08` Add observability runbook for triage and SLO tuning.
 
 ---
 
 ## 9) Reliability, Fallbacks, and Runtime Resilience (8 items)
 
-- [ ] `RE01` Add model failover strategy (primary/secondary LLM routing).
-- [ ] `RE02` Add STT fallback chain and capability probes.
-- [ ] `RE03` Add TTS fallback chain (cloud/local optional).
-- [ ] `RE04` Add startup self-check gate with actionable failure messages.
-- [ ] `RE05` Add degraded mode responses when integrations are down.
-- [ ] `RE06` Add watchdog for stuck state loops (listening/thinking/speaking).
-- [ ] `RE07` Add graceful restart support preserving pending work items.
-- [ ] `RE08` Add soak tests covering failover and degraded behavior.
+- [x] `RE01` Add model failover strategy (primary/secondary LLM routing).
+- [x] `RE02` Add STT fallback chain and capability probes.
+- [x] `RE03` Add TTS fallback chain (cloud/local optional).
+- [x] `RE04` Add startup self-check gate with actionable failure messages.
+- [x] `RE05` Add degraded mode responses when integrations are down.
+- [x] `RE06` Add watchdog for stuck state loops (listening/thinking/speaking).
+- [x] `RE07` Add graceful restart support preserving pending work items.
+- [x] `RE08` Add soak tests covering failover and degraded behavior.
 
 ---
 
 ## 10) Security, Privacy, and Deployment Hygiene (8 items)
 
-- [ ] `SE01` Add encrypted-at-rest option for memory/audit stores.
+- [x] `SE01` Add encrypted-at-rest option for memory/audit stores.
 - [x] `SE02` Add configurable data retention windows for memory/audit data.
 - [x] `SE03` Add PII detection guardrails for memory writes.
 - [x] `SE04` Add stricter token-scoping validation warnings on startup.
 - [x] `SE05` Add outbound request domain allowlist enforcement for webhooks.
-- [ ] `SE06` Add signed release artifact verification and provenance docs.
-- [ ] `SE07` Add deploy-time security checklist automation.
-- [ ] `SE08` Add incident response runbook with rollback playbooks.
+- [x] `SE06` Add signed release artifact verification and provenance docs.
+- [x] `SE07` Add deploy-time security checklist automation.
+- [x] `SE08` Add incident response runbook with rollback playbooks.
 
 ---
 

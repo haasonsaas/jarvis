@@ -7,6 +7,8 @@ Everything is audit-logged.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import hmac
 import json
 import logging
@@ -25,10 +27,17 @@ import aiohttp
 from claude_agent_sdk import tool, create_sdk_mcp_server
 
 from jarvis.config import Config
+from jarvis.skills import SkillRegistry
 from jarvis.tool_policy import is_tool_allowed
 from jarvis.tool_summary import record_summary, list_summaries
 from jarvis.memory import MemoryStore
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, normalize_service_error_code
+
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+except Exception:  # pragma: no cover - optional dependency fallback
+    Fernet = None  # type: ignore[assignment]
+    InvalidToken = Exception  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -122,6 +131,9 @@ _identity_approval_code: str = ""
 _memory_retention_days: float = 0.0
 _audit_retention_days: float = 0.0
 _memory_pii_guardrails_enabled: bool = True
+_audit_encryption_enabled: bool = False
+_data_encryption_key: str = ""
+_audit_fernet: Fernet | None = None
 _ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _timers: dict[int, dict[str, Any]] = {}
 _timer_id_seq: int = 1
@@ -131,6 +143,7 @@ _email_history: list[dict[str, Any]] = []
 _runtime_voice_state: dict[str, Any] = {}
 _runtime_observability_state: dict[str, Any] = {}
 _runtime_skills_state: dict[str, Any] = {}
+_skill_registry: SkillRegistry | None = None
 _inbound_webhook_events: list[dict[str, Any]] = []
 _inbound_webhook_seq: int = 1
 SENSITIVE_AUDIT_KEY_TOKENS = {
@@ -575,6 +588,31 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "limit": {"type": "integer"},
         },
     },
+    "skills_list": {
+        "type": "object",
+        "properties": {},
+    },
+    "skills_enable": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "required": ["name"],
+    },
+    "skills_disable": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "required": ["name"],
+    },
+    "skills_version": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "required": ["name"],
+    },
 }
 
 SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
@@ -622,6 +660,10 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "task_plan_next": set(),
     "tool_summary": set(),
     "tool_summary_text": set(),
+    "skills_list": set(),
+    "skills_enable": {"name"},
+    "skills_disable": {"name"},
+    "skills_version": {"name"},
 }
 
 # Backward compatibility for existing imports/tests.
@@ -648,6 +690,11 @@ def set_runtime_skills_state(state: dict[str, Any]) -> None:
     _runtime_skills_state = {str(key): value for key, value in state.items()} if isinstance(state, dict) else {}
 
 
+def set_skill_registry(registry: SkillRegistry | None) -> None:
+    global _skill_registry
+    _skill_registry = registry
+
+
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _config, _memory, _audit_log_max_bytes, _audit_log_backups
     global _home_permission_profile, _home_require_confirm_execute, _home_conversation_enabled
@@ -662,7 +709,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _identity_enforcement_enabled, _identity_default_user, _identity_default_profile
     global _identity_user_profiles, _identity_trusted_users, _identity_require_approval, _identity_approval_code
     global _memory_retention_days, _audit_retention_days
-    global _memory_pii_guardrails_enabled
+    global _memory_pii_guardrails_enabled, _audit_encryption_enabled, _data_encryption_key
     global _timer_id_seq, _reminder_id_seq
     _config = config
     _memory = memory_store
@@ -732,6 +779,9 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _memory_retention_days = max(0.0, float(getattr(config, "memory_retention_days", 0.0)))
     _audit_retention_days = max(0.0, float(getattr(config, "audit_retention_days", 0.0)))
     _memory_pii_guardrails_enabled = bool(getattr(config, "memory_pii_guardrails_enabled", True))
+    _audit_encryption_enabled = bool(getattr(config, "audit_encryption_enabled", False))
+    _data_encryption_key = str(getattr(config, "data_encryption_key", "")).strip()
+    _configure_audit_encryption(enabled=_audit_encryption_enabled, key=_data_encryption_key)
     _action_last_seen.clear()
     _ha_state_cache.clear()
     _timers.clear()
@@ -761,6 +811,8 @@ def _tool_permitted(name: str) -> bool:
         return False
     if _notification_permission_profile == "off" and name in {"pushover_notify", "slack_notify", "discord_notify"}:
         return False
+    if name.startswith("skills_") and _skill_registry is not None and not _skill_registry.enabled:
+        return False
     if _config is not None and not _config.home_enabled:
         if name in {
             "smart_home",
@@ -776,6 +828,64 @@ def _tool_permitted(name: str) -> bool:
         }:
             return False
     return is_tool_allowed(name, _tool_allowlist, _tool_denylist)
+
+
+def _configure_audit_encryption(*, enabled: bool, key: str) -> None:
+    global _audit_encryption_enabled, _data_encryption_key, _audit_fernet
+    _audit_encryption_enabled = bool(enabled)
+    _data_encryption_key = str(key or "").strip()
+    if not _audit_encryption_enabled:
+        _audit_fernet = None
+        return
+    if not _data_encryption_key or Fernet is None:
+        _audit_fernet = None
+        return
+    candidate = _data_encryption_key.encode("utf-8")
+    try:
+        Fernet(candidate)
+        fernet_key = candidate
+    except Exception:
+        digest = hashlib.sha256(candidate).digest()
+        fernet_key = base64.urlsafe_b64encode(digest)
+    _audit_fernet = Fernet(fernet_key)
+
+
+def _encrypt_audit_line(payload: dict[str, Any]) -> str:
+    line = json.dumps(payload, default=str)
+    if not _audit_encryption_enabled or _audit_fernet is None:
+        return line
+    token = _audit_fernet.encrypt(line.encode("utf-8")).decode("utf-8")
+    return json.dumps({"enc": token}, default=str)
+
+
+def _decode_audit_line(line: str) -> dict[str, Any] | None:
+    text = line.strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return None
+    if isinstance(payload, dict) and "enc" in payload:
+        token = str(payload.get("enc", "")).strip()
+        if not token or _audit_fernet is None:
+            return {"encrypted": True, "error": "missing_encryption_key"}
+        try:
+            raw = _audit_fernet.decrypt(token.encode("utf-8")).decode("utf-8")
+        except InvalidToken:
+            return {"encrypted": True, "error": "invalid_token"}
+        try:
+            decrypted = json.loads(raw)
+        except Exception:
+            return {"encrypted": True, "error": "invalid_payload"}
+        if isinstance(decrypted, dict):
+            return decrypted
+        return {"encrypted": True, "error": "invalid_payload"}
+    return payload if isinstance(payload, dict) else None
+
+
+def decode_audit_entry_line(line: str) -> dict[str, Any] | None:
+    return _decode_audit_line(line)
 
 
 def _audit(action: str, details: dict) -> None:
@@ -811,7 +921,7 @@ def _audit(action: str, details: dict) -> None:
     try:
         _rotate_audit_log_if_needed()
         with open(AUDIT_LOG, "a") as f:
-            f.write(json.dumps(entry, default=str) + "\n")
+            f.write(_encrypt_audit_line(entry) + "\n")
     except OSError as e:
         log.warning("Failed to write audit log: %s", e)
     log.info("AUDIT: %s — %s", action, details_json)
@@ -1342,6 +1452,8 @@ def _audit_status() -> dict[str, Any]:
         "exists": exists,
         "size_bytes": int(size_bytes),
         "max_bytes": int(_audit_log_max_bytes),
+        "encrypted": bool(_audit_encryption_enabled and _audit_fernet is not None),
+        "encryption_configured": bool(_audit_encryption_enabled),
         "backups": backups,
         "redaction_enabled": bool(SENSITIVE_AUDIT_KEY_TOKENS),
         "redaction_key_count": len(SENSITIVE_AUDIT_KEY_TOKENS),
@@ -1359,16 +1471,17 @@ def _prune_audit_file(path: Path, *, cutoff_ts: float) -> int:
     kept: list[str] = []
     removed = 0
     for line in lines:
-        if not line.strip():
+        raw_line = line.strip()
+        if not raw_line:
             continue
-        try:
-            payload = json.loads(line)
-        except Exception:
+        payload = _decode_audit_line(raw_line)
+        if not isinstance(payload, dict):
             removed += 1
             continue
         ts = payload.get("timestamp")
         if isinstance(ts, (int, float)) and float(ts) >= cutoff_ts:
-            kept.append(json.dumps(payload, default=str))
+            # Preserve original line format (encrypted/plain) on retention rewrites.
+            kept.append(raw_line)
         else:
             removed += 1
     if removed <= 0:
@@ -1876,6 +1989,8 @@ def _observability_snapshot() -> dict[str, Any]:
 
 def _skills_status_snapshot() -> dict[str, Any]:
     if not _runtime_skills_state:
+        if _skill_registry is not None:
+            return _skill_registry.status_snapshot()
         return {
             "enabled": False,
             "loaded_count": 0,
@@ -4315,6 +4430,82 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Unexpected Pushover error."}]}
 
 
+async def skills_list(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("skills_list"):
+        record_summary("skills_list", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if _skill_registry is None:
+        _record_service_error("skills_list", start_time, "missing_store")
+        return {"content": [{"type": "text", "text": "Skill registry is not available."}]}
+    record_summary("skills_list", "ok", start_time)
+    return {"content": [{"type": "text", "text": json.dumps(_skill_registry.status_snapshot(), default=str)}]}
+
+
+async def skills_enable(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("skills_enable"):
+        record_summary("skills_enable", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if _skill_registry is None:
+        _record_service_error("skills_enable", start_time, "missing_store")
+        return {"content": [{"type": "text", "text": "Skill registry is not available."}]}
+    name = str(args.get("name", "")).strip().lower()
+    if not name:
+        _record_service_error("skills_enable", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "name is required."}]}
+    ok, detail = _skill_registry.enable_skill(name)
+    if not ok:
+        _record_service_error("skills_enable", start_time, "policy")
+        return {"content": [{"type": "text", "text": f"Unable to enable skill '{name}': {detail}."}]}
+    set_runtime_skills_state(_skill_registry.status_snapshot())
+    record_summary("skills_enable", "ok", start_time)
+    _audit("skills_enable", {"result": "ok", "name": name})
+    return {"content": [{"type": "text", "text": f"Enabled skill '{name}'."}]}
+
+
+async def skills_disable(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("skills_disable"):
+        record_summary("skills_disable", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if _skill_registry is None:
+        _record_service_error("skills_disable", start_time, "missing_store")
+        return {"content": [{"type": "text", "text": "Skill registry is not available."}]}
+    name = str(args.get("name", "")).strip().lower()
+    if not name:
+        _record_service_error("skills_disable", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "name is required."}]}
+    ok, detail = _skill_registry.disable_skill(name)
+    if not ok:
+        _record_service_error("skills_disable", start_time, "policy")
+        return {"content": [{"type": "text", "text": f"Unable to disable skill '{name}': {detail}."}]}
+    set_runtime_skills_state(_skill_registry.status_snapshot())
+    record_summary("skills_disable", "ok", start_time)
+    _audit("skills_disable", {"result": "ok", "name": name})
+    return {"content": [{"type": "text", "text": f"Disabled skill '{name}'."}]}
+
+
+async def skills_version(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("skills_version"):
+        record_summary("skills_version", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if _skill_registry is None:
+        _record_service_error("skills_version", start_time, "missing_store")
+        return {"content": [{"type": "text", "text": "Skill registry is not available."}]}
+    name = str(args.get("name", "")).strip().lower()
+    if not name:
+        _record_service_error("skills_version", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "name is required."}]}
+    version = _skill_registry.skill_version(name)
+    if version is None:
+        _record_service_error("skills_version", start_time, "not_found")
+        return {"content": [{"type": "text", "text": f"Skill '{name}' not found."}]}
+    record_summary("skills_version", "ok", start_time)
+    return {"content": [{"type": "text", "text": json.dumps({"name": name, "version": version})}]}
+
+
 async def get_time(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("get_time"):
@@ -5337,6 +5528,30 @@ tool_summary_text_tool = tool(
     SERVICE_TOOL_SCHEMAS["tool_summary_text"],
 )(tool_summary_text)
 
+skills_list_tool = tool(
+    "skills_list",
+    "List discovered skills and their lifecycle status.",
+    SERVICE_TOOL_SCHEMAS["skills_list"],
+)(skills_list)
+
+skills_enable_tool = tool(
+    "skills_enable",
+    "Enable a discovered skill by name.",
+    SERVICE_TOOL_SCHEMAS["skills_enable"],
+)(skills_enable)
+
+skills_disable_tool = tool(
+    "skills_disable",
+    "Disable a discovered skill by name.",
+    SERVICE_TOOL_SCHEMAS["skills_disable"],
+)(skills_disable)
+
+skills_version_tool = tool(
+    "skills_version",
+    "Return a skill version by name.",
+    SERVICE_TOOL_SCHEMAS["skills_version"],
+)(skills_version)
+
 def create_services_server():
     return create_sdk_mcp_server(
         name="jarvis-services",
@@ -5366,6 +5581,10 @@ def create_services_server():
             system_status_contract_tool,
             tool_summary_tool,
             tool_summary_text_tool,
+            skills_list_tool,
+            skills_enable_tool,
+            skills_disable_tool,
+            skills_version_tool,
             memory_add_tool,
             memory_search_tool,
             memory_recent_tool,

@@ -6,8 +6,16 @@ import os
 import re
 import sqlite3
 import time
+import base64
+import hashlib
 from dataclasses import dataclass
 from typing import Any
+
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+except Exception:  # pragma: no cover - runtime fallback
+    Fernet = None  # type: ignore[assignment]
+    InvalidToken = Exception  # type: ignore[assignment]
 
 MAX_QUERY_LIMIT = 200
 MAX_SEARCH_FANOUT = 800
@@ -72,7 +80,7 @@ class ReminderEntry:
 
 
 class MemoryStore:
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, *, encryption_key: str = "") -> None:
         if path not in {":memory:", ""}:
             parent = os.path.dirname(path)
             if parent:
@@ -80,6 +88,10 @@ class MemoryStore:
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._closed = False
+        self._encrypted = False
+        self._crypto_available = Fernet is not None
+        self._fernet: Fernet | None = None
+        self._configure_encryption(encryption_key)
         self._configure_connection()
         self._fts_enabled = False
         self._memory_enabled = False
@@ -96,6 +108,49 @@ class MemoryStore:
         cur.execute("PRAGMA foreign_keys=ON;")
         cur.execute("PRAGMA busy_timeout=5000;")
         self._conn.commit()
+
+    def _configure_encryption(self, encryption_key: str) -> None:
+        key = str(encryption_key or "").strip()
+        if not key:
+            self._encrypted = False
+            self._fernet = None
+            return
+        if Fernet is None:
+            self._encrypted = False
+            self._fernet = None
+            return
+        candidate = key.encode("utf-8")
+        try:
+            # Accept a full Fernet key directly.
+            Fernet(candidate)
+            fernet_key = candidate
+        except Exception:
+            # Derive a stable Fernet key from passphrase input.
+            digest = hashlib.sha256(candidate).digest()
+            fernet_key = base64.urlsafe_b64encode(digest)
+        self._fernet = Fernet(fernet_key)
+        self._encrypted = True
+
+    def _encrypt_text(self, text: str) -> str:
+        value = str(text)
+        if not self._encrypted or self._fernet is None:
+            return value
+        token = self._fernet.encrypt(value.encode("utf-8")).decode("utf-8")
+        return f"enc:v1:{token}"
+
+    def _decrypt_text(self, value: Any) -> str:
+        text = str(value or "")
+        if not self._encrypted or self._fernet is None:
+            return text
+        if not text.startswith("enc:v1:"):
+            # Backward-compatible plaintext rows.
+            return text
+        token = text[len("enc:v1:") :]
+        try:
+            raw = self._fernet.decrypt(token.encode("utf-8"))
+        except InvalidToken:
+            return ""
+        return raw.decode("utf-8")
 
     def _init_schema(self) -> None:
         cur = self._conn.cursor()
@@ -187,31 +242,35 @@ class MemoryStore:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_reminders_notify_due ON reminders(status, notified_at, due_at ASC);"
         )
-        try:
-            cur.execute(
-                """
-                CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
-                    text,
-                    content='memory',
-                    content_rowid='id'
-                );
-                """
-            )
-            self._fts_enabled = True
-        except sqlite3.OperationalError:
+        if not self._encrypted:
+            try:
+                cur.execute(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+                        text,
+                        content='memory',
+                        content_rowid='id'
+                    );
+                    """
+                )
+                self._fts_enabled = True
+            except sqlite3.OperationalError:
+                self._fts_enabled = False
+            try:
+                cur.execute(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING fts5(
+                        text,
+                        content='memory',
+                        content_rowid='id'
+                    );
+                    """
+                )
+                self._memory_enabled = True
+            except sqlite3.OperationalError:
+                self._memory_enabled = False
+        else:
             self._fts_enabled = False
-        try:
-            cur.execute(
-                """
-                CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING fts5(
-                    text,
-                    content='memory',
-                    content_rowid='id'
-                );
-                """
-            )
-            self._memory_enabled = True
-        except sqlite3.OperationalError:
             self._memory_enabled = False
         self._conn.commit()
 
@@ -228,6 +287,7 @@ class MemoryStore:
         clean = text.strip()
         if not clean:
             raise ValueError("memory text required")
+        stored_text = self._encrypt_text(clean)
         payload = json.dumps(tags or [])
         created_at = time.time()
         cur = self._conn.cursor()
@@ -236,12 +296,12 @@ class MemoryStore:
             INSERT INTO memory(created_at, kind, text, tags, importance, sensitivity, source)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (created_at, kind, clean, payload, float(importance), float(sensitivity), source),
+            (created_at, kind, stored_text, payload, float(importance), float(sensitivity), source),
         )
         memory_id = int(cur.lastrowid)
-        if self._fts_enabled:
+        if self._fts_enabled and not self._encrypted:
             cur.execute("INSERT INTO memory_fts(rowid, text) VALUES (?, ?)", (memory_id, clean))
-        if self._memory_enabled:
+        if self._memory_enabled and not self._encrypted:
             cur.execute("INSERT INTO memory_vec(rowid, text) VALUES (?, ?)", (memory_id, clean))
         self._conn.commit()
         return memory_id
@@ -269,6 +329,19 @@ class MemoryStore:
         if not cleaned:
             return []
         limit = self._normalize_limit(limit, default=5)
+        if self._encrypted:
+            entries = self._search_encrypted(
+                cleaned,
+                limit=min(MAX_SEARCH_FANOUT, limit * 4),
+                max_sensitivity=max_sensitivity,
+                sources=sources,
+            )
+            entries = self._apply_hybrid_scoring(entries, cleaned, hybrid_weight)
+            if decay_enabled:
+                entries = self._apply_temporal_decay(entries, decay_half_life_days)
+            if mmr_enabled:
+                entries = self._apply_mmr(entries, mmr_lambda)
+            return sorted(entries, key=lambda e: e.score, reverse=True)[:limit]
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         keyword_rows = self._search_keyword(
             cleaned,
@@ -298,6 +371,8 @@ class MemoryStore:
         if not cleaned:
             return []
         limit = self._normalize_limit(limit, default=5)
+        if self._encrypted:
+            return self._search_encrypted(cleaned, limit=limit, max_sensitivity=max_sensitivity, sources=None)
         cur = self._conn.cursor()
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         if self._fts_enabled:
@@ -351,13 +426,13 @@ class MemoryStore:
             cur = self._conn.cursor()
             cur.execute(
                 "INSERT INTO task_plans(created_at, title, status) VALUES (?, ?, ?)",
-                (created_at, clean_title, "open"),
+                (created_at, self._encrypt_text(clean_title), "open"),
             )
             plan_id = int(cur.lastrowid)
             for idx, clean_step in enumerate(clean_steps):
                 cur.execute(
                     "INSERT INTO task_steps(plan_id, idx, text, status) VALUES (?, ?, ?, ?)",
-                    (plan_id, idx, clean_step, "pending"),
+                    (plan_id, idx, self._encrypt_text(clean_step), "pending"),
                 )
         return plan_id
 
@@ -381,9 +456,16 @@ class MemoryStore:
                 TaskPlan(
                     id=int(plan["id"]),
                     created_at=float(plan["created_at"]),
-                    title=str(plan["title"]),
+                    title=self._decrypt_text(plan["title"]),
                     status=str(plan["status"]),
-                    steps=[TaskStep(index=int(s["idx"]), text=str(s["text"]), status=str(s["status"])) for s in steps],
+                    steps=[
+                        TaskStep(
+                            index=int(s["idx"]),
+                            text=self._decrypt_text(s["text"]),
+                            status=str(s["status"]),
+                        )
+                        for s in steps
+                    ],
                 )
             )
         return results
@@ -455,11 +537,15 @@ class MemoryStore:
         plan = TaskPlan(
             id=int(plan_row["id"]),
             created_at=float(plan_row["created_at"]),
-            title=str(plan_row["title"]),
+            title=self._decrypt_text(plan_row["title"]),
             status=str(plan_row["status"]),
             steps=[],
         )
-        step = TaskStep(index=int(step_row["idx"]), text=str(step_row["text"]), status=str(step_row["status"]))
+        step = TaskStep(
+            index=int(step_row["idx"]),
+            text=self._decrypt_text(step_row["text"]),
+            status=str(step_row["status"]),
+        )
         return plan, step
 
     def upsert_summary(self, topic: str, summary: str) -> None:
@@ -475,7 +561,7 @@ class MemoryStore:
             VALUES (?, ?, ?)
             ON CONFLICT(topic) DO UPDATE SET summary = excluded.summary, updated_at = excluded.updated_at
             """,
-            (clean_topic, clean_summary, updated_at),
+            (clean_topic, self._encrypt_text(clean_summary), updated_at),
         )
         self._conn.commit()
 
@@ -487,7 +573,11 @@ class MemoryStore:
             (limit,),
         ).fetchall()
         return [
-            MemorySummary(topic=str(row["topic"]), summary=str(row["summary"]), updated_at=float(row["updated_at"]))
+            MemorySummary(
+                topic=str(row["topic"]),
+                summary=self._decrypt_text(row["summary"]),
+                updated_at=float(row["updated_at"]),
+            )
             for row in rows
         ]
 
@@ -503,7 +593,7 @@ class MemoryStore:
             return None
         return MemorySummary(
             topic=str(row["topic"]),
-            summary=str(row["summary"]),
+            summary=self._decrypt_text(row["summary"]),
             updated_at=float(row["updated_at"]),
         )
 
@@ -615,7 +705,7 @@ class MemoryStore:
             INSERT INTO reminders(created_at, due_at, text, status, completed_at, notified_at)
             VALUES (?, ?, ?, 'pending', NULL, NULL)
             """,
-            (created, float(due_at), clean_text),
+            (created, float(due_at), self._encrypt_text(clean_text)),
         )
         self._conn.commit()
         return int(cur.lastrowid)
@@ -735,6 +825,8 @@ class MemoryStore:
             "entries": int(count),
             "fts": self._fts_enabled,
             "vector": self._memory_enabled,
+            "encrypted": self._encrypted,
+            "crypto_available": self._crypto_available,
             "sources": source_counts,
             "timers": self.timer_counts(),
             "reminders": self.reminder_counts(),
@@ -772,7 +864,7 @@ class MemoryStore:
             id=int(row["id"]),
             created_at=float(row["created_at"]),
             kind=str(row["kind"]),
-            text=str(row["text"]),
+            text=self._decrypt_text(row["text"]),
             tags=tags,
             importance=float(row["importance"]),
             sensitivity=float(row["sensitivity"]),
@@ -798,7 +890,7 @@ class MemoryStore:
             id=int(row["id"]),
             created_at=float(row["created_at"]),
             due_at=float(row["due_at"]),
-            text=str(row["text"]),
+            text=self._decrypt_text(row["text"]),
             status=str(row["status"]),
             completed_at=float(completed_at) if completed_at is not None else None,
             notified_at=float(notified_at) if notified_at is not None else None,
@@ -956,6 +1048,38 @@ class MemoryStore:
             "ORDER BY created_at DESC LIMIT ?"
         )
         return self._conn.cursor().execute(sql, (like, *sensitivity_params, *source_params, limit)).fetchall()
+
+    def _search_encrypted(
+        self,
+        query: str,
+        *,
+        limit: int,
+        max_sensitivity: float | None,
+        sources: list[str] | None,
+    ) -> list[MemoryEntry]:
+        lowered = query.lower()
+        cur = self._conn.cursor()
+        sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
+        source_clause, source_params = self._source_filter(sources)
+        rows = cur.execute(
+            (
+                "SELECT * FROM memory WHERE 1=1 "
+                f"{sensitivity_clause} {source_clause} "
+                "ORDER BY created_at DESC LIMIT ?"
+            ),
+            (*sensitivity_params, *source_params, min(MAX_SEARCH_FANOUT, max(limit * 20, limit))),
+        ).fetchall()
+        results: list[MemoryEntry] = []
+        for row in rows:
+            entry = self._row_to_memory(row)
+            if lowered in entry.text.lower():
+                results.append(entry)
+                continue
+            query_tokens = set(re.findall(r"\w+", lowered))
+            text_tokens = set(re.findall(r"\w+", entry.text.lower()))
+            if query_tokens and (query_tokens & text_tokens):
+                results.append(entry)
+        return results[:limit]
 
     def _apply_hybrid_scoring(self, entries: list[MemoryEntry], query: str, weight: float) -> list[MemoryEntry]:
         tokens = set(re.findall(r"\w+", query.lower()))

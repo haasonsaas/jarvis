@@ -412,3 +412,30 @@ class TestConfig:
         c = Config()
         text = "\n".join(c.startup_warnings)
         assert "IDENTITY_REQUIRE_APPROVAL is enabled without IDENTITY_APPROVAL_CODE or IDENTITY_TRUSTED_USERS." in text
+
+    def test_model_secondary_mode_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+
+        c = Config(model_secondary_mode="unknown")
+        assert c.model_secondary_mode == "offline_stub"
+
+    def test_startup_warning_for_signature_requirement_without_key(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("SKILLS_REQUIRE_SIGNATURE", "true")
+        monkeypatch.delenv("SKILLS_SIGNATURE_KEY", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "SKILLS_REQUIRE_SIGNATURE enabled without SKILLS_SIGNATURE_KEY" in text
+
+    def test_startup_warning_for_encryption_without_data_key(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("MEMORY_ENCRYPTION_ENABLED", "true")
+        monkeypatch.delenv("JARVIS_DATA_KEY", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "Encryption enabled without JARVIS_DATA_KEY" in text

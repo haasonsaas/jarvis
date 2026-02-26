@@ -1,4 +1,4 @@
-.PHONY: check test-fast test-faults test-soak
+.PHONY: check test-fast test-faults test-soak security-gate
 
 check:
 	uv run ruff check src tests
@@ -12,3 +12,6 @@ test-faults:
 
 test-soak:
 	uv run pytest -q tests/test_main_audio.py -k soak
+
+security-gate:
+	./scripts/security_gate.sh

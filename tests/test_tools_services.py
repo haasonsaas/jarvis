@@ -41,6 +41,7 @@ class TestServicesTools:
         from jarvis.tools import services
         test_config = Config()
         services.bind(test_config)
+        services.set_skill_registry(None)
         yield
         services._config = None
 
@@ -3257,3 +3258,50 @@ class TestServicesTools:
         assert "slack_notify" in taxonomy_doc
         assert "discord_notify" in taxonomy_doc
         assert "email_send" in taxonomy_doc
+
+    @pytest.mark.asyncio
+    async def test_skills_lifecycle_tools(self, tmp_path):
+        from jarvis.skills import SkillRegistry
+        from jarvis.tools import services
+
+        skills_dir = tmp_path / "skills"
+        skill_dir = skills_dir / "weather_plus"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "skill.json").write_text(
+            json.dumps(
+                {
+                    "name": "weather_plus",
+                    "version": "1.0.1",
+                    "namespace": "skill.weather_plus",
+                    "capabilities": ["forecast"],
+                }
+            )
+        )
+
+        registry = SkillRegistry(skills_dir=str(skills_dir), enabled=True)
+        registry.discover()
+        services.set_skill_registry(registry)
+
+        listed = await services.skills_list({})
+        listed_payload = json.loads(listed["content"][0]["text"])
+        assert listed_payload["loaded_count"] == 1
+        assert listed_payload["skills"][0]["name"] == "weather_plus"
+
+        disabled = await services.skills_disable({"name": "weather_plus"})
+        assert "disabled" in disabled["content"][0]["text"].lower()
+
+        enabled = await services.skills_enable({"name": "weather_plus"})
+        assert "enabled" in enabled["content"][0]["text"].lower()
+
+        version = await services.skills_version({"name": "weather_plus"})
+        assert json.loads(version["content"][0]["text"]) == {"name": "weather_plus", "version": "1.0.1"}
+
+    @pytest.mark.asyncio
+    async def test_audit_decode_handles_encrypted_without_key(self):
+        from jarvis.tools import services
+
+        encrypted_line = json.dumps({"enc": "invalid-token"})
+        decoded = services.decode_audit_entry_line(encrypted_line)
+        assert decoded is not None
+        assert decoded.get("encrypted") is True
+        assert decoded.get("error") in {"missing_encryption_key", "invalid_token"}

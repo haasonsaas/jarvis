@@ -49,6 +49,7 @@ Run this once per month:
 4. Run security workflows manually:
    - `security.yml` (CodeQL + pip-audit)
    - `secrets-scan.yml` (gitleaks)
+   - `deploy-security-gate.yml` (release/deploy hardening checks)
 5. Validate baseline exceptions:
    - Review `.gitleaksignore` entries.
    - Remove stale/obsolete fingerprints.

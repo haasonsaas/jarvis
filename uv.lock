@@ -949,6 +949,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "claude-agent-sdk" },
+    { name = "cryptography" },
     { name = "elevenlabs" },
     { name = "faster-whisper" },
     { name = "numpy" },
@@ -976,6 +977,7 @@ wireless = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10.0" },
     { name = "claude-agent-sdk", specifier = ">=0.1.0" },
+    { name = "cryptography", specifier = ">=44.0.0" },
     { name = "elevenlabs", specifier = ">=1.0.0" },
     { name = "faster-whisper", specifier = ">=1.1.0" },
     { name = "numpy", specifier = ">=1.26.0" },

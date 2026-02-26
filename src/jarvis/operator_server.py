@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable
 from aiohttp import web
 
 from jarvis.tool_summary import list_summaries
-from jarvis.tools.services import AUDIT_LOG
+from jarvis.tools.services import AUDIT_LOG, decode_audit_entry_line
 
 
 def _dashboard_html() -> str:
@@ -92,6 +92,21 @@ def _dashboard_html() -> str:
       <div>
         <button onclick=\"control('set_push_to_talk',{active:true})\">PTT On</button>
         <button onclick=\"control('set_push_to_talk',{active:false})\">PTT Off</button>
+      </div>
+      <div>
+        <button onclick=\"control('set_motion_enabled',{enabled:true})\">Motion On</button>
+        <button onclick=\"control('set_motion_enabled',{enabled:false})\">Motion Off</button>
+      </div>
+      <div>
+        <button onclick=\"control('set_home_enabled',{enabled:true})\">Home On</button>
+        <button onclick=\"control('set_home_enabled',{enabled:false})\">Home Off</button>
+      </div>
+      <div>
+        <button onclick=\"control('set_tts_enabled',{enabled:true})\">TTS On</button>
+        <button onclick=\"control('set_tts_enabled',{enabled:false})\">TTS Off</button>
+      </div>
+      <div>
+        <button onclick=\"control('skills_reload',{})\">Reload Skills</button>
       </div>
       <div>
         <button data-danger=\"true\" onclick=\"control('clear_inbound_webhooks',{})\">Clear Inbound Webhooks</button>
@@ -246,9 +261,8 @@ class OperatorServer:
             for line in reversed(lines):
                 if not line.strip():
                     continue
-                try:
-                    payload = json.loads(line)
-                except Exception:
+                payload = decode_audit_entry_line(line)
+                if payload is None:
                     continue
                 entries.append(payload)
                 if len(entries) >= limit:

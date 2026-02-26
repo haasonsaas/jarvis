@@ -1,0 +1,52 @@
+# Observability Runbook
+
+## Scope
+
+Jarvis observability covers:
+- persistent telemetry snapshots in `OBSERVABILITY_DB_PATH`
+- runtime event stream in `OBSERVABILITY_EVENT_LOG_PATH`
+- restart and uptime state in `OBSERVABILITY_STATE_PATH`
+- Prometheus/OpenMetrics export at `GET /metrics` (operator server)
+- SSE event feed at `GET /events` (operator server)
+
+## Key Signals
+
+- Latency percentiles: STT / LLM-first-sentence / TTS-first-audio (`p50`, `p95`, `p99`)
+- Tool rolling rates: per-tool `success_rate` / `error_rate` windows
+- Failure burst alerts: generated when recent tool errors exceed `OBSERVABILITY_FAILURE_BURST_THRESHOLD`
+- Process lifecycle: `runtime_start`, `runtime_stop`, `restart_count`, `uptime_sec`
+
+## Triage Flow
+
+1. Check current health snapshot:
+   - query `system_status`
+   - inspect `observability.alerts`
+2. Inspect metrics endpoint:
+   - `curl http://127.0.0.1:8765/metrics`
+   - verify spikes in p95/p99 latency lines
+3. Inspect event stream and timeline:
+   - `curl http://127.0.0.1:8765/events`
+   - filter for `watchdog_reset`, `stt_fallback`, `tts_fallback_text_only`, `failure_burst`
+4. Correlate with tool history:
+   - query `tool_summary` and `tool_summary_text`
+
+## Tuning
+
+- Increase snapshot density:
+  - lower `OBSERVABILITY_SNAPSHOT_INTERVAL_SEC`
+- Reduce noisy alerts:
+  - raise `OBSERVABILITY_FAILURE_BURST_THRESHOLD`
+- Tighten degraded-mode detection:
+  - combine lower burst threshold with watchdog timeouts (`WATCHDOG_*`)
+
+## SLO Suggestions
+
+- STT p95 < 1200ms
+- LLM first sentence p95 < 1800ms
+- TTS first audio p95 < 700ms
+- Tool error rate < 5% for critical integrations
+
+## Backup / Retention
+
+- Observability DB and event log are local files; include them in host backup policy.
+- If disk pressure increases, rotate/trim event log and archive DB snapshots out of band.

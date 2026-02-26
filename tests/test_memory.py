@@ -352,3 +352,43 @@ def test_prune_retention_removes_old_non_active_data(tmp_path):
         assert any(timer.label == "new-active" for timer in active_timers)
     finally:
         store.close()
+
+
+def test_memory_store_encryption_round_trip(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"), encryption_key="top-secret")
+    try:
+        memory_id = store.add_memory("secret note", kind="note")
+        raw_text = store._conn.execute("SELECT text FROM memory WHERE id = ?", (memory_id,)).fetchone()[0]
+        assert str(raw_text).startswith("enc:v1:")
+
+        rows = store.search_v2("secret", limit=5)
+        assert rows
+        assert rows[0].text == "secret note"
+
+        reminder_id = store.add_reminder(text="secret reminder", due_at=1_700_000_500.0, created_at=1_700_000_000.0)
+        raw_reminder = store._conn.execute("SELECT text FROM reminders WHERE id = ?", (reminder_id,)).fetchone()[0]
+        assert str(raw_reminder).startswith("enc:v1:")
+        reminders = store.list_reminders(status="pending")
+        assert reminders[0].text == "secret reminder"
+
+        status = store.memory_status()
+        assert status["encrypted"] is True
+        assert status["fts"] is False
+    finally:
+        store.close()
+
+
+def test_memory_store_encryption_reads_legacy_plaintext(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"), encryption_key="top-secret")
+    try:
+        store._conn.execute(
+            "INSERT INTO memory(created_at, kind, text, tags, importance, sensitivity, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (1_700_000_000.0, "note", "legacy row", "[]", 0.5, 0.0, "user"),
+        )
+        store._conn.commit()
+
+        rows = store.search_v2("legacy", limit=5)
+        assert rows
+        assert rows[0].text == "legacy row"
+    finally:
+        store.close()

@@ -181,3 +181,46 @@ async def test_tts_barge_in_soak_harness_stability():
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+def test_transcribe_with_fallback_uses_secondary_model():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis.stt = MagicMock()
+    jarvis.stt.transcribe.return_value = ""
+    jarvis._stt_secondary = MagicMock()
+    jarvis._stt_secondary.transcribe.return_value = "fallback transcript"
+    jarvis._telemetry = {"fallback_responses": 0.0}
+    jarvis._observability = None
+
+    text = Jarvis._transcribe_with_fallback(jarvis, np.ones(32, dtype=np.float32))
+    assert text == "fallback transcript"
+    assert jarvis._telemetry["fallback_responses"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_watchdog_resets_stuck_state():
+    from jarvis.presence import State
+
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis.config = SimpleNamespace(
+        watchdog_listening_timeout_sec=0.05,
+        watchdog_thinking_timeout_sec=0.05,
+        watchdog_speaking_timeout_sec=0.05,
+    )
+    jarvis.presence = SimpleNamespace(signals=SimpleNamespace(state=State.THINKING))
+    jarvis._barge_in = threading.Event()
+    jarvis._flush_output = MagicMock()
+    jarvis._clear_tts_queue = MagicMock()
+    jarvis._telemetry = {"fallback_responses": 0.0}
+    jarvis._observability = None
+
+    task = asyncio.create_task(Jarvis._watchdog_loop(jarvis))
+    await asyncio.sleep(0.08)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert jarvis.presence.signals.state == State.IDLE
+    assert jarvis._flush_output.called
+    assert jarvis._clear_tts_queue.called
+    assert jarvis._telemetry["fallback_responses"] >= 1.0

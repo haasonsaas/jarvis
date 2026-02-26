@@ -96,6 +96,14 @@ cp .env.example .env
 # Optional: IDENTITY_REQUIRE_APPROVAL / IDENTITY_APPROVAL_CODE
 # Optional: MEMORY_RETENTION_DAYS / AUDIT_RETENTION_DAYS (0 disables pruning)
 # Optional: MEMORY_PII_GUARDRAILS_ENABLED=true|false
+# Optional: MEMORY_ENCRYPTION_ENABLED / AUDIT_ENCRYPTION_ENABLED / JARVIS_DATA_KEY
+# Optional: WAKE_MODE / WAKE_WORDS / WAKE_WORD_SENSITIVITY / VOICE_TIMEOUT_PROFILE
+# Optional: STT_FALLBACK_ENABLED / WHISPER_MODEL_FALLBACK / TTS_FALLBACK_TEXT_ONLY
+# Optional: MODEL_FAILOVER_ENABLED / MODEL_SECONDARY_MODE / WATCHDOG_* / STARTUP_STRICT
+# Optional: OPERATOR_SERVER_ENABLED / OPERATOR_SERVER_HOST / OPERATOR_SERVER_PORT
+# Optional: WEBHOOK_INBOUND_ENABLED / WEBHOOK_INBOUND_TOKEN
+# Optional: OBSERVABILITY_* (DB/state/event paths, burst threshold, snapshot interval)
+# Optional: SKILLS_ENABLED / SKILLS_DIR / SKILLS_ALLOWLIST / SKILLS_REQUIRE_SIGNATURE / SKILLS_SIGNATURE_KEY
 ```
 
 Smart home safety defaults:
@@ -120,6 +128,10 @@ Smart home safety defaults:
 - Release checklist: [`docs/operations/release-checklist.md`](docs/operations/release-checklist.md).
 - Security maintenance: [`docs/operations/security-maintenance.md`](docs/operations/security-maintenance.md).
 - Error taxonomy: [`docs/operations/error-taxonomy.md`](docs/operations/error-taxonomy.md).
+- Observability runbook: [`docs/operations/observability-runbook.md`](docs/operations/observability-runbook.md).
+- Skills developer guide: [`docs/operations/skills-development.md`](docs/operations/skills-development.md).
+- Provenance verification: [`docs/operations/provenance-verification.md`](docs/operations/provenance-verification.md).
+- Incident response: [`docs/operations/incident-response.md`](docs/operations/incident-response.md).
 - Todoist integration:
   - `TODOIST_PERMISSION_PROFILE=readonly|control`
   - `readonly` allows `todoist_list_tasks` and denies `todoist_add_task`
@@ -184,6 +196,9 @@ uv run python -m jarvis --sim
 
 # Verbose logging
 uv run python -m jarvis --debug
+
+# Open operator console
+open http://127.0.0.1:8765
 ```
 
 ## Developer Checks
@@ -201,6 +216,9 @@ make test-faults
 # Soak/stability subset
 make test-soak
 
+# Deployment/security gate (lint + tests + fault subset + workflow pin checks)
+make security-gate
+
 # Marker-based subsets
 uv run pytest -q -m fast
 uv run pytest -q -m fault
@@ -212,6 +230,7 @@ Equivalent scripts are available under `scripts/`:
 - `scripts/test_fast.sh`
 - `scripts/test_faults.sh`
 - `scripts/test_soak.sh`
+- `scripts/security_gate.sh`
 
 CI runs the same lint + test gates on every push and pull request via
 [`ci.yml`](.github/workflows/ci.yml).
@@ -244,6 +263,9 @@ jarvis/
 │       ├── __main__.py        # Entry point + conversation loop
 │       ├── config.py          # Settings & env vars
 │       ├── brain.py           # Claude Agent SDK orchestrator
+│       ├── observability.py   # Telemetry store + metrics export
+│       ├── operator_server.py # Local operator dashboard/API
+│       ├── skills.py          # Local skill discovery + lifecycle
 │       ├── presence.py        # 30Hz presence loop (the soul)
 │       ├── tools/
 │       │   ├── robot.py       # embody, play_emotion, play_dance

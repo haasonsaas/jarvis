@@ -6,6 +6,7 @@ Use this checklist for policy or integration behavior changes before merging to 
 
 - [ ] `make check` passes locally.
 - [ ] `make test-faults` passes locally.
+- [ ] `make security-gate` passes locally.
 - [ ] New/changed policy behavior has test coverage for:
   - allow path
   - deny path
@@ -39,6 +40,7 @@ Use this checklist for policy or integration behavior changes before merging to 
 - [ ] `workflow-sanity.yml` completes (actionlint + script checks).
 - [ ] `shellcheck.yml` completes for shell script changes.
 - [ ] `security.yml` has no new actionable CodeQL alerts for changed files.
+- [ ] `deploy-security-gate.yml` completed for the target revision.
 - [ ] Artifacts are present for test diagnostics:
   - junit XML
   - optional coverage XML (if manually requested)
@@ -66,3 +68,4 @@ Rollback actions:
 2. Re-run `make check` and `make test-faults`.
 3. Redeploy previous known-good revision.
 4. Capture incident notes and add missing regression tests before retrying release.
+5. Verify release artifact/provenance checks per `docs/operations/provenance-verification.md`.
