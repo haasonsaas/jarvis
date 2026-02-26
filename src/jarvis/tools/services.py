@@ -21,6 +21,7 @@ from jarvis.config import Config
 from jarvis.tool_policy import is_tool_allowed
 from jarvis.tool_summary import record_summary, list_summaries
 from jarvis.memory import MemoryStore
+from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, normalize_service_error_code
 
 log = logging.getLogger(__name__)
 
@@ -261,36 +262,12 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "tool_summary_text": set(),
 }
 
-SERVICE_ERROR_CODES: set[str] = {
-    "policy",
-    "missing_config",
-    "missing_fields",
-    "invalid_data",
-    "timeout",
-    "cancelled",
-    "network_client_error",
-    "invalid_json",
-    "api_error",
-    "auth",
-    "not_found",
-    "unexpected",
-    "storage_error",
-    "missing_store",
-    "missing_text",
-    "missing_query",
-    "missing_entity",
-    "missing_plan",
-    "invalid_plan",
-    "invalid_status",
-    "invalid_steps",
-    "http_error",
-    "summary_unavailable",
-    "unknown_error",
-}
+# Backward compatibility for existing imports/tests.
+SERVICE_ERROR_CODES = TOOL_SERVICE_ERROR_CODES
 
 
 def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
-    normalized = code if code in SERVICE_ERROR_CODES else "unknown_error"
+    normalized = normalize_service_error_code(code)
     record_summary(tool_name, "error", start_time, normalized)
 
 

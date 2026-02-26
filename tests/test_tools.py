@@ -253,10 +253,12 @@ class TestServicesTools:
 
     def test_service_error_codes_include_required_entries(self):
         from jarvis.tools import services
+        from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES
 
         assert "summary_unavailable" in services.SERVICE_ERROR_CODES
         assert "unknown_error" in services.SERVICE_ERROR_CODES
         assert "api_error" in services.SERVICE_ERROR_CODES
+        assert services.SERVICE_ERROR_CODES == TOOL_SERVICE_ERROR_CODES
 
     def test_record_service_error_normalizes_unknown_code(self, monkeypatch):
         from jarvis.tools import services

@@ -253,3 +253,17 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
+
+---
+
+## 20) Taxonomy Module Decoupling
+
+### 20.1 Shared error taxonomy extraction (`P1`)
+- [x] Extract shared service error taxonomy into side-effect-free module (`jarvis/tool_errors.py`).
+- [x] Rewire telemetry to import taxonomy from shared module instead of MCP services module.
+- [x] Keep `services.SERVICE_ERROR_CODES` as compatibility alias for existing call sites/tests.
+- Files:
+  - `src/jarvis/tool_errors.py`
+  - `src/jarvis/tools/services.py`
+  - `src/jarvis/__main__.py`
+  - `tests/test_tools.py`
