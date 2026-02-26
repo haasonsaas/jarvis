@@ -1065,7 +1065,7 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
                         "pushover_notify",
                         {
                             "result": "ok",
-                            "title": title,
+                            "title_length": len(title),
                             "priority": priority,
                             "message_length": len(message),
                         },

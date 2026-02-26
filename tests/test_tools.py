@@ -1212,8 +1212,10 @@ class TestServicesTools:
         by_action = {name: details for name, details in audit_calls}
         assert "content_preview" not in by_action["todoist_add_task"]
         assert "message_preview" not in by_action["pushover_notify"]
+        assert "title" not in by_action["pushover_notify"]
         assert by_action["todoist_add_task"]["content_length"] == len("my password is swordfish")
         assert by_action["pushover_notify"]["message_length"] == len("otp 123456")
+        assert by_action["pushover_notify"]["title_length"] == len("Jarvis")
 
     @pytest.mark.asyncio
     async def test_memory_add_ignores_non_list_tags(self, tmp_path):

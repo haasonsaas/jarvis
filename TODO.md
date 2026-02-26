@@ -292,3 +292,14 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - [x] Align architecture diagram audit log path/name with runtime (`~/.jarvis/audit.jsonl`).
 - Files:
   - `README.md`
+
+---
+
+## 22) Notification Audit Minimization
+
+### 22.1 Pushover title redaction-by-design (`P1`)
+- [x] Replace raw `title` audit field with metadata-only `title_length`.
+- [x] Extend regression coverage to assert raw notification title/content fields are absent from audit payloads.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
