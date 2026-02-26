@@ -70,6 +70,7 @@ TELEMETRY_SERVICE_ERROR_DETAILS = {
     "cancelled",
     "network_client_error",
     "invalid_json",
+    "api_error",
     "auth",
     "not_found",
     "unexpected",

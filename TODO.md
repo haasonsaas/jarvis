@@ -136,3 +136,16 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
+
+---
+
+## 10) Error Taxonomy Precision
+
+### 10.1 Pushover API rejection classification (`P1`)
+- [x] Classify `status=0` API rejections as `api_error` (not generic `http_error`).
+- [x] Extend service error-code set and tests to cover this branch.
+- [x] Keep lifecycle telemetry error taxonomy in sync with service error-code additions.
+- Files:
+  - `src/jarvis/__main__.py`
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`

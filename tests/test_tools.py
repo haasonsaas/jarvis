@@ -256,6 +256,7 @@ class TestServicesTools:
 
         assert "summary_unavailable" in services.SERVICE_ERROR_CODES
         assert "unknown_error" in services.SERVICE_ERROR_CODES
+        assert "api_error" in services.SERVICE_ERROR_CODES
 
     def test_record_service_error_normalizes_unknown_code(self, monkeypatch):
         from jarvis.tools import services
@@ -936,6 +937,7 @@ class TestServicesTools:
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
+        from jarvis.tool_summary import list_summaries
 
         cfg = Config()
         cfg.pushover_api_token = "app-token"
@@ -960,6 +962,8 @@ class TestServicesTools:
             result = await services.pushover_notify({"message": "hello"})
 
         assert "rejected" in result["content"][0]["text"].lower()
+        summaries = list_summaries(20)
+        assert any(item.get("name") == "pushover_notify" and item.get("detail") == "api_error" for item in summaries)
 
     @pytest.mark.asyncio
     async def test_todoist_and_pushover_tools_audit_on_success(self, tmp_path, monkeypatch):

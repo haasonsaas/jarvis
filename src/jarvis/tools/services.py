@@ -259,6 +259,7 @@ SERVICE_ERROR_CODES: set[str] = {
     "cancelled",
     "network_client_error",
     "invalid_json",
+    "api_error",
     "auth",
     "not_found",
     "unexpected",
@@ -1032,7 +1033,7 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
                         error_text = ""
                         if isinstance(errors, list):
                             error_text = "; ".join(str(item) for item in errors if str(item).strip())
-                        _record_service_error("pushover_notify", start_time, "http_error")
+                        _record_service_error("pushover_notify", start_time, "api_error")
                         _audit("pushover_notify", {"result": "api_error", "error": error_text})
                         return {"content": [{"type": "text", "text": f"Pushover rejected notification{f': {error_text}' if error_text else '.'}"}]}
                     record_summary("pushover_notify", "ok", start_time)
