@@ -1655,6 +1655,19 @@ class TestServicesTools:
         assert "must be one of" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_task_plan_update_accepts_case_insensitive_status(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        await services.task_plan_create({"title": "Plan", "steps": ["step"]})
+        result = await services.task_plan_update({"plan_id": 1, "step_index": 0, "status": "DONE"})
+        assert "updated" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_task_plan_update_rejects_fractional_identifiers(self, tmp_path):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services

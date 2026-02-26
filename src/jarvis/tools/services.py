@@ -1572,7 +1572,7 @@ async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = _as_exact_int(args.get("plan_id"))
     step_index = _as_exact_int(args.get("step_index"))
-    status = str(args.get("status", "pending")).strip()
+    status = str(args.get("status", "pending")).strip().lower()
     allowed_status = {"pending", "in_progress", "blocked", "done"}
     if plan_id is None or plan_id <= 0 or step_index is None or step_index < 0:
         _record_service_error("task_plan_update", start_time, "missing_fields")
