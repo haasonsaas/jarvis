@@ -29,10 +29,29 @@ For `smart_home` requests:
 
 ## 5) Audit and Diagnostics
 - All smart-home actions are audit logged.
-- Service payloads are sensitive-key redacted before audit persistence (`code`, `pin`, `token`, `secret`, etc.).
+- Service payloads are sensitive-key redacted before audit persistence (`code`, `pin`, `token`, `secret`, `alarm_code`, `passcode`, `webhook_id`, `oauth_token`, etc.).
 - `system_status` includes:
   - tool allow/deny counts
   - active `home_permission_profile`
+
+### Redaction examples
+Input payload:
+```json
+{
+  "code": "1234",
+  "nested": {"alarm_code": "0000", "brightness": 10},
+  "callbacks": [{"webhook_id": "hook-1"}, {"safe": "ok"}]
+}
+```
+
+Audit payload:
+```json
+{
+  "code": "***REDACTED***",
+  "nested": {"alarm_code": "***REDACTED***", "brightness": 10},
+  "callbacks": [{"webhook_id": "***REDACTED***"}, {"safe": "ok"}]
+}
+```
 
 ## 6) Cooldown Semantics
 - Cooldown applies to mutating executes (`dry_run=false`) only.

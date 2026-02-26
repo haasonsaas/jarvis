@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 import pytest
 from unittest.mock import MagicMock, patch
@@ -300,8 +301,14 @@ class TestServicesTools:
             "data": {
                 "code": "1234",
                 "label": "front",
-                "nested": {"pin": "9999", "brightness": 10},
-                "list": [{"access_token": "abc"}, {"safe": "ok"}],
+                "nested": {"pin": "9999", "alarm_code": "0000", "brightness": 10},
+                "list": [
+                    {"access_token": "abc"},
+                    {"safe": "ok"},
+                    {"webhook_id": "hook-1"},
+                    {"oauth_token": "oauth-123"},
+                    {"passcode": "2468"},
+                ],
             },
             "dry_run": True,
         })
@@ -310,9 +317,42 @@ class TestServicesTools:
         payload = details["data"]
         assert payload["code"] == "***REDACTED***"
         assert payload["nested"]["pin"] == "***REDACTED***"
+        assert payload["nested"]["alarm_code"] == "***REDACTED***"
         assert payload["list"][0]["access_token"] == "***REDACTED***"
+        assert payload["list"][2]["webhook_id"] == "***REDACTED***"
+        assert payload["list"][3]["oauth_token"] == "***REDACTED***"
+        assert payload["list"][4]["passcode"] == "***REDACTED***"
         assert payload["label"] == "front"
         assert payload["nested"]["brightness"] == 10
+
+    def test_metadata_only_audit_helper_strips_raw_fields(self):
+        from jarvis.tools import services
+
+        todoist = services._metadata_only_audit_details(
+            "todoist_add_task",
+            {
+                "result": "ok",
+                "content": "secret content",
+                "description": "secret desc",
+                "content_length": 14,
+            },
+        )
+        pushover = services._metadata_only_audit_details(
+            "pushover_notify",
+            {
+                "result": "ok",
+                "message": "otp 123456",
+                "title": "Private",
+                "message_length": 10,
+            },
+        )
+
+        assert "content" not in todoist
+        assert "description" not in todoist
+        assert todoist["content_length"] == 14
+        assert "message" not in pushover
+        assert "title" not in pushover
+        assert pushover["message_length"] == 10
 
     @pytest.mark.asyncio
     async def test_smart_home_cooldown_on_execute(self, aiohttp_response, aiohttp_session_mock):
@@ -1054,6 +1094,54 @@ class TestServicesTools:
         assert by_action["pushover_notify"]["title_length"] == len("Jarvis")
 
     @pytest.mark.asyncio
+    async def test_todoist_and_pushover_audit_log_entries_are_metadata_only(
+        self, tmp_path, aiohttp_response, aiohttp_session_mock
+    ):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        cfg.pushover_api_token = "app-token"
+        cfg.pushover_user_key = "user-key"
+        services.AUDIT_LOG = tmp_path / "audit.jsonl"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_add_resp = aiohttp_response(status=200, json_data={"id": "t1"})
+            mock_notify_resp = aiohttp_response(status=200, json_data={"status": 1})
+            mock_session = aiohttp_session_mock(post=[mock_add_resp, mock_notify_resp])
+            mock_session_cls.return_value = mock_session
+
+            await services.todoist_add_task(
+                {
+                    "content": "my password is swordfish",
+                    "description": "raw details",
+                    "due_string": "tomorrow",
+                }
+            )
+            await services.pushover_notify({"message": "otp 123456", "title": "Bank code"})
+
+        entries = [json.loads(line) for line in services.AUDIT_LOG.read_text().splitlines() if line.strip()]
+        todoist_entry = next(
+            entry for entry in entries if entry.get("action") == "todoist_add_task" and entry.get("result") == "ok"
+        )
+        pushover_entry = next(
+            entry for entry in entries if entry.get("action") == "pushover_notify" and entry.get("result") == "ok"
+        )
+
+        for forbidden in {"content", "description", "due_string", "message", "title"}:
+            assert forbidden not in todoist_entry
+            assert forbidden not in pushover_entry
+
+        assert todoist_entry["content_length"] == len("my password is swordfish")
+        assert pushover_entry["message_length"] == len("otp 123456")
+        assert pushover_entry["title_length"] == len("Bank code")
+
+    @pytest.mark.asyncio
     async def test_memory_add_ignores_non_list_tags(self, tmp_path):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
@@ -1428,6 +1516,9 @@ class TestServicesTools:
         assert "tool_policy" in payload
         assert "memory" in payload
         assert "audit" in payload
+        assert payload["audit"]["redaction_enabled"] is True
+        assert payload["audit"]["redaction_key_count"] >= 1
+        assert "todoist_add_task" in payload["audit"]["metadata_only_actions"]
         assert "todoist_configured" in payload
         assert "pushover_configured" in payload
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
@@ -1572,6 +1663,46 @@ class TestServicesTools:
 
         assert services.AUDIT_LOG.exists()
         assert (tmp_path / "audit.jsonl.1").exists()
+
+    def test_audit_log_rotation_rolls_existing_backups_at_max_count(self, tmp_path):
+        from jarvis.tools import services
+
+        services.AUDIT_LOG = tmp_path / "audit.jsonl"
+        services._audit_log_max_bytes = 8
+        services._audit_log_backups = 2
+        services.AUDIT_LOG.write_text("main-old-entry")
+        (tmp_path / "audit.jsonl.1").write_text("backup-one")
+        (tmp_path / "audit.jsonl.2").write_text("backup-two")
+
+        services._rotate_audit_log_if_needed()
+
+        assert not services.AUDIT_LOG.exists()
+        assert (tmp_path / "audit.jsonl.1").read_text() == "main-old-entry"
+        assert (tmp_path / "audit.jsonl.2").read_text() == "backup-one"
+
+    def test_audit_log_rotation_errors_are_logged(self, tmp_path, monkeypatch, caplog):
+        from jarvis.tools import services
+
+        services.AUDIT_LOG = tmp_path / "audit.jsonl"
+        services._audit_log_max_bytes = 1
+        services._audit_log_backups = 1
+        services.AUDIT_LOG.write_text("this is large enough to rotate")
+        backup = tmp_path / "audit.jsonl.1"
+        backup.write_text("existing-backup")
+
+        original_unlink = services.Path.unlink
+
+        def _failing_unlink(path, *args, **kwargs):
+            if path == backup:
+                raise OSError("unlink failed")
+            return original_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(services.Path, "unlink", _failing_unlink)
+
+        with caplog.at_level(logging.WARNING):
+            services._rotate_audit_log_if_needed()
+
+        assert "Failed to rotate audit log" in caplog.text
 
     def test_action_history_prunes_stale_and_caps_size(self):
         from jarvis.tools import services

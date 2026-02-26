@@ -50,14 +50,14 @@ Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools
 
 ## 3) Audit and Privacy Hardening (8 items)
 
-- [ ] `A01` Expand sensitive key redaction aliases (`alarm_code`, `passcode`, `webhook_id`, `oauth_token`).
-- [ ] `A02` Add regression tests for all new redaction aliases across nested objects/lists.
-- [ ] `A03` Add audit schema helper to enforce metadata-only fields for notification/task integrations.
-- [ ] `A04` Add cross-tool test verifying no raw message/content/title fields leak into audits.
-- [ ] `A05` Add tests for audit rotation when existing backups already exist at max count.
-- [ ] `A06` Add tests for rotation error handling when backup rename/unlink fails.
-- [ ] `A07` Add system_status field exposing audit redaction mode enabled/disabled.
-- [ ] `A08` Add doc update with redaction examples in runbooks.
+- [x] `A01` Expand sensitive key redaction aliases (`alarm_code`, `passcode`, `webhook_id`, `oauth_token`).
+- [x] `A02` Add regression tests for all new redaction aliases across nested objects/lists.
+- [x] `A03` Add audit schema helper to enforce metadata-only fields for notification/task integrations.
+- [x] `A04` Add cross-tool test verifying no raw message/content/title fields leak into audits.
+- [x] `A05` Add tests for audit rotation when existing backups already exist at max count.
+- [x] `A06` Add tests for rotation error handling when backup rename/unlink fails.
+- [x] `A07` Add system_status field exposing audit redaction mode enabled/disabled.
+- [x] `A08` Add doc update with redaction examples in runbooks.
 
 Files: `src/jarvis/tools/services.py`, `tests/test_tools.py`, `docs/operations/home-control-policy.md`, `docs/operations/integration-policy.md`
 

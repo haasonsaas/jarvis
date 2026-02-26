@@ -61,11 +61,20 @@ SENSITIVE_AUDIT_KEY_TOKENS = {
     "password",
     "token",
     "secret",
+    "alarm_code",
+    "passcode",
+    "webhook_id",
+    "oauth_token",
     "api_key",
     "access_token",
     "authorization",
 }
 AUDIT_REDACTED = "***REDACTED***"
+AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
+    "todoist_add_task": {"content", "description", "due_string", "message", "title"},
+    "todoist_list_tasks": {"content", "description", "due_string", "message", "title"},
+    "pushover_notify": {"message", "title", "content", "description", "body"},
+}
 
 SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "smart_home": {
@@ -313,11 +322,13 @@ def _tool_permitted(name: str) -> bool:
 
 def _audit(action: str, details: dict) -> None:
     """Append to local audit log: what was heard, what was done, why."""
-    details_json = json.dumps(details, default=str)
+    metadata_only = _metadata_only_audit_details(action, details)
+    redacted = _redact_sensitive_for_audit(metadata_only)
+    details_json = json.dumps(redacted, default=str)
     entry = {
         "timestamp": time.time(),
         "action": action,
-        **details,
+        **redacted,
     }
     try:
         _rotate_audit_log_if_needed()
@@ -360,6 +371,19 @@ def _redact_sensitive_for_audit(value: Any, *, key_hint: str | None = None) -> A
     if isinstance(value, list):
         return [_redact_sensitive_for_audit(item, key_hint=key_hint) for item in value]
     return value
+
+
+def _metadata_only_audit_details(action: str, details: dict[str, Any]) -> dict[str, Any]:
+    forbidden = AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS.get(action)
+    if not forbidden:
+        return {str(key): value for key, value in details.items()}
+    sanitized: dict[str, Any] = {}
+    for key, value in details.items():
+        key_text = str(key)
+        if key_text.strip().lower() in forbidden:
+            continue
+        sanitized[key_text] = value
+    return sanitized
 
 
 def _format_tool_summaries(items: list[dict[str, object]]) -> str:
@@ -560,6 +584,9 @@ def _audit_status() -> dict[str, Any]:
         "size_bytes": int(size_bytes),
         "max_bytes": int(_audit_log_max_bytes),
         "backups": backups,
+        "redaction_enabled": bool(SENSITIVE_AUDIT_KEY_TOKENS),
+        "redaction_key_count": len(SENSITIVE_AUDIT_KEY_TOKENS),
+        "metadata_only_actions": sorted(AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS),
     }
 
 

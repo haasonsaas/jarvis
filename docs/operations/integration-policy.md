@@ -56,6 +56,27 @@ This runbook covers operational setup and policy behavior for Todoist and Pushov
 - Todoist and Pushover audits intentionally store metadata-only summaries.
 - Smart-home payload data is redacted by sensitive key token matching before audit write (`token`, `secret`, `code`, `pin`, `password`, etc.).
 - Redacted values are persisted as `***REDACTED***`.
+- Todoist/Pushover metadata-only enforcement drops raw body fields before write (`content`, `description`, `due_string`, `message`, `title`).
+
+### Metadata-only examples
+
+Input attempt (internal tool details):
+```json
+{
+  "result": "ok",
+  "content": "my password is swordfish",
+  "description": "private context",
+  "content_length": 24
+}
+```
+
+Persisted audit details:
+```json
+{
+  "result": "ok",
+  "content_length": 24
+}
+```
 
 ## 6) Troubleshooting Matrix
 
