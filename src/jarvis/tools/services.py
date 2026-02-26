@@ -952,6 +952,10 @@ async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
                     if not isinstance(data, list):
                         _record_service_error("todoist_list_tasks", start_time, "invalid_json")
                         return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
+                    if any(not isinstance(item, dict) for item in data):
+                        _record_service_error("todoist_list_tasks", start_time, "invalid_json")
+                        _audit("todoist_list_tasks", {"result": "invalid_json"})
+                        return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
                     tasks = data[:limit]
                     if not tasks:
                         record_summary("todoist_list_tasks", "empty", start_time)
@@ -1040,7 +1044,12 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
                         _record_service_error("pushover_notify", start_time, "invalid_json")
                         _audit("pushover_notify", {"result": "invalid_json"})
                         return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
-                    if int(body.get("status", 0)) != 1:
+                    status_value = _as_exact_int(body.get("status"))
+                    if status_value is None:
+                        _record_service_error("pushover_notify", start_time, "invalid_json")
+                        _audit("pushover_notify", {"result": "invalid_json"})
+                        return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
+                    if status_value != 1:
                         errors = body.get("errors")
                         error_text = ""
                         if isinstance(errors, list):

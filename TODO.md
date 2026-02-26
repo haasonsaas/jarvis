@@ -192,3 +192,21 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - [x] Keep storage-error subset separation for split counters.
 - Files:
   - `src/jarvis/__main__.py`
+
+---
+
+## 15) API Payload Validation Hardening
+
+### 15.1 Todoist list payload shape checks (`P1`)
+- [x] Reject task-list responses containing non-object entries as `invalid_json`.
+- [x] Add regression test for mixed valid/invalid entry payloads.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
+### 15.2 Pushover status-type checks (`P1`)
+- [x] Reject non-integer `status` values as `invalid_json` instead of bubbling to unexpected errors.
+- [x] Add regression test for malformed `status` payload (`\"status\": \"ok\"`).
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
