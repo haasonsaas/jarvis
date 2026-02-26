@@ -1002,6 +1002,48 @@ class TestServicesTools:
         assert "pushover_notify" in actions
 
     @pytest.mark.asyncio
+    async def test_todoist_and_pushover_audit_does_not_log_raw_content(self, tmp_path, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        cfg.pushover_api_token = "app-token"
+        cfg.pushover_user_key = "user-key"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        audit_calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_add_resp = AsyncMock()
+            mock_add_resp.status = 200
+            mock_add_resp.json = AsyncMock(return_value={"id": "t1"})
+            mock_notify_resp = AsyncMock()
+            mock_notify_resp.status = 200
+            mock_notify_resp.json = AsyncMock(return_value={"status": 1})
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.post = MagicMock(side_effect=[
+                AsyncMock(__aenter__=AsyncMock(return_value=mock_add_resp), __aexit__=AsyncMock(return_value=False)),
+                AsyncMock(__aenter__=AsyncMock(return_value=mock_notify_resp), __aexit__=AsyncMock(return_value=False)),
+            ])
+            mock_session_cls.return_value = mock_session
+
+            await services.todoist_add_task({"content": "my password is swordfish"})
+            await services.pushover_notify({"message": "otp 123456"})
+
+        by_action = {name: details for name, details in audit_calls}
+        assert "content_preview" not in by_action["todoist_add_task"]
+        assert "message_preview" not in by_action["pushover_notify"]
+        assert by_action["todoist_add_task"]["content_length"] == len("my password is swordfish")
+        assert by_action["pushover_notify"]["message_length"] == len("otp 123456")
+
+    @pytest.mark.asyncio
     async def test_memory_add_ignores_non_list_tags(self, tmp_path):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services

@@ -339,15 +339,6 @@ def _audit(action: str, details: dict) -> None:
     log.info("AUDIT: %s — %s", action, details_json)
 
 
-def _preview_text(value: Any, *, limit: int = 80) -> str:
-    text = str(value or "").strip()
-    if len(text) <= limit:
-        return text
-    if limit <= 3:
-        return text[:limit]
-    return text[: limit - 3] + "..."
-
-
 def _rotate_audit_log_if_needed() -> None:
     if _audit_log_backups < 1:
         return
@@ -890,7 +881,6 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
                         {
                             "result": "ok",
                             "task_id": task_id,
-                            "content_preview": _preview_text(content),
                             "content_length": len(content),
                             "project_id": payload.get("project_id", ""),
                         },
@@ -1052,7 +1042,6 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
                             "result": "ok",
                             "title": title,
                             "priority": priority,
-                            "message_preview": _preview_text(message),
                             "message_length": len(message),
                         },
                     )

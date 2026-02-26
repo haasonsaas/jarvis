@@ -124,3 +124,15 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - [x] Update service tool description line to reflect current integrations.
 - Files:
   - `README.md`
+
+---
+
+## 9) Audit Privacy Hardening
+
+### 9.1 External integration audit minimization (`P1`)
+- [x] Remove raw text previews from Todoist/Pushover success audit payloads.
+- [x] Keep only non-sensitive metadata (`length`, `ids`, `status`, `priority`, `title`).
+- [x] Add regression tests to prevent reintroduction of preview fields.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
