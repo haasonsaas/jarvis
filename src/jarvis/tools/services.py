@@ -67,6 +67,7 @@ _audit_log_backups: int = 3
 _home_permission_profile: str = "control"
 _home_require_confirm_execute: bool = False
 _home_conversation_enabled: bool = False
+_home_conversation_permission_profile: str = "readonly"
 _todoist_permission_profile: str = "control"
 _notification_permission_profile: str = "allow"
 _todoist_timeout_sec: float = 10.0
@@ -344,6 +345,7 @@ def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _config, _memory, _audit_log_max_bytes, _audit_log_backups
     global _home_permission_profile, _home_require_confirm_execute, _home_conversation_enabled
+    global _home_conversation_permission_profile
     global _todoist_permission_profile, _notification_permission_profile
     global _todoist_timeout_sec, _pushover_timeout_sec
     global _timer_id_seq
@@ -356,6 +358,11 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
         _home_permission_profile = "control"
     _home_require_confirm_execute = bool(getattr(config, "home_require_confirm_execute", False))
     _home_conversation_enabled = bool(getattr(config, "home_conversation_enabled", False))
+    _home_conversation_permission_profile = str(
+        getattr(config, "home_conversation_permission_profile", "readonly")
+    ).strip().lower()
+    if _home_conversation_permission_profile not in {"readonly", "control"}:
+        _home_conversation_permission_profile = "readonly"
     _todoist_permission_profile = str(getattr(config, "todoist_permission_profile", "control")).strip().lower()
     if _todoist_permission_profile not in {"readonly", "control"}:
         _todoist_permission_profile = "control"
@@ -370,6 +377,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _ha_state_cache.clear()
     _timers.clear()
     _timer_id_seq = 1
+    _load_timers_from_store()
     global _tool_allowlist, _tool_denylist
     _tool_allowlist = list(config.tool_allowlist)
     _tool_denylist = list(config.tool_denylist)
@@ -738,6 +746,11 @@ def _audit_status() -> dict[str, Any]:
 
 
 def _prune_timers(now_mono: float | None = None) -> None:
+    if _memory is not None:
+        try:
+            _memory.expire_timers(now=time.time())
+        except Exception:
+            log.warning("Failed to expire persisted timers", exc_info=True)
     if not _timers:
         return
     current = time.monotonic() if now_mono is None else now_mono
@@ -756,6 +769,37 @@ def _timer_status() -> dict[str, Any]:
         "active_count": len(_timers),
         "next_due_in_sec": max(0.0, next_due - now),
     }
+
+
+def _load_timers_from_store() -> None:
+    global _timer_id_seq
+    if _memory is None:
+        return
+    now_wall = time.time()
+    now_mono = time.monotonic()
+    try:
+        _memory.expire_timers(now=now_wall)
+        rows = _memory.list_timers(status="active", include_expired=False, now=now_wall, limit=TIMER_MAX_ACTIVE)
+    except Exception:
+        log.warning("Failed to load persisted timers", exc_info=True)
+        return
+    max_id = 0
+    for row in rows:
+        remaining = float(row.due_at) - now_wall
+        if remaining <= 0.0:
+            continue
+        timer_id = int(row.id)
+        max_id = max(max_id, timer_id)
+        _timers[timer_id] = {
+            "id": timer_id,
+            "label": row.label,
+            "duration_sec": float(row.duration_sec),
+            "created_at": float(row.created_at),
+            "due_at": float(row.due_at),
+            "due_mono": now_mono + remaining,
+        }
+    if max_id >= _timer_id_seq:
+        _timer_id_seq = max_id + 1
 
 
 def _ha_headers() -> dict[str, str]:
@@ -1113,10 +1157,17 @@ async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
                 }
             ]
         }
-    if _home_permission_profile != "control":
+    if _home_conversation_permission_profile != "control":
         _record_service_error("home_assistant_conversation", start_time, "policy")
-        _audit("home_assistant_conversation", {"result": "denied", "reason": "readonly_profile"})
-        return {"content": [{"type": "text", "text": "Home Assistant conversation requires HOME_PERMISSION_PROFILE=control."}]}
+        _audit("home_assistant_conversation", {"result": "denied", "reason": "conversation_readonly_profile"})
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Home Assistant conversation requires HOME_CONVERSATION_PERMISSION_PROFILE=control.",
+                }
+            ]
+        }
     text = str(args.get("text", "")).strip()
     if not text:
         _record_service_error("home_assistant_conversation", start_time, "missing_fields")
@@ -1619,6 +1670,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "home_permission_profile": _home_permission_profile,
             "home_require_confirm_execute": bool(_home_require_confirm_execute),
             "home_conversation_enabled": bool(_home_conversation_enabled),
+            "home_conversation_permission_profile": _home_conversation_permission_profile,
             "todoist_permission_profile": _todoist_permission_profile,
             "notification_permission_profile": _notification_permission_profile,
         },
@@ -2007,11 +2059,24 @@ async def timer_create(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("timer_create", start_time, "invalid_data")
         return {"content": [{"type": "text", "text": f"Too many active timers ({TIMER_MAX_ACTIVE} max)."}]}
     label = str(args.get("label", "")).strip()
-    timer_id = _allocate_timer_id()
     now_wall = time.time()
     now_mono = time.monotonic()
     due_wall = now_wall + duration
     due_mono = now_mono + duration
+    timer_id: int
+    if _memory is not None:
+        try:
+            timer_id = _memory.add_timer(
+                due_at=due_wall,
+                duration_sec=duration,
+                label=label,
+                created_at=now_wall,
+            )
+        except Exception:
+            _record_service_error("timer_create", start_time, "storage_error")
+            return {"content": [{"type": "text", "text": "Timer create failed: persistent storage unavailable."}]}
+    else:
+        timer_id = _allocate_timer_id()
     _timers[timer_id] = {
         "id": timer_id,
         "label": label,
@@ -2106,6 +2171,15 @@ async def timer_cancel(args: dict[str, Any]) -> dict[str, Any]:
     if selected_id is None:
         _record_service_error("timer_cancel", start_time, "not_found")
         return {"content": [{"type": "text", "text": "Timer not found."}]}
+    if _memory is not None:
+        try:
+            cancelled = _memory.cancel_timer(selected_id)
+        except Exception:
+            _record_service_error("timer_cancel", start_time, "storage_error")
+            return {"content": [{"type": "text", "text": "Timer cancel failed: persistent storage unavailable."}]}
+        if not cancelled:
+            _record_service_error("timer_cancel", start_time, "not_found")
+            return {"content": [{"type": "text", "text": "Timer not found."}]}
     removed = _timers.pop(selected_id, None)
     if removed is None:
         _record_service_error("timer_cancel", start_time, "not_found")

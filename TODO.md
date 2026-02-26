@@ -40,8 +40,8 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 - [ ] `HA05` Add Home Assistant timer integration tool path.
 - [ ] `HA06` Add entity capability discovery helper for safer action planning.
 - [ ] `HA07` Add optional area-aware commands (room/area targeting helper).
-- [ ] `HA08` Add HA conversation error taxonomy mapping and tests.
-- [ ] `HA09` Add policy profile controls for HA intent tool (`readonly|control`).
+- [x] `HA08` Add HA conversation error taxonomy mapping and tests.
+- [x] `HA09` Add policy profile controls for HA intent tool (`readonly|control`).
 - [ ] `HA10` Add HA intent runbook section with safe rollout checklist.
 
 ---
@@ -56,7 +56,7 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 - [ ] `PR06` Add optional reminder notifications via Pushover.
 - [ ] `PR07` Add calendar read integration (Google/ICS or HA calendar bridge).
 - [ ] `PR08` Add “next event” conversational helper tool.
-- [ ] `PR09` Add persistence layer for timers/reminders across restarts.
+- [x] `PR09` Add persistence layer for timers/reminders across restarts.
 - [ ] `PR10` Add productivity tool regression tests and edge-case parsing tests.
 
 ---
@@ -156,7 +156,7 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 
 - [x] `E01` Implement `HA01` + `HA02` + `HA03` (Home Assistant conversation API tool + schema + mapping + tests).
 - [x] `E02` Implement `PR01` + `PR02` + `PR03` (timer create/list/cancel tools + tests + status exposure).
-- [ ] `E03` Implement `HA08` + `HA09` (policy and taxonomy mapping for HA intent tool).
-- [ ] `E04` Implement `PR09` (persist timer/reminder data in `MemoryStore`).
+- [x] `E03` Implement `HA08` + `HA09` (policy and taxonomy mapping for HA intent tool).
+- [x] `E04` Implement `PR09` (persist timer/reminder data in `MemoryStore`).
 - [ ] `E05` Implement `UX06` (structured status endpoint behavior contract).
-- [ ] `E06` Update README/runbooks for new tools and safe operating guidance.
+- [x] `E06` Update README/runbooks for new tools and safe operating guidance.

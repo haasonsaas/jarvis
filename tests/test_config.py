@@ -97,6 +97,12 @@ class TestConfig:
         c = Config(home_permission_profile="execute-all")
         assert c.home_permission_profile == "control"
 
+    def test_home_conversation_permission_profile_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(home_conversation_permission_profile="execute-all")
+        assert c.home_conversation_permission_profile == "readonly"
+
     def test_todoist_permission_profile_normalizes(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         from jarvis.config import Config
@@ -130,6 +136,7 @@ class TestConfig:
         monkeypatch.setenv("HOME_REQUIRE_CONFIRM_EXECUTE", "sometimes")
         monkeypatch.setenv("HOME_CONVERSATION_ENABLED", "perhaps")
         monkeypatch.setenv("HOME_PERMISSION_PROFILE", "execute-all")
+        monkeypatch.setenv("HOME_CONVERSATION_PERMISSION_PROFILE", "execute-all")
         monkeypatch.setenv("TODOIST_PERMISSION_PROFILE", "write-all")
         monkeypatch.setenv("NOTIFICATION_PERMISSION_PROFILE", "enabled")
         from jarvis.config import Config
@@ -147,6 +154,7 @@ class TestConfig:
         assert "HOME_REQUIRE_CONFIRM_EXECUTE invalid boolean" in text
         assert "HOME_CONVERSATION_ENABLED invalid boolean" in text
         assert "HOME_PERMISSION_PROFILE invalid" in text
+        assert "HOME_CONVERSATION_PERMISSION_PROFILE invalid" in text
         assert "TODOIST_PERMISSION_PROFILE invalid" in text
         assert "NOTIFICATION_PERMISSION_PROFILE invalid" in text
 
@@ -242,6 +250,7 @@ class TestConfig:
     def test_startup_warning_for_permissive_profiles_without_credentials(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         monkeypatch.setenv("HOME_PERMISSION_PROFILE", "control")
+        monkeypatch.setenv("HOME_CONVERSATION_PERMISSION_PROFILE", "control")
         monkeypatch.setenv("TODOIST_PERMISSION_PROFILE", "control")
         monkeypatch.setenv("NOTIFICATION_PERMISSION_PROFILE", "allow")
         monkeypatch.delenv("HASS_URL", raising=False)
@@ -254,5 +263,6 @@ class TestConfig:
         c = Config()
         text = "\n".join(c.startup_warnings).lower()
         assert "home_permission_profile=control set while hass_url/hass_token are empty" in text
+        assert "home_conversation_permission_profile=control set while hass_url/hass_token are empty" in text
         assert "todoist_permission_profile=control set while todoist_api_token is empty" in text
         assert "notification_permission_profile=allow set while pushover credentials are empty" in text

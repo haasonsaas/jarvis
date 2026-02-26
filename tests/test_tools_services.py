@@ -797,6 +797,7 @@ class TestServicesTools:
         cfg = services._config
         assert cfg is not None
         cfg.home_conversation_enabled = True
+        cfg.home_conversation_permission_profile = "control"
         services.bind(cfg)
 
         result = await services.home_assistant_conversation({
@@ -811,14 +812,14 @@ class TestServicesTools:
         cfg = services._config
         assert cfg is not None
         cfg.home_conversation_enabled = True
-        cfg.home_permission_profile = "readonly"
+        cfg.home_conversation_permission_profile = "readonly"
         services.bind(cfg)
 
         result = await services.home_assistant_conversation({
             "text": "turn on kitchen lights",
             "confirm": True,
         })
-        assert "home_permission_profile=control" in result["content"][0]["text"].lower()
+        assert "home_conversation_permission_profile=control" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_home_assistant_conversation_success(self, aiohttp_response, aiohttp_session_mock):
@@ -827,7 +828,7 @@ class TestServicesTools:
         cfg = services._config
         assert cfg is not None
         cfg.home_conversation_enabled = True
-        cfg.home_permission_profile = "control"
+        cfg.home_conversation_permission_profile = "control"
         services.bind(cfg)
 
         response = aiohttp_response(
@@ -860,7 +861,7 @@ class TestServicesTools:
         cfg = services._config
         assert cfg is not None
         cfg.home_conversation_enabled = True
-        cfg.home_permission_profile = "control"
+        cfg.home_conversation_permission_profile = "control"
         services.bind(cfg)
 
         response = aiohttp_response(status=200, json_data="not-a-dict")
@@ -871,6 +872,82 @@ class TestServicesTools:
                 "confirm": True,
             })
         assert "invalid home assistant conversation response" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("status", "expected_text", "expected_detail"),
+        [
+            (401, "authentication failed", "auth"),
+            (404, "endpoint not found", "not_found"),
+            (500, "conversation error (500)", "http_error"),
+        ],
+    )
+    async def test_home_assistant_conversation_http_mappings(
+        self,
+        status,
+        expected_text,
+        expected_detail,
+        aiohttp_response,
+        aiohttp_session_mock,
+    ):
+        from jarvis.tools import services
+        from jarvis.tool_summary import list_summaries
+
+        cfg = services._config
+        assert cfg is not None
+        cfg.home_conversation_enabled = True
+        cfg.home_conversation_permission_profile = "control"
+        services.bind(cfg)
+
+        response = aiohttp_response(status=status, json_data={})
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_session_cls.return_value = aiohttp_session_mock(post=response)
+            result = await services.home_assistant_conversation({
+                "text": "turn off the kitchen lights",
+                "confirm": True,
+            })
+        assert expected_text in result["content"][0]["text"].lower()
+        summaries = list_summaries(25)
+        assert any(
+            item.get("name") == "home_assistant_conversation" and item.get("detail") == expected_detail
+            for item in summaries
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("side_effect", "expected_text", "expected_detail"),
+        [
+            (asyncio.TimeoutError(), "timed out", "timeout"),
+            (asyncio.CancelledError(), "was cancelled", "cancelled"),
+            (aiohttp.ClientError("boom"), "failed to reach", "network_client_error"),
+        ],
+    )
+    async def test_home_assistant_conversation_transport_error_mappings(
+        self,
+        side_effect,
+        expected_text,
+        expected_detail,
+    ):
+        from jarvis.tools import services
+        from jarvis.tool_summary import list_summaries
+
+        cfg = services._config
+        assert cfg is not None
+        cfg.home_conversation_enabled = True
+        cfg.home_conversation_permission_profile = "control"
+        services.bind(cfg)
+
+        with patch("aiohttp.ClientSession", side_effect=side_effect):
+            result = await services.home_assistant_conversation({
+                "text": "turn off the kitchen lights",
+                "confirm": True,
+            })
+        assert expected_text in result["content"][0]["text"].lower()
+        summaries = list_summaries(25)
+        assert any(
+            item.get("name") == "home_assistant_conversation" and item.get("detail") == expected_detail
+            for item in summaries
+        )
 
     @pytest.mark.asyncio
     async def test_timer_create_list_cancel_lifecycle(self):
@@ -920,6 +997,43 @@ class TestServicesTools:
 
         hidden = await services.timer_list({})
         assert "no active timers" in hidden["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_timer_persists_across_bind(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        created = await services.timer_create({"duration": 600, "label": "persisted"})
+        timer_id = int(created["content"][0]["text"].split()[1])
+
+        services.bind(cfg, store)
+        listed = await services.timer_list({})
+        text = listed["content"][0]["text"].lower()
+        assert "persisted" in text
+        assert f"- {timer_id}" in text
+
+    @pytest.mark.asyncio
+    async def test_timer_cancel_persists_across_bind(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        created = await services.timer_create({"duration": 600, "label": "to-cancel"})
+        timer_id = int(created["content"][0]["text"].split()[1])
+        await services.timer_cancel({"timer_id": timer_id})
+
+        services.bind(cfg, store)
+        listed = await services.timer_list({})
+        assert "no active timers" in listed["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_todoist_add_task_requires_config(self):
@@ -2067,6 +2181,7 @@ class TestServicesTools:
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
         assert isinstance(payload["tool_policy"]["home_conversation_enabled"], bool)
+        assert payload["tool_policy"]["home_conversation_permission_profile"] in {"readonly", "control"}
         assert "memory" in payload
         assert "audit" in payload
         assert payload["audit"]["redaction_enabled"] is True
@@ -2386,3 +2501,10 @@ class TestServicesTools:
         }
         for code in critical_codes:
             assert code in script_text
+
+    def test_error_taxonomy_doc_mentions_home_assistant_conversation_and_timers(self):
+        project_root = Path(__file__).resolve().parents[1]
+        taxonomy_doc = (project_root / "docs" / "operations" / "error-taxonomy.md").read_text()
+        assert "home_assistant_conversation" in taxonomy_doc
+        assert "timer_cancel" in taxonomy_doc
+        assert "timer_*" in taxonomy_doc

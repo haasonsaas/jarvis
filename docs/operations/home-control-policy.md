@@ -29,7 +29,7 @@ For `smart_home` requests:
 
 For `home_assistant_conversation` requests:
 - Requires `HOME_CONVERSATION_ENABLED=true`.
-- Requires `HOME_PERMISSION_PROFILE=control`.
+- Requires `HOME_CONVERSATION_PERMISSION_PROFILE=control`.
 - Requires tool argument `confirm=true` on every request.
 
 ## 4) Transport/Service Validation
@@ -42,6 +42,8 @@ For `home_assistant_conversation` requests:
 - `system_status` includes:
   - tool allow/deny counts
   - active `home_permission_profile`
+  - active `home_conversation_enabled`
+  - active `home_conversation_permission_profile`
 
 ### Redaction examples
 Input payload:
@@ -77,3 +79,4 @@ Audit payload:
   3. Ensure sensitive executes pass `confirm=true`.
   4. Verify `HASS_URL` and `HASS_TOKEN` are both set.
   5. If an execute is blocked, check whether an action cooldown is currently active.
+  6. For `home_assistant_conversation`, verify `HOME_CONVERSATION_ENABLED=true`, `HOME_CONVERSATION_PERMISSION_PROFILE=control`, and `confirm=true`.

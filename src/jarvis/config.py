@@ -125,6 +125,9 @@ class Config:
     home_permission_profile: str = field(default_factory=lambda: os.environ.get("HOME_PERMISSION_PROFILE", "control"))
     home_require_confirm_execute: bool = field(default_factory=lambda: _env_bool("HOME_REQUIRE_CONFIRM_EXECUTE") or False)
     home_conversation_enabled: bool = field(default_factory=lambda: _env_bool("HOME_CONVERSATION_ENABLED") or False)
+    home_conversation_permission_profile: str = field(
+        default_factory=lambda: os.environ.get("HOME_CONVERSATION_PERMISSION_PROFILE", "readonly")
+    )
     todoist_api_token: str = field(default_factory=lambda: os.environ.get("TODOIST_API_TOKEN", ""))
     todoist_project_id: str = field(default_factory=lambda: os.environ.get("TODOIST_PROJECT_ID", ""))
     todoist_permission_profile: str = field(default_factory=lambda: os.environ.get("TODOIST_PERMISSION_PROFILE", "control"))
@@ -177,6 +180,9 @@ class Config:
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
         self.home_permission_profile = self._normalize_home_permission_profile(self.home_permission_profile)
+        self.home_conversation_permission_profile = self._normalize_home_conversation_permission_profile(
+            self.home_conversation_permission_profile
+        )
         self.todoist_permission_profile = self._normalize_todoist_permission_profile(self.todoist_permission_profile)
         self.notification_permission_profile = self._normalize_notification_permission_profile(self.notification_permission_profile)
         if _env_is_set("BACKCHANNEL_STYLE") and self.backchannel_style == "balanced":
@@ -191,6 +197,13 @@ class Config:
             raw = os.environ.get("HOME_PERMISSION_PROFILE", "")
             if raw.strip().lower() not in {"readonly", "control"}:
                 self.startup_warnings.append("HOME_PERMISSION_PROFILE invalid; using control.")
+        if (
+            _env_is_set("HOME_CONVERSATION_PERMISSION_PROFILE")
+            and self.home_conversation_permission_profile == "readonly"
+        ):
+            raw = os.environ.get("HOME_CONVERSATION_PERMISSION_PROFILE", "")
+            if raw.strip().lower() not in {"readonly", "control"}:
+                self.startup_warnings.append("HOME_CONVERSATION_PERMISSION_PROFILE invalid; using readonly.")
         if _env_is_set("TODOIST_PERMISSION_PROFILE") and self.todoist_permission_profile == "control":
             raw = os.environ.get("TODOIST_PERMISSION_PROFILE", "")
             if raw.strip().lower() not in {"readonly", "control"}:
@@ -222,6 +235,13 @@ class Config:
         return "control"
 
     @staticmethod
+    def _normalize_home_conversation_permission_profile(profile: str) -> str:
+        normalized = (profile or "readonly").strip().lower()
+        if normalized in {"readonly", "control"}:
+            return normalized
+        return "readonly"
+
+    @staticmethod
     def _normalize_todoist_permission_profile(profile: str) -> str:
         normalized = (profile or "control").strip().lower()
         if normalized in {"readonly", "control"}:
@@ -248,6 +268,15 @@ class Config:
             and not has_hass_token
         ):
             warnings.append("HOME_PERMISSION_PROFILE=control set while HASS_URL/HASS_TOKEN are empty.")
+        if (
+            _env_is_set("HOME_CONVERSATION_PERMISSION_PROFILE")
+            and self.home_conversation_permission_profile == "control"
+            and not has_hass_url
+            and not has_hass_token
+        ):
+            warnings.append(
+                "HOME_CONVERSATION_PERMISSION_PROFILE=control set while HASS_URL/HASS_TOKEN are empty."
+            )
         has_todoist_token = bool((self.todoist_api_token or "").strip())
         has_todoist_project = bool((self.todoist_project_id or "").strip())
         if has_todoist_project and not has_todoist_token:

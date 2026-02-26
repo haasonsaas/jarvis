@@ -109,4 +109,4 @@ Persisted audit details:
 - `timer_create` accepts numeric seconds or compact durations (`90s`, `5m`, `1h 15m`).
 - `timer_list` reports current active timers and remaining time.
 - `timer_cancel` removes a timer by `timer_id` or exact `label`.
-- Timers are currently runtime-memory only and reset on process restart.
+- Timers are persisted in the memory store when memory is enabled and are restored on restart.

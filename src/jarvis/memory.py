@@ -49,6 +49,17 @@ class MemorySummary:
     updated_at: float
 
 
+@dataclass
+class TimerEntry:
+    id: int
+    created_at: float
+    due_at: float
+    duration_sec: float
+    label: str
+    status: str
+    cancelled_at: float | None
+
+
 class MemoryStore:
     def __init__(self, path: str) -> None:
         if path not in {":memory:", ""}:
@@ -134,6 +145,20 @@ class MemoryStore:
             """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memory_summaries_updated ON memory_summaries(updated_at DESC);")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS timers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at REAL NOT NULL,
+                due_at REAL NOT NULL,
+                duration_sec REAL NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'active',
+                cancelled_at REAL
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_timers_status_due ON timers(status, due_at ASC);")
         try:
             cur.execute(
                 """
@@ -454,6 +479,95 @@ class MemoryStore:
             updated_at=float(row["updated_at"]),
         )
 
+    def add_timer(
+        self,
+        *,
+        due_at: float,
+        duration_sec: float,
+        label: str = "",
+        created_at: float | None = None,
+    ) -> int:
+        if not math.isfinite(due_at):
+            raise ValueError("due_at must be finite")
+        if not math.isfinite(duration_sec) or duration_sec <= 0.0:
+            raise ValueError("duration_sec must be > 0")
+        created = time.time() if created_at is None else float(created_at)
+        clean_label = label.strip()
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO timers(created_at, due_at, duration_sec, label, status, cancelled_at)
+            VALUES (?, ?, ?, ?, 'active', NULL)
+            """,
+            (created, float(due_at), float(duration_sec), clean_label),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def list_timers(
+        self,
+        *,
+        status: str = "active",
+        include_expired: bool = False,
+        now: float | None = None,
+        limit: int = 200,
+    ) -> list[TimerEntry]:
+        clean_status = status.strip().lower()
+        if clean_status not in {"active", "expired", "cancelled"}:
+            raise ValueError("status must be active, expired, or cancelled")
+        limit = self._normalize_limit(limit, default=200)
+        cur = self._conn.cursor()
+        params: list[Any] = [clean_status]
+        where = "status = ?"
+        if clean_status == "active" and not include_expired:
+            now_ts = time.time() if now is None else float(now)
+            where += " AND due_at > ?"
+            params.append(now_ts)
+        rows = cur.execute(
+            f"SELECT * FROM timers WHERE {where} ORDER BY due_at ASC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+        return [self._row_to_timer(row) for row in rows]
+
+    def expire_timers(self, *, now: float | None = None) -> int:
+        now_ts = time.time() if now is None else float(now)
+        with self._conn:
+            cur = self._conn.cursor()
+            cur.execute(
+                """
+                UPDATE timers
+                SET status = 'expired'
+                WHERE status = 'active' AND due_at <= ?
+                """,
+                (now_ts,),
+            )
+            return int(cur.rowcount)
+
+    def cancel_timer(self, timer_id: int, *, cancelled_at: float | None = None) -> bool:
+        cancelled = time.time() if cancelled_at is None else float(cancelled_at)
+        with self._conn:
+            cur = self._conn.cursor()
+            cur.execute(
+                """
+                UPDATE timers
+                SET status = 'cancelled', cancelled_at = ?
+                WHERE id = ? AND status = 'active'
+                """,
+                (cancelled, int(timer_id)),
+            )
+            return cur.rowcount > 0
+
+    def timer_counts(self) -> dict[str, int]:
+        rows = self._conn.cursor().execute(
+            "SELECT status, COUNT(*) AS c FROM timers GROUP BY status",
+        ).fetchall()
+        counts = {"active": 0, "expired": 0, "cancelled": 0}
+        for row in rows:
+            key = str(row["status"])
+            if key in counts:
+                counts[key] = int(row["c"])
+        return counts
+
     def close(self) -> None:
         if self._closed:
             return
@@ -470,6 +584,7 @@ class MemoryStore:
             "fts": self._fts_enabled,
             "vector": self._memory_enabled,
             "sources": source_counts,
+            "timers": self.timer_counts(),
             "last_warm": self._last_warm,
             "last_sync": self._last_sync,
             "last_optimize": self._last_optimize,
@@ -509,6 +624,18 @@ class MemoryStore:
             importance=float(row["importance"]),
             sensitivity=float(row["sensitivity"]),
             source=str(row["source"]),
+        )
+
+    def _row_to_timer(self, row: sqlite3.Row) -> TimerEntry:
+        cancelled_at = row["cancelled_at"]
+        return TimerEntry(
+            id=int(row["id"]),
+            created_at=float(row["created_at"]),
+            due_at=float(row["due_at"]),
+            duration_sec=float(row["duration_sec"]),
+            label=str(row["label"] or ""),
+            status=str(row["status"]),
+            cancelled_at=float(cancelled_at) if cancelled_at is not None else None,
         )
 
     @staticmethod

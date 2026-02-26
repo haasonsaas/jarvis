@@ -206,3 +206,48 @@ def test_update_task_step_rolls_back_on_plan_status_failure(tmp_path):
         assert plan_status == "open"
     finally:
         store.close()
+
+
+def test_timer_store_lifecycle(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        now = 1_700_000_000.0
+        timer_id = store.add_timer(
+            due_at=now + 120.0,
+            duration_sec=120.0,
+            label="tea",
+            created_at=now,
+        )
+        active = store.list_timers(status="active", include_expired=False, now=now)
+        assert [timer.id for timer in active] == [timer_id]
+        assert active[0].label == "tea"
+
+        assert store.cancel_timer(timer_id) is True
+        assert store.cancel_timer(timer_id) is False
+        cancelled = store.list_timers(status="cancelled")
+        assert [timer.id for timer in cancelled] == [timer_id]
+    finally:
+        store.close()
+
+
+def test_expire_timers_moves_due_rows_to_expired(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        now = 1_700_000_000.0
+        _ = store.add_timer(
+            due_at=now - 5.0,
+            duration_sec=30.0,
+            label="old",
+            created_at=now - 35.0,
+        )
+        changed = store.expire_timers(now=now)
+        assert changed == 1
+        active = store.list_timers(status="active", include_expired=False, now=now)
+        assert active == []
+        expired = store.list_timers(status="expired")
+        assert len(expired) == 1
+        counts = store.timer_counts()
+        assert counts["expired"] == 1
+        assert counts["active"] == 0
+    finally:
+        store.close()
