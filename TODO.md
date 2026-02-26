@@ -80,8 +80,8 @@ Files: `src/jarvis/tool_errors.py`, `src/jarvis/__main__.py`, `tests/test_main_l
 
 ## 5) CI and Workflow Evolution (12 items)
 
-- [ ] `C01` Add docs-only change detection gate to skip test/fault jobs when safe.
-- [ ] `C02` Add changed-scope filtering for path groups (services/tests/docs/workflows).
+- [x] `C01` Add docs-only change detection gate to skip test/fault jobs when safe.
+- [x] `C02` Add changed-scope filtering for path groups (services/tests/docs/workflows).
 - [x] `C03` Add `workflow_dispatch` inputs to CI for `lint-only`, `faults-only`, and `full`.
 - [ ] `C04` Add optional coverage XML generation in CI (non-blocking artifact).
 - [x] `C05` Upload junit/pytest artifacts for easier failure triage.
@@ -89,9 +89,9 @@ Files: `src/jarvis/tool_errors.py`, `src/jarvis/__main__.py`, `tests/test_main_l
 - [x] `C07` Pin `actions/*` usages to full commit SHA (supply-chain hardening).
 - [ ] `C08` Add a lightweight workflow to validate shell scripts (`shellcheck`) on PRs.
 - [ ] `C09` Add a security workflow (`codeql` or equivalent) with weekly schedule.
-- [ ] `C10` Add dependency update automation (`dependabot` config) for Python and GitHub Actions.
+- [x] `C10` Add dependency update automation (`dependabot` config) for Python and GitHub Actions.
 - [ ] `C11` Add a CI summary step that reports slowest tests.
-- [ ] `C12` Add explicit CI check for executable bit + shebang consistency in scripts.
+- [x] `C12` Add explicit CI check for executable bit + shebang consistency in scripts.
 
 Files: `.github/workflows/ci.yml`, `.github/workflows/workflow-sanity.yml`, `.github/dependabot.yml`, `scripts/`
 

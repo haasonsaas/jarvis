@@ -46,8 +46,153 @@ jobs:
       - name: Ruff
         run: uv run ruff check src tests
 
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+      changed_services: ${{ steps.scope.outputs.changed_services }}
+      changed_tests: ${{ steps.scope.outputs.changed_tests }}
+      changed_docs: ${{ steps.scope.outputs.changed_docs }}
+      changed_workflows: ${{ steps.scope.outputs.changed_workflows }}
+      run_tests: ${{ steps.scope.outputs.run_tests }}
+      run_faults: ${{ steps.scope.outputs.run_faults }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute changed scope
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          event="${{ github.event_name }}"
+
+          if [[ "$event" == "workflow_dispatch" ]]; then
+            full="${{ github.event.inputs.full }}"
+            lint_only="${{ github.event.inputs.lint_only }}"
+            faults_only="${{ github.event.inputs.faults_only }}"
+
+            run_tests=true
+            run_faults=true
+            if [[ "$full" == "true" ]]; then
+              run_tests=true
+              run_faults=true
+            elif [[ "$lint_only" == "true" ]]; then
+              run_tests=false
+              run_faults=false
+            elif [[ "$faults_only" == "true" ]]; then
+              run_tests=false
+              run_faults=true
+            fi
+
+            {
+              echo "docs_only=false"
+              echo "changed_services=true"
+              echo "changed_tests=true"
+              echo "changed_docs=true"
+              echo "changed_workflows=true"
+              echo "run_tests=${run_tests}"
+              echo "run_faults=${run_faults}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$event" == "push" ]]; then
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          else
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          fi
+
+          changed="$(git diff --name-only "$base" "$head" 2>/dev/null || true)"
+          if [[ -z "$changed" ]]; then
+            # Fail-safe: run all when change detection is uncertain.
+            {
+              echo "docs_only=false"
+              echo "changed_services=true"
+              echo "changed_tests=true"
+              echo "changed_docs=true"
+              echo "changed_workflows=true"
+              echo "run_tests=true"
+              echo "run_faults=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          docs_only=true
+          changed_services=false
+          changed_tests=false
+          changed_docs=false
+          changed_workflows=false
+          changed_fault_inputs=false
+
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            case "$path" in
+              docs/*|*.md|*.mdx)
+                changed_docs=true
+                ;;
+              *)
+                docs_only=false
+                ;;
+            esac
+
+            case "$path" in
+              src/*)
+                changed_services=true
+                changed_fault_inputs=true
+                ;;
+            esac
+
+            case "$path" in
+              tests/*)
+                changed_tests=true
+                changed_fault_inputs=true
+                ;;
+            esac
+
+            case "$path" in
+              .github/workflows/*)
+                changed_workflows=true
+                changed_fault_inputs=true
+                ;;
+            esac
+
+            case "$path" in
+              Makefile|scripts/test_faults.sh)
+                changed_fault_inputs=true
+                ;;
+            esac
+          done <<< "$changed"
+
+          run_tests=true
+          run_faults=true
+          if [[ "$docs_only" == "true" ]]; then
+            run_tests=false
+            run_faults=false
+          fi
+          if [[ "$changed_fault_inputs" != "true" ]]; then
+            run_faults=false
+          fi
+
+          {
+            echo "docs_only=${docs_only}"
+            echo "changed_services=${changed_services}"
+            echo "changed_tests=${changed_tests}"
+            echo "changed_docs=${changed_docs}"
+            echo "changed_workflows=${changed_workflows}"
+            echo "run_tests=${run_tests}"
+            echo "run_faults=${run_faults}"
+          } >> "$GITHUB_OUTPUT"
+
   tests:
-    if: github.event_name != 'workflow_dispatch' || github.event.inputs.full == 'true' || (github.event.inputs.lint_only != 'true' && github.event.inputs.faults_only != 'true')
+    needs: [changes]
+    if: needs.changes.outputs.run_tests == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -79,7 +224,8 @@ jobs:
           if-no-files-found: warn
 
   faults:
-    if: github.event_name != 'workflow_dispatch' || github.event.inputs.full == 'true' || github.event.inputs.lint_only != 'true'
+    needs: [changes]
+    if: needs.changes.outputs.run_faults == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

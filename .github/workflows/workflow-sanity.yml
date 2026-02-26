@@ -71,13 +71,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Ensure scripts are executable
+      - name: Ensure shell scripts are executable and use bash shebang
         run: |
           set -euo pipefail
           bad=0
           while IFS= read -r -d '' path; do
             if [ ! -x "$path" ]; then
               echo "Non-executable script: $path"
+              bad=1
+            fi
+            shebang="$(head -n 1 "$path" || true)"
+            if [ "$shebang" != "#!/usr/bin/env bash" ]; then
+              echo "Invalid shebang in $path: expected '#!/usr/bin/env bash', got '${shebang:-<empty>}'"
               bad=1
             fi
           done < <(find scripts -type f -name "*.sh" -print0)
