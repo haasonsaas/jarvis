@@ -765,6 +765,35 @@ class TestServicesTools:
         assert "created" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_todoist_add_task_invalid_json_response(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = AsyncMock()
+            mock_resp.status = 200
+            mock_resp.json = AsyncMock(side_effect=ValueError("bad json"))
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.post = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
+
+            result = await services.todoist_add_task({"content": "Buy coffee"})
+
+        assert "invalid todoist response" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_todoist_list_tasks_success(self, tmp_path):
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
@@ -811,6 +840,7 @@ class TestServicesTools:
         with patch("aiohttp.ClientSession") as mock_session_cls:
             mock_resp = AsyncMock()
             mock_resp.status = 200
+            mock_resp.json = AsyncMock(return_value={"status": 1})
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=False)
@@ -823,6 +853,76 @@ class TestServicesTools:
             result = await services.pushover_notify({"message": "hello"})
 
         assert "sent" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_pushover_notify_api_reject_with_error_list(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.pushover_api_token = "app-token"
+        cfg.pushover_user_key = "user-key"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = AsyncMock()
+            mock_resp.status = 200
+            mock_resp.json = AsyncMock(return_value={"status": 0, "errors": ["user identifier is invalid"]})
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.post = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
+
+            result = await services.pushover_notify({"message": "hello"})
+
+        assert "rejected" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_todoist_and_pushover_tools_audit_on_success(self, tmp_path, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        cfg.pushover_api_token = "app-token"
+        cfg.pushover_user_key = "user-key"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        audit_calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_post_resp = AsyncMock()
+            mock_post_resp.status = 200
+            mock_post_resp.json = AsyncMock(return_value={"id": "a1"})
+            mock_notify_resp = AsyncMock()
+            mock_notify_resp.status = 200
+            mock_notify_resp.json = AsyncMock(return_value={"status": 1})
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.post = MagicMock(side_effect=[
+                AsyncMock(__aenter__=AsyncMock(return_value=mock_post_resp), __aexit__=AsyncMock(return_value=False)),
+                AsyncMock(__aenter__=AsyncMock(return_value=mock_notify_resp), __aexit__=AsyncMock(return_value=False)),
+            ])
+            mock_session_cls.return_value = mock_session
+
+            await services.todoist_add_task({"content": "Buy coffee"})
+            await services.pushover_notify({"message": "hello"})
+
+        actions = [name for name, _ in audit_calls]
+        assert "todoist_add_task" in actions
+        assert "pushover_notify" in actions
 
     @pytest.mark.asyncio
     async def test_memory_add_ignores_non_list_tags(self, tmp_path):
@@ -1199,6 +1299,8 @@ class TestServicesTools:
         assert "tool_policy" in payload
         assert "memory" in payload
         assert "audit" in payload
+        assert "todoist_configured" in payload
+        assert "pushover_configured" in payload
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
 
     @pytest.mark.asyncio

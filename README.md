@@ -134,6 +134,8 @@ Equivalent scripts are available under `scripts/`:
 
 CI runs the same lint + test gates on every push and pull request via
 [`ci.yml`](.github/workflows/ci.yml).
+Workflow linting and YAML hygiene run via
+[`workflow-sanity.yml`](.github/workflows/workflow-sanity.yml).
 Nightly soak coverage is scheduled in
 [`nightly-soak.yml`](.github/workflows/nightly-soak.yml).
 

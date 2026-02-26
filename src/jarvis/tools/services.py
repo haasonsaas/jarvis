@@ -338,6 +338,15 @@ def _audit(action: str, details: dict) -> None:
     log.info("AUDIT: %s — %s", action, details_json)
 
 
+def _preview_text(value: Any, *, limit: int = 80) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    if limit <= 3:
+        return text[:limit]
+    return text[: limit - 3] + "..."
+
+
 def _rotate_audit_log_if_needed() -> None:
     if _audit_log_backups < 1:
         return
@@ -824,13 +833,16 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("todoist_add_task"):
         record_summary("todoist_add_task", "denied", start_time, "policy")
+        _audit("todoist_add_task", {"result": "denied", "reason": "policy"})
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _config or not str(_config.todoist_api_token).strip():
         _record_service_error("todoist_add_task", start_time, "missing_config")
+        _audit("todoist_add_task", {"result": "missing_config"})
         return {"content": [{"type": "text", "text": "Todoist not configured. Set TODOIST_API_TOKEN."}]}
     content = str(args.get("content", "")).strip()
     if not content:
         _record_service_error("todoist_add_task", start_time, "missing_fields")
+        _audit("todoist_add_task", {"result": "missing_fields"})
         return {"content": [{"type": "text", "text": "Task content required."}]}
     payload: dict[str, Any] = {"content": content}
     description = str(args.get("description", "")).strip()
@@ -859,26 +871,48 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
                     try:
                         data = await resp.json()
                     except Exception:
-                        data = {}
+                        _record_service_error("todoist_add_task", start_time, "invalid_json")
+                        _audit("todoist_add_task", {"result": "invalid_json"})
+                        return {"content": [{"type": "text", "text": "Invalid Todoist response while creating task."}]}
+                    if not isinstance(data, dict):
+                        _record_service_error("todoist_add_task", start_time, "invalid_json")
+                        _audit("todoist_add_task", {"result": "invalid_json"})
+                        return {"content": [{"type": "text", "text": "Invalid Todoist response while creating task."}]}
                     task_id = data.get("id")
                     record_summary("todoist_add_task", "ok", start_time)
+                    _audit(
+                        "todoist_add_task",
+                        {
+                            "result": "ok",
+                            "task_id": task_id,
+                            "content_preview": _preview_text(content),
+                            "content_length": len(content),
+                            "project_id": payload.get("project_id", ""),
+                        },
+                    )
                     return {"content": [{"type": "text", "text": f"Todoist task created{f' (id={task_id})' if task_id else ''}."}]}
                 if resp.status == 401:
                     _record_service_error("todoist_add_task", start_time, "auth")
+                    _audit("todoist_add_task", {"result": "auth"})
                     return {"content": [{"type": "text", "text": "Todoist authentication failed. Check TODOIST_API_TOKEN."}]}
                 _record_service_error("todoist_add_task", start_time, "http_error")
+                _audit("todoist_add_task", {"result": "http_error", "status": resp.status})
                 return {"content": [{"type": "text", "text": f"Todoist error ({resp.status}) creating task."}]}
     except asyncio.TimeoutError:
         _record_service_error("todoist_add_task", start_time, "timeout")
+        _audit("todoist_add_task", {"result": "timeout"})
         return {"content": [{"type": "text", "text": "Todoist request timed out."}]}
     except asyncio.CancelledError:
         _record_service_error("todoist_add_task", start_time, "cancelled")
+        _audit("todoist_add_task", {"result": "cancelled"})
         return {"content": [{"type": "text", "text": "Todoist request was cancelled."}]}
     except aiohttp.ClientError as e:
         _record_service_error("todoist_add_task", start_time, "network_client_error")
+        _audit("todoist_add_task", {"result": "network_client_error"})
         return {"content": [{"type": "text", "text": f"Failed to reach Todoist: {e}"}]}
     except Exception as e:
         _record_service_error("todoist_add_task", start_time, "unexpected")
+        _audit("todoist_add_task", {"result": "unexpected"})
         return {"content": [{"type": "text", "text": f"Unexpected Todoist error: {e}"}]}
 
 
@@ -886,9 +920,11 @@ async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("todoist_list_tasks"):
         record_summary("todoist_list_tasks", "denied", start_time, "policy")
+        _audit("todoist_list_tasks", {"result": "denied", "reason": "policy"})
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _config or not str(_config.todoist_api_token).strip():
         _record_service_error("todoist_list_tasks", start_time, "missing_config")
+        _audit("todoist_list_tasks", {"result": "missing_config"})
         return {"content": [{"type": "text", "text": "Todoist not configured. Set TODOIST_API_TOKEN."}]}
     limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=50)
     headers = {"Authorization": f"Bearer {str(_config.todoist_api_token).strip()}"}
@@ -911,26 +947,49 @@ async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
                     tasks = data[:limit]
                     if not tasks:
                         record_summary("todoist_list_tasks", "empty", start_time)
+                        _audit(
+                            "todoist_list_tasks",
+                            {
+                                "result": "empty",
+                                "limit": limit,
+                                "project_id": params.get("project_id", ""),
+                            },
+                        )
                         return {"content": [{"type": "text", "text": "No Todoist tasks found."}]}
                     lines = [f"- {str(t.get('content', '')).strip() or '(untitled)'}" for t in tasks]
                     record_summary("todoist_list_tasks", "ok", start_time)
+                    _audit(
+                        "todoist_list_tasks",
+                        {
+                            "result": "ok",
+                            "count": len(tasks),
+                            "limit": limit,
+                            "project_id": params.get("project_id", ""),
+                        },
+                    )
                     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
                 if resp.status == 401:
                     _record_service_error("todoist_list_tasks", start_time, "auth")
+                    _audit("todoist_list_tasks", {"result": "auth"})
                     return {"content": [{"type": "text", "text": "Todoist authentication failed. Check TODOIST_API_TOKEN."}]}
                 _record_service_error("todoist_list_tasks", start_time, "http_error")
+                _audit("todoist_list_tasks", {"result": "http_error", "status": resp.status})
                 return {"content": [{"type": "text", "text": f"Todoist error ({resp.status}) listing tasks."}]}
     except asyncio.TimeoutError:
         _record_service_error("todoist_list_tasks", start_time, "timeout")
+        _audit("todoist_list_tasks", {"result": "timeout"})
         return {"content": [{"type": "text", "text": "Todoist request timed out."}]}
     except asyncio.CancelledError:
         _record_service_error("todoist_list_tasks", start_time, "cancelled")
+        _audit("todoist_list_tasks", {"result": "cancelled"})
         return {"content": [{"type": "text", "text": "Todoist request was cancelled."}]}
     except aiohttp.ClientError as e:
         _record_service_error("todoist_list_tasks", start_time, "network_client_error")
+        _audit("todoist_list_tasks", {"result": "network_client_error"})
         return {"content": [{"type": "text", "text": f"Failed to reach Todoist: {e}"}]}
     except Exception as e:
         _record_service_error("todoist_list_tasks", start_time, "unexpected")
+        _audit("todoist_list_tasks", {"result": "unexpected"})
         return {"content": [{"type": "text", "text": f"Unexpected Todoist error: {e}"}]}
 
 
@@ -938,13 +997,16 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("pushover_notify"):
         record_summary("pushover_notify", "denied", start_time, "policy")
+        _audit("pushover_notify", {"result": "denied", "reason": "policy"})
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     if not _config or not str(_config.pushover_api_token).strip() or not str(_config.pushover_user_key).strip():
         _record_service_error("pushover_notify", start_time, "missing_config")
+        _audit("pushover_notify", {"result": "missing_config"})
         return {"content": [{"type": "text", "text": "Pushover not configured. Set PUSHOVER_API_TOKEN and PUSHOVER_USER_KEY."}]}
     message = str(args.get("message", "")).strip()
     if not message:
         _record_service_error("pushover_notify", start_time, "missing_fields")
+        _audit("pushover_notify", {"result": "missing_fields"})
         return {"content": [{"type": "text", "text": "Notification message required."}]}
     title = str(args.get("title", "Jarvis")).strip() or "Jarvis"
     priority = _as_int(args.get("priority", 0), 0, minimum=-2, maximum=2)
@@ -960,24 +1022,58 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post("https://api.pushover.net/1/messages.json", data=payload) as resp:
                 if resp.status == 200:
+                    try:
+                        body = await resp.json()
+                    except Exception:
+                        _record_service_error("pushover_notify", start_time, "invalid_json")
+                        _audit("pushover_notify", {"result": "invalid_json"})
+                        return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
+                    if not isinstance(body, dict):
+                        _record_service_error("pushover_notify", start_time, "invalid_json")
+                        _audit("pushover_notify", {"result": "invalid_json"})
+                        return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
+                    if int(body.get("status", 0)) != 1:
+                        errors = body.get("errors")
+                        error_text = ""
+                        if isinstance(errors, list):
+                            error_text = "; ".join(str(item) for item in errors if str(item).strip())
+                        _record_service_error("pushover_notify", start_time, "http_error")
+                        _audit("pushover_notify", {"result": "api_error", "error": error_text})
+                        return {"content": [{"type": "text", "text": f"Pushover rejected notification{f': {error_text}' if error_text else '.'}"}]}
                     record_summary("pushover_notify", "ok", start_time)
+                    _audit(
+                        "pushover_notify",
+                        {
+                            "result": "ok",
+                            "title": title,
+                            "priority": priority,
+                            "message_preview": _preview_text(message),
+                            "message_length": len(message),
+                        },
+                    )
                     return {"content": [{"type": "text", "text": "Notification sent."}]}
-                if resp.status == 401:
+                if resp.status in {400, 401}:
                     _record_service_error("pushover_notify", start_time, "auth")
+                    _audit("pushover_notify", {"result": "auth", "status": resp.status})
                     return {"content": [{"type": "text", "text": "Pushover authentication failed."}]}
                 _record_service_error("pushover_notify", start_time, "http_error")
+                _audit("pushover_notify", {"result": "http_error", "status": resp.status})
                 return {"content": [{"type": "text", "text": f"Pushover error ({resp.status}) sending notification."}]}
     except asyncio.TimeoutError:
         _record_service_error("pushover_notify", start_time, "timeout")
+        _audit("pushover_notify", {"result": "timeout"})
         return {"content": [{"type": "text", "text": "Pushover request timed out."}]}
     except asyncio.CancelledError:
         _record_service_error("pushover_notify", start_time, "cancelled")
+        _audit("pushover_notify", {"result": "cancelled"})
         return {"content": [{"type": "text", "text": "Pushover request was cancelled."}]}
     except aiohttp.ClientError as e:
         _record_service_error("pushover_notify", start_time, "network_client_error")
+        _audit("pushover_notify", {"result": "network_client_error"})
         return {"content": [{"type": "text", "text": f"Failed to reach Pushover: {e}"}]}
     except Exception as e:
         _record_service_error("pushover_notify", start_time, "unexpected")
+        _audit("pushover_notify", {"result": "unexpected"})
         return {"content": [{"type": "text", "text": f"Unexpected Pushover error: {e}"}]}
 
 
@@ -1020,6 +1116,12 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
     status = {
         "local_time": _now_local(),
         "home_assistant_configured": bool(_config and _config.has_home_assistant),
+        "todoist_configured": bool(_config and str(_config.todoist_api_token).strip()),
+        "pushover_configured": bool(
+            _config
+            and str(_config.pushover_api_token).strip()
+            and str(_config.pushover_user_key).strip()
+        ),
         "motion_enabled": bool(_config and _config.motion_enabled),
         "home_tools_enabled": bool(_config and _config.home_enabled),
         "memory_enabled": bool(_config and _config.memory_enabled),
