@@ -114,3 +114,13 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
+
+---
+
+## 8) Documentation Accuracy
+
+### 8.1 Runtime path and tool map alignment (`P2`)
+- [x] Correct audit log path in README structure to `~/.jarvis/audit.jsonl`.
+- [x] Update service tool description line to reflect current integrations.
+- Files:
+  - `README.md`

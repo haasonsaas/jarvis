@@ -145,7 +145,7 @@ Nightly soak coverage is scheduled in
 jarvis/
 ├── pyproject.toml
 ├── .env.example
-├── jarvis_audit.jsonl         # Auto-created audit log
+├── ~/.jarvis/audit.jsonl      # Auto-created audit log (runtime path)
 ├── src/
 │   └── jarvis/
 │       ├── __main__.py        # Entry point + conversation loop
@@ -154,7 +154,7 @@ jarvis/
 │       ├── presence.py        # 30Hz presence loop (the soul)
 │       ├── tools/
 │       │   ├── robot.py       # embody, play_emotion, play_dance
-│       │   └── services.py    # smart_home (with dry-run + audit)
+│       │   └── services.py    # smart_home + Todoist + Pushover + memory/planning tools
 │       ├── audio/
 │       │   ├── vad.py         # Silero voice activity detection
 │       │   ├── stt.py         # faster-whisper transcription
