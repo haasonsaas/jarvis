@@ -122,6 +122,8 @@ class TestConfig:
         monkeypatch.setenv("DOA_TIMEOUT", "nan")
         monkeypatch.setenv("DOA_CHANGE_THRESHOLD", "inf")
         monkeypatch.setenv("MEMORY_SEARCH_LIMIT", "oops")
+        monkeypatch.setenv("TODOIST_TIMEOUT_SEC", "0")
+        monkeypatch.setenv("PUSHOVER_TIMEOUT_SEC", "-5")
         monkeypatch.setenv("BACKCHANNEL_STYLE", "LOUD")
         monkeypatch.setenv("PERSONA_STYLE", "chatty")
         monkeypatch.setenv("HOME_ENABLED", "maybe")
@@ -136,6 +138,8 @@ class TestConfig:
         assert "DOA_TIMEOUT invalid" in text
         assert "DOA_CHANGE_THRESHOLD invalid" in text
         assert "MEMORY_SEARCH_LIMIT invalid" in text
+        assert "TODOIST_TIMEOUT_SEC invalid" in text
+        assert "PUSHOVER_TIMEOUT_SEC invalid" in text
         assert "BACKCHANNEL_STYLE invalid" in text
         assert "PERSONA_STYLE invalid" in text
         assert "HOME_ENABLED invalid boolean" in text
@@ -172,6 +176,26 @@ class TestConfig:
         c = Config()
         assert c.doa_timeout == 1.0
         assert c.doa_change_threshold == 0.04
+
+    def test_timeout_env_values_fall_back_to_defaults_when_invalid(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("TODOIST_TIMEOUT_SEC", "0")
+        monkeypatch.setenv("PUSHOVER_TIMEOUT_SEC", "-5")
+        from jarvis.config import Config
+
+        c = Config()
+        assert c.todoist_timeout_sec == 10.0
+        assert c.pushover_timeout_sec == 10.0
+
+    def test_timeout_env_values_can_be_set(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("TODOIST_TIMEOUT_SEC", "7.5")
+        monkeypatch.setenv("PUSHOVER_TIMEOUT_SEC", "12")
+        from jarvis.config import Config
+
+        c = Config()
+        assert c.todoist_timeout_sec == 7.5
+        assert c.pushover_timeout_sec == 12.0
 
     def test_startup_warning_for_partial_home_assistant_config(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

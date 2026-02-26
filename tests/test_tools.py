@@ -5,7 +5,7 @@ import json
 import logging
 from pathlib import Path
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 
@@ -1038,6 +1038,110 @@ class TestServicesTools:
 
         assert "invalid todoist response" in result["content"][0]["text"].lower()
 
+    def test_retry_backoff_delay_bounds_and_jitter(self):
+        from jarvis.tools import services
+
+        delay_low = services._retry_backoff_delay(0, jitter_sample=0.0)
+        delay_mid = services._retry_backoff_delay(0, jitter_sample=0.5)
+        delay_high = services._retry_backoff_delay(0, jitter_sample=1.0)
+        delay_capped = services._retry_backoff_delay(10, jitter_sample=0.5)
+
+        assert 0.0 <= delay_low <= delay_mid <= delay_high
+        assert delay_capped <= services.RETRY_MAX_DELAY_SEC
+
+    @pytest.mark.asyncio
+    async def test_todoist_list_tasks_retries_timeout_then_succeeds(self, tmp_path, monkeypatch, aiohttp_response):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        timeout_ctx = AsyncMock()
+        timeout_ctx.__aenter__ = AsyncMock(side_effect=asyncio.TimeoutError)
+        timeout_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        success_resp = aiohttp_response(status=200, json_data=[{"content": "Buy coffee"}])
+        success_ctx = AsyncMock()
+        success_ctx.__aenter__ = AsyncMock(return_value=success_resp)
+        success_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        session = AsyncMock()
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        session.get = MagicMock(side_effect=[timeout_ctx, success_ctx])
+
+        sleep_calls: list[float] = []
+
+        async def _fake_sleep(seconds: float) -> None:
+            sleep_calls.append(seconds)
+
+        monkeypatch.setattr("jarvis.tools.services.asyncio.sleep", _fake_sleep)
+        with patch("aiohttp.ClientSession", return_value=session):
+            result = await services.todoist_list_tasks({"limit": 1})
+
+        assert "buy coffee" in result["content"][0]["text"].lower()
+        assert len(sleep_calls) == 1
+        assert session.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_todoist_add_task_rejects_invalid_labels_type(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await services.todoist_add_task({"content": "Buy coffee", "labels": "personal"})
+
+        assert "labels must be a list" in result["content"][0]["text"].lower()
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_todoist_add_task_rejects_invalid_labels_entries(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await services.todoist_add_task({"content": "Buy coffee", "labels": ["ok", ""]})
+
+        assert "labels must be a list" in result["content"][0]["text"].lower()
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_todoist_add_task_rejects_invalid_priority(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await services.todoist_add_task({"content": "Buy coffee", "priority": 99})
+
+        assert "priority must be an integer between 1 and 4" in result["content"][0]["text"].lower()
+        mock_session_cls.assert_not_called()
+
     @pytest.mark.asyncio
     async def test_todoist_list_tasks_success(self, tmp_path, aiohttp_response, aiohttp_session_mock):
         from jarvis.config import Config
@@ -1060,6 +1164,84 @@ class TestServicesTools:
         text = result["content"][0]["text"].lower()
         assert "buy coffee" in text
         assert "call mom" in text
+
+    @pytest.mark.asyncio
+    async def test_todoist_list_tasks_verbose_format(self, tmp_path, aiohttp_response, aiohttp_session_mock):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = aiohttp_response(
+                status=200,
+                json_data=[
+                    {
+                        "id": "t-1",
+                        "content": "Buy coffee",
+                        "priority": 4,
+                        "labels": ["errands", "home"],
+                        "due": {"string": "tomorrow morning"},
+                    }
+                ],
+            )
+            mock_session = aiohttp_session_mock(get=mock_resp)
+            mock_session_cls.return_value = mock_session
+
+            result = await services.todoist_list_tasks({"limit": 1, "format": "verbose"})
+
+        text = result["content"][0]["text"].lower()
+        assert "buy coffee" in text
+        assert "id=t-1" in text
+        assert "p=4" in text
+        assert "due=tomorrow morning" in text
+        assert "labels=errands,home" in text
+
+    @pytest.mark.asyncio
+    async def test_todoist_list_tasks_rejects_invalid_format(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await services.todoist_list_tasks({"format": "detailed"})
+
+        assert "format must be 'short' or 'verbose'" in result["content"][0]["text"].lower()
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_todoist_list_tasks_uses_configured_timeout(self, tmp_path, aiohttp_response, aiohttp_session_mock):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        cfg.todoist_timeout_sec = 3.5
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = aiohttp_response(status=200, json_data=[{"content": "Buy coffee"}])
+            mock_session = aiohttp_session_mock(get=mock_resp)
+            mock_session_cls.return_value = mock_session
+
+            await services.todoist_list_tasks({"limit": 1})
+
+        timeout_arg = mock_session_cls.call_args.kwargs["timeout"]
+        assert timeout_arg.total == 3.5
 
     @pytest.mark.asyncio
     async def test_todoist_list_tasks_rejects_non_object_entries(self, tmp_path, aiohttp_response, aiohttp_session_mock):
@@ -1103,6 +1285,49 @@ class TestServicesTools:
             result = await services.pushover_notify({"message": "hello"})
 
         assert "sent" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_pushover_notify_rejects_invalid_priority(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.pushover_api_token = "app-token"
+        cfg.pushover_user_key = "user-key"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await services.pushover_notify({"message": "hello", "priority": 9})
+
+        assert "priority must be an integer between -2 and 2" in result["content"][0]["text"].lower()
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pushover_notify_uses_configured_timeout(self, tmp_path, aiohttp_response, aiohttp_session_mock):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.pushover_api_token = "app-token"
+        cfg.pushover_user_key = "user-key"
+        cfg.pushover_timeout_sec = 4.25
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = aiohttp_response(status=200, json_data={"status": 1})
+            mock_session = aiohttp_session_mock(post=mock_resp)
+            mock_session_cls.return_value = mock_session
+
+            await services.pushover_notify({"message": "hello"})
+
+        timeout_arg = mock_session_cls.call_args.kwargs["timeout"]
+        assert timeout_arg.total == 4.25
 
     @pytest.mark.asyncio
     async def test_pushover_notify_api_reject_with_error_list(self, tmp_path, aiohttp_response, aiohttp_session_mock):

@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import math
+import random
 import time
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,10 @@ HA_MUTATING_ALLOWED_ACTIONS: dict[str, set[str]] = {
     "media_player": {"turn_on", "turn_off", "toggle", "volume_set", "media_play", "media_pause", "play_media"},
     "alarm_control_panel": {"arm_home", "arm_away", "disarm"},
 }
+TODOIST_LIST_MAX_RETRIES = 2
+RETRY_BASE_DELAY_SEC = 0.2
+RETRY_MAX_DELAY_SEC = 1.0
+RETRY_JITTER_RATIO = 0.2
 
 _config: Config | None = None
 _memory: MemoryStore | None = None
@@ -55,6 +60,8 @@ _home_permission_profile: str = "control"
 _home_require_confirm_execute: bool = False
 _todoist_permission_profile: str = "control"
 _notification_permission_profile: str = "allow"
+_todoist_timeout_sec: float = 10.0
+_pushover_timeout_sec: float = 10.0
 _ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 SENSITIVE_AUDIT_KEY_TOKENS = {
     "code",
@@ -127,6 +134,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "limit": {"type": "integer"},
+            "format": {"type": "string", "description": "short (default) or verbose"},
         },
     },
     "pushover_notify": {
@@ -284,6 +292,7 @@ def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _config, _memory, _audit_log_max_bytes, _audit_log_backups
     global _home_permission_profile, _home_require_confirm_execute, _todoist_permission_profile, _notification_permission_profile
+    global _todoist_timeout_sec, _pushover_timeout_sec
     _config = config
     _memory = memory_store
     _audit_log_max_bytes = int(config.audit_log_max_bytes)
@@ -300,6 +309,8 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     ).strip().lower()
     if _notification_permission_profile not in {"off", "allow"}:
         _notification_permission_profile = "allow"
+    _todoist_timeout_sec = float(getattr(config, "todoist_timeout_sec", 10.0))
+    _pushover_timeout_sec = float(getattr(config, "pushover_timeout_sec", 10.0))
     _action_last_seen.clear()
     _ha_state_cache.clear()
     global _tool_allowlist, _tool_denylist
@@ -512,6 +523,22 @@ def _as_float(
     if maximum is not None:
         parsed = min(maximum, parsed)
     return parsed
+
+
+def _retry_backoff_delay(
+    attempt_index: int,
+    *,
+    base_delay_sec: float = RETRY_BASE_DELAY_SEC,
+    max_delay_sec: float = RETRY_MAX_DELAY_SEC,
+    jitter_ratio: float = RETRY_JITTER_RATIO,
+    jitter_sample: float | None = None,
+) -> float:
+    step = max(0, int(attempt_index))
+    base_delay = min(max_delay_sec, base_delay_sec * (2 ** step))
+    sample = random.random() if jitter_sample is None else float(jitter_sample)
+    sample = min(1.0, max(0.0, sample))
+    jitter = base_delay * jitter_ratio * ((sample * 2.0) - 1.0)
+    return max(0.0, base_delay + jitter)
 
 
 def _as_str_list(value: Any) -> list[str] | None:
@@ -930,11 +957,33 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
     due_string = str(args.get("due_string", "")).strip()
     if due_string:
         payload["due_string"] = due_string
-    priority = _as_int(args.get("priority", 1), 1, minimum=1, maximum=4)
+    priority_raw = args.get("priority", 1)
+    priority = _as_exact_int(priority_raw)
+    if priority is None or priority < 1 or priority > 4:
+        _record_service_error("todoist_add_task", start_time, "invalid_data")
+        _audit("todoist_add_task", {"result": "invalid_data", "field": "priority"})
+        return {"content": [{"type": "text", "text": "Todoist priority must be an integer between 1 and 4."}]}
     payload["priority"] = priority
-    labels = _as_str_list(args.get("labels"))
-    if labels:
-        payload["labels"] = labels
+    labels_raw = args.get("labels")
+    if labels_raw is not None:
+        if not isinstance(labels_raw, list):
+            _record_service_error("todoist_add_task", start_time, "invalid_data")
+            _audit("todoist_add_task", {"result": "invalid_data", "field": "labels"})
+            return {"content": [{"type": "text", "text": "Todoist labels must be a list of non-empty strings."}]}
+        labels: list[str] = []
+        for item in labels_raw:
+            if not isinstance(item, str):
+                _record_service_error("todoist_add_task", start_time, "invalid_data")
+                _audit("todoist_add_task", {"result": "invalid_data", "field": "labels"})
+                return {"content": [{"type": "text", "text": "Todoist labels must be a list of non-empty strings."}]}
+            cleaned = item.strip()
+            if not cleaned:
+                _record_service_error("todoist_add_task", start_time, "invalid_data")
+                _audit("todoist_add_task", {"result": "invalid_data", "field": "labels"})
+                return {"content": [{"type": "text", "text": "Todoist labels must be a list of non-empty strings."}]}
+            labels.append(cleaned)
+        if labels:
+            payload["labels"] = labels
     if str(getattr(_config, "todoist_project_id", "")).strip():
         payload["project_id"] = str(_config.todoist_project_id).strip()
 
@@ -942,7 +991,7 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
         "Authorization": f"Bearer {str(_config.todoist_api_token).strip()}",
         "Content-Type": "application/json",
     }
-    timeout = aiohttp.ClientTimeout(total=10)
+    timeout = aiohttp.ClientTimeout(total=_todoist_timeout_sec)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post("https://api.todoist.com/rest/v2/tasks", headers=headers, json=payload) as resp:
@@ -1005,74 +1054,123 @@ async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
         _audit("todoist_list_tasks", {"result": "missing_config"})
         return {"content": [{"type": "text", "text": "Todoist not configured. Set TODOIST_API_TOKEN."}]}
     limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=50)
+    list_format = str(args.get("format", "short")).strip().lower() or "short"
+    if list_format not in {"short", "verbose"}:
+        _record_service_error("todoist_list_tasks", start_time, "invalid_data")
+        _audit("todoist_list_tasks", {"result": "invalid_data", "field": "format"})
+        return {"content": [{"type": "text", "text": "Todoist list format must be 'short' or 'verbose'."}]}
     headers = {"Authorization": f"Bearer {str(_config.todoist_api_token).strip()}"}
     params: dict[str, str] = {}
     if str(getattr(_config, "todoist_project_id", "")).strip():
         params["project_id"] = str(_config.todoist_project_id).strip()
-    timeout = aiohttp.ClientTimeout(total=10)
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get("https://api.todoist.com/rest/v2/tasks", headers=headers, params=params or None) as resp:
-                if resp.status == 200:
-                    try:
-                        data = await resp.json()
-                    except Exception:
-                        _record_service_error("todoist_list_tasks", start_time, "invalid_json")
-                        return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
-                    if not isinstance(data, list):
-                        _record_service_error("todoist_list_tasks", start_time, "invalid_json")
-                        return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
-                    if any(not isinstance(item, dict) for item in data):
-                        _record_service_error("todoist_list_tasks", start_time, "invalid_json")
-                        _audit("todoist_list_tasks", {"result": "invalid_json"})
-                        return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
-                    tasks = data[:limit]
-                    if not tasks:
-                        record_summary("todoist_list_tasks", "empty", start_time)
+    timeout = aiohttp.ClientTimeout(total=_todoist_timeout_sec)
+    attempt = 0
+    while True:
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get("https://api.todoist.com/rest/v2/tasks", headers=headers, params=params or None) as resp:
+                    if resp.status == 200:
+                        try:
+                            data = await resp.json()
+                        except Exception:
+                            _record_service_error("todoist_list_tasks", start_time, "invalid_json")
+                            return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
+                        if not isinstance(data, list):
+                            _record_service_error("todoist_list_tasks", start_time, "invalid_json")
+                            return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
+                        if any(not isinstance(item, dict) for item in data):
+                            _record_service_error("todoist_list_tasks", start_time, "invalid_json")
+                            _audit("todoist_list_tasks", {"result": "invalid_json"})
+                            return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
+                        tasks = data[:limit]
+                        if not tasks:
+                            record_summary("todoist_list_tasks", "empty", start_time)
+                            _audit(
+                                "todoist_list_tasks",
+                                {
+                                    "result": "empty",
+                                    "limit": limit,
+                                    "format": list_format,
+                                    "project_id": params.get("project_id", ""),
+                                },
+                            )
+                            return {"content": [{"type": "text", "text": "No Todoist tasks found."}]}
+
+                        lines: list[str] = []
+                        for task in tasks:
+                            content = str(task.get("content", "")).strip() or "(untitled)"
+                            if list_format == "short":
+                                lines.append(f"- {content}")
+                                continue
+                            due_text = ""
+                            due_payload = task.get("due")
+                            if isinstance(due_payload, dict):
+                                due_text = str(
+                                    due_payload.get("string")
+                                    or due_payload.get("date")
+                                    or due_payload.get("datetime")
+                                    or ""
+                                ).strip()
+                            labels = task.get("labels")
+                            labels_text = ""
+                            if isinstance(labels, list):
+                                cleaned_labels = [str(item).strip() for item in labels if str(item).strip()]
+                                if cleaned_labels:
+                                    labels_text = ",".join(cleaned_labels)
+                            meta: list[str] = []
+                            if str(task.get("id", "")).strip():
+                                meta.append(f"id={task['id']}")
+                            if _as_exact_int(task.get("priority")) is not None:
+                                meta.append(f"p={int(task['priority'])}")
+                            if due_text:
+                                meta.append(f"due={due_text}")
+                            if labels_text:
+                                meta.append(f"labels={labels_text}")
+                            lines.append(f"- {content}" + (f" ({'; '.join(meta)})" if meta else ""))
+
+                        record_summary("todoist_list_tasks", "ok", start_time)
                         _audit(
                             "todoist_list_tasks",
                             {
-                                "result": "empty",
+                                "result": "ok",
+                                "count": len(tasks),
                                 "limit": limit,
+                                "format": list_format,
                                 "project_id": params.get("project_id", ""),
                             },
                         )
-                        return {"content": [{"type": "text", "text": "No Todoist tasks found."}]}
-                    lines = [f"- {str(t.get('content', '')).strip() or '(untitled)'}" for t in tasks]
-                    record_summary("todoist_list_tasks", "ok", start_time)
-                    _audit(
-                        "todoist_list_tasks",
-                        {
-                            "result": "ok",
-                            "count": len(tasks),
-                            "limit": limit,
-                            "project_id": params.get("project_id", ""),
-                        },
-                    )
-                    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
-                if resp.status == 401:
-                    _record_service_error("todoist_list_tasks", start_time, "auth")
-                    _audit("todoist_list_tasks", {"result": "auth"})
-                    return {"content": [{"type": "text", "text": "Todoist authentication failed. Check TODOIST_API_TOKEN."}]}
-                _record_service_error("todoist_list_tasks", start_time, "http_error")
-                _audit("todoist_list_tasks", {"result": "http_error", "status": resp.status})
-                return {"content": [{"type": "text", "text": f"Todoist error ({resp.status}) listing tasks."}]}
-    except asyncio.TimeoutError:
-        _record_service_error("todoist_list_tasks", start_time, "timeout")
-        _audit("todoist_list_tasks", {"result": "timeout"})
-        return {"content": [{"type": "text", "text": "Todoist request timed out."}]}
-    except asyncio.CancelledError:
-        _record_service_error("todoist_list_tasks", start_time, "cancelled")
-        _audit("todoist_list_tasks", {"result": "cancelled"})
-        return {"content": [{"type": "text", "text": "Todoist request was cancelled."}]}
-    except aiohttp.ClientError as e:
-        _record_service_error("todoist_list_tasks", start_time, "network_client_error")
-        _audit("todoist_list_tasks", {"result": "network_client_error"})
-        return {"content": [{"type": "text", "text": f"Failed to reach Todoist: {e}"}]}
-    except Exception as e:
-        _record_service_error("todoist_list_tasks", start_time, "unexpected")
-        _audit("todoist_list_tasks", {"result": "unexpected"})
-        return {"content": [{"type": "text", "text": f"Unexpected Todoist error: {e}"}]}
+                        return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+                    if resp.status == 401:
+                        _record_service_error("todoist_list_tasks", start_time, "auth")
+                        _audit("todoist_list_tasks", {"result": "auth"})
+                        return {"content": [{"type": "text", "text": "Todoist authentication failed. Check TODOIST_API_TOKEN."}]}
+                    _record_service_error("todoist_list_tasks", start_time, "http_error")
+                    _audit("todoist_list_tasks", {"result": "http_error", "status": resp.status})
+                    return {"content": [{"type": "text", "text": f"Todoist error ({resp.status}) listing tasks."}]}
+        except asyncio.TimeoutError:
+            if attempt < TODOIST_LIST_MAX_RETRIES:
+                await asyncio.sleep(_retry_backoff_delay(attempt))
+                attempt += 1
+                continue
+            _record_service_error("todoist_list_tasks", start_time, "timeout")
+            _audit("todoist_list_tasks", {"result": "timeout"})
+            return {"content": [{"type": "text", "text": "Todoist request timed out."}]}
+        except asyncio.CancelledError:
+            _record_service_error("todoist_list_tasks", start_time, "cancelled")
+            _audit("todoist_list_tasks", {"result": "cancelled"})
+            return {"content": [{"type": "text", "text": "Todoist request was cancelled."}]}
+        except aiohttp.ClientError as e:
+            if attempt < TODOIST_LIST_MAX_RETRIES:
+                await asyncio.sleep(_retry_backoff_delay(attempt))
+                attempt += 1
+                continue
+            _record_service_error("todoist_list_tasks", start_time, "network_client_error")
+            _audit("todoist_list_tasks", {"result": "network_client_error"})
+            return {"content": [{"type": "text", "text": f"Failed to reach Todoist: {e}"}]}
+        except Exception as e:
+            _record_service_error("todoist_list_tasks", start_time, "unexpected")
+            _audit("todoist_list_tasks", {"result": "unexpected"})
+            return {"content": [{"type": "text", "text": f"Unexpected Todoist error: {e}"}]}
 
 
 async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
@@ -1091,7 +1189,12 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
         _audit("pushover_notify", {"result": "missing_fields"})
         return {"content": [{"type": "text", "text": "Notification message required."}]}
     title = str(args.get("title", "Jarvis")).strip() or "Jarvis"
-    priority = _as_int(args.get("priority", 0), 0, minimum=-2, maximum=2)
+    priority_raw = args.get("priority", 0)
+    priority = _as_exact_int(priority_raw)
+    if priority is None or priority < -2 or priority > 2:
+        _record_service_error("pushover_notify", start_time, "invalid_data")
+        _audit("pushover_notify", {"result": "invalid_data", "field": "priority"})
+        return {"content": [{"type": "text", "text": "Pushover priority must be an integer between -2 and 2."}]}
     payload = {
         "token": str(_config.pushover_api_token).strip(),
         "user": str(_config.pushover_user_key).strip(),
@@ -1099,7 +1202,7 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
         "title": title,
         "priority": priority,
     }
-    timeout = aiohttp.ClientTimeout(total=10)
+    timeout = aiohttp.ClientTimeout(total=_pushover_timeout_sec)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post("https://api.pushover.net/1/messages.json", data=payload) as resp:

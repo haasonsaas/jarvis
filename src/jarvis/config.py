@@ -41,6 +41,13 @@ def _env_float(name: str, default: float) -> float:
     return parsed
 
 
+def _env_positive_float(name: str, default: float) -> float:
+    parsed = _env_float(name, default)
+    if parsed <= 0.0:
+        return default
+    return parsed
+
+
 def _env_int(name: str, default: int) -> int:
     val = os.environ.get(name)
     if val is None or not val.strip():
@@ -120,9 +127,11 @@ class Config:
     todoist_api_token: str = field(default_factory=lambda: os.environ.get("TODOIST_API_TOKEN", ""))
     todoist_project_id: str = field(default_factory=lambda: os.environ.get("TODOIST_PROJECT_ID", ""))
     todoist_permission_profile: str = field(default_factory=lambda: os.environ.get("TODOIST_PERMISSION_PROFILE", "control"))
+    todoist_timeout_sec: float = field(default_factory=lambda: _env_positive_float("TODOIST_TIMEOUT_SEC", 10.0))
     pushover_api_token: str = field(default_factory=lambda: os.environ.get("PUSHOVER_API_TOKEN", ""))
     pushover_user_key: str = field(default_factory=lambda: os.environ.get("PUSHOVER_USER_KEY", ""))
     notification_permission_profile: str = field(default_factory=lambda: os.environ.get("NOTIFICATION_PERMISSION_PROFILE", "allow"))
+    pushover_timeout_sec: float = field(default_factory=lambda: _env_positive_float("PUSHOVER_TIMEOUT_SEC", 10.0))
 
     # Quick toggles
     motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)
@@ -159,6 +168,10 @@ class Config:
             raise ValueError("audit_log_max_bytes must be > 0")
         if self.audit_log_backups < 1:
             raise ValueError("audit_log_backups must be >= 1")
+        if self.todoist_timeout_sec <= 0.0:
+            raise ValueError("todoist_timeout_sec must be > 0")
+        if self.pushover_timeout_sec <= 0.0:
+            raise ValueError("pushover_timeout_sec must be > 0")
         self.startup_warnings = self._collect_startup_warnings()
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
@@ -261,16 +274,20 @@ class Config:
             ("MEMORY_SEARCH_LIMIT", "int", str(self.memory_search_limit)),
             ("AUDIT_LOG_MAX_BYTES", "int", str(self.audit_log_max_bytes)),
             ("AUDIT_LOG_BACKUPS", "int", str(self.audit_log_backups)),
+            ("TODOIST_TIMEOUT_SEC", "positive_float", str(self.todoist_timeout_sec)),
+            ("PUSHOVER_TIMEOUT_SEC", "positive_float", str(self.pushover_timeout_sec)),
         ]
         for name, kind, fallback in checks:
             raw = os.environ.get(name)
             if raw is None or not raw.strip():
                 continue
             try:
-                if kind == "float":
+                if kind in {"float", "positive_float"}:
                     parsed = float(raw)
                     if not math.isfinite(parsed):
                         raise ValueError("non-finite float")
+                    if kind == "positive_float" and parsed <= 0.0:
+                        raise ValueError("non-positive float")
                 else:
                     int(raw)
             except ValueError:

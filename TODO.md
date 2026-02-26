@@ -33,16 +33,16 @@ Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools
 
 ## 2) External Integration Reliability (10 items)
 
-- [ ] `I01` Add bounded retry for `todoist_list_tasks` on transient network/timeout errors.
-- [ ] `I02` Add jitter/backoff helper and tests for retry timing logic (unit-level, not sleep-heavy).
-- [ ] `I03` Add explicit invalid-data checks for Todoist `labels` type/entries.
-- [ ] `I04` Add explicit invalid-data checks for Todoist `priority` type/range before HTTP.
-- [ ] `I05` Add explicit invalid-data checks for Pushover `priority` type/range before HTTP.
-- [ ] `I06` Add optional default timeout env vars for Todoist/Pushover requests.
-- [ ] `I07` Add config normalization and warnings for invalid timeout env var values.
-- [ ] `I08` Add tests for timeout env var fallback behavior.
-- [ ] `I09` Add richer list output formatting option (short vs verbose) for Todoist task listing.
-- [ ] `I10` Add tests for short/verbose list formatting modes.
+- [x] `I01` Add bounded retry for `todoist_list_tasks` on transient network/timeout errors.
+- [x] `I02` Add jitter/backoff helper and tests for retry timing logic (unit-level, not sleep-heavy).
+- [x] `I03` Add explicit invalid-data checks for Todoist `labels` type/entries.
+- [x] `I04` Add explicit invalid-data checks for Todoist `priority` type/range before HTTP.
+- [x] `I05` Add explicit invalid-data checks for Pushover `priority` type/range before HTTP.
+- [x] `I06` Add optional default timeout env vars for Todoist/Pushover requests.
+- [x] `I07` Add config normalization and warnings for invalid timeout env var values.
+- [x] `I08` Add tests for timeout env var fallback behavior.
+- [x] `I09` Add richer list output formatting option (short vs verbose) for Todoist task listing.
+- [x] `I10` Add tests for short/verbose list formatting modes.
 
 Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools.py`, `tests/test_config.py`
 

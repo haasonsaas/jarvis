@@ -12,6 +12,7 @@ This runbook covers operational setup and policy behavior for Todoist and Pushov
 - `TODOIST_API_TOKEN` (required for all Todoist calls)
 - `TODOIST_PROJECT_ID` (optional: scope list/add to a project)
 - `TODOIST_PERMISSION_PROFILE=readonly|control`
+- `TODOIST_TIMEOUT_SEC` (optional: request timeout in seconds, default `10.0`)
 
 ### Tool behavior by profile
 - `readonly`
@@ -22,7 +23,11 @@ This runbook covers operational setup and policy behavior for Todoist and Pushov
 
 ### Runtime notes
 - `todoist_add_task` requires `content`.
+- `todoist_add_task` validates:
+  - `priority` must be integer `1..4`
+  - `labels` must be a list of non-empty strings
 - `todoist_list_tasks` accepts optional `limit`.
+- `todoist_list_tasks` supports `format=short|verbose`.
 - Invalid upstream payloads are normalized as `invalid_json`.
 
 ## 3) Pushover
@@ -31,6 +36,7 @@ This runbook covers operational setup and policy behavior for Todoist and Pushov
 - `PUSHOVER_API_TOKEN`
 - `PUSHOVER_USER_KEY`
 - `NOTIFICATION_PERMISSION_PROFILE=off|allow`
+- `PUSHOVER_TIMEOUT_SEC` (optional: request timeout in seconds, default `10.0`)
 
 ### Tool behavior by profile
 - `off`: denies `pushover_notify`
@@ -38,6 +44,7 @@ This runbook covers operational setup and policy behavior for Todoist and Pushov
 
 ### Runtime notes
 - `pushover_notify` requires `message`.
+- `pushover_notify` validates `priority` as integer `-2..2`.
 - API-level rejects (`status=0`) are normalized as `api_error`.
 - Malformed payloads are normalized as `invalid_json`.
 

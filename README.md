@@ -83,6 +83,7 @@ cp .env.example .env
 # Optional: HOME_PERMISSION_PROFILE=readonly (state only) or control (default)
 # Optional: HOME_REQUIRE_CONFIRM_EXECUTE=true (require confirm=true on all executes)
 # Optional: TODOIST_API_TOKEN / TODOIST_PROJECT_ID / TODOIST_PERMISSION_PROFILE
+# Optional: TODOIST_TIMEOUT_SEC=10.0 / PUSHOVER_TIMEOUT_SEC=10.0
 # Optional: PUSHOVER_API_TOKEN / PUSHOVER_USER_KEY / NOTIFICATION_PERMISSION_PROFILE
 ```
 
@@ -99,10 +100,13 @@ Smart home safety defaults:
   - `TODOIST_PERMISSION_PROFILE=readonly|control`
   - `readonly` allows `todoist_list_tasks` and denies `todoist_add_task`
   - `control` allows both tools
+  - `TODOIST_TIMEOUT_SEC` controls request timeout (default `10.0`)
+  - `todoist_list_tasks` supports `format=short|verbose` (default `short`)
 - Pushover integration:
   - `NOTIFICATION_PERMISSION_PROFILE=off|allow`
   - `off` denies `pushover_notify`
   - `allow` enables `pushover_notify`
+  - `PUSHOVER_TIMEOUT_SEC` controls request timeout (default `10.0`)
 
 ### First-Time Operator Checklist
 
