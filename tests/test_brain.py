@@ -217,6 +217,26 @@ class TestBrain:
         assert search_mock.call_args.args[0] == "coffee please"
 
     @pytest.mark.asyncio
+    async def test_memory_search_failure_does_not_abort_response_flow(self, brain):
+        if brain._memory is None:
+            pytest.skip("Memory disabled")
+        captured = {}
+
+        async def fake_query(text: str, session_id: str):
+            captured["text"] = text
+
+        with patch.object(brain._client, "query", new=AsyncMock(side_effect=fake_query)), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain._memory, "search_v2", side_effect=RuntimeError("db down")), \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([])
+            async for _ in brain.respond("hello"):
+                pass
+
+        assert "text" in captured
+        assert captured["text"].startswith("hello")
+
+    @pytest.mark.asyncio
     async def test_respond_includes_persona_style_instruction(self, brain):
         brain._config.persona_style = "friendly"
         if brain._memory is not None:
