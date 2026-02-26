@@ -193,8 +193,10 @@ class Jarvis:
             "tts_first_audio_count": 0.0,
             "service_errors": 0.0,
             "storage_errors": 0.0,
+            "unknown_summary_details": 0.0,
             "fallback_responses": 0.0,
         }
+        self._telemetry_error_counts: dict[str, float] = {}
 
     def start(self) -> None:
         """Initialize all subsystems."""
@@ -266,6 +268,7 @@ class Jarvis:
             f"Persona style: {self.config.persona_style}",
             f"Config warnings: {warning_count}",
             f"Tool policy: allow={len(self.config.tool_allowlist)} deny={len(self.config.tool_denylist)}",
+            f"Error taxonomy: total={len(TOOL_SERVICE_ERROR_CODES)} service={len(TELEMETRY_SERVICE_ERROR_DETAILS)} storage={len(TELEMETRY_STORAGE_ERROR_DETAILS)}",
         ]
 
     def _refresh_tool_error_counters(self) -> None:
@@ -275,6 +278,8 @@ class Jarvis:
             return
         service_errors = 0
         storage_errors = 0
+        unknown_summary_details = 0
+        per_code: dict[str, float] = {}
         for item in recent:
             if not isinstance(item, dict):
                 continue
@@ -282,30 +287,53 @@ class Jarvis:
             detail = str(item.get("detail", ""))
             if status != "error":
                 continue
+            if detail in TOOL_SERVICE_ERROR_CODES:
+                per_code[detail] = per_code.get(detail, 0.0) + 1.0
             if detail in TELEMETRY_STORAGE_ERROR_DETAILS:
                 storage_errors += 1
                 continue
             if detail in TELEMETRY_SERVICE_ERROR_DETAILS:
                 service_errors += 1
+                continue
+            unknown_summary_details += 1
         self._telemetry["service_errors"] = float(service_errors)
         self._telemetry["storage_errors"] = float(storage_errors)
+        self._telemetry["unknown_summary_details"] = float(unknown_summary_details)
+        self._telemetry_error_counts = {name: per_code[name] for name in sorted(per_code)}
 
-    def _telemetry_snapshot(self) -> dict[str, float]:
-        def avg(total_key: str, count_key: str) -> float:
-            count = self._telemetry.get(count_key, 0.0)
-            if count <= 0:
+    def _telemetry_snapshot(self) -> dict[str, float | dict[str, float]]:
+        def metric(key: str) -> float:
+            value = self._telemetry.get(key, 0.0)
+            if not math.isfinite(value):
                 return 0.0
-            return self._telemetry.get(total_key, 0.0) / count
+            return value
 
+        def avg(total_key: str, count_key: str) -> float:
+            count = metric(count_key)
+            if count <= 0.0:
+                return 0.0
+            total = metric(total_key)
+            value = total / count
+            if not math.isfinite(value):
+                return 0.0
+            return value
+
+        counts = {
+            name: value
+            for name, value in getattr(self, "_telemetry_error_counts", {}).items()
+            if math.isfinite(value)
+        }
         return {
-            "turns": self._telemetry.get("turns", 0.0),
-            "barge_ins": self._telemetry.get("barge_ins", 0.0),
+            "turns": metric("turns"),
+            "barge_ins": metric("barge_ins"),
             "avg_stt_latency_ms": avg("stt_latency_total_ms", "stt_latency_count"),
             "avg_llm_first_sentence_ms": avg("llm_first_sentence_total_ms", "llm_first_sentence_count"),
             "avg_tts_first_audio_ms": avg("tts_first_audio_total_ms", "tts_first_audio_count"),
-            "service_errors": self._telemetry.get("service_errors", 0.0),
-            "storage_errors": self._telemetry.get("storage_errors", 0.0),
-            "fallback_responses": self._telemetry.get("fallback_responses", 0.0),
+            "service_errors": metric("service_errors"),
+            "storage_errors": metric("storage_errors"),
+            "unknown_summary_details": metric("unknown_summary_details"),
+            "service_error_counts": counts,
+            "fallback_responses": metric("fallback_responses"),
         }
 
     def stop(self) -> None:

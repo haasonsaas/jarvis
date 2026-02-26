@@ -92,6 +92,7 @@ Smart home safety defaults:
 - Integration runbook: [`docs/operations/integration-policy.md`](docs/operations/integration-policy.md).
 - Release checklist: [`docs/operations/release-checklist.md`](docs/operations/release-checklist.md).
 - Security maintenance: [`docs/operations/security-maintenance.md`](docs/operations/security-maintenance.md).
+- Error taxonomy: [`docs/operations/error-taxonomy.md`](docs/operations/error-taxonomy.md).
 - Todoist integration:
   - `TODOIST_PERMISSION_PROFILE=readonly|control`
   - `readonly` allows `todoist_list_tasks` and denies `todoist_add_task`

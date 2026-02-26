@@ -1,6 +1,7 @@
 """Lifecycle robustness tests for jarvis.__main__.Jarvis."""
 
 import pytest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock
 
@@ -79,6 +80,21 @@ def test_startup_summary_lines_include_core_status():
     assert "Memory: enabled" in joined
     assert "Config warnings: 0" in joined
     assert "Tool policy: allow=1 deny=2" in joined
+    assert "Error taxonomy: total=" in joined
+
+
+def test_error_taxonomy_doc_matches_constants():
+    from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES
+
+    doc_path = Path(__file__).resolve().parents[1] / "docs" / "operations" / "error-taxonomy.md"
+    text = doc_path.read_text(encoding="utf-8")
+    start = "<!-- SERVICE_ERROR_CODES_START -->"
+    end = "<!-- SERVICE_ERROR_CODES_END -->"
+    assert start in text and end in text
+
+    block = text.split(start, 1)[1].split(end, 1)[0]
+    documented = {line.strip() for line in block.splitlines() if line.strip()}
+    assert documented == TOOL_SERVICE_ERROR_CODES
 
 
 def test_telemetry_snapshot_averages():
@@ -104,6 +120,7 @@ def test_telemetry_snapshot_averages():
     assert snapshot["avg_tts_first_audio_ms"] == 250.0
     assert snapshot["service_errors"] == 3.0
     assert snapshot["storage_errors"] == 1.0
+    assert snapshot["unknown_summary_details"] == 0.0
     assert snapshot["fallback_responses"] == 4.0
 
 
@@ -121,6 +138,7 @@ def test_refresh_tool_error_counters():
 
     assert jarvis._telemetry["service_errors"] == 1.0
     assert jarvis._telemetry["storage_errors"] == 1.0
+    assert jarvis._telemetry["unknown_summary_details"] == 0.0
 
 
 def test_refresh_tool_error_counters_classifies_missing_store_as_storage():
@@ -137,6 +155,7 @@ def test_refresh_tool_error_counters_classifies_missing_store_as_storage():
 
     assert jarvis._telemetry["service_errors"] == 1.0
     assert jarvis._telemetry["storage_errors"] == 2.0
+    assert jarvis._telemetry["unknown_summary_details"] == 0.0
 
 
 def test_refresh_tool_error_counters_includes_network_taxonomy():
@@ -153,6 +172,80 @@ def test_refresh_tool_error_counters_includes_network_taxonomy():
 
     assert jarvis._telemetry["service_errors"] == 3.0
     assert jarvis._telemetry["storage_errors"] == 0.0
+    assert jarvis._telemetry["unknown_summary_details"] == 0.0
+
+
+def test_refresh_tool_error_counters_tracks_unknown_summary_detail_count():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._telemetry = {"service_errors": 0.0, "storage_errors": 0.0, "unknown_summary_details": 0.0}
+    from unittest.mock import patch
+
+    with patch("jarvis.__main__.list_summaries", return_value=[
+        {"status": "error", "detail": "timeout"},
+        {"status": "error", "detail": "not_a_real_code"},
+        {"status": "error", "detail": "another_unknown"},
+    ]):
+        Jarvis._refresh_tool_error_counters(jarvis)
+
+    assert jarvis._telemetry["service_errors"] == 1.0
+    assert jarvis._telemetry["storage_errors"] == 0.0
+    assert jarvis._telemetry["unknown_summary_details"] == 2.0
+
+
+def test_refresh_tool_error_counters_reports_per_code_totals():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._telemetry = {"service_errors": 0.0, "storage_errors": 0.0, "unknown_summary_details": 0.0}
+    from unittest.mock import patch
+
+    with patch("jarvis.__main__.list_summaries", return_value=[
+        {"status": "error", "detail": "timeout"},
+        {"status": "error", "detail": "timeout"},
+        {"status": "error", "detail": "storage_error"},
+        {"status": "error", "detail": "unknown_error"},
+        {"status": "error", "detail": "not_a_real_code"},
+        {"status": "ok", "detail": "timeout"},
+    ]):
+        Jarvis._refresh_tool_error_counters(jarvis)
+
+    assert jarvis._telemetry_error_counts == {
+        "storage_error": 1.0,
+        "timeout": 2.0,
+        "unknown_error": 1.0,
+    }
+
+    snapshot = Jarvis._telemetry_snapshot(jarvis)
+    assert snapshot["service_error_counts"] == jarvis._telemetry_error_counts
+    assert snapshot["unknown_summary_details"] == 1.0
+
+
+def test_telemetry_snapshot_guards_non_finite_values():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._telemetry = {
+        "turns": float("nan"),
+        "barge_ins": float("inf"),
+        "stt_latency_total_ms": float("inf"),
+        "stt_latency_count": 1.0,
+        "llm_first_sentence_total_ms": 100.0,
+        "llm_first_sentence_count": float("nan"),
+        "tts_first_audio_total_ms": 100.0,
+        "tts_first_audio_count": 0.0,
+        "service_errors": float("nan"),
+        "storage_errors": float("inf"),
+        "unknown_summary_details": float("nan"),
+        "fallback_responses": float("inf"),
+    }
+    jarvis._telemetry_error_counts = {"timeout": float("nan"), "auth": 2.0}
+
+    snapshot = Jarvis._telemetry_snapshot(jarvis)
+    assert snapshot["turns"] == 0.0
+    assert snapshot["barge_ins"] == 0.0
+    assert snapshot["avg_stt_latency_ms"] == 0.0
+    assert snapshot["avg_llm_first_sentence_ms"] == 0.0
+    assert snapshot["service_errors"] == 0.0
+    assert snapshot["storage_errors"] == 0.0
+    assert snapshot["unknown_summary_details"] == 0.0
+    assert snapshot["fallback_responses"] == 0.0
+    assert snapshot["service_error_counts"] == {"auth": 2.0}
 
 
 def test_telemetry_error_taxonomy_matches_service_error_codes():

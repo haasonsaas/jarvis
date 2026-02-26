@@ -65,14 +65,14 @@ Files: `src/jarvis/tools/services.py`, `tests/test_tools.py`, `docs/operations/h
 
 ## 4) Telemetry and Taxonomy (8 items)
 
-- [ ] `T01` Add taxonomy reference doc with each error code and owning tool families.
-- [ ] `T02` Add test asserting taxonomy doc examples stay in sync with constants.
-- [ ] `T03` Track unknown summary detail count in telemetry snapshot.
-- [ ] `T04` Add tests for unknown summary detail accounting.
-- [ ] `T05` Add explicit counter for per-code service error totals in telemetry snapshot.
-- [ ] `T06` Add tests for per-code aggregation stability.
-- [ ] `T07` Add NaN/inf guard tests for telemetry averages.
-- [ ] `T08` Add startup log line summarizing taxonomy sizes (service/storage subsets).
+- [x] `T01` Add taxonomy reference doc with each error code and owning tool families.
+- [x] `T02` Add test asserting taxonomy doc examples stay in sync with constants.
+- [x] `T03` Track unknown summary detail count in telemetry snapshot.
+- [x] `T04` Add tests for unknown summary detail accounting.
+- [x] `T05` Add explicit counter for per-code service error totals in telemetry snapshot.
+- [x] `T06` Add tests for per-code aggregation stability.
+- [x] `T07` Add NaN/inf guard tests for telemetry averages.
+- [x] `T08` Add startup log line summarizing taxonomy sizes (service/storage subsets).
 
 Files: `src/jarvis/tool_errors.py`, `src/jarvis/__main__.py`, `tests/test_main_lifecycle.py`, `docs/operations/error-taxonomy.md`
 
