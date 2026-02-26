@@ -191,3 +191,21 @@ class TestConfig:
         c = Config()
         text = "\n".join(c.startup_warnings)
         assert "pushover config incomplete" in text.lower()
+
+    def test_startup_warning_for_permissive_profiles_without_credentials(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("HOME_PERMISSION_PROFILE", "control")
+        monkeypatch.setenv("TODOIST_PERMISSION_PROFILE", "control")
+        monkeypatch.setenv("NOTIFICATION_PERMISSION_PROFILE", "allow")
+        monkeypatch.delenv("HASS_URL", raising=False)
+        monkeypatch.delenv("HASS_TOKEN", raising=False)
+        monkeypatch.delenv("TODOIST_API_TOKEN", raising=False)
+        monkeypatch.delenv("PUSHOVER_API_TOKEN", raising=False)
+        monkeypatch.delenv("PUSHOVER_USER_KEY", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings).lower()
+        assert "home_permission_profile=control set while hass_url/hass_token are empty" in text
+        assert "todoist_permission_profile=control set while todoist_api_token is empty" in text
+        assert "notification_permission_profile=allow set while pushover credentials are empty" in text

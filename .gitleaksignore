@@ -1,0 +1,3 @@
+# Baseline allowlist for gitleaks fingerprints.
+# Add one fingerprint per line only after manual triage confirms false positive.
+# Keep this file minimal and periodically prune stale entries.

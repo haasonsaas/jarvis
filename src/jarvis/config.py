@@ -226,14 +226,34 @@ class Config:
         has_hass_token = bool((self.hass_token or "").strip())
         if has_hass_url != has_hass_token:
             warnings.append("Home Assistant config incomplete; set both HASS_URL and HASS_TOKEN.")
+        if (
+            _env_is_set("HOME_PERMISSION_PROFILE")
+            and self.home_permission_profile == "control"
+            and not has_hass_url
+            and not has_hass_token
+        ):
+            warnings.append("HOME_PERMISSION_PROFILE=control set while HASS_URL/HASS_TOKEN are empty.")
         has_todoist_token = bool((self.todoist_api_token or "").strip())
         has_todoist_project = bool((self.todoist_project_id or "").strip())
         if has_todoist_project and not has_todoist_token:
             warnings.append("Todoist config incomplete; set TODOIST_API_TOKEN when TODOIST_PROJECT_ID is set.")
+        if (
+            _env_is_set("TODOIST_PERMISSION_PROFILE")
+            and self.todoist_permission_profile == "control"
+            and not has_todoist_token
+        ):
+            warnings.append("TODOIST_PERMISSION_PROFILE=control set while TODOIST_API_TOKEN is empty.")
         has_pushover_token = bool((self.pushover_api_token or "").strip())
         has_pushover_user = bool((self.pushover_user_key or "").strip())
         if has_pushover_token != has_pushover_user:
             warnings.append("Pushover config incomplete; set both PUSHOVER_API_TOKEN and PUSHOVER_USER_KEY.")
+        if (
+            _env_is_set("NOTIFICATION_PERMISSION_PROFILE")
+            and self.notification_permission_profile == "allow"
+            and not has_pushover_token
+            and not has_pushover_user
+        ):
+            warnings.append("NOTIFICATION_PERMISSION_PROFILE=allow set while Pushover credentials are empty.")
         checks: list[tuple[str, str, str]] = [
             ("DOA_CHANGE_THRESHOLD", "float", str(self.doa_change_threshold)),
             ("DOA_TIMEOUT", "float", str(self.doa_timeout)),

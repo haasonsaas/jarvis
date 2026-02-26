@@ -129,12 +129,12 @@ Files: `README.md`, `docs/operations/home-control-policy.md`, `docs/operations/i
 
 ## 8) Security and Dependency Hygiene (6 items)
 
-- [ ] `H01` Add `pip-audit` (or equivalent) CI step on schedule and PR.
-- [ ] `H02` Add secret scanning pre-commit/CI step and baseline handling.
-- [ ] `H03` Add provenance notes for third-party actions/tools in workflows.
-- [ ] `H04` Add policy for minimum pinned versions of critical dependencies.
-- [ ] `H05` Add tests for config warnings on insecure/empty auth-like env combinations.
-- [ ] `H06` Add monthly maintenance task list for dependency and workflow pin refresh.
+- [x] `H01` Add `pip-audit` (or equivalent) CI step on schedule and PR.
+- [x] `H02` Add secret scanning pre-commit/CI step and baseline handling.
+- [x] `H03` Add provenance notes for third-party actions/tools in workflows.
+- [x] `H04` Add policy for minimum pinned versions of critical dependencies.
+- [x] `H05` Add tests for config warnings on insecure/empty auth-like env combinations.
+- [x] `H06` Add monthly maintenance task list for dependency and workflow pin refresh.
 
 Files: `.github/workflows/*.yml`, `pyproject.toml`, `README.md`, `docs/operations/security-maintenance.md`, `tests/test_config.py`
 
