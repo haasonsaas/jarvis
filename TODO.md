@@ -272,3 +272,18 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
   - `src/jarvis/__main__.py`
   - `tests/test_main_lifecycle.py`
   - `tests/test_tools.py`
+
+---
+
+## 21) CI and Command Drift Prevention
+
+### 21.1 Fault command single-source (`P2`)
+- [x] Make `make test-faults` delegate to `scripts/test_faults.sh` to avoid selector drift.
+- Files:
+  - `Makefile`
+  - `scripts/test_faults.sh`
+
+### 21.2 Fault regression as CI gate (`P1`)
+- [x] Add explicit fault-subset step in CI workflow (`make test-faults`).
+- Files:
+  - `.github/workflows/ci.yml`

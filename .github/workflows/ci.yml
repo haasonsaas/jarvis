@@ -33,3 +33,6 @@ jobs:
 
       - name: Pytest
         run: uv run pytest -q
+
+      - name: Fault subset
+        run: make test-faults
