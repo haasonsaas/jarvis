@@ -87,7 +87,8 @@ class TestConfig:
 
     def test_startup_warnings_include_invalid_optional_env_values(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
-        monkeypatch.setenv("DOA_TIMEOUT", "abc")
+        monkeypatch.setenv("DOA_TIMEOUT", "nan")
+        monkeypatch.setenv("DOA_CHANGE_THRESHOLD", "inf")
         monkeypatch.setenv("MEMORY_SEARCH_LIMIT", "oops")
         monkeypatch.setenv("BACKCHANNEL_STYLE", "LOUD")
         monkeypatch.setenv("PERSONA_STYLE", "chatty")
@@ -97,6 +98,7 @@ class TestConfig:
         c = Config()
         text = "\n".join(c.startup_warnings)
         assert "DOA_TIMEOUT invalid" in text
+        assert "DOA_CHANGE_THRESHOLD invalid" in text
         assert "MEMORY_SEARCH_LIMIT invalid" in text
         assert "BACKCHANNEL_STYLE invalid" in text
         assert "PERSONA_STYLE invalid" in text
@@ -111,3 +113,13 @@ class TestConfig:
         c = Config()
         assert c.home_enabled is True
         assert c.memory_enabled is True
+
+    def test_non_finite_float_env_values_fall_back_to_defaults(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("DOA_TIMEOUT", "nan")
+        monkeypatch.setenv("DOA_CHANGE_THRESHOLD", "inf")
+        from jarvis.config import Config
+
+        c = Config()
+        assert c.doa_timeout == 1.0
+        assert c.doa_change_threshold == 0.04

@@ -123,6 +123,22 @@ def test_refresh_tool_error_counters():
     assert jarvis._telemetry["storage_errors"] == 1.0
 
 
+def test_refresh_tool_error_counters_classifies_missing_store_as_storage():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._telemetry = {"service_errors": 0.0, "storage_errors": 0.0}
+    from unittest.mock import patch
+
+    with patch("jarvis.__main__.list_summaries", return_value=[
+        {"status": "error", "detail": "missing_store"},
+        {"status": "error", "detail": "storage_error"},
+        {"status": "error", "detail": "invalid_plan"},
+    ]):
+        Jarvis._refresh_tool_error_counters(jarvis)
+
+    assert jarvis._telemetry["service_errors"] == 1.0
+    assert jarvis._telemetry["storage_errors"] == 2.0
+
+
 def test_refresh_tool_error_counters_includes_network_taxonomy():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis._telemetry = {"service_errors": 0.0, "storage_errors": 0.0}

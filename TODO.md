@@ -1,8 +1,8 @@
-# Jarvis Engineering TODO (Fresh Cycle)
+# Jarvis Engineering TODO (Deep Hardening Cycle)
 
-Last updated: 2026-02-25
+Last updated: 2026-02-26
 
-This is a newly reset backlog for the next hardening wave.
+This cycle focuses on silent-misconfiguration prevention and telemetry taxonomy consistency.
 
 ## Status legend
 - `[ ]` Not started
@@ -11,83 +11,63 @@ This is a newly reset backlog for the next hardening wave.
 
 ---
 
-## 1) Reliability and Error Taxonomy
+## 1) Configuration Robustness
 
-### 1.1 Boolean env parsing safety (`P0`)
-- [x] Treat invalid boolean environment values as "unset" (default behavior), not `False`.
+### 1.1 Finite float env parsing (`P0`)
+- [x] Treat non-finite float strings (`nan`, `inf`, `-inf`) as invalid env values.
 - Why:
-  - Invalid env booleans should not silently disable major features.
+  - Non-finite values can bypass range checks and silently degrade runtime behavior.
 - Acceptance criteria:
-  - `_env_bool` returns `None` for invalid strings.
-  - `*_enabled` fields keep default semantics when env is invalid.
+  - `_env_float` falls back to default when parsed value is not finite.
+  - Config initialization does not propagate `nan`/`inf` from env.
 - Test plan:
-  - Add config tests for invalid bool env values and fallback behavior.
+  - Add config tests for `DOA_TIMEOUT=nan` and `DOA_CHANGE_THRESHOLD=inf` fallback semantics.
 - Files:
   - `src/jarvis/config.py`
   - `tests/test_config.py`
 
-### 1.2 Startup warnings for invalid booleans (`P1`)
-- [x] Include invalid boolean env diagnostics in startup warnings.
+### 1.2 Finite float startup diagnostics (`P1`)
+- [x] Mark non-finite float env values as invalid in startup warnings.
 - Why:
-  - Operators need explicit visibility when env values were ignored.
+  - Operators should be told when numeric env input was ignored.
 - Acceptance criteria:
-  - `startup_warnings` includes invalid boolean notices.
+  - `startup_warnings` contains entries for non-finite configured floats.
 - Test plan:
-  - Assert warnings include invalid boolean keys.
+  - Extend startup warning assertions with `nan`/`inf` float inputs.
 - Files:
   - `src/jarvis/config.py`
   - `tests/test_config.py`
-
-### 1.3 Service error code normalization guard (`P1`)
-- [x] Add validated service error recording helper that normalizes unknown codes.
-- Why:
-  - Error detail taxonomy should remain machine-readable and bounded.
-- Acceptance criteria:
-  - Helper maps unknown codes to `unknown_error`.
-  - Home Assistant and summary endpoints use validated error recording.
-- Test plan:
-  - Existing fault-injection tests keep passing with normalized codes.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
 
 ---
 
-## 2) Observability and Telemetry
+## 2) Telemetry Taxonomy Consistency
 
-### 2.1 Error counter taxonomy coverage (`P1`)
-- [x] Ensure telemetry error counters classify `network_client_error` and `http_error`.
+### 2.1 Storage taxonomy completeness (`P1`)
+- [x] Count `missing_store` failures under storage-error telemetry.
 - Why:
-  - Degraded-state metrics should reflect network/service classes accurately.
+  - Missing backing store is a storage-class failure and should be measured with other storage errors.
 - Acceptance criteria:
-  - `_refresh_tool_error_counters` increments service-error counts for new taxonomy values.
+  - `_refresh_tool_error_counters` increments `storage_errors` for `missing_store`.
 - Test plan:
-  - Add lifecycle unit test with synthetic summary payloads.
+  - Add lifecycle test with mixed `missing_store` and `storage_error` payloads.
+- Files:
+  - `src/jarvis/__main__.py`
+  - `tests/test_main_lifecycle.py`
+
+### 2.2 Service taxonomy guardrail (`P1`)
+- [x] Centralize telemetry service-error code set to avoid drift within `__main__.py`.
+- Why:
+  - Inlined literals are easy to desynchronize from service module taxonomy evolution.
+- Acceptance criteria:
+  - Service and storage error detail sets are module constants used by refresh logic.
+- Test plan:
+  - Existing lifecycle taxonomy tests continue to pass.
 - Files:
   - `src/jarvis/__main__.py`
   - `tests/test_main_lifecycle.py`
 
 ---
 
-## 3) Developer Workflow
-
-### 3.1 Soak command entry points (`P2`)
-- [x] Add soak-focused workflow commands in Makefile/scripts/docs.
-- Why:
-  - Stability checks should be one command for repeatability.
-- Acceptance criteria:
-  - `make test-soak` target exists.
-  - `scripts/test_soak.sh` exists.
-  - README documents soak command.
-- Test plan:
-  - Verify target resolves and command is documented.
-- Files:
-  - `Makefile`
-  - `scripts/test_soak.sh`
-  - `README.md`
-
----
-
-## 4) Execution result
+## 3) Execution Result
 - [x] Lint clean: `uv run ruff check src tests`
 - [x] Test suite green: `uv run pytest -q`

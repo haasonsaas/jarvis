@@ -57,6 +57,33 @@ CONFIRMATION_PHRASE = "Did you mean me?"
 AFFIRMATIONS = {"yes", "yeah", "yep", "yup", "correct", "affirmative", "sure", "please"}
 NEGATIONS = {"no", "nope", "nah", "negative"}
 TELEMETRY_LOG_EVERY_TURNS = 5
+TELEMETRY_STORAGE_ERROR_DETAILS = {
+    "storage_error",
+    "missing_store",
+}
+TELEMETRY_SERVICE_ERROR_DETAILS = {
+    "policy",
+    "missing_config",
+    "missing_fields",
+    "invalid_data",
+    "timeout",
+    "cancelled",
+    "network_client_error",
+    "invalid_json",
+    "auth",
+    "not_found",
+    "unexpected",
+    "missing_text",
+    "missing_query",
+    "missing_entity",
+    "missing_plan",
+    "invalid_plan",
+    "invalid_status",
+    "invalid_steps",
+    "http_error",
+    "summary_unavailable",
+    "unknown_error",
+}
 
 
 def _to_mono(audio: np.ndarray) -> np.ndarray:
@@ -279,24 +306,10 @@ class Jarvis:
             detail = str(item.get("detail", ""))
             if status != "error":
                 continue
-            if detail == "storage_error":
+            if detail in TELEMETRY_STORAGE_ERROR_DETAILS:
                 storage_errors += 1
                 continue
-            if detail in {
-                "timeout",
-                "cancelled",
-                "invalid_json",
-                "missing_config",
-                "missing_fields",
-                "missing_entity",
-                "auth",
-                "not_found",
-                "network_client_error",
-                "http_error",
-                "summary_unavailable",
-                "unknown_error",
-                "unexpected",
-            }:
+            if detail in TELEMETRY_SERVICE_ERROR_DETAILS:
                 service_errors += 1
         self._telemetry["service_errors"] = float(service_errors)
         self._telemetry["storage_errors"] = float(storage_errors)

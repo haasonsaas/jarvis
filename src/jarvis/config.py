@@ -1,3 +1,4 @@
+import math
 import os
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
@@ -32,9 +33,12 @@ def _env_float(name: str, default: float) -> float:
     if val is None or not val.strip():
         return default
     try:
-        return float(val)
+        parsed = float(val)
     except ValueError:
         return default
+    if not math.isfinite(parsed):
+        return default
+    return parsed
 
 
 def _env_int(name: str, default: int) -> int:
@@ -188,7 +192,9 @@ class Config:
                 continue
             try:
                 if kind == "float":
-                    float(raw)
+                    parsed = float(raw)
+                    if not math.isfinite(parsed):
+                        raise ValueError("non-finite float")
                 else:
                     int(raw)
             except ValueError:
