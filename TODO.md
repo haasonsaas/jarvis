@@ -149,3 +149,14 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
   - `src/jarvis/__main__.py`
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
+
+---
+
+## 11) Conversation Quality Fixes
+
+### 11.1 Low-confidence phrase matching (`P2`)
+- [x] Normalize confidence-phrase token set to lowercase to match lowercased sentence checks.
+- [x] Add regression test for phrase-only sentence (`"I believe..."`) to prevent case regressions.
+- Files:
+  - `src/jarvis/__main__.py`
+  - `tests/test_turn_taking.py`

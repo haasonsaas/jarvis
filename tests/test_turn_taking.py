@@ -37,3 +37,7 @@ def test_turn_taking_threshold_barge_in(jarvis_instance):
 
 def test_confidence_pause(jarvis_instance):
     assert jarvis_instance._confidence_pause("I think it might work") > 0
+
+
+def test_confidence_pause_phrase_only(jarvis_instance):
+    assert jarvis_instance._confidence_pause("I believe this is correct") > 0
