@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-26
 
-This cycle focuses on config strictness, telemetry taxonomy consistency, fault-test workflow coverage, and CI enforcement.
+This cycle focuses on config strictness, telemetry taxonomy consistency, fault-test workflow coverage, CI enforcement, and task-plan input validation.
 
 ## Status legend
 - `[ ]` Not started
@@ -21,16 +21,6 @@ This cycle focuses on config strictness, telemetry taxonomy consistency, fault-t
 
 ### 1.3 Required env whitespace strictness (`P1`)
 - [x] Reject whitespace-only required env values and return stripped values for required keys.
-- Why:
-  - `ANTHROPIC_API_KEY="   "` should be treated as missing, not accepted.
-- Acceptance criteria:
-  - `_require_env` raises when the value is blank after trimming.
-  - `_require_env` returns trimmed value for valid input.
-- Test plan:
-  - Add config tests for whitespace-only and padded required env values.
-- Files:
-  - `src/jarvis/config.py`
-  - `tests/test_config.py`
 
 ---
 
@@ -47,27 +37,33 @@ This cycle focuses on config strictness, telemetry taxonomy consistency, fault-t
 
 ---
 
-## 3) Developer Workflow
+## 3) Tool Input Hardening
 
-### 3.1 Fault target taxonomy coverage (`P2`)
-- [x] Expand `test-faults` selectors to include current normalized taxonomy values.
-
-### 3.2 CI enforcement for checks (`P1`)
-- [x] Add GitHub Actions workflow to run lint + tests on pushes and pull requests.
+### 3.1 Exact integer validation for task-plan identifiers (`P1`)
+- [x] Reject fractional plan IDs and step indices (no implicit truncation).
 - Why:
-  - Local checks are useful but unenforced; CI should block regressions automatically.
+  - JSON numeric values like `1.9` should not mutate plan `1` by truncation.
 - Acceptance criteria:
-  - Workflow runs on `push` and `pull_request`.
-  - Workflow installs dependencies and executes lint + tests.
+  - `task_plan_update`, `task_plan_summary`, and `task_plan_next` require integer-like IDs.
 - Test plan:
-  - Validate YAML and keep local check scripts as CI commands.
+  - Add tests for fractional `plan_id` / `step_index` rejection.
 - Files:
-  - `.github/workflows/ci.yml`
-  - `README.md`
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
 
 ---
 
-## 4) Execution Result
+## 4) Developer Workflow
+
+### 4.1 Fault target taxonomy coverage (`P2`)
+- [x] Expand `test-faults` selectors to include current normalized taxonomy values.
+
+### 4.2 CI enforcement for checks (`P1`)
+- [x] Add GitHub Actions workflow to run lint + tests on pushes and pull requests.
+
+---
+
+## 5) Execution Result
 - [x] Lint clean: `uv run ruff check src tests`
 - [x] Test suite green: `uv run pytest -q`
 - [x] Fault subset green: `scripts/test_faults.sh`

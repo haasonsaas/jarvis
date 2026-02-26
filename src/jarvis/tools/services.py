@@ -357,6 +357,28 @@ def _as_int(value: Any, default: int, *, minimum: int | None = None, maximum: in
     return parsed
 
 
+def _as_exact_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            return None
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.isdigit() or (text.startswith(("+", "-")) and text[1:].isdigit()):
+            try:
+                return int(text)
+            except ValueError:
+                return None
+        return None
+    return None
+
+
 def _as_float(
     value: Any,
     default: float,
@@ -936,11 +958,11 @@ async def task_plan_update(args: dict[str, Any]) -> dict[str, Any]:
     if not _memory:
         _record_service_error("task_plan_update", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
-    plan_id = _as_int(args.get("plan_id", 0), 0)
-    step_index = _as_int(args.get("step_index", -1), -1)
+    plan_id = _as_exact_int(args.get("plan_id"))
+    step_index = _as_exact_int(args.get("step_index"))
     status = str(args.get("status", "pending")).strip()
     allowed_status = {"pending", "in_progress", "blocked", "done"}
-    if plan_id <= 0 or step_index < 0:
+    if plan_id is None or plan_id <= 0 or step_index is None or step_index < 0:
         _record_service_error("task_plan_update", start_time, "missing_fields")
         return {"content": [{"type": "text", "text": "Plan id and step index required."}]}
     if status not in allowed_status:
@@ -966,8 +988,8 @@ async def task_plan_summary(args: dict[str, Any]) -> dict[str, Any]:
     if not _memory:
         _record_service_error("task_plan_summary", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
-    plan_id = _as_int(args.get("plan_id", 0), 0)
-    if plan_id <= 0:
+    plan_id = _as_exact_int(args.get("plan_id"))
+    if plan_id is None or plan_id <= 0:
         _record_service_error("task_plan_summary", start_time, "missing_plan")
         return {"content": [{"type": "text", "text": "Plan id required."}]}
     try:
@@ -993,10 +1015,10 @@ async def task_plan_next(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("task_plan_next", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Memory store not available."}]}
     plan_id = args.get("plan_id")
-    if plan_id is not None and _as_int(plan_id, 0) <= 0:
+    parsed_plan_id = _as_exact_int(plan_id) if plan_id is not None else None
+    if plan_id is not None and (parsed_plan_id is None or parsed_plan_id <= 0):
         _record_service_error("task_plan_next", start_time, "invalid_plan")
         return {"content": [{"type": "text", "text": "Plan id must be a positive integer."}]}
-    parsed_plan_id = _as_int(plan_id, 0) if plan_id is not None else None
     try:
         plan = _memory.next_task_step(parsed_plan_id) if parsed_plan_id else _memory.next_task_step()
     except Exception as e:
