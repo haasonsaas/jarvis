@@ -32,6 +32,16 @@ SENSITIVE_DOMAINS = {"lock", "alarm_control_panel", "cover"}
 ACTION_COOLDOWN_SEC = 2.0
 ACTION_HISTORY_RETENTION_SEC = 3600.0
 ACTION_HISTORY_MAX_ENTRIES = 2000
+HA_STATE_CACHE_TTL_SEC = 2.0
+HA_MUTATING_ALLOWED_ACTIONS: dict[str, set[str]] = {
+    "light": {"turn_on", "turn_off", "toggle"},
+    "switch": {"turn_on", "turn_off", "toggle"},
+    "lock": {"lock", "unlock"},
+    "cover": {"open_cover", "close_cover", "stop_cover"},
+    "climate": {"set_temperature", "set_hvac_mode", "set_fan_mode"},
+    "media_player": {"turn_on", "turn_off", "toggle", "volume_set", "media_play", "media_pause", "play_media"},
+    "alarm_control_panel": {"arm_home", "arm_away", "disarm"},
+}
 
 _config: Config | None = None
 _memory: MemoryStore | None = None
@@ -40,6 +50,8 @@ _tool_allowlist: list[str] = []
 _tool_denylist: list[str] = []
 _audit_log_max_bytes: int = 1_000_000
 _audit_log_backups: int = 3
+_home_permission_profile: str = "control"
+_ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "smart_home": {
@@ -240,11 +252,15 @@ def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
 
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
-    global _config, _memory, _audit_log_max_bytes, _audit_log_backups
+    global _config, _memory, _audit_log_max_bytes, _audit_log_backups, _home_permission_profile
     _config = config
     _memory = memory_store
     _audit_log_max_bytes = int(config.audit_log_max_bytes)
     _audit_log_backups = int(config.audit_log_backups)
+    _home_permission_profile = str(getattr(config, "home_permission_profile", "control")).strip().lower()
+    if _home_permission_profile not in {"readonly", "control"}:
+        _home_permission_profile = "control"
+    _ha_state_cache.clear()
     global _tool_allowlist, _tool_denylist
     _tool_allowlist = list(config.tool_allowlist)
     _tool_denylist = list(config.tool_denylist)
@@ -253,6 +269,8 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
 
 
 def _tool_permitted(name: str) -> bool:
+    if _home_permission_profile == "readonly" and name == "smart_home":
+        return False
     if _config is not None and not _config.home_enabled:
         if name in {"smart_home", "smart_home_state"}:
             return False
@@ -496,6 +514,63 @@ def _audit_status() -> dict[str, Any]:
     }
 
 
+def _ha_headers() -> dict[str, str]:
+    assert _config is not None
+    return {"Authorization": f"Bearer {_config.hass_token}"}
+
+
+def _ha_cached_state(entity_id: str) -> dict[str, Any] | None:
+    item = _ha_state_cache.get(entity_id)
+    if item is None:
+        return None
+    expires_at, payload = item
+    if expires_at < time.monotonic():
+        _ha_state_cache.pop(entity_id, None)
+        return None
+    return payload
+
+
+def _ha_action_allowed(domain: str, action: str) -> bool:
+    allowed = HA_MUTATING_ALLOWED_ACTIONS.get(domain)
+    if allowed is None:
+        return True
+    return action in allowed
+
+
+async def _ha_get_state(entity_id: str) -> tuple[dict[str, Any] | None, str | None]:
+    cached = _ha_cached_state(entity_id)
+    if cached is not None:
+        return cached, None
+    assert _config is not None
+    url = f"{_config.hass_url}/api/states/{entity_id}"
+    timeout = aiohttp.ClientTimeout(total=5)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=_ha_headers()) as resp:
+                if resp.status == 200:
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        return None, "invalid_json"
+                    if not isinstance(data, dict):
+                        return None, "invalid_json"
+                    _ha_state_cache[entity_id] = (time.monotonic() + HA_STATE_CACHE_TTL_SEC, data)
+                    return data, None
+                if resp.status == 401:
+                    return None, "auth"
+                if resp.status == 404:
+                    return None, "not_found"
+                return None, "http_error"
+    except asyncio.TimeoutError:
+        return None, "timeout"
+    except asyncio.CancelledError:
+        return None, "cancelled"
+    except aiohttp.ClientError:
+        return None, "network_client_error"
+    except Exception:
+        return None, "unexpected"
+
+
 def _health_rollup(
     *,
     config_present: bool,
@@ -539,17 +614,53 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(data, dict):
         _record_service_error("smart_home", start_time, "invalid_data")
         return {"content": [{"type": "text", "text": "Service data must be an object."}]}
+    entity_domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+    if not entity_domain or entity_domain != domain:
+        _record_service_error("smart_home", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "entity_id domain must match domain."}]}
+    if not _ha_action_allowed(domain, action):
+        _record_service_error("smart_home", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": f"Unsupported action for domain: {domain}.{action}"}]}
     # Force dry_run for sensitive domains unless explicitly set to false
     dry_run = _as_bool(args.get("dry_run"), default=domain in SENSITIVE_DOMAINS)
+    confirm = _as_bool(args.get("confirm"), default=False)
+    if domain in SENSITIVE_DOMAINS and not dry_run and not confirm:
+        _record_service_error("smart_home", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Sensitive action requires confirm=true when dry_run=false."}]}
 
     if _cooldown_active(domain, action, entity_id):
         tool_feedback("done")
         record_summary("smart_home", "cooldown", start_time)
         return {"content": [{"type": "text", "text": "Action cooldown active. Try again in a moment."}]}
 
+    current_state = "unknown"
+    if not dry_run:
+        state_payload, state_error = await _ha_get_state(entity_id)
+        if state_error is not None:
+            _record_service_error("smart_home", start_time, state_error)
+            if state_error == "not_found":
+                return {"content": [{"type": "text", "text": f"Entity not found: {entity_id}"}]}
+            if state_error == "auth":
+                return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+            if state_error == "timeout":
+                return {"content": [{"type": "text", "text": "Home Assistant state preflight timed out."}]}
+            if state_error == "cancelled":
+                return {"content": [{"type": "text", "text": "Home Assistant state preflight was cancelled."}]}
+            if state_error == "network_client_error":
+                return {"content": [{"type": "text", "text": "Failed to reach Home Assistant for state preflight."}]}
+            return {"content": [{"type": "text", "text": "Unable to validate entity state before action."}]}
+
+        current_state = str(state_payload.get("state", "unknown")) if isinstance(state_payload, dict) else "unknown"
+        if action == "turn_on" and current_state not in {"off", "unavailable", "unknown"}:
+            record_summary("smart_home", "noop", start_time, effect=f"already_on {entity_id}", risk="low")
+            return {"content": [{"type": "text", "text": f"No-op: {entity_id} is already {current_state}."}]}
+        if action == "turn_off" and current_state in {"off", "unavailable", "unknown"}:
+            record_summary("smart_home", "noop", start_time, effect=f"already_off {entity_id}", risk="low")
+            return {"content": [{"type": "text", "text": f"No-op: {entity_id} is already {current_state}."}]}
+
     _audit("smart_home", {
         "domain": domain, "action": action, "entity_id": entity_id,
-        "data": data, "dry_run": dry_run,
+        "data": data, "dry_run": dry_run, "confirm": confirm, "state": current_state,
     })
 
     if dry_run:
@@ -570,7 +681,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         )}]}
 
     url = f"{_config.hass_url}/api/services/{domain}/{action}"
-    headers = {"Authorization": f"Bearer {_config.hass_token}", "Content-Type": "application/json"}
+    headers = {**_ha_headers(), "Content-Type": "application/json"}
     payload = {"entity_id": entity_id, **data}
     timeout = aiohttp.ClientTimeout(total=10)
 
@@ -639,53 +750,30 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
     if not entity_id:
         _record_service_error("smart_home_state", start_time, "missing_entity")
         return {"content": [{"type": "text", "text": "Entity id required."}]}
-
-    url = f"{_config.hass_url}/api/states/{entity_id}"
-    headers = {"Authorization": f"Bearer {_config.hass_token}"}
-    timeout = aiohttp.ClientTimeout(total=10)
-
-    try:
-        tool_feedback("start")
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status == 200:
-                    try:
-                        data = await resp.json()
-                    except Exception:
-                        tool_feedback("done")
-                        _record_service_error("smart_home_state", start_time, "invalid_json")
-                        return {"content": [{"type": "text", "text": "Invalid response from Home Assistant."}]}
-                    tool_feedback("done")
-                    record_summary("smart_home_state", "ok", start_time)
-                    return {"content": [{"type": "text", "text": json.dumps({
-                        "state": data.get("state", "unknown"),
-                        "attributes": data.get("attributes", {}),
-                    })}]}
-                elif resp.status == 404:
-                    tool_feedback("done")
-                    _record_service_error("smart_home_state", start_time, "not_found")
-                    return {"content": [{"type": "text", "text": f"Entity not found: {entity_id}"}]}
-                else:
-                    tool_feedback("done")
-                    _record_service_error("smart_home_state", start_time, "http_error")
-                    return {"content": [{"type": "text", "text": f"Error ({resp.status}) fetching entity state"}]}
-    except asyncio.TimeoutError:
-        tool_feedback("done")
-        _record_service_error("smart_home_state", start_time, "timeout")
-        return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
-    except asyncio.CancelledError:
-        tool_feedback("done")
-        _record_service_error("smart_home_state", start_time, "cancelled")
-        return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
-    except aiohttp.ClientError as e:
-        tool_feedback("done")
-        _record_service_error("smart_home_state", start_time, "network_client_error")
-        return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
-    except Exception as e:
-        tool_feedback("done")
-        _record_service_error("smart_home_state", start_time, "unexpected")
-        log.exception("Unexpected smart_home_state failure")
-        return {"content": [{"type": "text", "text": f"Unexpected Home Assistant error: {e}"}]}
+    tool_feedback("start")
+    data, error_code = await _ha_get_state(entity_id)
+    tool_feedback("done")
+    if error_code is not None:
+        _record_service_error("smart_home_state", start_time, error_code)
+        if error_code == "not_found":
+            return {"content": [{"type": "text", "text": f"Entity not found: {entity_id}"}]}
+        if error_code == "auth":
+            return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+        if error_code == "invalid_json":
+            return {"content": [{"type": "text", "text": "Invalid response from Home Assistant."}]}
+        if error_code == "timeout":
+            return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
+        if error_code == "cancelled":
+            return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
+        if error_code == "network_client_error":
+            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant."}]}
+        return {"content": [{"type": "text", "text": "Unexpected Home Assistant error."}]}
+    payload = data or {}
+    record_summary("smart_home_state", "ok", start_time)
+    return {"content": [{"type": "text", "text": json.dumps({
+        "state": payload.get("state", "unknown"),
+        "attributes": payload.get("attributes", {}),
+    })}]}
 
 
 async def get_time(args: dict[str, Any]) -> dict[str, Any]:
@@ -735,6 +823,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         "tool_policy": {
             "allow_count": len(_tool_allowlist),
             "deny_count": len(_tool_denylist),
+            "home_permission_profile": _home_permission_profile,
         },
         "memory": memory_status,
         "audit": _audit_status(),

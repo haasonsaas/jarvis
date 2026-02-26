@@ -1,8 +1,8 @@
-# Jarvis Engineering TODO (Deep Hardening Cycle)
+# Jarvis Engineering TODO (Integration Hardening Wave)
 
 Last updated: 2026-02-26
 
-This cycle focuses on config strictness, telemetry taxonomy consistency, task-plan validation, CI enforcement, brain reliability, and numeric input safety.
+This wave implements deeper Home Assistant integration safety, policy gating, preflight validation, idempotency, and operational consistency.
 
 ## Status legend
 - `[ ]` Not started
@@ -11,85 +11,99 @@ This cycle focuses on config strictness, telemetry taxonomy consistency, task-pl
 
 ---
 
-## 1) Configuration Robustness
+## 1) Home Assistant Integration Safety
 
-### 1.1 Finite float env parsing (`P0`)
-- [x] Treat non-finite float strings (`nan`, `inf`, `-inf`) as invalid env values.
-
-### 1.2 Finite float startup diagnostics (`P1`)
-- [x] Mark non-finite float env values as invalid in startup warnings.
-
-### 1.3 Required env whitespace strictness (`P1`)
-- [x] Reject whitespace-only required env values and return stripped values for required keys.
-
----
-
-## 2) Telemetry Taxonomy Consistency
-
-### 2.1 Storage taxonomy completeness (`P1`)
-- [x] Count `missing_store` failures under storage-error telemetry.
-
-### 2.2 Service taxonomy guardrail (`P1`)
-- [x] Centralize telemetry service-error code set to avoid drift within `__main__.py`.
-
-### 2.3 Cross-module taxonomy drift test (`P1`)
-- [x] Add regression test ensuring telemetry error sets align with `SERVICE_ERROR_CODES`.
-
----
-
-## 3) Tool Input Hardening
-
-### 3.1 Exact integer validation for task-plan identifiers (`P1`)
-- [x] Reject fractional plan IDs and step indices (no implicit truncation).
-
-### 3.2 Reject boolean coercion in service numeric parsers (`P1`)
-- [x] Prevent `True/False` from being implicitly accepted as numeric values for service tool params.
-
-### 3.3 Reject fractional values for integer service params (`P1`)
-- [x] Treat non-integer numeric limits as invalid and use safe defaults.
-
-### 3.4 Reject boolean coercion in robot numeric parsers (`P1`)
-- [x] Prevent `True/False` from being implicitly accepted as float intensity/motion inputs.
-
----
-
-## 4) Store-Level Input Hardening
-
-### 4.1 Strict limit normalization in MemoryStore (`P1`)
-- [x] Apply strict integer limit parsing inside `MemoryStore` for direct callers.
-
-### 4.2 Strict limit normalization in ToolSummaryStore (`P2`)
-- [x] Apply strict integer limit parsing inside `ToolSummaryStore` for direct callers.
+### 1.1 Permission profile for HA mutation (`P0`)
+- [x] Add `HOME_PERMISSION_PROFILE` (`readonly`/`control`) and enforce at tool permission layer.
 - Why:
-  - Summary retrieval should be consistent with other strict limit parsing and avoid bool/fraction coercion.
+  - Operations should be able to switch to state-only mode without code changes.
 - Acceptance criteria:
-  - `ToolSummaryStore.list` rejects bool/fractional limits and uses defaults.
-- Test plan:
-  - Add tests for `limit=True` and `limit=1.8` fallback behavior.
+  - `smart_home` is denied in `readonly` profile.
+  - `smart_home_state` remains available.
 - Files:
-  - `src/jarvis/tool_summary.py`
-  - `tests/test_tool_summary.py`
+  - `src/jarvis/config.py`
+  - `src/jarvis/tools/services.py`
+  - `tests/test_config.py`
+  - `tests/test_tools.py`
+
+### 1.2 Sensitive action confirmation gate (`P0`)
+- [x] Require `confirm=true` when executing sensitive domains with `dry_run=false`.
+- Why:
+  - Prevent accidental lock/alarm/cover actuation.
+- Acceptance criteria:
+  - Mutating sensitive actions return policy error unless explicitly confirmed.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
+### 1.3 Entity domain preflight validation (`P1`)
+- [x] Validate `entity_id` domain matches `domain` and reject unsupported action/domain combinations.
+- Why:
+  - Catch malformed and semantically invalid requests before network calls.
+- Acceptance criteria:
+  - `light` + `switch.kitchen` is rejected.
+  - Unsupported action for known domain is rejected.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
+### 1.4 Idempotency short-circuit for `turn_on`/`turn_off` (`P1`)
+- [x] Preflight state read and no-op when target state already satisfied.
+- Why:
+  - Avoid unnecessary HA writes and reduce device churn.
+- Acceptance criteria:
+  - `turn_on` returns no-op when state already on.
+  - `turn_off` returns no-op when state already off.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
+### 1.5 Lightweight HA state cache (`P2`)
+- [x] Add short TTL cache for HA state reads used by preflight and `smart_home_state`.
+- Why:
+  - Reduce duplicate state round-trips during rapid command bursts.
+- Acceptance criteria:
+  - Shared helper backs both preflight and state endpoint.
+- Files:
+  - `src/jarvis/tools/services.py`
 
 ---
 
-## 5) Brain Reliability
+## 2) Config and Observability
 
-### 5.1 Memory context lookup fault tolerance (`P1`)
-- [x] Prevent memory lookup failures from aborting response generation.
+### 2.1 Config model for HA permission profile (`P1`)
+- [x] Normalize/validate `HOME_PERMISSION_PROFILE` in config.
+- [x] Emit startup warning on invalid profile values.
+- Files:
+  - `src/jarvis/config.py`
+  - `tests/test_config.py`
+
+### 2.2 System status visibility (`P2`)
+- [x] Include active `home_permission_profile` in `system_status.tool_policy` payload.
+- Files:
+  - `src/jarvis/tools/services.py`
+
+### 2.3 Environment/docs updates (`P2`)
+- [x] Document new HA profile and confirm flow.
+- Files:
+  - `.env.example`
+  - `README.md`
 
 ---
 
-## 6) Developer Workflow
+## 3) Existing Hardening Carry-Forward
 
-### 6.1 Fault target taxonomy coverage (`P2`)
-- [x] Expand `test-faults` selectors to include current normalized taxonomy values.
+### 3.1 Strict numeric parsing and coercion defenses (`P1`)
+- [x] Service numeric parsers reject bool/fractional limits.
+- [x] Robot float parser rejects bool coercion.
+- [x] MemoryStore and ToolSummaryStore enforce strict limit parsing for direct callers.
 
-### 6.2 CI enforcement for checks (`P1`)
-- [x] Add GitHub Actions workflow to run lint + tests on pushes and pull requests.
+### 3.2 Brain resilience (`P1`)
+- [x] Memory context lookup failure no longer aborts response flow.
 
 ---
 
-## 7) Execution Result
+## 4) Execution Result
 - [x] Lint clean: `uv run ruff check src tests`
 - [x] Test suite green: `uv run pytest -q`
 - [x] Fault subset green: `scripts/test_faults.sh`

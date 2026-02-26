@@ -115,6 +115,7 @@ class Config:
     # Service audit retention
     audit_log_max_bytes: int = field(default_factory=lambda: _env_int("AUDIT_LOG_MAX_BYTES", 1_000_000))
     audit_log_backups: int = field(default_factory=lambda: _env_int("AUDIT_LOG_BACKUPS", 3))
+    home_permission_profile: str = field(default_factory=lambda: os.environ.get("HOME_PERMISSION_PROFILE", "control"))
 
     # Quick toggles
     motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)
@@ -154,6 +155,7 @@ class Config:
         self.startup_warnings = self._collect_startup_warnings()
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
+        self.home_permission_profile = self._normalize_home_permission_profile(self.home_permission_profile)
         if _env_is_set("BACKCHANNEL_STYLE") and self.backchannel_style == "balanced":
             raw = os.environ.get("BACKCHANNEL_STYLE", "")
             if raw.strip().lower() not in {"quiet", "balanced", "expressive"}:
@@ -162,6 +164,10 @@ class Config:
             raw = os.environ.get("PERSONA_STYLE", "")
             if raw.strip().lower() not in {"terse", "composed", "friendly"}:
                 self.startup_warnings.append("PERSONA_STYLE invalid; using composed.")
+        if _env_is_set("HOME_PERMISSION_PROFILE") and self.home_permission_profile == "control":
+            raw = os.environ.get("HOME_PERMISSION_PROFILE", "")
+            if raw.strip().lower() not in {"readonly", "control"}:
+                self.startup_warnings.append("HOME_PERMISSION_PROFILE invalid; using control.")
 
     @staticmethod
     def _normalize_backchannel_style(style: str) -> str:
@@ -176,6 +182,13 @@ class Config:
         if normalized in {"terse", "composed", "friendly"}:
             return normalized
         return "composed"
+
+    @staticmethod
+    def _normalize_home_permission_profile(profile: str) -> str:
+        normalized = (profile or "control").strip().lower()
+        if normalized in {"readonly", "control"}:
+            return normalized
+        return "control"
 
     def _collect_startup_warnings(self) -> list[str]:
         warnings: list[str] = []

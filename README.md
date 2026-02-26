@@ -79,7 +79,12 @@ uv sync
 cp .env.example .env
 # Fill in: ANTHROPIC_API_KEY, ELEVENLABS_API_KEY
 # Optional: HASS_URL, HASS_TOKEN for smart home
+# Optional: HOME_PERMISSION_PROFILE=readonly (state only) or control (default)
 ```
+
+Smart home safety defaults:
+- Sensitive domains (`lock`, `alarm_control_panel`, `cover`) require `confirm=true` when `dry_run=false`.
+- `HOME_PERMISSION_PROFILE=readonly` disables mutating `smart_home` actions but keeps `smart_home_state`.
 
 ## Usage
 

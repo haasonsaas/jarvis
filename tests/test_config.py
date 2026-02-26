@@ -91,6 +91,12 @@ class TestConfig:
         c = Config(persona_style="chatty")
         assert c.persona_style == "composed"
 
+    def test_home_permission_profile_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(home_permission_profile="execute-all")
+        assert c.home_permission_profile == "control"
+
     def test_invalid_audit_retention_raises(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         from jarvis.config import Config
@@ -107,6 +113,7 @@ class TestConfig:
         monkeypatch.setenv("BACKCHANNEL_STYLE", "LOUD")
         monkeypatch.setenv("PERSONA_STYLE", "chatty")
         monkeypatch.setenv("HOME_ENABLED", "maybe")
+        monkeypatch.setenv("HOME_PERMISSION_PROFILE", "execute-all")
         from jarvis.config import Config
 
         c = Config()
@@ -117,6 +124,7 @@ class TestConfig:
         assert "BACKCHANNEL_STYLE invalid" in text
         assert "PERSONA_STYLE invalid" in text
         assert "HOME_ENABLED invalid boolean" in text
+        assert "HOME_PERMISSION_PROFILE invalid" in text
 
     def test_invalid_bool_env_falls_back_to_default_behavior(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

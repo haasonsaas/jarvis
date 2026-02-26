@@ -418,16 +418,42 @@ class TestServicesTools:
         assert "not permitted" in denied["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
-    async def test_smart_home_dry_run_explicit_false(self):
+    async def test_home_permission_profile_readonly_denies_mutation(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.home_permission_profile = "readonly"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        result = await services.smart_home({
+            "domain": "light",
+            "action": "turn_on",
+            "entity_id": "light.kitchen",
+        })
+        assert "not permitted" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_dry_run_explicit_false_with_confirm(self):
         from jarvis.tools.services import smart_home
 
-        # Even for locks, explicit dry_run=false should execute
+        # Sensitive domains require confirm=true when executing
         with patch("aiohttp.ClientSession") as mock_session_cls:
+            state_resp = AsyncMock()
+            state_resp.status = 200
+            state_resp.json = AsyncMock(return_value={"state": "locked", "attributes": {}})
             mock_resp = AsyncMock()
             mock_resp.status = 200
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=state_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
             mock_session.post = MagicMock(return_value=AsyncMock(
                 __aenter__=AsyncMock(return_value=mock_resp),
                 __aexit__=AsyncMock(return_value=False),
@@ -439,10 +465,62 @@ class TestServicesTools:
                 "action": "unlock",
                 "entity_id": "lock.front_door",
                 "dry_run": False,
+                "confirm": True,
             })
 
         text = result["content"][0]["text"]
         assert "DRY RUN" not in text
+
+    @pytest.mark.asyncio
+    async def test_smart_home_sensitive_execute_requires_confirm(self):
+        from jarvis.tools.services import smart_home
+
+        result = await smart_home({
+            "domain": "lock",
+            "action": "unlock",
+            "entity_id": "lock.front_door",
+            "dry_run": False,
+        })
+        assert "requires confirm=true" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_rejects_entity_domain_mismatch(self):
+        from jarvis.tools.services import smart_home
+
+        result = await smart_home({
+            "domain": "light",
+            "action": "turn_on",
+            "entity_id": "switch.kitchen",
+        })
+        assert "domain must match" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_idempotent_turn_on_short_circuits(self):
+        from jarvis.tools.services import smart_home
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            state_resp = AsyncMock()
+            state_resp.status = 200
+            state_resp.json = AsyncMock(return_value={"state": "on", "attributes": {}})
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=state_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session.post = MagicMock()
+            mock_session_cls.return_value = mock_session
+
+            result = await smart_home({
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": "light.kitchen",
+                "dry_run": False,
+            })
+
+        assert "no-op" in result["content"][0]["text"].lower()
+        mock_session.post.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_smart_home_no_config(self):
@@ -468,7 +546,7 @@ class TestServicesTools:
                 "entity_id": "light.kitchen",
                 "dry_run": False,
             })
-        assert "unexpected home assistant error" in result["content"][0]["text"].lower()
+        assert "unable to validate entity state" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_smart_home_handles_timeout(self):
@@ -481,7 +559,7 @@ class TestServicesTools:
                 "entity_id": "light.kitchen",
                 "dry_run": False,
             })
-        assert "timed out" in result["content"][0]["text"].lower()
+        assert "preflight timed out" in result["content"][0]["text"].lower()
         from jarvis.tool_summary import list_summaries
         summaries = list_summaries(20)
         assert any(item.get("name") == "smart_home" and item.get("detail") == "timeout" for item in summaries)
@@ -497,19 +575,26 @@ class TestServicesTools:
                 "entity_id": "light.kitchen",
                 "dry_run": False,
             })
-        assert "cancelled" in result["content"][0]["text"].lower()
+        assert "preflight was cancelled" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_smart_home_handles_error_body_read_failure(self):
         from jarvis.tools.services import smart_home
 
         with patch("aiohttp.ClientSession") as mock_session_cls:
+            state_resp = AsyncMock()
+            state_resp.status = 200
+            state_resp.json = AsyncMock(return_value={"state": "off", "attributes": {}})
             mock_resp = AsyncMock()
             mock_resp.status = 500
             mock_resp.text = AsyncMock(side_effect=RuntimeError("read failed"))
             mock_session = AsyncMock()
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=state_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
             mock_session.post = MagicMock(return_value=AsyncMock(
                 __aenter__=AsyncMock(return_value=mock_resp),
                 __aexit__=AsyncMock(return_value=False),
