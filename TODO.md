@@ -1,8 +1,8 @@
-# Jarvis Engineering TODO (Reliability and Operations Wave)
+# Jarvis Engineering TODO (Next Reliability and Scale Wave)
 
 Last updated: 2026-02-26
 
-This wave focuses on gaps found during deeper review: audit parity for newly-added integrations, stricter upstream API validation, and CI workflow hardening inspired by patterns in `openclaw/openclaw`.
+This backlog is intentionally broader and longer so we can iterate through multiple passes without running out of high-value engineering work. Focus areas: safety, observability, CI confidence, and maintainability.
 
 ## Status legend
 - `[ ]` Not started
@@ -11,295 +11,186 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 
 ---
 
-## 1) External Integration Reliability
+## 1) Home Assistant Safety and Correctness
 
-### 1.1 Todoist response strictness (`P0`)
-- [x] Treat 2xx + invalid/non-object JSON as failure instead of silent success.
-- [x] Keep normalized taxonomy (`invalid_json`, `http_error`, `auth`, etc.) for summary consistency.
+### 1.1 Domain/action validation tightening (`P0`)
+- [ ] Restrict unknown Home Assistant domains to readonly state checks by default (explicit allowlist for mutating actions).
+- [ ] Add tests proving unsupported domain/action pairs are denied before transport.
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
 
-### 1.2 Pushover response strictness (`P0`)
-- [x] Parse response body on 200 and require `status == 1` for success.
-- [x] Surface API-provided `errors` text on rejection.
-- [x] Treat HTTP 400/401 as auth/config error branch.
+### 1.2 Sensitive-domain policy expansion (`P0`)
+- [ ] Evaluate and add additional sensitive domains (e.g. `vacuum`, `scene`, `script`) where execute confirmation should be stricter.
+- [ ] Add tests for sensitive confirmation enforcement.
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
 
-### 1.3 Integration audit parity (`P0`)
-- [x] Add audit records for Todoist and Pushover tools, matching smart-home audit expectations.
-- [x] Record safe metadata only (length/preview/IDs/status), no credential fields.
+### 1.3 Entity/domain normalization (`P1`)
+- [ ] Normalize whitespace/case in `domain` and `entity_id` handling for deterministic comparisons.
+- [ ] Add tests for mixed-case and trailing-space inputs.
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
 
----
-
-## 2) System Observability
-
-### 2.1 Status payload diagnostics (`P1`)
-- [x] Include `todoist_configured` and `pushover_configured` booleans in `system_status`.
-- [x] Keep profile diagnostics (`home`, `todoist`, `notification`) in policy payload.
+### 1.4 Smart-home result semantics (`P1`)
+- [ ] Return more structured outcome categories (`noop`, `executed`, `preflight_failed`) in tool text for downstream reasoning consistency.
+- [ ] Add tests covering each category branch.
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
 
 ---
 
-## 3) CI and Workflow Hygiene
+## 2) External Integration Hardening
 
-### 3.1 Workflow sanity guardrails (`P1`)
-- [x] Add dedicated `workflow-sanity.yml`.
-- [x] Enforce no tab characters in workflow YAML files.
-- [x] Run `actionlint` with checksum-verified installation.
-- Files:
-  - `.github/workflows/workflow-sanity.yml`
-
-### 3.2 Documentation of workflow gates (`P2`)
-- [x] Document workflow sanity checks in README developer checks section.
-- Files:
-  - `README.md`
-
----
-
-## 4) Verification Gates
-
-### 4.1 Local static and tests (`P0`)
-- [x] Lint clean: `uv run ruff check src tests`
-- [x] Test suite green: `uv run pytest -q`
-- [x] Fault subset green: `make test-faults`
-
----
-
-## 5) Home Assistant Runtime Correctness
-
-### 5.1 Rebind state reset (`P1`)
-- [x] Clear action cooldown history in `bind()` so stale in-memory state does not survive profile/config rebinds.
+### 2.1 Todoist timeout/backoff posture (`P1`)
+- [ ] Add bounded retry (idempotent-safe) for transient Todoist list failures (`timeout`, `network_client_error`).
+- [ ] Keep add-task mutation non-retried by default unless explicit idempotency token is introduced.
+- [ ] Add tests proving retry policy boundaries.
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
 
-### 5.2 State cache invalidation on mutation (`P1`)
-- [x] Invalidate cached entity state after successful mutating `smart_home` service call to prevent stale follow-up reads.
+### 2.2 Pushover payload validation (`P1`)
+- [ ] Validate `priority` type/range earlier and return `invalid_data` on malformed inputs.
+- [ ] Add tests for malformed/overflow priority values.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
+### 2.3 Permission profile diagnostics (`P1`)
+- [ ] Extend `system_status` with per-integration “mutation enabled” booleans for quick operator checks.
+- [ ] Add tests for profile combinations (`readonly`, `off`, `control`, `allow`).
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
 
 ---
 
-## 6) CI Throughput and Stability
+## 3) Audit and Privacy
 
-### 6.1 Workflow concurrency control (`P1`)
-- [x] Add `concurrency` groups to CI and workflow-sanity so newer PR pushes cancel older runs.
-- [x] Keep nightly soak non-cancelling (`cancel-in-progress: false`) to preserve scheduled signal.
+### 3.1 Smart-home payload redaction coverage (`P0`)
+- [ ] Expand sensitive-key detection list with common HA service fields (e.g. `alarm_code`, `passcode`, `webhook_id`).
+- [ ] Add regression tests for newly redacted aliases.
 - Files:
-  - `.github/workflows/ci.yml`
-  - `.github/workflows/workflow-sanity.yml`
-  - `.github/workflows/nightly-soak.yml`
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
 
-### 6.2 Workflow lint toolchain freshness (`P2`)
-- [x] Bump `actionlint` installer pin to `1.7.11` in workflow-sanity.
+### 3.2 Audit event consistency (`P1`)
+- [ ] Ensure every external-facing tool has explicit audit records on denied/config/error/success branches.
+- [ ] Add a cross-tool test table verifying audit coverage.
 - Files:
-  - `.github/workflows/workflow-sanity.yml`
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
 
----
-
-## 7) Smart Home UX Safety
-
-### 7.1 Cooldown semantics (`P1`)
-- [x] Apply cooldown only to mutating executions (`dry_run=false`), not simulation calls.
-- [x] Ensure dry-run calls do not update cooldown history.
+### 3.3 Audit size management validation (`P2`)
+- [ ] Add tests for multi-rotation behavior and backup retention boundaries.
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
 
 ---
 
-## 8) Documentation Accuracy
+## 4) Taxonomy and Telemetry
 
-### 8.1 Runtime path and tool map alignment (`P2`)
-- [x] Correct audit log path in README structure to `~/.jarvis/audit.jsonl`.
-- [x] Update service tool description line to reflect current integrations.
+### 4.1 Taxonomy docs and contracts (`P1`)
+- [ ] Document taxonomy definitions and intended usage in a short developer reference doc.
+- [ ] Add tests ensuring docs/examples stay aligned with constants.
 - Files:
-  - `README.md`
-
----
-
-## 9) Audit Privacy Hardening
-
-### 9.1 External integration audit minimization (`P1`)
-- [x] Remove raw text previews from Todoist/Pushover success audit payloads.
-- [x] Keep only non-sensitive metadata (`length`, `ids`, `status`, `priority`, `title`).
-- [x] Add regression tests to prevent reintroduction of preview fields.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
----
-
-## 10) Error Taxonomy Precision
-
-### 10.1 Pushover API rejection classification (`P1`)
-- [x] Classify `status=0` API rejections as `api_error` (not generic `http_error`).
-- [x] Extend service error-code set and tests to cover this branch.
-- [x] Keep lifecycle telemetry error taxonomy in sync with service error-code additions.
-- Files:
-  - `src/jarvis/__main__.py`
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
----
-
-## 11) Conversation Quality Fixes
-
-### 11.1 Low-confidence phrase matching (`P2`)
-- [x] Normalize confidence-phrase token set to lowercase to match lowercased sentence checks.
-- [x] Add regression test for phrase-only sentence (`"I believe..."`) to prevent case regressions.
-- Files:
-  - `src/jarvis/__main__.py`
-  - `tests/test_turn_taking.py`
-
----
-
-## 12) Audit Coverage Consistency
-
-### 12.1 State-read audit logging (`P2`)
-- [x] Add audit entries for `smart_home_state` success and error branches.
-- [x] Add tests asserting audit records exist for both success and missing-entity cases.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
----
-
-## 13) Schema Precision
-
-### 13.1 Integer field declarations (`P2`)
-- [x] Update tool schemas to use `integer` for integer-only args (priority, limit, plan IDs, step indexes).
-- [x] Add regression tests for schema type precision on these fields.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
----
-
-## 14) Taxonomy Drift Prevention
-
-### 14.1 Telemetry/service taxonomy single-source (`P1`)
-- [x] Derive telemetry service-error set from `SERVICE_ERROR_CODES` instead of duplicating literals.
-- [x] Keep storage-error subset separation for split counters.
-- Files:
-  - `src/jarvis/__main__.py`
-
----
-
-## 15) API Payload Validation Hardening
-
-### 15.1 Todoist list payload shape checks (`P1`)
-- [x] Reject task-list responses containing non-object entries as `invalid_json`.
-- [x] Add regression test for mixed valid/invalid entry payloads.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
-### 15.2 Pushover status-type checks (`P1`)
-- [x] Reject non-integer `status` values as `invalid_json` instead of bubbling to unexpected errors.
-- [x] Add regression test for malformed `status` payload (`\"status\": \"ok\"`).
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
----
-
-## 16) Audit Secret Redaction
-
-### 16.1 Smart home audit payload redaction (`P0`)
-- [x] Redact sensitive keys in smart-home service data before audit logging (e.g. `code`, `pin`, `token`, `secret`).
-- [x] Preserve non-sensitive fields for operational traceability.
-- [x] Add regression test covering nested dict/list redaction.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
----
-
-## 17) Fault Test Coverage Alignment
-
-### 17.1 Fault selector taxonomy sync (`P1`)
-- [x] Include `api_error` in `test-faults` selectors (Makefile and script) so API-level rejects stay in fast fault regressions.
-- Files:
-  - `Makefile`
-  - `scripts/test_faults.sh`
-
----
-
-## 18) Integration Ops Documentation
-
-### 18.1 Profile semantics clarity (`P2`)
-- [x] Document exact Todoist and notification profile values and behavior in README safety section.
-- Files:
-  - `README.md`
-
----
-
-## 19) Home Action Idempotency Correctness
-
-### 19.1 `turn_off` no-op criteria (`P1`)
-- [x] Only short-circuit `turn_off` as no-op when current state is explicitly `off`.
-- [x] Do not no-op for `unknown`/`unavailable`; allow execution attempt.
-- [x] Add regression test proving `turn_off` executes when state is `unknown`.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
-
----
-
-## 20) Taxonomy Module Decoupling
-
-### 20.1 Shared error taxonomy extraction (`P1`)
-- [x] Extract shared service error taxonomy into side-effect-free module (`jarvis/tool_errors.py`).
-- [x] Rewire telemetry to import taxonomy from shared module instead of MCP services module.
-- [x] Keep `services.SERVICE_ERROR_CODES` as compatibility alias for existing call sites/tests.
-
-### 20.2 Shared storage-error subset extraction (`P1`)
-- [x] Define storage-error subset in shared taxonomy module and consume it in telemetry.
-- [x] Add regression assertion that telemetry storage-error set matches shared module constant.
-- Files:
+  - `docs/operations/error-taxonomy.md`
   - `src/jarvis/tool_errors.py`
-  - `src/jarvis/tools/services.py`
+  - `tests/test_main_lifecycle.py`
+
+### 4.2 Unknown detail accounting (`P1`)
+- [ ] Track and surface unexpected summary details in telemetry snapshot for debugging taxonomy misses.
+- [ ] Add tests proving unknown details are counted/surfaced.
+- Files:
   - `src/jarvis/__main__.py`
   - `tests/test_main_lifecycle.py`
-  - `tests/test_tools.py`
+
+### 4.3 Metrics snapshot stability (`P2`)
+- [ ] Add tests for telemetry averaging under zero/NaN edge cases to avoid runtime regressions.
+- Files:
+  - `src/jarvis/__main__.py`
+  - `tests/test_main_lifecycle.py`
 
 ---
 
-## 21) CI and Command Drift Prevention
+## 5) CI and Workflow Quality
 
-### 21.1 Fault command single-source (`P2`)
-- [x] Make `make test-faults` delegate to `scripts/test_faults.sh` to avoid selector drift.
-- Files:
-  - `Makefile`
-  - `scripts/test_faults.sh`
-
-### 21.2 Fault regression as CI gate (`P1`)
-- [x] Add explicit fault-subset step in CI workflow (`make test-faults`).
+### 5.1 CI lane decomposition (`P1`)
+- [x] Split CI into separate jobs (`lint`, `tests`, `faults`) for clearer failure locality.
+- [x] Keep shared dependency setup efficient.
 - Files:
   - `.github/workflows/ci.yml`
 
-### 21.3 README architecture consistency (`P2`)
-- [x] Align architecture diagram audit log path/name with runtime (`~/.jarvis/audit.jsonl`).
+### 5.2 Workflow shell hardening (`P2`)
+- [ ] Standardize `set -euo pipefail` in bash run blocks where appropriate.
+- [ ] Add checks for script executable bits in CI.
+- Files:
+  - `.github/workflows/ci.yml`
+  - `.github/workflows/workflow-sanity.yml`
+
+### 5.3 Optional coverage artifact (`P2`)
+- [ ] Add optional coverage XML generation/upload on CI (non-blocking initially).
+- Files:
+  - `.github/workflows/ci.yml`
+
+---
+
+## 6) Test Suite Maintainability
+
+### 6.1 Shared HTTP mock helpers (`P1`)
+- [x] Introduce reusable mock helpers for `aiohttp.ClientSession` patterns to reduce test duplication.
+- [x] Refactor service tests to use helper utilities.
+- Files:
+  - `tests/test_tools.py`
+  - `tests/conftest.py`
+
+### 6.2 Parametrize repetitive service cases (`P2`)
+- [ ] Parametrize common failure-mode tests (timeout/cancelled/network) across integrations.
+- Files:
+  - `tests/test_tools.py`
+
+### 6.3 Fault test taxonomy coverage map (`P2`)
+- [ ] Add test that ensures every critical taxonomy code is represented in the fault subset selection.
+- Files:
+  - `tests/test_tools.py`
+  - `scripts/test_faults.sh`
+  - `Makefile`
+
+---
+
+## 7) Documentation and Runbooks
+
+### 7.1 Home Assistant runbook updates (`P1`)
+- [x] Document current redaction behavior and examples in home-control runbook.
+- [x] Document cooldown semantics (`dry_run` vs execute).
+- Files:
+  - `docs/operations/home-control-policy.md`
+
+### 7.2 Integration runbook (`P1`)
+- [x] Create runbook for Todoist/Pushover operational setup, profile modes, and troubleshooting.
+- Files:
+  - `docs/operations/integration-policy.md`
+  - `README.md`
+
+### 7.3 README architecture sync (`P2`)
+- [ ] Reconcile architecture diagram text with current tool list (Todoist, Pushover, memory/planning).
 - Files:
   - `README.md`
 
 ---
 
-## 22) Notification Audit Minimization
+## 8) Immediate Execution Queue
 
-### 22.1 Pushover title redaction-by-design (`P1`)
-- [x] Replace raw `title` audit field with metadata-only `title_length`.
-- [x] Extend regression coverage to assert raw notification title/content fields are absent from audit payloads.
-- Files:
-  - `src/jarvis/tools/services.py`
-  - `tests/test_tools.py`
+### 8.1 Start now (`P0`)
+- [x] Begin with **6.1 Shared HTTP mock helpers** to reduce service-test maintenance overhead.
+
+### 8.2 Next after 6.1 (`P1`)
+- [x] Continue with **5.1 CI lane decomposition**.
+
+### 8.3 Then (`P1`)
+- [x] Continue with **7.2 Integration runbook**.

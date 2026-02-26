@@ -29,9 +29,14 @@ For `smart_home` requests:
 
 ## 5) Audit and Diagnostics
 - All smart-home actions are audit logged.
+- Service payloads are sensitive-key redacted before audit persistence (`code`, `pin`, `token`, `secret`, etc.).
 - `system_status` includes:
   - tool allow/deny counts
   - active `home_permission_profile`
+
+## 6) Cooldown Semantics
+- Cooldown applies to mutating executes (`dry_run=false`) only.
+- Dry-run requests do not consume cooldown history and can be repeated for planning/confirmation.
 
 ## Recommended Profiles
 - Development: `HOME_PERMISSION_PROFILE=readonly`
@@ -43,3 +48,4 @@ For `smart_home` requests:
   2. Check `HOME_PERMISSION_PROFILE`.
   3. Ensure sensitive executes pass `confirm=true`.
   4. Verify `HASS_URL` and `HASS_TOKEN` are both set.
+  5. If an execute is blocked, check whether an action cooldown is currently active.

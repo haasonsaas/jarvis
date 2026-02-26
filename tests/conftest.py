@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import pytest
 import numpy as np
+from unittest.mock import AsyncMock, MagicMock
 
 # Set required env vars before any imports touch Config
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key-not-real")
@@ -56,3 +57,65 @@ def audio_16k_noise():
 def sample_frame():
     """A dummy 480x640 RGB camera frame."""
     return np.zeros((480, 640, 3), dtype=np.uint8)
+
+
+def _aiohttp_context_manager(response: AsyncMock) -> AsyncMock:
+    ctx = AsyncMock()
+    ctx.__aenter__ = AsyncMock(return_value=response)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    return ctx
+
+
+@pytest.fixture
+def aiohttp_response():
+    """Factory for aiohttp-like response mocks."""
+
+    def _build(
+        *,
+        status: int = 200,
+        json_data=None,
+        json_side_effect=None,
+        text_data: str = "",
+        text_side_effect=None,
+    ) -> AsyncMock:
+        response = AsyncMock()
+        response.status = status
+        if json_side_effect is not None:
+            response.json = AsyncMock(side_effect=json_side_effect)
+        else:
+            response.json = AsyncMock(return_value=json_data)
+        if text_side_effect is not None:
+            response.text = AsyncMock(side_effect=text_side_effect)
+        else:
+            response.text = AsyncMock(return_value=text_data)
+        return response
+
+    return _build
+
+
+@pytest.fixture
+def aiohttp_session_mock():
+    """Factory for aiohttp.ClientSession context manager mocks."""
+
+    def _build(*, get=None, post=None) -> AsyncMock:
+        session = AsyncMock()
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+
+        if get is None:
+            session.get = MagicMock()
+        elif isinstance(get, list):
+            session.get = MagicMock(side_effect=[_aiohttp_context_manager(resp) for resp in get])
+        else:
+            session.get = MagicMock(return_value=_aiohttp_context_manager(get))
+
+        if post is None:
+            session.post = MagicMock()
+        elif isinstance(post, list):
+            session.post = MagicMock(side_effect=[_aiohttp_context_manager(resp) for resp in post])
+        else:
+            session.post = MagicMock(return_value=_aiohttp_context_manager(post))
+
+        return session
+
+    return _build

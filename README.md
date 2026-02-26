@@ -89,6 +89,7 @@ Smart home safety defaults:
 - Sensitive domains (`lock`, `alarm_control_panel`, `cover`) require `confirm=true` when `dry_run=false`.
 - `HOME_PERMISSION_PROFILE=readonly` disables mutating `smart_home` actions but keeps `smart_home_state`.
 - Operational runbook: [`docs/operations/home-control-policy.md`](docs/operations/home-control-policy.md).
+- Integration runbook: [`docs/operations/integration-policy.md`](docs/operations/integration-policy.md).
 - Todoist integration:
   - `TODOIST_PERMISSION_PROFILE=readonly|control`
   - `readonly` allows `todoist_list_tasks` and denies `todoist_add_task`
