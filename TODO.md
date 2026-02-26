@@ -128,7 +128,7 @@ This backlog is intentionally broader and longer so we can iterate through multi
 
 ### 5.2 Workflow shell hardening (`P2`)
 - [ ] Standardize `set -euo pipefail` in bash run blocks where appropriate.
-- [ ] Add checks for script executable bits in CI.
+- [x] Add checks for script executable bits in CI.
 - Files:
   - `.github/workflows/ci.yml`
   - `.github/workflows/workflow-sanity.yml`

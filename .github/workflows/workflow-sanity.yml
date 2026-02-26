@@ -61,3 +61,21 @@ jobs:
 
       - name: Lint workflows
         run: actionlint
+
+  scripts-executable:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure scripts are executable
+        run: |
+          set -euo pipefail
+          bad=0
+          while IFS= read -r -d '' path; do
+            if [ ! -x "$path" ]; then
+              echo "Non-executable script: $path"
+              bad=1
+            fi
+          done < <(find scripts -type f -name "*.sh" -print0)
+          exit "$bad"
