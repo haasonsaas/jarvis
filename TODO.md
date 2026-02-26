@@ -232,3 +232,12 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - Files:
   - `Makefile`
   - `scripts/test_faults.sh`
+
+---
+
+## 18) Integration Ops Documentation
+
+### 18.1 Profile semantics clarity (`P2`)
+- [x] Document exact Todoist and notification profile values and behavior in README safety section.
+- Files:
+  - `README.md`

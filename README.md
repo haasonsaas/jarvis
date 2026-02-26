@@ -88,8 +88,14 @@ Smart home safety defaults:
 - Sensitive domains (`lock`, `alarm_control_panel`, `cover`) require `confirm=true` when `dry_run=false`.
 - `HOME_PERMISSION_PROFILE=readonly` disables mutating `smart_home` actions but keeps `smart_home_state`.
 - Operational runbook: [`docs/operations/home-control-policy.md`](docs/operations/home-control-policy.md).
-- Todoist integration: `todoist_add_task` (control-only by profile) and `todoist_list_tasks`.
-- Pushover integration: `pushover_notify` (gated by notification profile).
+- Todoist integration:
+  - `TODOIST_PERMISSION_PROFILE=readonly|control`
+  - `readonly` allows `todoist_list_tasks` and denies `todoist_add_task`
+  - `control` allows both tools
+- Pushover integration:
+  - `NOTIFICATION_PERMISSION_PROFILE=off|allow`
+  - `off` denies `pushover_notify`
+  - `allow` enables `pushover_notify`
 
 ## Usage
 
