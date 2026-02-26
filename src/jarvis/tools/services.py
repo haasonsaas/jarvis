@@ -96,7 +96,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "content": {"type": "string"},
             "description": {"type": "string"},
             "due_string": {"type": "string"},
-            "priority": {"type": "number"},
+            "priority": {"type": "integer"},
             "labels": {"type": "array", "items": {"type": "string"}},
         },
         "required": ["content"],
@@ -104,7 +104,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "todoist_list_tasks": {
         "type": "object",
         "properties": {
-            "limit": {"type": "number"},
+            "limit": {"type": "integer"},
         },
     },
     "pushover_notify": {
@@ -112,7 +112,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "message": {"type": "string"},
             "title": {"type": "string"},
-            "priority": {"type": "number"},
+            "priority": {"type": "integer"},
         },
         "required": ["message"],
     },
@@ -134,7 +134,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "query": {"type": "string"},
-            "limit": {"type": "number"},
+            "limit": {"type": "integer"},
             "max_sensitivity": {"type": "number"},
             "include_sensitive": {"type": "boolean"},
             "hybrid_weight": {"type": "number"},
@@ -158,7 +158,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "memory_recent": {
         "type": "object",
         "properties": {
-            "limit": {"type": "number"},
+            "limit": {"type": "integer"},
             "kind": {"type": "string"},
             "sources": {"type": "array", "items": {"type": "string"}},
         },
@@ -174,7 +174,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "memory_summary_list": {
         "type": "object",
         "properties": {
-            "limit": {"type": "number"},
+            "limit": {"type": "integer"},
         },
     },
     "task_plan_create": {
@@ -194,8 +194,8 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "task_plan_update": {
         "type": "object",
         "properties": {
-            "plan_id": {"type": "number"},
-            "step_index": {"type": "number", "description": "0-based index"},
+            "plan_id": {"type": "integer"},
+            "step_index": {"type": "integer", "description": "0-based index"},
             "status": {"type": "string", "description": "pending, in_progress, blocked, done"},
         },
         "required": ["plan_id", "step_index", "status"],
@@ -203,26 +203,26 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "task_plan_summary": {
         "type": "object",
         "properties": {
-            "plan_id": {"type": "number"},
+            "plan_id": {"type": "integer"},
         },
         "required": ["plan_id"],
     },
     "task_plan_next": {
         "type": "object",
         "properties": {
-            "plan_id": {"type": "number"},
+            "plan_id": {"type": "integer"},
         },
     },
     "tool_summary": {
         "type": "object",
         "properties": {
-            "limit": {"type": "number"},
+            "limit": {"type": "integer"},
         },
     },
     "tool_summary_text": {
         "type": "object",
         "properties": {
-            "limit": {"type": "number"},
+            "limit": {"type": "integer"},
         },
     },
 }

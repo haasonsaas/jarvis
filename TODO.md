@@ -171,3 +171,14 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
+
+---
+
+## 13) Schema Precision
+
+### 13.1 Integer field declarations (`P2`)
+- [x] Update tool schemas to use `integer` for integer-only args (priority, limit, plan IDs, step indexes).
+- [x] Add regression tests for schema type precision on these fields.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`

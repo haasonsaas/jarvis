@@ -1686,6 +1686,23 @@ class TestServicesTools:
         for name, schema in services.SERVICE_TOOL_SCHEMAS.items():
             assert _schema_required_fields(schema) == services.SERVICE_RUNTIME_REQUIRED_FIELDS[name]
 
+    def test_service_schema_integer_fields_are_declared_integer(self):
+        from jarvis.tools import services
+
+        schemas = services.SERVICE_TOOL_SCHEMAS
+        assert schemas["todoist_add_task"]["properties"]["priority"]["type"] == "integer"
+        assert schemas["todoist_list_tasks"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["pushover_notify"]["properties"]["priority"]["type"] == "integer"
+        assert schemas["memory_search"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["memory_recent"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["memory_summary_list"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["task_plan_update"]["properties"]["plan_id"]["type"] == "integer"
+        assert schemas["task_plan_update"]["properties"]["step_index"]["type"] == "integer"
+        assert schemas["task_plan_summary"]["properties"]["plan_id"]["type"] == "integer"
+        assert schemas["task_plan_next"]["properties"]["plan_id"]["type"] == "integer"
+        assert schemas["tool_summary"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["tool_summary_text"]["properties"]["limit"]["type"] == "integer"
+
     def test_bind_clears_action_history(self, config):
         from jarvis.tools import services
 
