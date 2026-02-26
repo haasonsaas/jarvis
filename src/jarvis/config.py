@@ -116,6 +116,12 @@ class Config:
     audit_log_max_bytes: int = field(default_factory=lambda: _env_int("AUDIT_LOG_MAX_BYTES", 1_000_000))
     audit_log_backups: int = field(default_factory=lambda: _env_int("AUDIT_LOG_BACKUPS", 3))
     home_permission_profile: str = field(default_factory=lambda: os.environ.get("HOME_PERMISSION_PROFILE", "control"))
+    todoist_api_token: str = field(default_factory=lambda: os.environ.get("TODOIST_API_TOKEN", ""))
+    todoist_project_id: str = field(default_factory=lambda: os.environ.get("TODOIST_PROJECT_ID", ""))
+    todoist_permission_profile: str = field(default_factory=lambda: os.environ.get("TODOIST_PERMISSION_PROFILE", "control"))
+    pushover_api_token: str = field(default_factory=lambda: os.environ.get("PUSHOVER_API_TOKEN", ""))
+    pushover_user_key: str = field(default_factory=lambda: os.environ.get("PUSHOVER_USER_KEY", ""))
+    notification_permission_profile: str = field(default_factory=lambda: os.environ.get("NOTIFICATION_PERMISSION_PROFILE", "allow"))
 
     # Quick toggles
     motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)
@@ -156,6 +162,8 @@ class Config:
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
         self.home_permission_profile = self._normalize_home_permission_profile(self.home_permission_profile)
+        self.todoist_permission_profile = self._normalize_todoist_permission_profile(self.todoist_permission_profile)
+        self.notification_permission_profile = self._normalize_notification_permission_profile(self.notification_permission_profile)
         if _env_is_set("BACKCHANNEL_STYLE") and self.backchannel_style == "balanced":
             raw = os.environ.get("BACKCHANNEL_STYLE", "")
             if raw.strip().lower() not in {"quiet", "balanced", "expressive"}:
@@ -168,6 +176,14 @@ class Config:
             raw = os.environ.get("HOME_PERMISSION_PROFILE", "")
             if raw.strip().lower() not in {"readonly", "control"}:
                 self.startup_warnings.append("HOME_PERMISSION_PROFILE invalid; using control.")
+        if _env_is_set("TODOIST_PERMISSION_PROFILE") and self.todoist_permission_profile == "control":
+            raw = os.environ.get("TODOIST_PERMISSION_PROFILE", "")
+            if raw.strip().lower() not in {"readonly", "control"}:
+                self.startup_warnings.append("TODOIST_PERMISSION_PROFILE invalid; using control.")
+        if _env_is_set("NOTIFICATION_PERMISSION_PROFILE") and self.notification_permission_profile == "allow":
+            raw = os.environ.get("NOTIFICATION_PERMISSION_PROFILE", "")
+            if raw.strip().lower() not in {"off", "allow"}:
+                self.startup_warnings.append("NOTIFICATION_PERMISSION_PROFILE invalid; using allow.")
 
     @staticmethod
     def _normalize_backchannel_style(style: str) -> str:
@@ -190,12 +206,34 @@ class Config:
             return normalized
         return "control"
 
+    @staticmethod
+    def _normalize_todoist_permission_profile(profile: str) -> str:
+        normalized = (profile or "control").strip().lower()
+        if normalized in {"readonly", "control"}:
+            return normalized
+        return "control"
+
+    @staticmethod
+    def _normalize_notification_permission_profile(profile: str) -> str:
+        normalized = (profile or "allow").strip().lower()
+        if normalized in {"off", "allow"}:
+            return normalized
+        return "allow"
+
     def _collect_startup_warnings(self) -> list[str]:
         warnings: list[str] = []
         has_hass_url = bool((self.hass_url or "").strip())
         has_hass_token = bool((self.hass_token or "").strip())
         if has_hass_url != has_hass_token:
             warnings.append("Home Assistant config incomplete; set both HASS_URL and HASS_TOKEN.")
+        has_todoist_token = bool((self.todoist_api_token or "").strip())
+        has_todoist_project = bool((self.todoist_project_id or "").strip())
+        if has_todoist_project and not has_todoist_token:
+            warnings.append("Todoist config incomplete; set TODOIST_API_TOKEN when TODOIST_PROJECT_ID is set.")
+        has_pushover_token = bool((self.pushover_api_token or "").strip())
+        has_pushover_user = bool((self.pushover_user_key or "").strip())
+        if has_pushover_token != has_pushover_user:
+            warnings.append("Pushover config incomplete; set both PUSHOVER_API_TOKEN and PUSHOVER_USER_KEY.")
         checks: list[tuple[str, str, str]] = [
             ("DOA_CHANGE_THRESHOLD", "float", str(self.doa_change_threshold)),
             ("DOA_TIMEOUT", "float", str(self.doa_timeout)),

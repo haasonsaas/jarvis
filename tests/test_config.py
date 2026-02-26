@@ -97,6 +97,18 @@ class TestConfig:
         c = Config(home_permission_profile="execute-all")
         assert c.home_permission_profile == "control"
 
+    def test_todoist_permission_profile_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(todoist_permission_profile="write-all")
+        assert c.todoist_permission_profile == "control"
+
+    def test_notification_permission_profile_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(notification_permission_profile="enabled")
+        assert c.notification_permission_profile == "allow"
+
     def test_invalid_audit_retention_raises(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         from jarvis.config import Config
@@ -114,6 +126,8 @@ class TestConfig:
         monkeypatch.setenv("PERSONA_STYLE", "chatty")
         monkeypatch.setenv("HOME_ENABLED", "maybe")
         monkeypatch.setenv("HOME_PERMISSION_PROFILE", "execute-all")
+        monkeypatch.setenv("TODOIST_PERMISSION_PROFILE", "write-all")
+        monkeypatch.setenv("NOTIFICATION_PERMISSION_PROFILE", "enabled")
         from jarvis.config import Config
 
         c = Config()
@@ -125,6 +139,8 @@ class TestConfig:
         assert "PERSONA_STYLE invalid" in text
         assert "HOME_ENABLED invalid boolean" in text
         assert "HOME_PERMISSION_PROFILE invalid" in text
+        assert "TODOIST_PERMISSION_PROFILE invalid" in text
+        assert "NOTIFICATION_PERMISSION_PROFILE invalid" in text
 
     def test_invalid_bool_env_falls_back_to_default_behavior(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
@@ -155,3 +171,23 @@ class TestConfig:
         c = Config()
         text = "\n".join(c.startup_warnings)
         assert "home assistant config incomplete" in text.lower()
+
+    def test_startup_warning_for_partial_todoist_config(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("TODOIST_PROJECT_ID", "inbox")
+        monkeypatch.delenv("TODOIST_API_TOKEN", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "todoist config incomplete" in text.lower()
+
+    def test_startup_warning_for_partial_pushover_config(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("PUSHOVER_API_TOKEN", "app-token")
+        monkeypatch.delenv("PUSHOVER_USER_KEY", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "pushover config incomplete" in text.lower()

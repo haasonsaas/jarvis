@@ -1,8 +1,8 @@
-# Jarvis Engineering TODO (Integration Hardening Wave)
+# Jarvis Engineering TODO (External Integration Wave)
 
 Last updated: 2026-02-26
 
-This wave implements deeper Home Assistant integration safety, policy gating, preflight validation, idempotency, and operational consistency.
+This wave adds external task and notification integrations with explicit policy gates, config diagnostics, and test coverage.
 
 ## Status legend
 - `[ ]` Not started
@@ -11,72 +11,85 @@ This wave implements deeper Home Assistant integration safety, policy gating, pr
 
 ---
 
-## 1) Home Assistant Integration Safety
+## 1) Home Assistant Safety (Completed)
 
-### 1.1 Permission profile for HA mutation (`P0`)
-- [x] Add `HOME_PERMISSION_PROFILE` (`readonly`/`control`) and enforce at tool permission layer.
+### 1.1 Permission profile and gating (`P0`)
+- [x] `HOME_PERMISSION_PROFILE` (`readonly`/`control`) enforced in tool policy.
 
-### 1.2 Sensitive action confirmation gate (`P0`)
-- [x] Require `confirm=true` when executing sensitive domains with `dry_run=false`.
+### 1.2 Sensitive confirmation flow (`P0`)
+- [x] Sensitive execute requires `confirm=true` when `dry_run=false`.
 
-### 1.3 Entity domain preflight validation (`P1`)
-- [x] Validate `entity_id` domain matches `domain` and reject unsupported action/domain combinations.
-
-### 1.4 Idempotency short-circuit for `turn_on`/`turn_off` (`P1`)
-- [x] Preflight state read and no-op when target state already satisfied.
-
-### 1.5 Lightweight HA state cache (`P2`)
-- [x] Add short TTL cache for HA state reads used by preflight and `smart_home_state`.
+### 1.3 Preflight validation and idempotency (`P1`)
+- [x] Domain/entity/action preflight validation.
+- [x] Idempotent no-op short-circuit for `turn_on`/`turn_off`.
+- [x] Shared HA state helper and short TTL cache.
 
 ---
 
-## 2) Config and Observability
+## 2) New External Integrations
 
-### 2.1 Config model for HA permission profile (`P1`)
-- [x] Normalize/validate `HOME_PERMISSION_PROFILE` in config.
-- [x] Emit startup warning on invalid profile values.
+### 2.1 Todoist tools (`P0`)
+- [x] Add `todoist_add_task` and `todoist_list_tasks` tools.
+- [x] Add Todoist schemas and runtime required field parity.
+- [x] Add HTTP timeout/auth/network handling with normalized telemetry errors.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `src/jarvis/brain.py`
+  - `tests/test_tools.py`
 
-### 2.2 Secret/config diagnostics (`P1`)
-- [x] Warn when Home Assistant config is partially present (only URL or only token).
+### 2.2 Notification tool (`P0`)
+- [x] Add `pushover_notify` tool.
+- [x] Add schema and runtime required field parity.
+- [x] Add timeout/auth/network handling with normalized telemetry errors.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `src/jarvis/brain.py`
+  - `tests/test_tools.py`
 
-### 2.3 System status visibility (`P2`)
-- [x] Include active `home_permission_profile` in `system_status.tool_policy` payload.
+### 2.3 Integration permission profiles (`P1`)
+- [x] Add `TODOIST_PERMISSION_PROFILE` (`readonly`/`control`) and enforce add-task mutation gate.
+- [x] Add `NOTIFICATION_PERMISSION_PROFILE` (`off`/`allow`) and enforce notification gate.
+- Files:
+  - `src/jarvis/config.py`
+  - `src/jarvis/tools/services.py`
+  - `tests/test_config.py`
+  - `tests/test_tools.py`
 
-### 2.4 Environment/docs updates (`P2`)
-- [x] Document new HA profile and confirm flow.
-
----
-
-## 3) Store and Parser Hardening
-
-### 3.1 Strict numeric parsing and coercion defenses (`P1`)
-- [x] Service numeric parsers reject bool/fractional limits.
-- [x] Robot float parser rejects bool coercion.
-- [x] MemoryStore and ToolSummaryStore enforce strict limit parsing for direct callers.
-
----
-
-## 4) Brain Reliability
-
-### 4.1 Memory context lookup fault tolerance (`P1`)
-- [x] Prevent memory lookup failures from aborting response generation.
-
----
-
-## 5) Developer Workflow
-
-### 5.1 Fault target taxonomy coverage (`P2`)
-- [x] Expand `test-faults` selectors to include current normalized taxonomy values.
-
-### 5.2 CI enforcement for checks (`P1`)
-- [x] Add GitHub Actions workflow to run lint + tests on pushes and pull requests.
-
-### 5.3 Nightly soak workflow (`P2`)
-- [x] Add scheduled soak workflow to continuously run stability subset.
+### 2.4 Config diagnostics for integrations (`P1`)
+- [x] Warn on partial Todoist config.
+- [x] Warn on partial Pushover config.
+- [x] Warn on invalid integration permission profile env values.
+- Files:
+  - `src/jarvis/config.py`
+  - `tests/test_config.py`
 
 ---
 
-## 6) Execution Result
+## 3) Docs and Env Surface
+
+### 3.1 Environment template updates (`P1`)
+- [x] Add Todoist and Pushover env keys and policy profile keys.
+- Files:
+  - `.env.example`
+
+### 3.2 README updates (`P1`)
+- [x] Document Todoist/Pushover integrations and policy profile controls.
+- Files:
+  - `README.md`
+
+---
+
+## 4) Ops and CI
+
+### 4.1 Nightly soak (`P2`)
+- [x] Scheduled soak workflow remains in place.
+
+### 4.2 Home control runbook (`P2`)
+- [x] Operational policy-layer runbook remains in place.
+
+---
+
+## 5) Execution Result
 - [x] Lint clean: `uv run ruff check src tests`
 - [x] Test suite green: `uv run pytest -q`
 - [x] Fault subset green: `scripts/test_faults.sh`

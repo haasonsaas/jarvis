@@ -437,6 +437,36 @@ class TestServicesTools:
         assert "not permitted" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_todoist_permission_profile_readonly_denies_add(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_permission_profile = "readonly"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        result = await services.todoist_add_task({"content": "Buy coffee"})
+        assert "not permitted" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_notification_permission_profile_off_denies_notify(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.notification_permission_profile = "off"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        result = await services.pushover_notify({"message": "hello"})
+        assert "not permitted" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_smart_home_dry_run_explicit_false_with_confirm(self):
         from jarvis.tools.services import smart_home
 
@@ -682,6 +712,117 @@ class TestServicesTools:
 
         result = await smart_home_state({})
         assert "entity id required" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_todoist_add_task_requires_config(self):
+        from jarvis.tools import services
+
+        result = await services.todoist_add_task({"content": "Buy coffee"})
+        assert "todoist not configured" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_todoist_list_tasks_requires_config(self):
+        from jarvis.tools import services
+
+        result = await services.todoist_list_tasks({"limit": 5})
+        assert "todoist not configured" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_pushover_notify_requires_config(self):
+        from jarvis.tools import services
+
+        result = await services.pushover_notify({"message": "hello"})
+        assert "pushover not configured" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_todoist_add_task_success(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        cfg.todoist_project_id = "proj-1"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = AsyncMock()
+            mock_resp.status = 200
+            mock_resp.json = AsyncMock(return_value={"id": "123"})
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.post = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
+
+            result = await services.todoist_add_task({"content": "Buy coffee"})
+
+        assert "created" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_todoist_list_tasks_success(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = AsyncMock()
+            mock_resp.status = 200
+            mock_resp.json = AsyncMock(return_value=[{"content": "Buy coffee"}, {"content": "Call mom"}])
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
+
+            result = await services.todoist_list_tasks({"limit": 2})
+
+        text = result["content"][0]["text"].lower()
+        assert "buy coffee" in text
+        assert "call mom" in text
+
+    @pytest.mark.asyncio
+    async def test_pushover_notify_success(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.pushover_api_token = "app-token"
+        cfg.pushover_user_key = "user-key"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = AsyncMock()
+            mock_resp.status = 200
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.post = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
+
+            result = await services.pushover_notify({"message": "hello"})
+
+        assert "sent" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_memory_add_ignores_non_list_tags(self, tmp_path):
