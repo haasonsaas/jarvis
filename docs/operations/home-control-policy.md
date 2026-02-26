@@ -11,6 +11,16 @@ This project uses multiple control layers for Home Assistant actions.
 - `readonly`: denies mutating `smart_home` actions, allows `smart_home_state`.
 - `control`: allows both tools, subject to policy checks below.
 
+## 2.5) Identity and Trust Overlay
+- Optional identity enforcement layer:
+  - `IDENTITY_ENFORCEMENT_ENABLED=true`
+  - `IDENTITY_USER_PROFILES` (`user=deny|readonly|control|trusted`)
+- Per-user policy is layered over global home policy.
+- User-level identity cannot elevate globally denied behavior (for example global `HOME_PERMISSION_PROFILE=readonly` still blocks writes).
+- High-risk actions can require approval through:
+  - `approval_code` (matching `IDENTITY_APPROVAL_CODE`), or
+  - trusted requester path (`approved=true` with trusted identity).
+
 ## 3) Runtime Safety Policy
 For `smart_home` requests:
 - `domain`, `action`, and `entity_id` are required.

@@ -349,3 +349,54 @@ class TestConfig:
         assert "home_conversation_permission_profile=control set while hass_url/hass_token are empty" in text
         assert "todoist_permission_profile=control set while todoist_api_token is empty" in text
         assert "notification_permission_profile=allow set while pushover credentials are empty" in text
+
+    def test_identity_profile_parsing_and_normalization(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("IDENTITY_ENFORCEMENT_ENABLED", "true")
+        monkeypatch.setenv("IDENTITY_DEFAULT_USER", "  OWNER  ")
+        monkeypatch.setenv("IDENTITY_DEFAULT_PROFILE", "trusted")
+        monkeypatch.setenv("IDENTITY_USER_PROFILES", "alice=readonly,bob=DENY,charlie=unknown")
+        monkeypatch.setenv("IDENTITY_TRUSTED_USERS", "owner,alice,owner")
+        monkeypatch.setenv("IDENTITY_REQUIRE_APPROVAL", "true")
+        monkeypatch.setenv("IDENTITY_APPROVAL_CODE", "strong-secret")
+        from jarvis.config import Config
+
+        c = Config()
+        assert c.identity_enforcement_enabled is True
+        assert c.identity_default_user == "owner"
+        assert c.identity_default_profile == "trusted"
+        assert c.identity_user_profiles["alice"] == "readonly"
+        assert c.identity_user_profiles["bob"] == "deny"
+        assert c.identity_user_profiles["charlie"] == "control"
+        assert c.identity_trusted_users == ["alice", "owner"]
+        assert c.identity_require_approval is True
+        assert c.identity_approval_code == "strong-secret"
+
+    def test_identity_startup_warnings_for_invalid_profiles_and_missing_approval_path(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("IDENTITY_ENFORCEMENT_ENABLED", "true")
+        monkeypatch.setenv("IDENTITY_REQUIRE_APPROVAL", "true")
+        monkeypatch.setenv("IDENTITY_USER_PROFILES", "badentry,=readonly,user=super")
+        monkeypatch.setenv("IDENTITY_DEFAULT_PROFILE", "super")
+        monkeypatch.setenv("IDENTITY_APPROVAL_CODE", "short")
+        monkeypatch.delenv("IDENTITY_TRUSTED_USERS", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "IDENTITY_DEFAULT_PROFILE invalid" in text
+        assert "IDENTITY_USER_PROFILES has invalid entry" in text
+        assert "IDENTITY_USER_PROFILES has invalid profile" in text
+        assert "IDENTITY_APPROVAL_CODE appears unusually short" in text
+
+    def test_identity_require_approval_warning_when_no_code_or_trusted_users(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("IDENTITY_ENFORCEMENT_ENABLED", "true")
+        monkeypatch.setenv("IDENTITY_REQUIRE_APPROVAL", "true")
+        monkeypatch.delenv("IDENTITY_APPROVAL_CODE", raising=False)
+        monkeypatch.delenv("IDENTITY_TRUSTED_USERS", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "IDENTITY_REQUIRE_APPROVAL is enabled without IDENTITY_APPROVAL_CODE or IDENTITY_TRUSTED_USERS." in text

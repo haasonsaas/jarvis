@@ -91,6 +91,9 @@ cp .env.example .env
 # Optional: WEATHER_UNITS=metric|imperial / WEATHER_TIMEOUT_SEC
 # Optional: WEBHOOK_ALLOWLIST=example.com,api.example.com / WEBHOOK_AUTH_TOKEN / WEBHOOK_TIMEOUT_SEC
 # Optional: SLACK_WEBHOOK_URL / DISCORD_WEBHOOK_URL
+# Optional: IDENTITY_ENFORCEMENT_ENABLED / IDENTITY_DEFAULT_USER / IDENTITY_DEFAULT_PROFILE
+# Optional: IDENTITY_USER_PROFILES / IDENTITY_TRUSTED_USERS
+# Optional: IDENTITY_REQUIRE_APPROVAL / IDENTITY_APPROVAL_CODE
 # Optional: MEMORY_RETENTION_DAYS / AUDIT_RETENTION_DAYS (0 disables pruning)
 # Optional: MEMORY_PII_GUARDRAILS_ENABLED=true|false
 ```
@@ -101,6 +104,7 @@ Smart home safety defaults:
 - `HOME_REQUIRE_CONFIRM_EXECUTE=true` enforces `confirm=true` for all non-dry-run `smart_home` actions.
 - Operational runbook: [`docs/operations/home-control-policy.md`](docs/operations/home-control-policy.md).
 - Integration runbook: [`docs/operations/integration-policy.md`](docs/operations/integration-policy.md).
+- Trust/identity runbook: [`docs/operations/trust-policy.md`](docs/operations/trust-policy.md).
 - Home Assistant conversation tool requires both:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`
@@ -144,6 +148,7 @@ Smart home safety defaults:
 - Webhook integration:
   - `webhook_trigger` enforces `https` + `WEBHOOK_ALLOWLIST` domain policy
   - optional bearer token injection via `WEBHOOK_AUTH_TOKEN`
+  - when identity enforcement is enabled, high-risk calls require `approval_code` or a trusted requester with `approved=true`
 
 ### First-Time Operator Checklist
 

@@ -7,6 +7,7 @@ Everything is audit-logged.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import math
@@ -62,7 +63,7 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
-SYSTEM_STATUS_CONTRACT_VERSION = "1.0"
+SYSTEM_STATUS_CONTRACT_VERSION = "1.1"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
@@ -111,6 +112,13 @@ _webhook_auth_token: str = ""
 _webhook_timeout_sec: float = 8.0
 _slack_webhook_url: str = ""
 _discord_webhook_url: str = ""
+_identity_enforcement_enabled: bool = False
+_identity_default_user: str = "owner"
+_identity_default_profile: str = "control"
+_identity_user_profiles: dict[str, str] = {}
+_identity_trusted_users: set[str] = set()
+_identity_require_approval: bool = True
+_identity_approval_code: str = ""
 _memory_retention_days: float = 0.0
 _audit_retention_days: float = 0.0
 _memory_pii_guardrails_enabled: bool = True
@@ -173,6 +181,12 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "description": "If true, describe what would happen without executing. "
                 "Always true for locks/alarms/covers unless user explicitly confirms.",
             },
+            "confirm": {"type": "boolean", "description": "Optional explicit confirmation for execute paths."},
+            "requester_id": {"type": "string", "description": "Requester identity for policy decisions and audit."},
+            "request_context": {"type": "object", "description": "Optional voice/text context with requester metadata."},
+            "speaker_verified": {"type": "boolean", "description": "Trusted-speaker hook for voice identity pipelines."},
+            "approved": {"type": "boolean", "description": "Trusted approval handshake flag for high-risk actions."},
+            "approval_code": {"type": "string", "description": "Approval code for high-risk actions when required."},
         },
         "required": ["domain", "action", "entity_id"],
     },
@@ -201,6 +215,11 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "type": "boolean",
                 "description": "Must be true for execution to reduce accidental high-impact voice commands.",
             },
+            "requester_id": {"type": "string", "description": "Requester identity for policy decisions and audit."},
+            "request_context": {"type": "object", "description": "Optional voice/text context with requester metadata."},
+            "speaker_verified": {"type": "boolean", "description": "Trusted-speaker hook for voice identity pipelines."},
+            "approved": {"type": "boolean", "description": "Trusted approval handshake flag for high-risk actions."},
+            "approval_code": {"type": "string", "description": "Approval code for high-risk actions when required."},
         },
         "required": ["text"],
     },
@@ -212,6 +231,11 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "item": {"type": "string", "description": "Todo item text for add/remove actions"},
             "item_id": {"type": "string", "description": "Optional uid for remove actions"},
             "status": {"type": "string", "description": "Optional status filter for list actions"},
+            "requester_id": {"type": "string"},
+            "request_context": {"type": "object"},
+            "speaker_verified": {"type": "boolean"},
+            "approved": {"type": "boolean"},
+            "approval_code": {"type": "string"},
         },
         "required": ["action", "entity_id"],
     },
@@ -221,6 +245,11 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "action": {"type": "string", "description": "state, start, pause, cancel, or finish"},
             "entity_id": {"type": "string", "description": "Timer entity id, for example timer.kitchen"},
             "duration": {"type": "string", "description": "Optional duration when action=start (HH:MM:SS)."},
+            "requester_id": {"type": "string"},
+            "request_context": {"type": "object"},
+            "speaker_verified": {"type": "boolean"},
+            "approved": {"type": "boolean"},
+            "approval_code": {"type": "string"},
         },
         "required": ["action", "entity_id"],
     },
@@ -240,6 +269,11 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "action": {"type": "string", "description": "play, pause, stop, volume_set, mute, unmute"},
             "volume": {"type": "number", "description": "Volume level between 0.0 and 1.0 for volume_set."},
             "dry_run": {"type": "boolean"},
+            "requester_id": {"type": "string"},
+            "request_context": {"type": "object"},
+            "speaker_verified": {"type": "boolean"},
+            "approved": {"type": "boolean"},
+            "approval_code": {"type": "string"},
         },
         "required": ["entity_id", "action"],
     },
@@ -259,6 +293,11 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "payload": {"type": "object"},
             "headers": {"type": "object"},
             "timeout_sec": {"type": "number"},
+            "requester_id": {"type": "string"},
+            "request_context": {"type": "object"},
+            "speaker_verified": {"type": "boolean"},
+            "approved": {"type": "boolean"},
+            "approval_code": {"type": "string"},
         },
         "required": ["url"],
     },
@@ -266,6 +305,11 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "message": {"type": "string"},
+            "requester_id": {"type": "string"},
+            "request_context": {"type": "object"},
+            "speaker_verified": {"type": "boolean"},
+            "approved": {"type": "boolean"},
+            "approval_code": {"type": "string"},
         },
         "required": ["message"],
     },
@@ -273,6 +317,11 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "message": {"type": "string"},
+            "requester_id": {"type": "string"},
+            "request_context": {"type": "object"},
+            "speaker_verified": {"type": "boolean"},
+            "approved": {"type": "boolean"},
+            "approval_code": {"type": "string"},
         },
         "required": ["message"],
     },
@@ -283,6 +332,11 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "subject": {"type": "string"},
             "body": {"type": "string"},
             "confirm": {"type": "boolean"},
+            "requester_id": {"type": "string"},
+            "request_context": {"type": "object"},
+            "speaker_verified": {"type": "boolean"},
+            "approved": {"type": "boolean"},
+            "approval_code": {"type": "string"},
         },
         "required": ["subject", "body"],
     },
@@ -371,6 +425,11 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "due_string": {"type": "string"},
             "priority": {"type": "integer"},
             "labels": {"type": "array", "items": {"type": "string"}},
+            "requester_id": {"type": "string"},
+            "request_context": {"type": "object"},
+            "speaker_verified": {"type": "boolean"},
+            "approved": {"type": "boolean"},
+            "approval_code": {"type": "string"},
         },
         "required": ["content"],
     },
@@ -568,6 +627,8 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _weather_units, _weather_timeout_sec
     global _webhook_allowlist, _webhook_auth_token, _webhook_timeout_sec
     global _slack_webhook_url, _discord_webhook_url
+    global _identity_enforcement_enabled, _identity_default_user, _identity_default_profile
+    global _identity_user_profiles, _identity_trusted_users, _identity_require_approval, _identity_approval_code
     global _memory_retention_days, _audit_retention_days
     global _memory_pii_guardrails_enabled
     global _timer_id_seq, _reminder_id_seq
@@ -615,6 +676,27 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _webhook_timeout_sec = float(getattr(config, "webhook_timeout_sec", 8.0))
     _slack_webhook_url = str(getattr(config, "slack_webhook_url", "")).strip()
     _discord_webhook_url = str(getattr(config, "discord_webhook_url", "")).strip()
+    _identity_enforcement_enabled = bool(getattr(config, "identity_enforcement_enabled", False))
+    _identity_default_user = str(getattr(config, "identity_default_user", "owner")).strip().lower() or "owner"
+    _identity_default_profile = str(getattr(config, "identity_default_profile", "control")).strip().lower()
+    if _identity_default_profile not in {"deny", "readonly", "control", "trusted"}:
+        _identity_default_profile = "control"
+    raw_profiles = getattr(config, "identity_user_profiles", {}) or {}
+    if isinstance(raw_profiles, dict):
+        _identity_user_profiles = {
+            str(user).strip().lower(): str(profile).strip().lower()
+            for user, profile in raw_profiles.items()
+            if str(user).strip()
+            and str(profile).strip().lower() in {"deny", "readonly", "control", "trusted"}
+        }
+    else:
+        _identity_user_profiles = {}
+    raw_trusted_users = getattr(config, "identity_trusted_users", []) or []
+    _identity_trusted_users = {
+        str(user).strip().lower() for user in raw_trusted_users if str(user).strip()
+    }
+    _identity_require_approval = bool(getattr(config, "identity_require_approval", True))
+    _identity_approval_code = str(getattr(config, "identity_approval_code", "")).strip()
     _memory_retention_days = max(0.0, float(getattr(config, "memory_retention_days", 0.0)))
     _audit_retention_days = max(0.0, float(getattr(config, "audit_retention_days", 0.0)))
     _memory_pii_guardrails_enabled = bool(getattr(config, "memory_pii_guardrails_enabled", True))
@@ -663,7 +745,27 @@ def _tool_permitted(name: str) -> bool:
 
 def _audit(action: str, details: dict) -> None:
     """Append to local audit log: what was heard, what was done, why."""
-    metadata_only = _metadata_only_audit_details(action, details)
+    enriched = {str(key): value for key, value in details.items()}
+    if "requester_id" not in enriched:
+        enriched["requester_id"] = _identity_default_user
+    if "requester_profile" not in enriched:
+        enriched["requester_profile"] = _identity_user_profiles.get(
+            str(enriched["requester_id"]).strip().lower(),
+            _identity_default_profile,
+        )
+    if "requester_trusted" not in enriched:
+        requester = str(enriched["requester_id"]).strip().lower()
+        enriched["requester_trusted"] = requester in _identity_trusted_users or str(
+            enriched["requester_profile"]
+        ).strip().lower() == "trusted"
+    if "speaker_verified" not in enriched:
+        enriched["speaker_verified"] = False
+    if "identity_source" not in enriched:
+        enriched["identity_source"] = "default"
+    if "decision_chain" not in enriched:
+        enriched["decision_chain"] = ["identity_default_context"]
+
+    metadata_only = _metadata_only_audit_details(action, enriched)
     redacted = _redact_sensitive_for_audit(metadata_only)
     details_json = json.dumps(redacted, default=str)
     entry = {
@@ -732,6 +834,124 @@ def _contains_pii(text: str) -> bool:
     if not sample:
         return False
     return any(pattern.search(sample) is not None for pattern in _PII_PATTERNS)
+
+
+def _identity_context(args: dict[str, Any] | None) -> dict[str, Any]:
+    payload = args if isinstance(args, dict) else {}
+    request_context = payload.get("request_context")
+    context_payload = request_context if isinstance(request_context, dict) else {}
+
+    requester_id = str(payload.get("requester_id", "")).strip().lower()
+    source = "requester_id"
+    if not requester_id:
+        requester_id = str(context_payload.get("requester_id") or context_payload.get("user_id") or "").strip().lower()
+        source = "request_context" if requester_id else "default"
+    if not requester_id:
+        requester_id = _identity_default_user
+    profile = _identity_user_profiles.get(requester_id, _identity_default_profile)
+    if profile not in {"deny", "readonly", "control", "trusted"}:
+        profile = "control"
+    speaker_verified = _as_bool(
+        payload.get("speaker_verified", context_payload.get("speaker_verified")),
+        default=False,
+    )
+    trusted = requester_id in _identity_trusted_users or profile == "trusted" or speaker_verified
+    return {
+        "requester_id": requester_id,
+        "profile": profile,
+        "trusted": trusted,
+        "speaker_verified": speaker_verified,
+        "source": source,
+    }
+
+
+def _identity_audit_fields(context: dict[str, Any], decision_chain: list[str] | None = None) -> dict[str, Any]:
+    chain = [str(item) for item in (decision_chain or []) if str(item).strip()]
+    if not chain:
+        chain = ["identity_context_applied"]
+    return {
+        "requester_id": str(context.get("requester_id", "")),
+        "requester_profile": str(context.get("profile", "control")),
+        "requester_trusted": bool(context.get("trusted", False)),
+        "speaker_verified": bool(context.get("speaker_verified", False)),
+        "identity_source": str(context.get("source", "default")),
+        "decision_chain": chain,
+    }
+
+
+def _identity_authorize(
+    tool_name: str,
+    args: dict[str, Any] | None,
+    *,
+    mutating: bool,
+    high_risk: bool,
+) -> tuple[bool, str | None, dict[str, Any], list[str]]:
+    context = _identity_context(args)
+    chain = [
+        f"tool={tool_name}",
+        f"requester={context['requester_id']}",
+        f"profile={context['profile']}",
+    ]
+    if not _identity_enforcement_enabled:
+        chain.append("identity_enforcement_disabled")
+        return True, None, context, chain
+
+    profile = str(context.get("profile", "control"))
+    if profile == "deny":
+        chain.append("deny:user_profile")
+        return (
+            False,
+            (
+                f"Action blocked for requester '{context['requester_id']}'. "
+                "Ask an admin to update IDENTITY_USER_PROFILES for this user."
+            ),
+            context,
+            chain,
+        )
+    if mutating and profile == "readonly":
+        chain.append("deny:readonly_profile")
+        return (
+            False,
+            (
+                f"Requester '{context['requester_id']}' is readonly for mutating actions. "
+                "Ask a trusted user or admin to execute this action."
+            ),
+            context,
+            chain,
+        )
+    if high_risk and _identity_require_approval:
+        payload = args if isinstance(args, dict) else {}
+        approved = _as_bool(payload.get("approved"), default=False)
+        approval_code = str(payload.get("approval_code", "")).strip()
+        code_valid = bool(_identity_approval_code) and bool(approval_code) and hmac.compare_digest(
+            approval_code,
+            _identity_approval_code,
+        )
+        trusted_approved = bool(context.get("trusted", False)) and approved
+        if not (code_valid or trusted_approved):
+            chain.append("deny:approval_required")
+            if _identity_approval_code:
+                guidance = "Provide a valid approval_code, or use a trusted requester with approved=true."
+            else:
+                guidance = "Use a trusted requester with approved=true."
+            return (
+                False,
+                f"High-risk action requires approval. {guidance}",
+                context,
+                chain,
+            )
+        if code_valid:
+            chain.append("approval_code_valid")
+        if trusted_approved:
+            chain.append("trusted_approval")
+    if context.get("trusted"):
+        chain.append("trusted_requester")
+    chain.append("allow")
+    return True, None, context, chain
+
+
+def _identity_enriched_audit(details: dict[str, Any], identity: dict[str, Any], decision_chain: list[str]) -> dict[str, Any]:
+    return {**details, **_identity_audit_fields(identity, decision_chain)}
 
 
 def _format_tool_summaries(items: list[dict[str, object]]) -> str:
@@ -1548,11 +1768,26 @@ def _integration_health_snapshot() -> dict[str, Any]:
     }
 
 
+def _identity_status_snapshot() -> dict[str, Any]:
+    return {
+        "enabled": _identity_enforcement_enabled,
+        "default_user": _identity_default_user,
+        "default_profile": _identity_default_profile,
+        "require_approval": _identity_require_approval,
+        "approval_code_configured": bool(_identity_approval_code),
+        "trusted_user_count": len(_identity_trusted_users),
+        "trusted_users": sorted(_identity_trusted_users),
+        "profile_count": len(_identity_user_profiles),
+        "user_profiles": {user: _identity_user_profiles[user] for user in sorted(_identity_user_profiles)},
+    }
+
+
 def _health_rollup(
     *,
     config_present: bool,
     memory_status: dict[str, Any] | None,
     recent_tools: list[dict[str, object]] | dict[str, str],
+    identity_status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     reasons: list[str] = []
     level = "ok"
@@ -1563,6 +1798,14 @@ def _health_rollup(
         reasons.append("memory_error")
     if isinstance(recent_tools, dict) and "error" in recent_tools:
         reasons.append("tool_summary_error")
+    if isinstance(identity_status, dict):
+        if (
+            bool(identity_status.get("enabled"))
+            and bool(identity_status.get("require_approval"))
+            and not bool(identity_status.get("approval_code_configured"))
+            and int(identity_status.get("trusted_user_count", 0) or 0) <= 0
+        ):
+            reasons.append("identity_approval_unconfigured")
     if reasons and level != "error":
         level = "degraded"
     return {"health_level": level, "reasons": reasons}
@@ -1607,38 +1850,73 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     # Force dry_run for sensitive domains unless explicitly set to false
     dry_run = _as_bool(args.get("dry_run"), default=domain in SENSITIVE_DOMAINS)
     confirm = _as_bool(args.get("confirm"), default=False)
+    identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
+        "smart_home",
+        args,
+        mutating=not dry_run,
+        high_risk=(not dry_run and domain in SENSITIVE_DOMAINS),
+    )
+    if not identity_allowed:
+        _record_service_error("smart_home", start_time, "policy")
+        _audit(
+            "smart_home",
+            _identity_enriched_audit(
+                {
+                    "domain": domain,
+                    "action": action,
+                    "entity_id": entity_id,
+                    "data": _redact_sensitive_for_audit(data),
+                    "dry_run": dry_run,
+                    "confirm": confirm,
+                    "state": "unknown",
+                    "policy_decision": "denied",
+                    "reason": "identity_policy",
+                },
+                identity_context,
+                identity_chain,
+            ),
+        )
+        return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     if _home_require_confirm_execute and not dry_run and not confirm:
         _record_service_error("smart_home", start_time, "policy")
         _audit(
             "smart_home",
-            {
-                "domain": domain,
-                "action": action,
-                "entity_id": entity_id,
-                "data": _redact_sensitive_for_audit(data),
-                "dry_run": dry_run,
-                "confirm": confirm,
-                "state": "unknown",
-                "policy_decision": "denied",
-                "reason": "strict_confirm_required",
-            },
+            _identity_enriched_audit(
+                {
+                    "domain": domain,
+                    "action": action,
+                    "entity_id": entity_id,
+                    "data": _redact_sensitive_for_audit(data),
+                    "dry_run": dry_run,
+                    "confirm": confirm,
+                    "state": "unknown",
+                    "policy_decision": "denied",
+                    "reason": "strict_confirm_required",
+                },
+                identity_context,
+                [*identity_chain, "deny:strict_confirm_required"],
+            ),
         )
         return {"content": [{"type": "text", "text": "Action requires confirm=true when HOME_REQUIRE_CONFIRM_EXECUTE=true."}]}
     if domain in SENSITIVE_DOMAINS and not dry_run and not confirm:
         _record_service_error("smart_home", start_time, "policy")
         _audit(
             "smart_home",
-            {
-                "domain": domain,
-                "action": action,
-                "entity_id": entity_id,
-                "data": _redact_sensitive_for_audit(data),
-                "dry_run": dry_run,
-                "confirm": confirm,
-                "state": "unknown",
-                "policy_decision": "denied",
-                "reason": "sensitive_confirm_required",
-            },
+            _identity_enriched_audit(
+                {
+                    "domain": domain,
+                    "action": action,
+                    "entity_id": entity_id,
+                    "data": _redact_sensitive_for_audit(data),
+                    "dry_run": dry_run,
+                    "confirm": confirm,
+                    "state": "unknown",
+                    "policy_decision": "denied",
+                    "reason": "sensitive_confirm_required",
+                },
+                identity_context,
+                [*identity_chain, "deny:sensitive_confirm_required"],
+            ),
         )
         return {"content": [{"type": "text", "text": "Sensitive action requires confirm=true when dry_run=false."}]}
 
@@ -1672,11 +1950,23 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
             record_summary("smart_home", "noop", start_time, effect=f"already_off {entity_id}", risk="low")
             return {"content": [{"type": "text", "text": f"No-op: {entity_id} is already {current_state}."}]}
 
-    _audit("smart_home", {
-        "domain": domain, "action": action, "entity_id": entity_id,
-        "data": _redact_sensitive_for_audit(data), "dry_run": dry_run, "confirm": confirm, "state": current_state,
-        "policy_decision": "dry_run" if dry_run else "allowed",
-    })
+    _audit(
+        "smart_home",
+        _identity_enriched_audit(
+            {
+                "domain": domain,
+                "action": action,
+                "entity_id": entity_id,
+                "data": _redact_sensitive_for_audit(data),
+                "dry_run": dry_run,
+                "confirm": confirm,
+                "state": current_state,
+                "policy_decision": "dry_run" if dry_run else "allowed",
+            },
+            identity_context,
+            [*identity_chain, "decision:dry_run" if dry_run else "decision:execute"],
+        ),
+    )
 
     if dry_run:
         tool_feedback("start")
@@ -1960,6 +2250,23 @@ async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("home_assistant_conversation", start_time, "policy")
         _audit("home_assistant_conversation", {"result": "denied", "reason": "confirm_required", "text_length": len(text)})
         return {"content": [{"type": "text", "text": "Set confirm=true to execute a Home Assistant conversation command."}]}
+    identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
+        "home_assistant_conversation",
+        args,
+        mutating=True,
+        high_risk=True,
+    )
+    if not identity_allowed:
+        _record_service_error("home_assistant_conversation", start_time, "policy")
+        _audit(
+            "home_assistant_conversation",
+            _identity_enriched_audit(
+                {"result": "denied", "reason": "identity_policy", "text_length": len(text)},
+                identity_context,
+                identity_chain,
+            ),
+        )
+        return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
 
     payload: dict[str, Any] = {"text": text}
     language = str(args.get("language", "")).strip()
@@ -1996,14 +2303,18 @@ async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
                     record_summary("home_assistant_conversation", "ok", start_time)
                     _audit(
                         "home_assistant_conversation",
-                        {
-                            "result": "ok",
-                            "response_type": response_type,
-                            "conversation_id": conversation_id,
-                            "text_length": len(text),
-                            "language": language,
-                            "agent_id": agent_id,
-                        },
+                        _identity_enriched_audit(
+                            {
+                                "result": "ok",
+                                "response_type": response_type,
+                                "conversation_id": conversation_id,
+                                "text_length": len(text),
+                                "language": language,
+                                "agent_id": agent_id,
+                            },
+                            identity_context,
+                            [*identity_chain, "decision:execute"],
+                        ),
                     )
                     suffix = ""
                     if response_type:
@@ -2069,6 +2380,28 @@ async def home_assistant_todo(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("home_assistant_todo", start_time, "missing_fields")
         _audit("home_assistant_todo", {"result": "missing_fields"})
         return {"content": [{"type": "text", "text": "entity_id is required."}]}
+    identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
+        "home_assistant_todo",
+        args,
+        mutating=(action in {"add", "remove"}),
+        high_risk=False,
+    )
+    if not identity_allowed:
+        _record_service_error("home_assistant_todo", start_time, "policy")
+        _audit(
+            "home_assistant_todo",
+            _identity_enriched_audit(
+                {
+                    "result": "denied",
+                    "reason": "identity_policy",
+                    "action": action,
+                    "entity_id": entity_id,
+                },
+                identity_context,
+                identity_chain,
+            ),
+        )
+        return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     if _home_permission_profile == "readonly" and action in {"add", "remove"}:
         _record_service_error("home_assistant_todo", start_time, "policy")
         _audit("home_assistant_todo", {"result": "denied", "reason": "readonly_profile", "action": action})
@@ -2201,6 +2534,28 @@ async def home_assistant_timer(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("home_assistant_timer", start_time, "missing_fields")
         _audit("home_assistant_timer", {"result": "missing_fields"})
         return {"content": [{"type": "text", "text": "entity_id is required."}]}
+    identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
+        "home_assistant_timer",
+        args,
+        mutating=(action != "state"),
+        high_risk=False,
+    )
+    if not identity_allowed:
+        _record_service_error("home_assistant_timer", start_time, "policy")
+        _audit(
+            "home_assistant_timer",
+            _identity_enriched_audit(
+                {
+                    "result": "denied",
+                    "reason": "identity_policy",
+                    "action": action,
+                    "entity_id": entity_id,
+                },
+                identity_context,
+                identity_chain,
+            ),
+        )
+        return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     if _home_permission_profile == "readonly" and action != "state":
         _record_service_error("home_assistant_timer", start_time, "policy")
         _audit("home_assistant_timer", {"result": "denied", "reason": "readonly_profile", "action": action})
@@ -2417,11 +2772,32 @@ async def media_control(args: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": "volume must be a number between 0.0 and 1.0 for volume_set."}]}
         payload_data["volume_level"] = volume
     dry_run = _as_bool(args.get("dry_run"), default=False)
+    identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
+        "media_control",
+        args,
+        mutating=not dry_run,
+        high_risk=False,
+    )
+    if not identity_allowed:
+        _record_service_error("media_control", start_time, "policy")
+        _audit(
+            "media_control",
+            _identity_enriched_audit(
+                {"result": "denied", "reason": "identity_policy", "entity_id": entity_id, "action": action},
+                identity_context,
+                identity_chain,
+            ),
+        )
+        return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     if dry_run:
         record_summary("media_control", "dry_run", start_time)
         _audit(
             "media_control",
-            {"result": "dry_run", "entity_id": entity_id, "action": action, "data": payload_data},
+            _identity_enriched_audit(
+                {"result": "dry_run", "entity_id": entity_id, "action": action, "data": payload_data},
+                identity_context,
+                [*identity_chain, "decision:dry_run"],
+            ),
         )
         return {"content": [{"type": "text", "text": f"DRY RUN: media_player.{service} on {entity_id} with {payload_data}"}]}
     service_data = {"entity_id": entity_id, **payload_data}
@@ -2441,7 +2817,14 @@ async def media_control(args: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": "Failed to reach Home Assistant media endpoint."}]}
         return {"content": [{"type": "text", "text": "Unexpected Home Assistant media control error."}]}
     record_summary("media_control", "ok", start_time, effect=f"{service} {entity_id}", risk="low")
-    _audit("media_control", {"result": "ok", "entity_id": entity_id, "action": action})
+    _audit(
+        "media_control",
+        _identity_enriched_audit(
+            {"result": "ok", "entity_id": entity_id, "action": action},
+            identity_context,
+            [*identity_chain, "decision:execute"],
+        ),
+    )
     return {"content": [{"type": "text", "text": f"Media action executed: {action} on {entity_id}."}]}
 
 
@@ -2563,9 +2946,17 @@ async def weather_lookup(args: dict[str, Any]) -> dict[str, Any]:
 
 async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
+    identity_probe = _identity_context(args)
     if not _tool_permitted("webhook_trigger"):
         record_summary("webhook_trigger", "denied", start_time, "policy")
-        _audit("webhook_trigger", {"result": "denied", "reason": "policy"})
+        _audit(
+            "webhook_trigger",
+            _identity_enriched_audit(
+                {"result": "denied", "reason": "policy"},
+                identity_probe,
+                ["tool=webhook_trigger", "deny:tool_policy"],
+            ),
+        )
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     url = str(args.get("url", "")).strip()
     if not url:
@@ -2574,11 +2965,25 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
     parsed = urlparse(url)
     if parsed.scheme.lower() != "https":
         _record_service_error("webhook_trigger", start_time, "policy")
-        _audit("webhook_trigger", {"result": "denied", "reason": "https_required"})
+        _audit(
+            "webhook_trigger",
+            _identity_enriched_audit(
+                {"result": "denied", "reason": "https_required"},
+                identity_probe,
+                ["tool=webhook_trigger", "deny:https_required"],
+            ),
+        )
         return {"content": [{"type": "text", "text": "Webhook URL must use https."}]}
     if not _webhook_host_allowed(url):
         _record_service_error("webhook_trigger", start_time, "policy")
-        _audit("webhook_trigger", {"result": "denied", "reason": "allowlist", "host": parsed.hostname or ""})
+        _audit(
+            "webhook_trigger",
+            _identity_enriched_audit(
+                {"result": "denied", "reason": "allowlist", "host": parsed.hostname or ""},
+                identity_probe,
+                ["tool=webhook_trigger", "deny:allowlist"],
+            ),
+        )
         return {"content": [{"type": "text", "text": "Webhook host is not in WEBHOOK_ALLOWLIST."}]}
     method = str(args.get("method", "POST")).strip().upper() or "POST"
     if method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
@@ -2598,6 +3003,23 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
         if not clean_key:
             continue
         headers[clean_key] = str(value)
+    identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
+        "webhook_trigger",
+        args,
+        mutating=True,
+        high_risk=True,
+    )
+    if not identity_allowed:
+        _record_service_error("webhook_trigger", start_time, "policy")
+        _audit(
+            "webhook_trigger",
+            _identity_enriched_audit(
+                {"result": "denied", "reason": "identity_policy", "method": method, "host": parsed.hostname or ""},
+                identity_context,
+                identity_chain,
+            ),
+        )
+        return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     if _webhook_auth_token and not any(key.lower() == "authorization" for key in headers):
         headers["Authorization"] = f"Bearer {_webhook_auth_token}"
     timeout_sec = _as_float(
@@ -2618,13 +3040,17 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
                     record_summary("webhook_trigger", "ok", start_time)
                     _audit(
                         "webhook_trigger",
-                        {
-                            "result": "ok",
-                            "method": method,
-                            "host": parsed.hostname or "",
-                            "status": resp.status,
-                            "response_length": len(body),
-                        },
+                        _identity_enriched_audit(
+                            {
+                                "result": "ok",
+                                "method": method,
+                                "host": parsed.hostname or "",
+                                "status": resp.status,
+                                "response_length": len(body),
+                            },
+                            identity_context,
+                            [*identity_chain, "decision:execute"],
+                        ),
                     )
                     body_preview = body[:200]
                     suffix = f" body={body_preview}" if body_preview else ""
@@ -2676,13 +3102,37 @@ async def slack_notify(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("slack_notify", start_time, "missing_fields")
         _audit("slack_notify", {"result": "missing_fields"})
         return {"content": [{"type": "text", "text": "message is required."}]}
+    identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
+        "slack_notify",
+        args,
+        mutating=True,
+        high_risk=False,
+    )
+    if not identity_allowed:
+        _record_service_error("slack_notify", start_time, "policy")
+        _audit(
+            "slack_notify",
+            _identity_enriched_audit(
+                {"result": "denied", "reason": "identity_policy"},
+                identity_context,
+                identity_chain,
+            ),
+        )
+        return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     timeout = aiohttp.ClientTimeout(total=_webhook_timeout_sec)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(_slack_webhook_url, json={"text": message}) as resp:
                 if 200 <= resp.status < 300:
                     record_summary("slack_notify", "ok", start_time)
-                    _audit("slack_notify", {"result": "ok", "message_length": len(message)})
+                    _audit(
+                        "slack_notify",
+                        _identity_enriched_audit(
+                            {"result": "ok", "message_length": len(message)},
+                            identity_context,
+                            [*identity_chain, "decision:execute"],
+                        ),
+                    )
                     return {"content": [{"type": "text", "text": "Slack notification sent."}]}
                 if resp.status in {401, 403}:
                     _record_service_error("slack_notify", start_time, "auth")
@@ -2725,13 +3175,37 @@ async def discord_notify(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("discord_notify", start_time, "missing_fields")
         _audit("discord_notify", {"result": "missing_fields"})
         return {"content": [{"type": "text", "text": "message is required."}]}
+    identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
+        "discord_notify",
+        args,
+        mutating=True,
+        high_risk=False,
+    )
+    if not identity_allowed:
+        _record_service_error("discord_notify", start_time, "policy")
+        _audit(
+            "discord_notify",
+            _identity_enriched_audit(
+                {"result": "denied", "reason": "identity_policy"},
+                identity_context,
+                identity_chain,
+            ),
+        )
+        return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     timeout = aiohttp.ClientTimeout(total=_webhook_timeout_sec)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(_discord_webhook_url, json={"content": message}) as resp:
                 if 200 <= resp.status < 300:
                     record_summary("discord_notify", "ok", start_time)
-                    _audit("discord_notify", {"result": "ok", "message_length": len(message)})
+                    _audit(
+                        "discord_notify",
+                        _identity_enriched_audit(
+                            {"result": "ok", "message_length": len(message)},
+                            identity_context,
+                            [*identity_chain, "decision:execute"],
+                        ),
+                    )
                     return {"content": [{"type": "text", "text": "Discord notification sent."}]}
                 if resp.status in {401, 403}:
                     _record_service_error("discord_notify", start_time, "auth")
@@ -2825,6 +3299,23 @@ async def email_send(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("email_send", start_time, "policy")
         _audit("email_send", {"result": "denied", "reason": "confirm_required"})
         return {"content": [{"type": "text", "text": "Set confirm=true to send email."}]}
+    identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
+        "email_send",
+        args,
+        mutating=True,
+        high_risk=True,
+    )
+    if not identity_allowed:
+        _record_service_error("email_send", start_time, "policy")
+        _audit(
+            "email_send",
+            _identity_enriched_audit(
+                {"result": "denied", "reason": "identity_policy"},
+                identity_context,
+                identity_chain,
+            ),
+        )
+        return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     recipient = str(args.get("to", "")).strip() or _email_default_to
     try:
         await asyncio.to_thread(_send_email_sync, recipient=recipient, subject=subject, body=body)
@@ -2845,7 +3336,11 @@ async def email_send(args: dict[str, Any]) -> dict[str, Any]:
     record_summary("email_send", "ok", start_time)
     _audit(
         "email_send",
-        {"result": "ok", "to": recipient, "subject_length": len(subject), "body_length": len(body)},
+        _identity_enriched_audit(
+            {"result": "ok", "to": recipient, "subject_length": len(subject), "body_length": len(body)},
+            identity_context,
+            [*identity_chain, "decision:execute"],
+        ),
     )
     return {"content": [{"type": "text", "text": f"Email sent to {recipient}."}]}
 
@@ -3352,6 +3847,23 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("todoist_add_task", start_time, "missing_fields")
         _audit("todoist_add_task", {"result": "missing_fields"})
         return {"content": [{"type": "text", "text": "Task content required."}]}
+    identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
+        "todoist_add_task",
+        args,
+        mutating=True,
+        high_risk=False,
+    )
+    if not identity_allowed:
+        _record_service_error("todoist_add_task", start_time, "policy")
+        _audit(
+            "todoist_add_task",
+            _identity_enriched_audit(
+                {"result": "denied", "reason": "identity_policy"},
+                identity_context,
+                identity_chain,
+            ),
+        )
+        return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     payload: dict[str, Any] = {"content": content}
     description = str(args.get("description", "")).strip()
     if description:
@@ -3412,12 +3924,16 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
                     record_summary("todoist_add_task", "ok", start_time)
                     _audit(
                         "todoist_add_task",
-                        {
-                            "result": "ok",
-                            "task_id": task_id,
-                            "content_length": len(content),
-                            "project_id": payload.get("project_id", ""),
-                        },
+                        _identity_enriched_audit(
+                            {
+                                "result": "ok",
+                                "task_id": task_id,
+                                "content_length": len(content),
+                                "project_id": payload.get("project_id", ""),
+                            },
+                            identity_context,
+                            [*identity_chain, "decision:execute"],
+                        ),
                     )
                     return {"content": [{"type": "text", "text": f"Todoist task created{f' (id={task_id})' if task_id else ''}."}]}
                 if resp.status == 401:
@@ -3703,10 +4219,12 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         recent_tools = list_summaries(limit=5)
     except Exception as e:
         recent_tools = {"error": str(e)}
+    identity_status = _identity_status_snapshot()
     health = _health_rollup(
         config_present=(_config is not None),
         memory_status=memory_status if isinstance(memory_status, dict) else None,
         recent_tools=recent_tools,
+        identity_status=identity_status,
     )
 
     status = {
@@ -3736,10 +4254,14 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "notification_permission_profile": _notification_permission_profile,
             "email_permission_profile": _email_permission_profile,
             "memory_pii_guardrails_enabled": _memory_pii_guardrails_enabled,
+            "identity_enforcement_enabled": _identity_enforcement_enabled,
+            "identity_default_profile": _identity_default_profile,
+            "identity_require_approval": _identity_require_approval,
         },
         "timers": _timer_status(),
         "reminders": _reminder_status(),
         "integrations": _integration_health_snapshot(),
+        "identity": identity_status,
         "retention_policy": {
             "memory_retention_days": _memory_retention_days,
             "audit_retention_days": _audit_retention_days,
@@ -3776,6 +4298,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "timers",
             "reminders",
             "integrations",
+            "identity",
             "retention_policy",
             "memory",
             "audit",
@@ -3793,6 +4316,9 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "notification_permission_profile",
             "email_permission_profile",
             "memory_pii_guardrails_enabled",
+            "identity_enforcement_enabled",
+            "identity_default_profile",
+            "identity_require_approval",
         ],
         "timers_required": [
             "active_count",
@@ -3812,6 +4338,17 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "webhook",
             "email",
             "channels",
+        ],
+        "identity_required": [
+            "enabled",
+            "default_user",
+            "default_profile",
+            "require_approval",
+            "approval_code_configured",
+            "trusted_user_count",
+            "trusted_users",
+            "profile_count",
+            "user_profiles",
         ],
         "retention_policy_required": [
             "memory_retention_days",

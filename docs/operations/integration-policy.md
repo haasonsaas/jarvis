@@ -5,6 +5,11 @@ This runbook covers operational setup and policy behavior for Todoist, Pushover,
 ## 1) Feature Availability
 - Tools are always registered, but runtime behavior depends on configuration and policy profile.
 - Missing credentials produce explicit `missing_config` failures.
+- Optional identity layer can further restrict mutating actions per requester:
+  - `IDENTITY_ENFORCEMENT_ENABLED`
+  - `IDENTITY_USER_PROFILES`
+  - `IDENTITY_REQUIRE_APPROVAL` / `IDENTITY_APPROVAL_CODE`
+  - `IDENTITY_TRUSTED_USERS`
 
 ## 2) Todoist
 

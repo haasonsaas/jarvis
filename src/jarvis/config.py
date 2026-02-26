@@ -72,6 +72,24 @@ def _env_list(name: str) -> list[str]:
     return [item.strip() for item in val.split(",") if item.strip()]
 
 
+def _env_key_value_map(name: str) -> dict[str, str]:
+    val = os.environ.get(name)
+    if not val:
+        return {}
+    mapping: dict[str, str] = {}
+    for item in val.split(","):
+        part = item.strip()
+        if not part or "=" not in part:
+            continue
+        key_raw, value_raw = part.split("=", 1)
+        key = key_raw.strip().lower()
+        value = value_raw.strip().lower()
+        if not key or not value:
+            continue
+        mapping[key] = value
+    return mapping
+
+
 def _env_is_set(name: str) -> bool:
     val = os.environ.get(name)
     return val is not None and bool(val.strip())
@@ -160,6 +178,13 @@ class Config:
     webhook_timeout_sec: float = field(default_factory=lambda: _env_positive_float("WEBHOOK_TIMEOUT_SEC", 8.0))
     slack_webhook_url: str = field(default_factory=lambda: os.environ.get("SLACK_WEBHOOK_URL", ""))
     discord_webhook_url: str = field(default_factory=lambda: os.environ.get("DISCORD_WEBHOOK_URL", ""))
+    identity_enforcement_enabled: bool = field(default_factory=lambda: _env_bool("IDENTITY_ENFORCEMENT_ENABLED") or False)
+    identity_default_user: str = field(default_factory=lambda: os.environ.get("IDENTITY_DEFAULT_USER", "owner"))
+    identity_default_profile: str = field(default_factory=lambda: os.environ.get("IDENTITY_DEFAULT_PROFILE", "control"))
+    identity_user_profiles: dict[str, str] = field(default_factory=lambda: _env_key_value_map("IDENTITY_USER_PROFILES"))
+    identity_trusted_users: list[str] = field(default_factory=lambda: _env_list("IDENTITY_TRUSTED_USERS"))
+    identity_require_approval: bool = field(default_factory=lambda: _env_bool("IDENTITY_REQUIRE_APPROVAL") is not False)
+    identity_approval_code: str = field(default_factory=lambda: os.environ.get("IDENTITY_APPROVAL_CODE", ""))
     memory_retention_days: float = field(default_factory=lambda: _env_nonnegative_float("MEMORY_RETENTION_DAYS", 0.0))
     audit_retention_days: float = field(default_factory=lambda: _env_nonnegative_float("AUDIT_RETENTION_DAYS", 0.0))
 
@@ -225,6 +250,10 @@ class Config:
         self.notification_permission_profile = self._normalize_notification_permission_profile(self.notification_permission_profile)
         self.email_permission_profile = self._normalize_email_permission_profile(self.email_permission_profile)
         self.weather_units = self._normalize_weather_units(self.weather_units)
+        self.identity_default_user = self._normalize_identity_default_user(self.identity_default_user)
+        self.identity_default_profile = self._normalize_identity_profile(self.identity_default_profile)
+        self.identity_user_profiles = self._normalize_identity_user_profiles(self.identity_user_profiles)
+        self.identity_trusted_users = self._normalize_identity_trusted_users(self.identity_trusted_users)
         if _env_is_set("BACKCHANNEL_STYLE") and self.backchannel_style == "balanced":
             raw = os.environ.get("BACKCHANNEL_STYLE", "")
             if raw.strip().lower() not in {"quiet", "balanced", "expressive"}:
@@ -260,6 +289,27 @@ class Config:
             raw = os.environ.get("WEATHER_UNITS", "")
             if raw.strip().lower() not in {"metric", "imperial"}:
                 self.startup_warnings.append("WEATHER_UNITS invalid; using metric.")
+        if _env_is_set("IDENTITY_DEFAULT_PROFILE") and self.identity_default_profile == "control":
+            raw = os.environ.get("IDENTITY_DEFAULT_PROFILE", "")
+            if raw.strip().lower() not in {"deny", "readonly", "control", "trusted"}:
+                self.startup_warnings.append("IDENTITY_DEFAULT_PROFILE invalid; using control.")
+        if _env_is_set("IDENTITY_USER_PROFILES"):
+            raw_map = os.environ.get("IDENTITY_USER_PROFILES", "")
+            for segment in raw_map.split(","):
+                part = segment.strip()
+                if not part:
+                    continue
+                if "=" not in part:
+                    self.startup_warnings.append("IDENTITY_USER_PROFILES has invalid entry; expected user=profile.")
+                    continue
+                user_text, profile_text = part.split("=", 1)
+                if not user_text.strip():
+                    self.startup_warnings.append("IDENTITY_USER_PROFILES has invalid entry; empty user id.")
+                    continue
+                if profile_text.strip().lower() not in {"deny", "readonly", "control", "trusted"}:
+                    self.startup_warnings.append(
+                        f"IDENTITY_USER_PROFILES has invalid profile for user '{user_text.strip()}'; using control."
+                    )
 
     @staticmethod
     def _normalize_backchannel_style(style: str) -> str:
@@ -316,6 +366,32 @@ class Config:
         if normalized in {"readonly", "control"}:
             return normalized
         return "readonly"
+
+    @staticmethod
+    def _normalize_identity_default_user(value: str) -> str:
+        normalized = (value or "owner").strip().lower()
+        return normalized or "owner"
+
+    @staticmethod
+    def _normalize_identity_profile(profile: str) -> str:
+        normalized = (profile or "control").strip().lower()
+        if normalized in {"deny", "readonly", "control", "trusted"}:
+            return normalized
+        return "control"
+
+    @classmethod
+    def _normalize_identity_user_profiles(cls, profiles: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for raw_user, raw_profile in profiles.items():
+            user = str(raw_user or "").strip().lower()
+            if not user:
+                continue
+            normalized[user] = cls._normalize_identity_profile(str(raw_profile))
+        return normalized
+
+    @staticmethod
+    def _normalize_identity_trusted_users(users: list[str]) -> list[str]:
+        return sorted({str(user).strip().lower() for user in users if str(user).strip()})
 
     def _collect_startup_warnings(self) -> list[str]:
         warnings: list[str] = []
@@ -383,6 +459,17 @@ class Config:
             warnings.append("SLACK_WEBHOOK_URL should use https.")
         if self.discord_webhook_url.strip() and not self.discord_webhook_url.strip().lower().startswith("https://"):
             warnings.append("DISCORD_WEBHOOK_URL should use https.")
+        if self.identity_approval_code.strip() and len(self.identity_approval_code.strip()) < 8:
+            warnings.append("IDENTITY_APPROVAL_CODE appears unusually short; use at least 8 characters.")
+        if (
+            self.identity_enforcement_enabled
+            and self.identity_require_approval
+            and not self.identity_approval_code.strip()
+            and not self.identity_trusted_users
+        ):
+            warnings.append(
+                "IDENTITY_REQUIRE_APPROVAL is enabled without IDENTITY_APPROVAL_CODE or IDENTITY_TRUSTED_USERS."
+            )
         checks: list[tuple[str, str, str]] = [
             ("DOA_CHANGE_THRESHOLD", "float", str(self.doa_change_threshold)),
             ("DOA_TIMEOUT", "float", str(self.doa_timeout)),
@@ -425,6 +512,8 @@ class Config:
             "HOME_ENABLED",
             "HOME_REQUIRE_CONFIRM_EXECUTE",
             "HOME_CONVERSATION_ENABLED",
+            "IDENTITY_ENFORCEMENT_ENABLED",
+            "IDENTITY_REQUIRE_APPROVAL",
         ]
         for name in bool_checks:
             raw = os.environ.get(name)

@@ -429,6 +429,105 @@ class TestServicesTools:
         assert "not permitted" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_identity_profile_deny_blocks_webhook_and_records_requester(self, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_user_profiles = {"alice": "deny"}
+        cfg.webhook_allowlist = ["example.com"]
+        services.bind(cfg)
+
+        audit_calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
+
+        result = await services.webhook_trigger(
+            {"url": "https://api.example.com/hook", "method": "POST", "requester_id": "alice"}
+        )
+        assert "blocked for requester 'alice'" in result["content"][0]["text"].lower()
+        _, details = audit_calls[-1]
+        assert details["requester_id"] == "alice"
+        assert details["requester_profile"] == "deny"
+        assert "deny:user_profile" in details["decision_chain"]
+
+    @pytest.mark.asyncio
+    async def test_identity_user_control_cannot_override_global_home_readonly(self):
+        from jarvis.config import Config
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.home_permission_profile = "readonly"
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_user_profiles = {"owner": "control"}
+        services.bind(cfg)
+
+        result = await services.home_assistant_todo(
+            {"action": "add", "entity_id": "todo.shopping", "item": "Milk", "requester_id": "owner"}
+        )
+        assert "readonly" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_identity_high_risk_webhook_requires_approval_code(self):
+        from jarvis.config import Config
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_require_approval = True
+        cfg.identity_approval_code = "super-secret-code"
+        cfg.webhook_allowlist = ["example.com"]
+        services.bind(cfg)
+
+        denied = await services.webhook_trigger({"url": "https://api.example.com/hook", "method": "POST"})
+        assert "requires approval" in denied["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_identity_high_risk_webhook_allows_code_or_trusted_approval(self):
+        from jarvis.config import Config
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_require_approval = True
+        cfg.identity_approval_code = "super-secret-code"
+        cfg.identity_trusted_users = ["trusted-user"]
+        cfg.webhook_allowlist = ["example.com"]
+        services.bind(cfg)
+
+        response = AsyncMock()
+        response.status = 200
+        response.text = AsyncMock(return_value="ok")
+        context = AsyncMock()
+        context.__aenter__ = AsyncMock(return_value=response)
+        context.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        session.request = MagicMock(return_value=context)
+
+        with patch("aiohttp.ClientSession", return_value=session):
+            by_code = await services.webhook_trigger(
+                {
+                    "url": "https://api.example.com/hook",
+                    "method": "POST",
+                    "approval_code": "super-secret-code",
+                    "requester_id": "guest-user",
+                }
+            )
+            by_trusted = await services.webhook_trigger(
+                {
+                    "url": "https://api.example.com/hook",
+                    "method": "POST",
+                    "requester_id": "trusted-user",
+                    "approved": True,
+                }
+            )
+
+        assert "webhook delivered" in by_code["content"][0]["text"].lower()
+        assert "webhook delivered" in by_trusted["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_smart_home_dry_run_explicit_false_with_confirm(self, aiohttp_response, aiohttp_session_mock):
         from jarvis.tools.services import smart_home
 
@@ -2709,7 +2808,7 @@ class TestServicesTools:
 
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.0"
+        assert payload["schema_version"] == "1.1"
         assert "local_time" in payload
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
@@ -2717,6 +2816,9 @@ class TestServicesTools:
         assert isinstance(payload["tool_policy"]["memory_pii_guardrails_enabled"], bool)
         assert payload["tool_policy"]["home_conversation_permission_profile"] in {"readonly", "control"}
         assert payload["tool_policy"]["email_permission_profile"] in {"readonly", "control"}
+        assert isinstance(payload["tool_policy"]["identity_enforcement_enabled"], bool)
+        assert payload["tool_policy"]["identity_default_profile"] in {"deny", "readonly", "control", "trusted"}
+        assert isinstance(payload["tool_policy"]["identity_require_approval"], bool)
         assert "memory" in payload
         assert "audit" in payload
         assert payload["audit"]["redaction_enabled"] is True
@@ -2733,6 +2835,10 @@ class TestServicesTools:
         assert "webhook" in payload["integrations"]
         assert "email" in payload["integrations"]
         assert "channels" in payload["integrations"]
+        assert "identity" in payload
+        assert isinstance(payload["identity"]["enabled"], bool)
+        assert isinstance(payload["identity"]["trusted_user_count"], int)
+        assert isinstance(payload["identity"]["user_profiles"], dict)
         assert "retention_policy" in payload
         assert "memory_retention_days" in payload["retention_policy"]
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
@@ -2743,18 +2849,25 @@ class TestServicesTools:
 
         result = await services.system_status_contract({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.0"
+        assert payload["schema_version"] == "1.1"
         assert "top_level_required" in payload
         assert "tool_policy" in payload["top_level_required"]
+        assert "identity" in payload["top_level_required"]
         assert "tool_policy_required" in payload
         assert "home_conversation_permission_profile" in payload["tool_policy_required"]
         assert "email_permission_profile" in payload["tool_policy_required"]
         assert "memory_pii_guardrails_enabled" in payload["tool_policy_required"]
+        assert "identity_enforcement_enabled" in payload["tool_policy_required"]
+        assert "identity_default_profile" in payload["tool_policy_required"]
+        assert "identity_require_approval" in payload["tool_policy_required"]
         assert "timers_required" in payload
         assert "reminders_required" in payload
         assert "integrations_required" in payload
         assert "email" in payload["integrations_required"]
         assert "channels" in payload["integrations_required"]
+        assert "identity_required" in payload
+        assert "enabled" in payload["identity_required"]
+        assert "user_profiles" in payload["identity_required"]
         assert "retention_policy_required" in payload
 
     @pytest.mark.asyncio
@@ -3036,6 +3149,29 @@ class TestServicesTools:
         assert schemas["email_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary_text"]["properties"]["limit"]["type"] == "integer"
+
+    def test_service_schema_identity_fields_present_for_mutating_tools(self):
+        from jarvis.tools import services
+
+        schemas = services.SERVICE_TOOL_SCHEMAS
+        for tool_name in [
+            "smart_home",
+            "home_assistant_conversation",
+            "home_assistant_todo",
+            "home_assistant_timer",
+            "media_control",
+            "webhook_trigger",
+            "slack_notify",
+            "discord_notify",
+            "email_send",
+            "todoist_add_task",
+        ]:
+            props = schemas[tool_name]["properties"]
+            assert "requester_id" in props
+            assert "request_context" in props
+            assert "speaker_verified" in props
+            assert "approved" in props
+            assert "approval_code" in props
 
     def test_bind_clears_action_history(self, config):
         from jarvis.tools import services

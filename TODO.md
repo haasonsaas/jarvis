@@ -63,14 +63,14 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 
 ## 4) Identity, Permissions, and Trust Controls (8 items)
 
-- [ ] `ID01` Add user identity abstraction for voice/text request contexts.
-- [ ] `ID02` Add per-user permission profiles layered over global policy.
-- [ ] `ID03` Add approval handshake flow for high-risk commands.
-- [ ] `ID04` Add trusted-speaker shortcut path (optional biometric/speaker-id hook point).
-- [ ] `ID05` Add denied-action escalation guidance in user-facing responses.
-- [ ] `ID06` Add audit fields for requester identity and decision reason chain.
-- [ ] `ID07` Add tests for per-user allow/deny precedence.
-- [ ] `ID08` Add trust policy runbook for household/shared deployments.
+- [x] `ID01` Add user identity abstraction for voice/text request contexts.
+- [x] `ID02` Add per-user permission profiles layered over global policy.
+- [x] `ID03` Add approval handshake flow for high-risk commands.
+- [x] `ID04` Add trusted-speaker shortcut path (optional biometric/speaker-id hook point).
+- [x] `ID05` Add denied-action escalation guidance in user-facing responses.
+- [x] `ID06` Add audit fields for requester identity and decision reason chain.
+- [x] `ID07` Add tests for per-user allow/deny precedence.
+- [x] `ID08` Add trust policy runbook for household/shared deployments.
 
 ---
 
