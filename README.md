@@ -109,7 +109,7 @@ make check
 # Fast local regression pass
 make test-fast
 
-# Fault-injection oriented subset
+# Fault-injection oriented subset (network, HTTP, summary, and storage taxonomy)
 make test-faults
 
 # Soak/stability subset

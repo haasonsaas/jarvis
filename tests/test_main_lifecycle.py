@@ -4,7 +4,7 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock
 
-from jarvis.__main__ import Jarvis
+from jarvis.__main__ import Jarvis, TELEMETRY_SERVICE_ERROR_DETAILS, TELEMETRY_STORAGE_ERROR_DETAILS
 
 
 def test_stop_is_noop_when_not_started():
@@ -153,3 +153,10 @@ def test_refresh_tool_error_counters_includes_network_taxonomy():
 
     assert jarvis._telemetry["service_errors"] == 3.0
     assert jarvis._telemetry["storage_errors"] == 0.0
+
+
+def test_telemetry_error_taxonomy_matches_service_error_codes():
+    from jarvis.tools.services import SERVICE_ERROR_CODES
+
+    assert TELEMETRY_STORAGE_ERROR_DETAILS.issubset(SERVICE_ERROR_CODES)
+    assert TELEMETRY_SERVICE_ERROR_DETAILS == (SERVICE_ERROR_CODES - TELEMETRY_STORAGE_ERROR_DETAILS)

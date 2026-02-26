@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-26
 
-This cycle focuses on silent-misconfiguration prevention and telemetry taxonomy consistency.
+This cycle focuses on silent-misconfiguration prevention, telemetry taxonomy consistency, and fault-test workflow coverage.
 
 ## Status legend
 - `[ ]` Not started
@@ -66,8 +66,37 @@ This cycle focuses on silent-misconfiguration prevention and telemetry taxonomy 
   - `src/jarvis/__main__.py`
   - `tests/test_main_lifecycle.py`
 
+### 2.3 Cross-module taxonomy drift test (`P1`)
+- [x] Add regression test ensuring telemetry error sets align with `SERVICE_ERROR_CODES`.
+- Why:
+  - Future service code changes should fail tests if telemetry counters are not updated.
+- Acceptance criteria:
+  - Unit test asserts telemetry service + storage sets partition service error taxonomy.
+- Test plan:
+  - Add lifecycle test importing both modules and comparing sets.
+- Files:
+  - `tests/test_main_lifecycle.py`
+
 ---
 
-## 3) Execution Result
+## 3) Developer Workflow
+
+### 3.1 Fault target taxonomy coverage (`P2`)
+- [x] Expand `test-faults` selectors to include current normalized taxonomy values.
+- Why:
+  - Fault regression command should exercise the same failures we classify in telemetry.
+- Acceptance criteria:
+  - `make test-faults` and `scripts/test_faults.sh` include `missing_store`, `unknown_error`, `http_error`, and `network_client_error` selectors.
+- Test plan:
+  - Run `scripts/test_faults.sh` and ensure suite passes.
+- Files:
+  - `Makefile`
+  - `scripts/test_faults.sh`
+  - `README.md`
+
+---
+
+## 4) Execution Result
 - [x] Lint clean: `uv run ruff check src tests`
 - [x] Test suite green: `uv run pytest -q`
+- [x] Fault subset green: `scripts/test_faults.sh`
