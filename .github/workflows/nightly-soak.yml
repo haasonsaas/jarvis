@@ -5,6 +5,10 @@ on:
     - cron: "0 8 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: nightly-soak-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   soak:
     runs-on: ubuntu-latest

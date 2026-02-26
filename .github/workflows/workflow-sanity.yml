@@ -6,6 +6,10 @@ on:
       - main
   pull_request:
 
+concurrency:
+  group: workflow-sanity-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   no-tabs:
     runs-on: ubuntu-latest
@@ -46,7 +50,7 @@ jobs:
       - name: Install actionlint
         run: |
           set -euo pipefail
-          ACTIONLINT_VERSION="1.7.7"
+          ACTIONLINT_VERSION="1.7.11"
           archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           base_url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
           curl -sSfL -o "${archive}" "${base_url}/${archive}"

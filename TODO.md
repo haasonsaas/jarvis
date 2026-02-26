@@ -86,3 +86,20 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
+
+---
+
+## 6) CI Throughput and Stability
+
+### 6.1 Workflow concurrency control (`P1`)
+- [x] Add `concurrency` groups to CI and workflow-sanity so newer PR pushes cancel older runs.
+- [x] Keep nightly soak non-cancelling (`cancel-in-progress: false`) to preserve scheduled signal.
+- Files:
+  - `.github/workflows/ci.yml`
+  - `.github/workflows/workflow-sanity.yml`
+  - `.github/workflows/nightly-soak.yml`
+
+### 6.2 Workflow lint toolchain freshness (`P2`)
+- [x] Bump `actionlint` installer pin to `1.7.11` in workflow-sanity.
+- Files:
+  - `.github/workflows/workflow-sanity.yml`
