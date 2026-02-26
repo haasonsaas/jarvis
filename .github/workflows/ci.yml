@@ -19,6 +19,10 @@ on:
         description: "Run lint + faults, skip full pytest"
         type: boolean
         default: false
+      with_coverage:
+        description: "Generate optional coverage XML artifact in tests job"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -215,12 +219,68 @@ jobs:
           mkdir -p .artifacts/pytest
           uv run pytest -q --junitxml=.artifacts/pytest/junit.xml
 
+      - name: Summarize slowest tests
+        if: always()
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          junit_path = Path(".artifacts/pytest/junit.xml")
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+
+          lines = ["### Slowest tests", ""]
+          if not junit_path.exists():
+            lines.append("No junit report found.")
+          else:
+            root = ET.parse(junit_path).getroot()
+            rows: list[tuple[float, str]] = []
+            for testcase in root.iter("testcase"):
+              try:
+                seconds = float(testcase.attrib.get("time", "0") or "0")
+              except ValueError:
+                seconds = 0.0
+              classname = testcase.attrib.get("classname", "").strip()
+              name = testcase.attrib.get("name", "").strip()
+              label = f"{classname}::{name}" if classname else (name or "<unnamed>")
+              rows.append((seconds, label))
+
+            lines.extend(["| Duration (s) | Test |", "| ---: | --- |"])
+            for seconds, label in sorted(rows, key=lambda row: row[0], reverse=True)[:10]:
+              safe_label = label.replace("|", "\\|")
+              lines.append(f"| {seconds:.3f} | `{safe_label}` |")
+            if not rows:
+              lines.append("| 0.000 | No test cases found |")
+
+          with summary_path.open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+          PY
+
       - name: Upload pytest junit
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pytest-junit-${{ github.run_id }}
           path: .artifacts/pytest/junit.xml
+          if-no-files-found: warn
+
+      - name: Optional coverage XML
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.with_coverage == 'true'
+        continue-on-error: true
+        run: |
+          mkdir -p .artifacts/pytest
+          uv pip install pytest-cov
+          uv run pytest -q --cov=jarvis --cov-report=xml:.artifacts/pytest/coverage.xml
+
+      - name: Upload optional coverage XML
+        if: always() && github.event_name == 'workflow_dispatch' && github.event.inputs.with_coverage == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pytest-coverage-${{ github.run_id }}
+          path: .artifacts/pytest/coverage.xml
           if-no-files-found: warn
 
   faults:

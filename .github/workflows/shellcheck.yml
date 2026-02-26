@@ -1,0 +1,35 @@
+name: Shellcheck
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/**/*.sh"
+  pull_request:
+    paths:
+      - "scripts/**/*.sh"
+  workflow_dispatch:
+
+concurrency:
+  group: shellcheck-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install shellcheck
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Lint shell scripts
+        run: |
+          set -euo pipefail
+          find scripts -type f -name "*.sh" -print0 | xargs -0 -r shellcheck
