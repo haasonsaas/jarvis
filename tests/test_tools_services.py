@@ -2177,6 +2177,7 @@ class TestServicesTools:
 
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
+        assert payload["schema_version"] == "1.0"
         assert "local_time" in payload
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
@@ -2192,6 +2193,19 @@ class TestServicesTools:
         assert "timers" in payload
         assert "active_count" in payload["timers"]
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
+
+    @pytest.mark.asyncio
+    async def test_system_status_contract_reports_expected_fields(self):
+        from jarvis.tools import services
+
+        result = await services.system_status_contract({})
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["schema_version"] == "1.0"
+        assert "top_level_required" in payload
+        assert "tool_policy" in payload["top_level_required"]
+        assert "tool_policy_required" in payload
+        assert "home_conversation_permission_profile" in payload["tool_policy_required"]
+        assert "timers_required" in payload
 
     @pytest.mark.asyncio
     async def test_system_status_handles_recent_tools_failure(self, tmp_path, monkeypatch):

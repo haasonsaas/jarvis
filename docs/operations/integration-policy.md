@@ -110,3 +110,7 @@ Persisted audit details:
 - `timer_list` reports current active timers and remaining time.
 - `timer_cancel` removes a timer by `timer_id` or exact `label`.
 - Timers are persisted in the memory store when memory is enabled and are restored on restart.
+
+## 9) Status Contract for Automation
+- `system_status` includes `schema_version` for machine consumers.
+- `system_status_contract` returns required top-level sections and nested required keys used by automation checks.

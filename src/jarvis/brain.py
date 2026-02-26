@@ -101,6 +101,7 @@ class Brain:
                 "mcp__jarvis-services__pushover_notify",
                 "mcp__jarvis-services__get_time",
                 "mcp__jarvis-services__system_status",
+                "mcp__jarvis-services__system_status_contract",
                 "mcp__jarvis-services__memory_add",
                 "mcp__jarvis-services__memory_search",
                 "mcp__jarvis-services__memory_recent",

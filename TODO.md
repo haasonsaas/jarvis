@@ -107,7 +107,7 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 - [ ] `UX03` Add audit viewer with server-side redaction guarantees.
 - [ ] `UX04` Add quick controls for motion/tts/home tools/wake mode.
 - [ ] `UX05` Add startup diagnostics page for missing/invalid config.
-- [ ] `UX06` Add structured JSON status endpoint for automation consumers.
+- [x] `UX06` Add structured JSON status endpoint for automation consumers.
 - [ ] `UX07` Add operator actions log in dashboard (who changed what, when).
 - [ ] `UX08` Add dashboard responsiveness tests (desktop/mobile).
 
@@ -158,5 +158,5 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 - [x] `E02` Implement `PR01` + `PR02` + `PR03` (timer create/list/cancel tools + tests + status exposure).
 - [x] `E03` Implement `HA08` + `HA09` (policy and taxonomy mapping for HA intent tool).
 - [x] `E04` Implement `PR09` (persist timer/reminder data in `MemoryStore`).
-- [ ] `E05` Implement `UX06` (structured status endpoint behavior contract).
+- [x] `E05` Implement `UX06` (structured status endpoint behavior contract).
 - [x] `E06` Update README/runbooks for new tools and safe operating guidance.

@@ -49,6 +49,7 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
+SYSTEM_STATUS_CONTRACT_VERSION = "1.0"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
@@ -197,6 +198,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "get_time": {},
     "system_status": {},
+    "system_status_contract": {},
     "memory_add": {
         "type": "object",
         "properties": {
@@ -318,6 +320,7 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "pushover_notify": {"message"},
     "get_time": set(),
     "system_status": set(),
+    "system_status_contract": set(),
     "memory_add": {"text"},
     "memory_search": {"query"},
     "memory_status": set(),
@@ -1650,6 +1653,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
     )
 
     status = {
+        "schema_version": SYSTEM_STATUS_CONTRACT_VERSION,
         "local_time": _now_local(),
         "home_assistant_configured": bool(_config and _config.has_home_assistant),
         "home_conversation_enabled": bool(_home_conversation_enabled),
@@ -1682,6 +1686,55 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
     }
     record_summary("system_status", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(status, default=str)}]}
+
+
+async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("system_status_contract"):
+        record_summary("system_status_contract", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    contract = {
+        "schema_version": SYSTEM_STATUS_CONTRACT_VERSION,
+        "top_level_required": [
+            "schema_version",
+            "local_time",
+            "home_assistant_configured",
+            "home_conversation_enabled",
+            "todoist_configured",
+            "pushover_configured",
+            "motion_enabled",
+            "home_tools_enabled",
+            "memory_enabled",
+            "backchannel_style",
+            "persona_style",
+            "tool_policy",
+            "timers",
+            "memory",
+            "audit",
+            "recent_tools",
+            "health",
+        ],
+        "tool_policy_required": [
+            "allow_count",
+            "deny_count",
+            "home_permission_profile",
+            "home_require_confirm_execute",
+            "home_conversation_enabled",
+            "home_conversation_permission_profile",
+            "todoist_permission_profile",
+            "notification_permission_profile",
+        ],
+        "timers_required": [
+            "active_count",
+            "next_due_in_sec",
+        ],
+        "health_required": [
+            "health_level",
+            "reasons",
+        ],
+    }
+    record_summary("system_status_contract", "ok", start_time)
+    return {"content": [{"type": "text", "text": json.dumps(contract)}]}
 
 
 # ── Memory + planning ───────────────────────────────────────
@@ -2281,6 +2334,12 @@ system_status_tool = tool(
     SERVICE_TOOL_SCHEMAS["system_status"],
 )(system_status)
 
+system_status_contract_tool = tool(
+    "system_status_contract",
+    "Return the stable system_status schema contract for automation clients.",
+    SERVICE_TOOL_SCHEMAS["system_status_contract"],
+)(system_status_contract)
+
 memory_add_tool = tool(
     "memory_add",
     "Store a long-term memory (facts, preferences, summaries).",
@@ -2390,6 +2449,7 @@ def create_services_server():
             pushover_notify_tool,
             get_time_tool,
             system_status_tool,
+            system_status_contract_tool,
             tool_summary_tool,
             tool_summary_text_tool,
             memory_add_tool,

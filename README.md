@@ -99,6 +99,9 @@ Smart home safety defaults:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`
   - and tool argument `confirm=true`
+- Automation consumers can use:
+  - `system_status` (includes `schema_version`)
+  - `system_status_contract` (stable required-field contract)
 - Release checklist: [`docs/operations/release-checklist.md`](docs/operations/release-checklist.md).
 - Security maintenance: [`docs/operations/security-maintenance.md`](docs/operations/security-maintenance.md).
 - Error taxonomy: [`docs/operations/error-taxonomy.md`](docs/operations/error-taxonomy.md).
