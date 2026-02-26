@@ -210,3 +210,15 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`
+
+---
+
+## 16) Audit Secret Redaction
+
+### 16.1 Smart home audit payload redaction (`P0`)
+- [x] Redact sensitive keys in smart-home service data before audit logging (e.g. `code`, `pin`, `token`, `secret`).
+- [x] Preserve non-sensitive fields for operational traceability.
+- [x] Add regression test covering nested dict/list redaction.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`

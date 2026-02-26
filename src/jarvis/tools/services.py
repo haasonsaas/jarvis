@@ -54,6 +54,17 @@ _home_permission_profile: str = "control"
 _todoist_permission_profile: str = "control"
 _notification_permission_profile: str = "allow"
 _ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+SENSITIVE_AUDIT_KEY_TOKENS = {
+    "code",
+    "pin",
+    "password",
+    "token",
+    "secret",
+    "api_key",
+    "access_token",
+    "authorization",
+}
+AUDIT_REDACTED = "***REDACTED***"
 
 SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "smart_home": {
@@ -357,6 +368,21 @@ def _rotate_audit_log_if_needed() -> None:
             AUDIT_LOG.rename(rotated)
     except OSError as e:
         log.warning("Failed to rotate audit log: %s", e)
+
+
+def _redact_sensitive_for_audit(value: Any, *, key_hint: str | None = None) -> Any:
+    if key_hint:
+        lowered = key_hint.strip().lower()
+        if any(token in lowered for token in SENSITIVE_AUDIT_KEY_TOKENS):
+            return AUDIT_REDACTED
+    if isinstance(value, dict):
+        return {
+            str(key): _redact_sensitive_for_audit(item, key_hint=str(key))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_sensitive_for_audit(item, key_hint=key_hint) for item in value]
+    return value
 
 
 def _format_tool_summaries(items: list[dict[str, object]]) -> str:
@@ -710,7 +736,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
 
     _audit("smart_home", {
         "domain": domain, "action": action, "entity_id": entity_id,
-        "data": data, "dry_run": dry_run, "confirm": confirm, "state": current_state,
+        "data": _redact_sensitive_for_audit(data), "dry_run": dry_run, "confirm": confirm, "state": current_state,
     })
 
     if dry_run:

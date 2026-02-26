@@ -284,6 +284,34 @@ class TestServicesTools:
         assert "DRY RUN" in text
 
     @pytest.mark.asyncio
+    async def test_smart_home_audit_redacts_sensitive_service_data(self, monkeypatch):
+        from jarvis.tools import services
+
+        audit_calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
+
+        await services.smart_home({
+            "domain": "lock",
+            "action": "unlock",
+            "entity_id": "lock.front_door",
+            "data": {
+                "code": "1234",
+                "label": "front",
+                "nested": {"pin": "9999", "brightness": 10},
+                "list": [{"access_token": "abc"}, {"safe": "ok"}],
+            },
+            "dry_run": True,
+        })
+
+        _, details = audit_calls[-1]
+        payload = details["data"]
+        assert payload["code"] == "***REDACTED***"
+        assert payload["nested"]["pin"] == "***REDACTED***"
+        assert payload["list"][0]["access_token"] == "***REDACTED***"
+        assert payload["label"] == "front"
+        assert payload["nested"]["brightness"] == 10
+
+    @pytest.mark.asyncio
     async def test_smart_home_cooldown_on_execute(self):
         from jarvis.tools import services
 
