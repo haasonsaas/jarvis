@@ -1459,6 +1459,66 @@ class TestServicesTools:
         assert "failed" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_memory_search_uses_config_defaults_when_args_missing(self, tmp_path, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.memory_max_sensitivity = 0.2
+        cfg.memory_hybrid_weight = 0.33
+        cfg.memory_decay_enabled = True
+        cfg.memory_decay_half_life_days = 9.0
+        cfg.memory_mmr_enabled = True
+        cfg.memory_mmr_lambda = 0.55
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        captured: dict[str, object] = {}
+
+        def wrapped_search_v2(query: str, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        monkeypatch.setattr(store, "search_v2", wrapped_search_v2)
+
+        result = await services.memory_search({"query": "hello"})
+
+        assert "no relevant" in result["content"][0]["text"].lower()
+        assert captured["max_sensitivity"] == 0.2
+        assert captured["hybrid_weight"] == 0.33
+        assert captured["decay_enabled"] is True
+        assert captured["decay_half_life_days"] == 9.0
+        assert captured["mmr_enabled"] is True
+        assert captured["mmr_lambda"] == 0.55
+
+    @pytest.mark.asyncio
+    async def test_memory_search_include_sensitive_overrides_config_sensitivity(self, tmp_path, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.memory_max_sensitivity = 0.1
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        captured: dict[str, object] = {}
+
+        def wrapped_search_v2(query: str, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        monkeypatch.setattr(store, "search_v2", wrapped_search_v2)
+
+        await services.memory_search({"query": "hello", "include_sensitive": True})
+
+        assert captured["max_sensitivity"] is None
+
+    @pytest.mark.asyncio
     async def test_memory_add_handles_storage_error(self, tmp_path, monkeypatch):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services

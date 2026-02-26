@@ -1384,19 +1384,63 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("memory_search", start_time, "missing_query")
         return {"content": [{"type": "text", "text": "Search query required."}]}
     limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
+    default_max_sensitivity = _as_float(
+        getattr(_config, "memory_max_sensitivity", 0.4),
+        0.4,
+        minimum=0.0,
+        maximum=1.0,
+    )
+    default_hybrid_weight = _as_float(
+        getattr(_config, "memory_hybrid_weight", 0.7),
+        0.7,
+        minimum=0.0,
+        maximum=1.0,
+    )
+    default_decay_enabled = _as_bool(getattr(_config, "memory_decay_enabled", False), default=False)
+    default_decay_half_life_days = _as_float(
+        getattr(_config, "memory_decay_half_life_days", 30.0),
+        30.0,
+        minimum=0.1,
+    )
+    default_mmr_enabled = _as_bool(getattr(_config, "memory_mmr_enabled", False), default=False)
+    default_mmr_lambda = _as_float(
+        getattr(_config, "memory_mmr_lambda", 0.7),
+        0.7,
+        minimum=0.0,
+        maximum=1.0,
+    )
     include_sensitive = _as_bool(args.get("include_sensitive"), default=False)
-    max_sensitivity = None if include_sensitive else _as_float(args.get("max_sensitivity", 0.4), 0.4, minimum=0.0, maximum=1.0)
+    max_sensitivity = None if include_sensitive else _as_float(
+        args.get("max_sensitivity", default_max_sensitivity),
+        default_max_sensitivity,
+        minimum=0.0,
+        maximum=1.0,
+    )
     source_list = _as_str_list(args.get("sources"))
     try:
         results = _memory.search_v2(
             query,
             limit=limit,
             max_sensitivity=max_sensitivity,
-            hybrid_weight=_as_float(args.get("hybrid_weight", 0.7), 0.7, minimum=0.0, maximum=1.0),
-            decay_enabled=_as_bool(args.get("decay_enabled"), default=False),
-            decay_half_life_days=_as_float(args.get("decay_half_life_days", 30.0), 30.0, minimum=0.1),
-            mmr_enabled=_as_bool(args.get("mmr_enabled"), default=False),
-            mmr_lambda=_as_float(args.get("mmr_lambda", 0.7), 0.7, minimum=0.0, maximum=1.0),
+            hybrid_weight=_as_float(
+                args.get("hybrid_weight", default_hybrid_weight),
+                default_hybrid_weight,
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            decay_enabled=_as_bool(args.get("decay_enabled"), default=default_decay_enabled),
+            decay_half_life_days=_as_float(
+                args.get("decay_half_life_days", default_decay_half_life_days),
+                default_decay_half_life_days,
+                minimum=0.1,
+            ),
+            mmr_enabled=_as_bool(args.get("mmr_enabled"), default=default_mmr_enabled),
+            mmr_lambda=_as_float(
+                args.get("mmr_lambda", default_mmr_lambda),
+                default_mmr_lambda,
+                minimum=0.0,
+                maximum=1.0,
+            ),
             sources=source_list,
         )
     except Exception as e:
