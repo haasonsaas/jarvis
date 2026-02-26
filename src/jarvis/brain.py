@@ -105,6 +105,8 @@ class Brain:
                 "mcp__jarvis-services__webhook_trigger",
                 "mcp__jarvis-services__slack_notify",
                 "mcp__jarvis-services__discord_notify",
+                "mcp__jarvis-services__email_send",
+                "mcp__jarvis-services__email_summary",
                 "mcp__jarvis-services__todoist_add_task",
                 "mcp__jarvis-services__todoist_list_tasks",
                 "mcp__jarvis-services__pushover_notify",

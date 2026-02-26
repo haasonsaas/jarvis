@@ -143,6 +143,15 @@ class Config:
     pushover_user_key: str = field(default_factory=lambda: os.environ.get("PUSHOVER_USER_KEY", ""))
     notification_permission_profile: str = field(default_factory=lambda: os.environ.get("NOTIFICATION_PERMISSION_PROFILE", "allow"))
     pushover_timeout_sec: float = field(default_factory=lambda: _env_positive_float("PUSHOVER_TIMEOUT_SEC", 10.0))
+    email_smtp_host: str = field(default_factory=lambda: os.environ.get("EMAIL_SMTP_HOST", ""))
+    email_smtp_port: int = field(default_factory=lambda: _env_int("EMAIL_SMTP_PORT", 587))
+    email_smtp_username: str = field(default_factory=lambda: os.environ.get("EMAIL_SMTP_USERNAME", ""))
+    email_smtp_password: str = field(default_factory=lambda: os.environ.get("EMAIL_SMTP_PASSWORD", ""))
+    email_from: str = field(default_factory=lambda: os.environ.get("EMAIL_FROM", ""))
+    email_default_to: str = field(default_factory=lambda: os.environ.get("EMAIL_DEFAULT_TO", ""))
+    email_use_tls: bool = field(default_factory=lambda: _env_bool("EMAIL_USE_TLS") is not False)
+    email_permission_profile: str = field(default_factory=lambda: os.environ.get("EMAIL_PERMISSION_PROFILE", "readonly"))
+    email_timeout_sec: float = field(default_factory=lambda: _env_positive_float("EMAIL_TIMEOUT_SEC", 10.0))
     weather_units: str = field(default_factory=lambda: os.environ.get("WEATHER_UNITS", "metric"))
     weather_timeout_sec: float = field(default_factory=lambda: _env_positive_float("WEATHER_TIMEOUT_SEC", 8.0))
     webhook_allowlist: list[str] = field(default_factory=lambda: _env_list("WEBHOOK_ALLOWLIST"))
@@ -192,6 +201,10 @@ class Config:
             raise ValueError("todoist_timeout_sec must be > 0")
         if self.pushover_timeout_sec <= 0.0:
             raise ValueError("pushover_timeout_sec must be > 0")
+        if self.email_smtp_port <= 0 or self.email_smtp_port > 65535:
+            raise ValueError("email_smtp_port must be between 1 and 65535")
+        if self.email_timeout_sec <= 0.0:
+            raise ValueError("email_timeout_sec must be > 0")
         if self.weather_timeout_sec <= 0.0:
             raise ValueError("weather_timeout_sec must be > 0")
         if self.webhook_timeout_sec <= 0.0:
@@ -209,6 +222,7 @@ class Config:
         )
         self.todoist_permission_profile = self._normalize_todoist_permission_profile(self.todoist_permission_profile)
         self.notification_permission_profile = self._normalize_notification_permission_profile(self.notification_permission_profile)
+        self.email_permission_profile = self._normalize_email_permission_profile(self.email_permission_profile)
         self.weather_units = self._normalize_weather_units(self.weather_units)
         if _env_is_set("BACKCHANNEL_STYLE") and self.backchannel_style == "balanced":
             raw = os.environ.get("BACKCHANNEL_STYLE", "")
@@ -237,6 +251,10 @@ class Config:
             raw = os.environ.get("NOTIFICATION_PERMISSION_PROFILE", "")
             if raw.strip().lower() not in {"off", "allow"}:
                 self.startup_warnings.append("NOTIFICATION_PERMISSION_PROFILE invalid; using allow.")
+        if _env_is_set("EMAIL_PERMISSION_PROFILE") and self.email_permission_profile == "readonly":
+            raw = os.environ.get("EMAIL_PERMISSION_PROFILE", "")
+            if raw.strip().lower() not in {"readonly", "control"}:
+                self.startup_warnings.append("EMAIL_PERMISSION_PROFILE invalid; using readonly.")
         if _env_is_set("WEATHER_UNITS") and self.weather_units == "metric":
             raw = os.environ.get("WEATHER_UNITS", "")
             if raw.strip().lower() not in {"metric", "imperial"}:
@@ -291,6 +309,13 @@ class Config:
             return normalized
         return "metric"
 
+    @staticmethod
+    def _normalize_email_permission_profile(profile: str) -> str:
+        normalized = (profile or "readonly").strip().lower()
+        if normalized in {"readonly", "control"}:
+            return normalized
+        return "readonly"
+
     def _collect_startup_warnings(self) -> list[str]:
         warnings: list[str] = []
         has_hass_url = bool((self.hass_url or "").strip())
@@ -334,6 +359,17 @@ class Config:
             and not has_pushover_user
         ):
             warnings.append("NOTIFICATION_PERMISSION_PROFILE=allow set while Pushover credentials are empty.")
+        has_email_host = bool((self.email_smtp_host or "").strip())
+        has_email_from = bool((self.email_from or "").strip())
+        has_email_to = bool((self.email_default_to or "").strip())
+        if has_email_host and (not has_email_from or not has_email_to):
+            warnings.append("Email config incomplete; set EMAIL_FROM and EMAIL_DEFAULT_TO when EMAIL_SMTP_HOST is set.")
+        if (
+            _env_is_set("EMAIL_PERMISSION_PROFILE")
+            and self.email_permission_profile == "control"
+            and not has_email_host
+        ):
+            warnings.append("EMAIL_PERMISSION_PROFILE=control set while EMAIL_SMTP_HOST is empty.")
         if has_hass_token and len(self.hass_token.strip()) < 20:
             warnings.append("HASS_TOKEN appears unusually short; verify token scope and rotation policy.")
         if has_todoist_token and len(self.todoist_api_token.strip()) < 20:
@@ -356,6 +392,7 @@ class Config:
             ("AUDIT_RETENTION_DAYS", "nonnegative_float", str(self.audit_retention_days)),
             ("TODOIST_TIMEOUT_SEC", "positive_float", str(self.todoist_timeout_sec)),
             ("PUSHOVER_TIMEOUT_SEC", "positive_float", str(self.pushover_timeout_sec)),
+            ("EMAIL_TIMEOUT_SEC", "positive_float", str(self.email_timeout_sec)),
             ("WEATHER_TIMEOUT_SEC", "positive_float", str(self.weather_timeout_sec)),
             ("WEBHOOK_TIMEOUT_SEC", "positive_float", str(self.webhook_timeout_sec)),
         ]

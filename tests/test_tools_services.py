@@ -397,6 +397,23 @@ class TestServicesTools:
         assert "not permitted" in discord["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_email_permission_profile_readonly_denies_send(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.email_permission_profile = "readonly"
+        cfg.email_smtp_host = "smtp.example.com"
+        cfg.email_from = "jarvis@example.com"
+        cfg.email_default_to = "owner@example.com"
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        result = await services.email_send({"subject": "Test", "body": "Hello", "confirm": True})
+        assert "not permitted" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_smart_home_dry_run_explicit_false_with_confirm(self, aiohttp_response, aiohttp_session_mock):
         from jarvis.tools.services import smart_home
 
@@ -1458,6 +1475,19 @@ class TestServicesTools:
         assert "discord webhook not configured" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_email_send_requires_config(self):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.email_permission_profile = "control"
+        store = MemoryStore(":memory:")
+        services.bind(cfg, store)
+        result = await services.email_send({"subject": "Test", "body": "Body", "confirm": True})
+        assert "email not configured" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_todoist_add_task_success(self, tmp_path, aiohttp_response, aiohttp_session_mock):
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
@@ -1895,6 +1925,50 @@ class TestServicesTools:
             result = await services.discord_notify({"message": "hello"})
 
         assert "discord notification sent" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_email_send_requires_confirm(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.email_permission_profile = "control"
+        cfg.email_smtp_host = "smtp.example.com"
+        cfg.email_from = "jarvis@example.com"
+        cfg.email_default_to = "owner@example.com"
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        result = await services.email_send({"subject": "Test", "body": "Body"})
+        assert "confirm=true" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_email_send_and_summary_success(self, tmp_path, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.email_permission_profile = "control"
+        cfg.email_smtp_host = "smtp.example.com"
+        cfg.email_from = "jarvis@example.com"
+        cfg.email_default_to = "owner@example.com"
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        sent_messages: list[tuple[str, str]] = []
+
+        def _fake_send(*, recipient: str, subject: str, body: str) -> None:
+            sent_messages.append((recipient, subject))
+
+        monkeypatch.setattr("jarvis.tools.services._send_email_sync", _fake_send)
+        sent = await services.email_send({"subject": "Status", "body": "All good", "confirm": True})
+        assert "email sent to owner@example.com" in sent["content"][0]["text"].lower()
+        assert sent_messages == [("owner@example.com", "Status")]
+
+        summary = await services.email_summary({"limit": 5})
+        assert "email sent to owner@example.com: status" in summary["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_pushover_notify_rejects_invalid_priority(self, tmp_path):
@@ -2626,6 +2700,7 @@ class TestServicesTools:
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
         assert isinstance(payload["tool_policy"]["home_conversation_enabled"], bool)
         assert payload["tool_policy"]["home_conversation_permission_profile"] in {"readonly", "control"}
+        assert payload["tool_policy"]["email_permission_profile"] in {"readonly", "control"}
         assert "memory" in payload
         assert "audit" in payload
         assert payload["audit"]["redaction_enabled"] is True
@@ -2640,6 +2715,7 @@ class TestServicesTools:
         assert "integrations" in payload
         assert "weather" in payload["integrations"]
         assert "webhook" in payload["integrations"]
+        assert "email" in payload["integrations"]
         assert "channels" in payload["integrations"]
         assert "retention_policy" in payload
         assert "memory_retention_days" in payload["retention_policy"]
@@ -2656,9 +2732,11 @@ class TestServicesTools:
         assert "tool_policy" in payload["top_level_required"]
         assert "tool_policy_required" in payload
         assert "home_conversation_permission_profile" in payload["tool_policy_required"]
+        assert "email_permission_profile" in payload["tool_policy_required"]
         assert "timers_required" in payload
         assert "reminders_required" in payload
         assert "integrations_required" in payload
+        assert "email" in payload["integrations_required"]
         assert "channels" in payload["integrations_required"]
         assert "retention_policy_required" in payload
 
@@ -2938,6 +3016,7 @@ class TestServicesTools:
         assert schemas["reminder_complete"]["properties"]["reminder_id"]["type"] == "integer"
         assert schemas["reminder_notify_due"]["properties"]["limit"]["type"] == "integer"
         assert schemas["calendar_events"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["email_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary_text"]["properties"]["limit"]["type"] == "integer"
 
@@ -2991,3 +3070,4 @@ class TestServicesTools:
         assert "webhook_trigger" in taxonomy_doc
         assert "slack_notify" in taxonomy_doc
         assert "discord_notify" in taxonomy_doc
+        assert "email_send" in taxonomy_doc

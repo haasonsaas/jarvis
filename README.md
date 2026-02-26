@@ -87,6 +87,7 @@ cp .env.example .env
 # Optional: TODOIST_API_TOKEN / TODOIST_PROJECT_ID / TODOIST_PERMISSION_PROFILE
 # Optional: TODOIST_TIMEOUT_SEC=10.0 / PUSHOVER_TIMEOUT_SEC=10.0
 # Optional: PUSHOVER_API_TOKEN / PUSHOVER_USER_KEY / NOTIFICATION_PERMISSION_PROFILE
+# Optional: EMAIL_SMTP_HOST / EMAIL_FROM / EMAIL_DEFAULT_TO / EMAIL_PERMISSION_PROFILE / EMAIL_TIMEOUT_SEC
 # Optional: WEATHER_UNITS=metric|imperial / WEATHER_TIMEOUT_SEC
 # Optional: WEBHOOK_ALLOWLIST=example.com,api.example.com / WEBHOOK_AUTH_TOKEN / WEBHOOK_TIMEOUT_SEC
 # Optional: SLACK_WEBHOOK_URL / DISCORD_WEBHOOK_URL
@@ -125,6 +126,10 @@ Smart home safety defaults:
   - `off` denies `pushover_notify`, `slack_notify`, and `discord_notify`
   - `allow` enables all channel notification tools
   - `PUSHOVER_TIMEOUT_SEC` controls request timeout (default `10.0`)
+- Email integration:
+  - `email_send` requires `confirm=true` and `EMAIL_PERMISSION_PROFILE=control`
+  - `email_summary` shows recent outbound email metadata
+  - required SMTP env for send: `EMAIL_SMTP_HOST`, `EMAIL_FROM`, `EMAIL_DEFAULT_TO`
 - Slack/Discord hooks:
   - `slack_notify` uses `SLACK_WEBHOOK_URL`
   - `discord_notify` uses `DISCORD_WEBHOOK_URL`

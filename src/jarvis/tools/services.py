@@ -12,8 +12,10 @@ import logging
 import math
 import random
 import re
+import smtplib
 import time
 from datetime import datetime, timezone
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -85,8 +87,17 @@ _home_conversation_enabled: bool = False
 _home_conversation_permission_profile: str = "readonly"
 _todoist_permission_profile: str = "control"
 _notification_permission_profile: str = "allow"
+_email_permission_profile: str = "readonly"
 _todoist_timeout_sec: float = 10.0
 _pushover_timeout_sec: float = 10.0
+_email_smtp_host: str = ""
+_email_smtp_port: int = 587
+_email_smtp_username: str = ""
+_email_smtp_password: str = ""
+_email_from: str = ""
+_email_default_to: str = ""
+_email_use_tls: bool = True
+_email_timeout_sec: float = 10.0
 _weather_units: str = "metric"
 _weather_timeout_sec: float = 8.0
 _webhook_allowlist: list[str] = []
@@ -101,6 +112,7 @@ _timers: dict[int, dict[str, Any]] = {}
 _timer_id_seq: int = 1
 _reminders: dict[int, dict[str, Any]] = {}
 _reminder_id_seq: int = 1
+_email_history: list[dict[str, Any]] = []
 SENSITIVE_AUDIT_KEY_TOKENS = {
     "code",
     "pin",
@@ -122,6 +134,7 @@ AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
     "pushover_notify": {"message", "title", "content", "description", "body"},
     "slack_notify": {"message", "title", "content", "description", "body"},
     "discord_notify": {"message", "title", "content", "description", "body"},
+    "email_send": {"subject", "body", "content", "description", "message"},
     "home_assistant_conversation": {"text"},
     "reminder_create": {"text"},
     "reminder_list": {"text"},
@@ -255,6 +268,22 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "message": {"type": "string"},
         },
         "required": ["message"],
+    },
+    "email_send": {
+        "type": "object",
+        "properties": {
+            "to": {"type": "string"},
+            "subject": {"type": "string"},
+            "body": {"type": "string"},
+            "confirm": {"type": "boolean"},
+        },
+        "required": ["subject", "body"],
+    },
+    "email_summary": {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer"},
+        },
     },
     "timer_create": {
         "type": "object",
@@ -479,6 +508,8 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "webhook_trigger": {"url"},
     "slack_notify": {"message"},
     "discord_notify": {"message"},
+    "email_send": {"subject", "body"},
+    "email_summary": set(),
     "timer_create": {"duration"},
     "timer_list": set(),
     "timer_cancel": set(),
@@ -522,8 +553,10 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _config, _memory, _audit_log_max_bytes, _audit_log_backups
     global _home_permission_profile, _home_require_confirm_execute, _home_conversation_enabled
     global _home_conversation_permission_profile
-    global _todoist_permission_profile, _notification_permission_profile
+    global _todoist_permission_profile, _notification_permission_profile, _email_permission_profile
     global _todoist_timeout_sec, _pushover_timeout_sec
+    global _email_smtp_host, _email_smtp_port, _email_smtp_username, _email_smtp_password
+    global _email_from, _email_default_to, _email_use_tls, _email_timeout_sec
     global _weather_units, _weather_timeout_sec
     global _webhook_allowlist, _webhook_auth_token, _webhook_timeout_sec
     global _slack_webhook_url, _discord_webhook_url
@@ -551,8 +584,19 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     ).strip().lower()
     if _notification_permission_profile not in {"off", "allow"}:
         _notification_permission_profile = "allow"
+    _email_permission_profile = str(getattr(config, "email_permission_profile", "readonly")).strip().lower()
+    if _email_permission_profile not in {"readonly", "control"}:
+        _email_permission_profile = "readonly"
     _todoist_timeout_sec = float(getattr(config, "todoist_timeout_sec", 10.0))
     _pushover_timeout_sec = float(getattr(config, "pushover_timeout_sec", 10.0))
+    _email_smtp_host = str(getattr(config, "email_smtp_host", "")).strip()
+    _email_smtp_port = int(getattr(config, "email_smtp_port", 587))
+    _email_smtp_username = str(getattr(config, "email_smtp_username", "")).strip()
+    _email_smtp_password = str(getattr(config, "email_smtp_password", "")).strip()
+    _email_from = str(getattr(config, "email_from", "")).strip()
+    _email_default_to = str(getattr(config, "email_default_to", "")).strip()
+    _email_use_tls = bool(getattr(config, "email_use_tls", True))
+    _email_timeout_sec = float(getattr(config, "email_timeout_sec", 10.0))
     _weather_units = str(getattr(config, "weather_units", "metric")).strip().lower()
     if _weather_units not in {"metric", "imperial"}:
         _weather_units = "metric"
@@ -570,6 +614,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _timer_id_seq = 1
     _reminders.clear()
     _reminder_id_seq = 1
+    _email_history.clear()
     _load_timers_from_store()
     _load_reminders_from_store()
     global _tool_allowlist, _tool_denylist
@@ -584,6 +629,8 @@ def _tool_permitted(name: str) -> bool:
     if _home_permission_profile == "readonly" and name in {"smart_home", "media_control"}:
         return False
     if _todoist_permission_profile == "readonly" and name == "todoist_add_task":
+        return False
+    if _email_permission_profile == "readonly" and name == "email_send":
         return False
     if _notification_permission_profile == "off" and name in {"pushover_notify", "slack_notify", "discord_notify"}:
         return False
@@ -1471,6 +1518,11 @@ def _integration_health_snapshot() -> dict[str, Any]:
             "allowlist_count": len(_webhook_allowlist),
             "auth_token_configured": bool(_webhook_auth_token),
             "timeout_sec": _webhook_timeout_sec,
+        },
+        "email": {
+            "configured": bool(_email_smtp_host and _email_from and _email_default_to),
+            "permission_profile": _email_permission_profile,
+            "timeout_sec": _email_timeout_sec,
         },
         "channels": {
             "slack_configured": bool(_slack_webhook_url),
@@ -2690,6 +2742,125 @@ async def discord_notify(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Unexpected Discord webhook error."}]}
 
 
+def _record_email_history(recipient: str, subject: str) -> None:
+    item = {
+        "timestamp": time.time(),
+        "to": recipient,
+        "subject": subject,
+    }
+    _email_history.append(item)
+    if len(_email_history) > 200:
+        del _email_history[:-200]
+    if _memory is not None:
+        try:
+            _memory.add_memory(
+                f"Email sent to {recipient}: {subject}",
+                kind="email_sent",
+                tags=["integration", "email"],
+                sensitivity=0.4,
+                source="integration.email",
+            )
+        except Exception:
+            log.warning("Failed to persist email send metadata", exc_info=True)
+
+
+def _send_email_sync(*, recipient: str, subject: str, body: str) -> None:
+    msg = EmailMessage()
+    msg["From"] = _email_from
+    msg["To"] = recipient
+    msg["Subject"] = subject
+    msg.set_content(body)
+    with smtplib.SMTP(_email_smtp_host, _email_smtp_port, timeout=_email_timeout_sec) as smtp:
+        smtp.ehlo()
+        if _email_use_tls:
+            smtp.starttls()
+            smtp.ehlo()
+        if _email_smtp_username:
+            smtp.login(_email_smtp_username, _email_smtp_password)
+        smtp.send_message(msg)
+
+
+async def email_send(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("email_send"):
+        record_summary("email_send", "denied", start_time, "policy")
+        _audit("email_send", {"result": "denied", "reason": "policy"})
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _email_smtp_host or not _email_from or not _email_default_to:
+        _record_service_error("email_send", start_time, "missing_config")
+        _audit("email_send", {"result": "missing_config"})
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Email not configured. Set EMAIL_SMTP_HOST, EMAIL_FROM, and EMAIL_DEFAULT_TO.",
+                }
+            ]
+        }
+    subject = str(args.get("subject", "")).strip()
+    body = str(args.get("body", "")).strip()
+    if not subject or not body:
+        _record_service_error("email_send", start_time, "missing_fields")
+        _audit("email_send", {"result": "missing_fields"})
+        return {"content": [{"type": "text", "text": "subject and body are required."}]}
+    confirm = _as_bool(args.get("confirm"), default=False)
+    if not confirm:
+        _record_service_error("email_send", start_time, "policy")
+        _audit("email_send", {"result": "denied", "reason": "confirm_required"})
+        return {"content": [{"type": "text", "text": "Set confirm=true to send email."}]}
+    recipient = str(args.get("to", "")).strip() or _email_default_to
+    try:
+        await asyncio.to_thread(_send_email_sync, recipient=recipient, subject=subject, body=body)
+    except smtplib.SMTPAuthenticationError:
+        _record_service_error("email_send", start_time, "auth")
+        _audit("email_send", {"result": "auth", "to": recipient})
+        return {"content": [{"type": "text", "text": "Email SMTP authentication failed."}]}
+    except (smtplib.SMTPException, OSError, TimeoutError):
+        _record_service_error("email_send", start_time, "network_client_error")
+        _audit("email_send", {"result": "network_client_error", "to": recipient})
+        return {"content": [{"type": "text", "text": "Failed to reach SMTP server."}]}
+    except Exception:
+        _record_service_error("email_send", start_time, "unexpected")
+        _audit("email_send", {"result": "unexpected", "to": recipient})
+        log.exception("Unexpected email_send failure")
+        return {"content": [{"type": "text", "text": "Unexpected email send error."}]}
+    _record_email_history(recipient, subject)
+    record_summary("email_send", "ok", start_time)
+    _audit(
+        "email_send",
+        {"result": "ok", "to": recipient, "subject_length": len(subject), "body_length": len(body)},
+    )
+    return {"content": [{"type": "text", "text": f"Email sent to {recipient}."}]}
+
+
+async def email_summary(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("email_summary"):
+        record_summary("email_summary", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=50)
+    lines: list[str] = []
+    if _memory is not None:
+        try:
+            rows = _memory.recent(limit=limit, kind="email_sent", sources=["integration.email"])
+        except Exception:
+            rows = []
+        for entry in rows:
+            lines.append(f"- {entry.text}")
+    else:
+        for item in list(reversed(_email_history))[:limit]:
+            ts = float(item.get("timestamp", 0.0))
+            when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+            recipient = str(item.get("to", ""))
+            subject = str(item.get("subject", ""))
+            lines.append(f"- {when} | to={recipient} | subject={subject}")
+    if not lines:
+        record_summary("email_summary", "empty", start_time)
+        return {"content": [{"type": "text", "text": "No email history found."}]}
+    record_summary("email_summary", "ok", start_time)
+    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+
 def _list_reminder_payloads(*, include_completed: bool, limit: int, now_ts: float) -> list[dict[str, Any]]:
     if _memory is not None:
         pending_rows = _memory.list_reminders(status="pending", now=now_ts, limit=limit)
@@ -3546,6 +3717,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "home_conversation_permission_profile": _home_conversation_permission_profile,
             "todoist_permission_profile": _todoist_permission_profile,
             "notification_permission_profile": _notification_permission_profile,
+            "email_permission_profile": _email_permission_profile,
         },
         "timers": _timer_status(),
         "reminders": _reminder_status(),
@@ -3601,6 +3773,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "home_conversation_permission_profile",
             "todoist_permission_profile",
             "notification_permission_profile",
+            "email_permission_profile",
         ],
         "timers_required": [
             "active_count",
@@ -3618,6 +3791,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "pushover",
             "weather",
             "webhook",
+            "email",
             "channels",
         ],
         "retention_policy_required": [
@@ -4253,6 +4427,18 @@ discord_notify_tool = tool(
     SERVICE_TOOL_SCHEMAS["discord_notify"],
 )(discord_notify)
 
+email_send_tool = tool(
+    "email_send",
+    "Send an email through configured SMTP. Requires confirm=true.",
+    SERVICE_TOOL_SCHEMAS["email_send"],
+)(email_send)
+
+email_summary_tool = tool(
+    "email_summary",
+    "Summarize recently sent emails recorded by Jarvis.",
+    SERVICE_TOOL_SCHEMAS["email_summary"],
+)(email_summary)
+
 todoist_add_task_tool = tool(
     "todoist_add_task",
     "Create a task in Todoist (project configurable via env).",
@@ -4439,6 +4625,8 @@ def create_services_server():
             webhook_trigger_tool,
             slack_notify_tool,
             discord_notify_tool,
+            email_send_tool,
+            email_summary_tool,
             todoist_add_task_tool,
             todoist_list_tasks_tool,
             pushover_notify_tool,

@@ -115,6 +115,12 @@ class TestConfig:
         c = Config(notification_permission_profile="enabled")
         assert c.notification_permission_profile == "allow"
 
+    def test_email_permission_profile_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(email_permission_profile="send-all")
+        assert c.email_permission_profile == "readonly"
+
     def test_weather_units_normalizes(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         from jarvis.config import Config
@@ -147,6 +153,8 @@ class TestConfig:
         monkeypatch.setenv("HOME_CONVERSATION_PERMISSION_PROFILE", "execute-all")
         monkeypatch.setenv("TODOIST_PERMISSION_PROFILE", "write-all")
         monkeypatch.setenv("NOTIFICATION_PERMISSION_PROFILE", "enabled")
+        monkeypatch.setenv("EMAIL_PERMISSION_PROFILE", "send-all")
+        monkeypatch.setenv("EMAIL_TIMEOUT_SEC", "0")
         monkeypatch.setenv("WEATHER_UNITS", "kelvin")
         from jarvis.config import Config
 
@@ -168,6 +176,8 @@ class TestConfig:
         assert "HOME_CONVERSATION_PERMISSION_PROFILE invalid" in text
         assert "TODOIST_PERMISSION_PROFILE invalid" in text
         assert "NOTIFICATION_PERMISSION_PROFILE invalid" in text
+        assert "EMAIL_PERMISSION_PROFILE invalid" in text
+        assert "EMAIL_TIMEOUT_SEC invalid" in text
         assert "WEATHER_UNITS invalid" in text
 
     def test_invalid_bool_env_falls_back_to_default_behavior(self, monkeypatch):
@@ -213,6 +223,7 @@ class TestConfig:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         monkeypatch.setenv("TODOIST_TIMEOUT_SEC", "0")
         monkeypatch.setenv("PUSHOVER_TIMEOUT_SEC", "-5")
+        monkeypatch.setenv("EMAIL_TIMEOUT_SEC", "0")
         monkeypatch.setenv("WEATHER_TIMEOUT_SEC", "0")
         monkeypatch.setenv("WEBHOOK_TIMEOUT_SEC", "-1")
         from jarvis.config import Config
@@ -220,6 +231,7 @@ class TestConfig:
         c = Config()
         assert c.todoist_timeout_sec == 10.0
         assert c.pushover_timeout_sec == 10.0
+        assert c.email_timeout_sec == 10.0
         assert c.weather_timeout_sec == 8.0
         assert c.webhook_timeout_sec == 8.0
 
@@ -227,6 +239,7 @@ class TestConfig:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         monkeypatch.setenv("TODOIST_TIMEOUT_SEC", "7.5")
         monkeypatch.setenv("PUSHOVER_TIMEOUT_SEC", "12")
+        monkeypatch.setenv("EMAIL_TIMEOUT_SEC", "11")
         monkeypatch.setenv("WEATHER_TIMEOUT_SEC", "4.5")
         monkeypatch.setenv("WEBHOOK_TIMEOUT_SEC", "9")
         from jarvis.config import Config
@@ -234,6 +247,7 @@ class TestConfig:
         c = Config()
         assert c.todoist_timeout_sec == 7.5
         assert c.pushover_timeout_sec == 12.0
+        assert c.email_timeout_sec == 11.0
         assert c.weather_timeout_sec == 4.5
         assert c.webhook_timeout_sec == 9.0
 
@@ -300,6 +314,17 @@ class TestConfig:
         c = Config()
         text = "\n".join(c.startup_warnings)
         assert "pushover config incomplete" in text.lower()
+
+    def test_startup_warning_for_partial_email_config(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("EMAIL_SMTP_HOST", "smtp.example.com")
+        monkeypatch.delenv("EMAIL_FROM", raising=False)
+        monkeypatch.delenv("EMAIL_DEFAULT_TO", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "email config incomplete" in text.lower()
 
     def test_startup_warning_for_permissive_profiles_without_credentials(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

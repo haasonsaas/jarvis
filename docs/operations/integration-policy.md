@@ -1,6 +1,6 @@
 # External Integration Policy Layers
 
-This runbook covers operational setup and policy behavior for Todoist and Pushover integrations.
+This runbook covers operational setup and policy behavior for Todoist, Pushover, Email, and channel integrations.
 
 ## 1) Feature Availability
 - Tools are always registered, but runtime behavior depends on configuration and policy profile.
@@ -48,13 +48,42 @@ This runbook covers operational setup and policy behavior for Todoist and Pushov
 - API-level rejects (`status=0`) are normalized as `api_error`.
 - Malformed payloads are normalized as `invalid_json`.
 
-## 4) Diagnostics
+## 4) Email
+
+### Required environment
+- `EMAIL_SMTP_HOST`
+- `EMAIL_SMTP_PORT` (default `587`)
+- `EMAIL_FROM`
+- `EMAIL_DEFAULT_TO`
+- `EMAIL_PERMISSION_PROFILE=readonly|control`
+- `EMAIL_TIMEOUT_SEC` (optional; default `10.0`)
+- Optional auth:
+  - `EMAIL_SMTP_USERNAME`
+  - `EMAIL_SMTP_PASSWORD`
+  - `EMAIL_USE_TLS=true|false` (default `true`)
+
+### Tool behavior by profile
+- `readonly`
+  - denies: `email_send`
+  - allows: `email_summary`
+- `control`
+  - allows both tools
+
+### Runtime notes
+- `email_send` requires:
+  - `subject`
+  - `body`
+  - `confirm=true`
+- `email_summary` returns recently sent outbound email metadata.
+
+## 5) Diagnostics
 - `system_status` includes:
   - `todoist_configured`
   - `pushover_configured`
-  - policy snapshot for todoist/notification profiles
+  - policy snapshot for todoist/notification/email profiles
+  - integration health block (`integrations`) for email/weather/webhooks/channels
 
-## 5) Audit Location, Rotation, and Redaction Guarantees
+## 6) Audit Location, Rotation, and Redaction Guarantees
 - Audit path: `~/.jarvis/audit.jsonl`
 - Rotation settings:
   - `AUDIT_LOG_MAX_BYTES` default is `1000000`
@@ -85,7 +114,7 @@ Persisted audit details:
 }
 ```
 
-## 6) Troubleshooting Matrix
+## 7) Troubleshooting Matrix
 
 | Symptom | Likely cause | Operator action |
 |---|---|---|
@@ -94,10 +123,13 @@ Persisted audit details:
 | `Pushover not configured. Set PUSHOVER_API_TOKEN and PUSHOVER_USER_KEY.` | One or both Pushover fields are missing | Set both values and restart process |
 | `Notification policy blocks pushover_notify` (tool denied) | `NOTIFICATION_PERMISSION_PROFILE=off` | Switch to `allow` if operationally approved |
 | `Todoist policy blocks todoist_add_task` (tool denied) | `TODOIST_PERMISSION_PROFILE=readonly` | Switch to `control` for write access |
+| `Email not configured. Set EMAIL_SMTP_HOST, EMAIL_FROM, and EMAIL_DEFAULT_TO.` | Missing SMTP endpoint or sender/recipient defaults | Set required email env vars and restart process |
+| `Set confirm=true to send email.` | Strict send safety gate | Require explicit confirmation in agent/tool call |
+| `Email SMTP authentication failed.` | Invalid SMTP username/password | Rotate credentials and validate SMTP auth outside Jarvis |
 | `invalid_json` result from Todoist/Pushover path | Upstream payload shape changed or transient invalid response | Retry once, then inspect API response and update parser tests |
 | Repeated `http_error` / `network_client_error` | Upstream outage, DNS, connectivity, or timeout issue | Validate network path, check service status page, rerun `make test-faults` |
 
-## 7) Triage Flow
+## 8) Triage Flow
 1. Check credential env vars are set and non-empty.
 2. Check profile env vars:
    - `TODOIST_PERMISSION_PROFILE`
@@ -105,13 +137,13 @@ Persisted audit details:
 3. Run `system_status` and verify configured/profile fields.
 4. Run `make test-faults` for fast taxonomy and error-path regression validation.
 
-## 8) Local Productivity Timers
+## 9) Local Productivity Timers
 - `timer_create` accepts numeric seconds or compact durations (`90s`, `5m`, `1h 15m`).
 - `timer_list` reports current active timers and remaining time.
 - `timer_cancel` removes a timer by `timer_id` or exact `label`.
 - Timers are persisted in the memory store when memory is enabled and are restored on restart.
 
-## 9) Local Productivity Reminders
+## 10) Local Productivity Reminders
 - `reminder_create` accepts:
   - epoch seconds
   - ISO datetime
@@ -121,12 +153,12 @@ Persisted audit details:
 - `reminder_notify_due` dispatches due reminder notifications through Pushover and marks reminders as notified to prevent duplicates.
 - Reminders are persisted in the memory store when memory is enabled.
 
-## 10) Home Assistant Calendar Bridge
+## 11) Home Assistant Calendar Bridge
 - `calendar_events` reads events from Home Assistant calendars in a caller-defined window.
 - `calendar_next_event` returns the next upcoming calendar event in the selected window.
 - Optional `calendar_entity_id` scopes reads to one calendar; otherwise all available calendars are queried.
 
-## 11) Home Assistant To-Do/Timer/Area Helpers
+## 12) Home Assistant To-Do/Timer/Area Helpers
 - `home_assistant_todo` supports:
   - `action=list` (read path)
   - `action=add|remove` (write path, blocked in `HOME_PERMISSION_PROFILE=readonly`)
@@ -138,12 +170,12 @@ Persisted audit details:
   - supported actions: `play`, `pause`, `turn_on`, `turn_off`, `toggle`, `mute`, `unmute`, `volume_set`
   - `volume_set` validates `volume` in `[0.0, 1.0]`
 
-## 12) Weather
+## 13) Weather
 - `weather_lookup` uses Open-Meteo geocoding + forecast APIs.
 - `WEATHER_UNITS=metric|imperial` controls default response units.
 - Runtime request timeout is controlled by `WEATHER_TIMEOUT_SEC`.
 
-## 13) Webhooks (Outbound)
+## 14) Webhooks (Outbound)
 - `webhook_trigger` enforces:
   - `https` URLs only
   - host matching against `WEBHOOK_ALLOWLIST` (exact host or subdomain match)
@@ -151,14 +183,14 @@ Persisted audit details:
   - if `WEBHOOK_AUTH_TOKEN` is set and no `Authorization` header is provided, the tool adds `Authorization: Bearer <token>`.
 - Runtime request timeout defaults to `WEBHOOK_TIMEOUT_SEC`.
 
-## 14) Slack/Discord Channel Hooks
+## 15) Slack/Discord Channel Hooks
 - `slack_notify` posts to `SLACK_WEBHOOK_URL`.
 - `discord_notify` posts to `DISCORD_WEBHOOK_URL`.
 - Channel hooks are opt-in and follow `NOTIFICATION_PERMISSION_PROFILE`:
   - `off`: deny channel sends
   - `allow`: permit channel sends
 
-## 15) Integration Health Snapshot
+## 16) Integration Health Snapshot
 - `system_status` includes an `integrations` block with current configuration state for:
   - `home_assistant`
   - `todoist`
@@ -168,6 +200,6 @@ Persisted audit details:
   - `channels`
 - `system_status_contract` includes `integrations_required` for automation consumers.
 
-## 16) Status Contract for Automation
+## 17) Status Contract for Automation
 - `system_status` includes `schema_version` for machine consumers.
 - `system_status_contract` returns required top-level sections and nested required keys used by automation checks.
