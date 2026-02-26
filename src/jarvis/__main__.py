@@ -279,6 +279,7 @@ class Jarvis:
             f"Mode: {'simulation' if self.robot.sim else 'hardware'}",
             f"Motion: {'on' if self.config.motion_enabled else 'off'} | Vision: {'on' if not self.args.no_vision and not self.robot.sim else 'off'} | Hands: {'on' if self.config.hand_track_enabled else 'off'}",
             f"Home tools: {'on' if self.config.home_enabled else 'off'}",
+            f"Home conversation: {'on' if self.config.home_conversation_enabled else 'off'}",
             f"TTS: {tts_reason}",
             f"Memory: {memory_state} ({self.config.memory_path})",
             f"Persona style: {self.config.persona_style}",

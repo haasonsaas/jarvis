@@ -27,6 +27,11 @@ For `smart_home` requests:
   - `turn_on` returns no-op if already on.
   - `turn_off` returns no-op if already off.
 
+For `home_assistant_conversation` requests:
+- Requires `HOME_CONVERSATION_ENABLED=true`.
+- Requires `HOME_PERMISSION_PROFILE=control`.
+- Requires tool argument `confirm=true` on every request.
+
 ## 4) Transport/Service Validation
 - Preflight state read checks entity existence and auth before mutation.
 - Request outcomes are normalized into telemetry error taxonomy.

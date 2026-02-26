@@ -82,6 +82,7 @@ cp .env.example .env
 # Optional: HASS_URL, HASS_TOKEN for smart home
 # Optional: HOME_PERMISSION_PROFILE=readonly (state only) or control (default)
 # Optional: HOME_REQUIRE_CONFIRM_EXECUTE=true (require confirm=true on all executes)
+# Optional: HOME_CONVERSATION_ENABLED=true (enable HA conversation intent tool)
 # Optional: TODOIST_API_TOKEN / TODOIST_PROJECT_ID / TODOIST_PERMISSION_PROFILE
 # Optional: TODOIST_TIMEOUT_SEC=10.0 / PUSHOVER_TIMEOUT_SEC=10.0
 # Optional: PUSHOVER_API_TOKEN / PUSHOVER_USER_KEY / NOTIFICATION_PERMISSION_PROFILE
@@ -93,6 +94,10 @@ Smart home safety defaults:
 - `HOME_REQUIRE_CONFIRM_EXECUTE=true` enforces `confirm=true` for all non-dry-run `smart_home` actions.
 - Operational runbook: [`docs/operations/home-control-policy.md`](docs/operations/home-control-policy.md).
 - Integration runbook: [`docs/operations/integration-policy.md`](docs/operations/integration-policy.md).
+- Home Assistant conversation tool requires both:
+  - `HOME_CONVERSATION_ENABLED=true`
+  - `HOME_PERMISSION_PROFILE=control`
+  - and tool argument `confirm=true`
 - Release checklist: [`docs/operations/release-checklist.md`](docs/operations/release-checklist.md).
 - Security maintenance: [`docs/operations/security-maintenance.md`](docs/operations/security-maintenance.md).
 - Error taxonomy: [`docs/operations/error-taxonomy.md`](docs/operations/error-taxonomy.md).

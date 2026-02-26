@@ -104,3 +104,9 @@ Persisted audit details:
    - `NOTIFICATION_PERMISSION_PROFILE`
 3. Run `system_status` and verify configured/profile fields.
 4. Run `make test-faults` for fast taxonomy and error-path regression validation.
+
+## 8) Local Productivity Timers
+- `timer_create` accepts numeric seconds or compact durations (`90s`, `5m`, `1h 15m`).
+- `timer_list` reports current active timers and remaining time.
+- `timer_cancel` removes a timer by `timer_id` or exact `label`.
+- Timers are currently runtime-memory only and reset on process restart.

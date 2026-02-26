@@ -66,6 +66,7 @@ def test_startup_summary_lines_include_core_status():
         motion_enabled=True,
         hand_track_enabled=False,
         home_enabled=True,
+        home_conversation_enabled=False,
         memory_enabled=True,
         memory_path="/tmp/memory.sqlite",
         persona_style="composed",

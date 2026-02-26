@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import random
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,13 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
+HA_CONVERSATION_MAX_TEXT_CHARS = 600
+TIMER_MAX_SECONDS = 86_400.0
+TIMER_MAX_ACTIVE = 200
+_DURATION_SEGMENT_RE = re.compile(
+    r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)",
+    re.IGNORECASE,
+)
 
 _config: Config | None = None
 _memory: MemoryStore | None = None
@@ -58,11 +66,14 @@ _audit_log_max_bytes: int = 1_000_000
 _audit_log_backups: int = 3
 _home_permission_profile: str = "control"
 _home_require_confirm_execute: bool = False
+_home_conversation_enabled: bool = False
 _todoist_permission_profile: str = "control"
 _notification_permission_profile: str = "allow"
 _todoist_timeout_sec: float = 10.0
 _pushover_timeout_sec: float = 10.0
 _ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_timers: dict[int, dict[str, Any]] = {}
+_timer_id_seq: int = 1
 SENSITIVE_AUDIT_KEY_TOKENS = {
     "code",
     "pin",
@@ -82,6 +93,7 @@ AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
     "todoist_add_task": {"content", "description", "due_string", "message", "title"},
     "todoist_list_tasks": {"content", "description", "due_string", "message", "title"},
     "pushover_notify": {"message", "title", "content", "description", "body"},
+    "home_assistant_conversation": {"text"},
 }
 
 SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -118,6 +130,42 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "entity_id": {"type": "string"},
         },
         "required": ["entity_id"],
+    },
+    "home_assistant_conversation": {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "description": "Natural language command for HA conversation agent."},
+            "language": {"type": "string", "description": "Optional language code (for example en)."},
+            "agent_id": {"type": "string", "description": "Optional Home Assistant conversation agent id."},
+            "confirm": {
+                "type": "boolean",
+                "description": "Must be true for execution to reduce accidental high-impact voice commands.",
+            },
+        },
+        "required": ["text"],
+    },
+    "timer_create": {
+        "type": "object",
+        "properties": {
+            "duration": {
+                "description": "Duration in seconds (number) or string like '90s', '5m', '1h 15m'.",
+            },
+            "label": {"type": "string"},
+        },
+        "required": ["duration"],
+    },
+    "timer_list": {
+        "type": "object",
+        "properties": {
+            "include_expired": {"type": "boolean"},
+        },
+    },
+    "timer_cancel": {
+        "type": "object",
+        "properties": {
+            "timer_id": {"type": "integer"},
+            "label": {"type": "string"},
+        },
     },
     "todoist_add_task": {
         "type": "object",
@@ -260,6 +308,10 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
 SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "smart_home": {"domain", "action", "entity_id"},
     "smart_home_state": {"entity_id"},
+    "home_assistant_conversation": {"text"},
+    "timer_create": {"duration"},
+    "timer_list": set(),
+    "timer_cancel": set(),
     "todoist_add_task": {"content"},
     "todoist_list_tasks": set(),
     "pushover_notify": {"message"},
@@ -291,8 +343,10 @@ def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _config, _memory, _audit_log_max_bytes, _audit_log_backups
-    global _home_permission_profile, _home_require_confirm_execute, _todoist_permission_profile, _notification_permission_profile
+    global _home_permission_profile, _home_require_confirm_execute, _home_conversation_enabled
+    global _todoist_permission_profile, _notification_permission_profile
     global _todoist_timeout_sec, _pushover_timeout_sec
+    global _timer_id_seq
     _config = config
     _memory = memory_store
     _audit_log_max_bytes = int(config.audit_log_max_bytes)
@@ -301,6 +355,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     if _home_permission_profile not in {"readonly", "control"}:
         _home_permission_profile = "control"
     _home_require_confirm_execute = bool(getattr(config, "home_require_confirm_execute", False))
+    _home_conversation_enabled = bool(getattr(config, "home_conversation_enabled", False))
     _todoist_permission_profile = str(getattr(config, "todoist_permission_profile", "control")).strip().lower()
     if _todoist_permission_profile not in {"readonly", "control"}:
         _todoist_permission_profile = "control"
@@ -313,6 +368,8 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _pushover_timeout_sec = float(getattr(config, "pushover_timeout_sec", 10.0))
     _action_last_seen.clear()
     _ha_state_cache.clear()
+    _timers.clear()
+    _timer_id_seq = 1
     global _tool_allowlist, _tool_denylist
     _tool_allowlist = list(config.tool_allowlist)
     _tool_denylist = list(config.tool_denylist)
@@ -525,6 +582,67 @@ def _as_float(
     return parsed
 
 
+def _duration_seconds(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        seconds = float(value)
+        if not math.isfinite(seconds) or seconds <= 0.0:
+            return None
+        return min(seconds, TIMER_MAX_SECONDS)
+    if not isinstance(value, str):
+        return None
+    text = value.strip().lower()
+    if not text:
+        return None
+    try:
+        parsed = float(text)
+        if math.isfinite(parsed) and parsed > 0.0:
+            return min(parsed, TIMER_MAX_SECONDS)
+    except ValueError:
+        pass
+    total = 0.0
+    cursor = 0
+    for match in _DURATION_SEGMENT_RE.finditer(text):
+        if match.start() != cursor and text[cursor:match.start()].strip():
+            return None
+        value_part = float(match.group("value"))
+        unit = match.group("unit").lower()
+        if unit.startswith("h"):
+            total += value_part * 3600.0
+        elif unit.startswith("m"):
+            total += value_part * 60.0
+        else:
+            total += value_part
+        cursor = match.end()
+    if cursor != len(text) and text[cursor:].strip():
+        return None
+    if total <= 0.0:
+        return None
+    return min(total, TIMER_MAX_SECONDS)
+
+
+def _format_duration(seconds: float) -> str:
+    remaining = max(0, int(round(seconds)))
+    hours, rem = divmod(remaining, 3600)
+    minutes, secs = divmod(rem, 60)
+    parts: list[str] = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if secs or not parts:
+        parts.append(f"{secs}s")
+    return " ".join(parts)
+
+
+def _allocate_timer_id() -> int:
+    global _timer_id_seq
+    timer_id = _timer_id_seq
+    _timer_id_seq += 1
+    return timer_id
+
+
 def _retry_backoff_delay(
     attempt_index: int,
     *,
@@ -616,6 +734,27 @@ def _audit_status() -> dict[str, Any]:
         "redaction_enabled": bool(SENSITIVE_AUDIT_KEY_TOKENS),
         "redaction_key_count": len(SENSITIVE_AUDIT_KEY_TOKENS),
         "metadata_only_actions": sorted(AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS),
+    }
+
+
+def _prune_timers(now_mono: float | None = None) -> None:
+    if not _timers:
+        return
+    current = time.monotonic() if now_mono is None else now_mono
+    expired = [timer_id for timer_id, payload in _timers.items() if float(payload.get("due_mono", 0.0)) <= current]
+    for timer_id in expired:
+        _timers.pop(timer_id, None)
+
+
+def _timer_status() -> dict[str, Any]:
+    _prune_timers()
+    if not _timers:
+        return {"active_count": 0, "next_due_in_sec": None}
+    now = time.monotonic()
+    next_due = min(float(payload.get("due_mono", now)) for payload in _timers.values())
+    return {
+        "active_count": len(_timers),
+        "next_due_in_sec": max(0.0, next_due - now),
     }
 
 
@@ -933,6 +1072,158 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
         "state": payload.get("state", "unknown"),
         "attributes": payload.get("attributes", {}),
     })}]}
+
+
+def _ha_conversation_speech(payload: dict[str, Any]) -> str:
+    response = payload.get("response")
+    if not isinstance(response, dict):
+        return ""
+    speech = response.get("speech")
+    if not isinstance(speech, dict):
+        return ""
+    plain = speech.get("plain")
+    if isinstance(plain, dict):
+        text = str(plain.get("speech", "")).strip()
+        if text:
+            return text
+    text = str(speech.get("speech", "")).strip()
+    if text:
+        return text
+    return ""
+
+
+async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("home_assistant_conversation"):
+        record_summary("home_assistant_conversation", "denied", start_time, "policy")
+        _audit("home_assistant_conversation", {"result": "denied", "reason": "policy"})
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _config or not _config.has_home_assistant:
+        _record_service_error("home_assistant_conversation", start_time, "missing_config")
+        _audit("home_assistant_conversation", {"result": "missing_config"})
+        return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
+    if not _home_conversation_enabled:
+        _record_service_error("home_assistant_conversation", start_time, "policy")
+        _audit("home_assistant_conversation", {"result": "denied", "reason": "conversation_disabled"})
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Home Assistant conversation tool is disabled. Set HOME_CONVERSATION_ENABLED=true to enable.",
+                }
+            ]
+        }
+    if _home_permission_profile != "control":
+        _record_service_error("home_assistant_conversation", start_time, "policy")
+        _audit("home_assistant_conversation", {"result": "denied", "reason": "readonly_profile"})
+        return {"content": [{"type": "text", "text": "Home Assistant conversation requires HOME_PERMISSION_PROFILE=control."}]}
+    text = str(args.get("text", "")).strip()
+    if not text:
+        _record_service_error("home_assistant_conversation", start_time, "missing_fields")
+        _audit("home_assistant_conversation", {"result": "missing_fields"})
+        return {"content": [{"type": "text", "text": "Conversation text is required."}]}
+    if len(text) > HA_CONVERSATION_MAX_TEXT_CHARS:
+        _record_service_error("home_assistant_conversation", start_time, "invalid_data")
+        _audit("home_assistant_conversation", {"result": "invalid_data", "field": "text_length", "length": len(text)})
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Conversation text exceeds {HA_CONVERSATION_MAX_TEXT_CHARS} characters.",
+                }
+            ]
+        }
+    confirm = _as_bool(args.get("confirm"), default=False)
+    if not confirm:
+        _record_service_error("home_assistant_conversation", start_time, "policy")
+        _audit("home_assistant_conversation", {"result": "denied", "reason": "confirm_required", "text_length": len(text)})
+        return {"content": [{"type": "text", "text": "Set confirm=true to execute a Home Assistant conversation command."}]}
+
+    payload: dict[str, Any] = {"text": text}
+    language = str(args.get("language", "")).strip()
+    if language:
+        payload["language"] = language
+    agent_id = str(args.get("agent_id", "")).strip()
+    if agent_id:
+        payload["agent_id"] = agent_id
+    url = f"{_config.hass_url}/api/conversation/process"
+    timeout = aiohttp.ClientTimeout(total=10)
+    headers = {**_ha_headers(), "Content-Type": "application/json"}
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                if resp.status == 200:
+                    try:
+                        body = await resp.json()
+                    except Exception:
+                        _record_service_error("home_assistant_conversation", start_time, "invalid_json")
+                        _audit("home_assistant_conversation", {"result": "invalid_json"})
+                        return {"content": [{"type": "text", "text": "Invalid Home Assistant conversation response."}]}
+                    if not isinstance(body, dict):
+                        _record_service_error("home_assistant_conversation", start_time, "invalid_json")
+                        _audit("home_assistant_conversation", {"result": "invalid_json"})
+                        return {"content": [{"type": "text", "text": "Invalid Home Assistant conversation response."}]}
+                    response_type = ""
+                    response = body.get("response")
+                    if isinstance(response, dict):
+                        response_type = str(response.get("response_type", "")).strip()
+                    speech = _ha_conversation_speech(body)
+                    if not speech:
+                        speech = "Home Assistant processed the command."
+                    conversation_id = str(body.get("conversation_id", "")).strip()
+                    record_summary("home_assistant_conversation", "ok", start_time)
+                    _audit(
+                        "home_assistant_conversation",
+                        {
+                            "result": "ok",
+                            "response_type": response_type,
+                            "conversation_id": conversation_id,
+                            "text_length": len(text),
+                            "language": language,
+                            "agent_id": agent_id,
+                        },
+                    )
+                    suffix = ""
+                    if response_type:
+                        suffix += f" [type={response_type}]"
+                    if conversation_id:
+                        suffix += f" [conversation_id={conversation_id}]"
+                    return {"content": [{"type": "text", "text": f"{speech}{suffix}"}]}
+                if resp.status == 401:
+                    _record_service_error("home_assistant_conversation", start_time, "auth")
+                    _audit("home_assistant_conversation", {"result": "auth"})
+                    return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+                if resp.status == 404:
+                    _record_service_error("home_assistant_conversation", start_time, "not_found")
+                    _audit("home_assistant_conversation", {"result": "not_found"})
+                    return {"content": [{"type": "text", "text": "Home Assistant conversation endpoint not found."}]}
+                _record_service_error("home_assistant_conversation", start_time, "http_error")
+                _audit("home_assistant_conversation", {"result": "http_error", "status": resp.status})
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"Home Assistant conversation error ({resp.status}).",
+                        }
+                    ]
+                }
+    except asyncio.TimeoutError:
+        _record_service_error("home_assistant_conversation", start_time, "timeout")
+        _audit("home_assistant_conversation", {"result": "timeout"})
+        return {"content": [{"type": "text", "text": "Home Assistant conversation request timed out."}]}
+    except asyncio.CancelledError:
+        _record_service_error("home_assistant_conversation", start_time, "cancelled")
+        _audit("home_assistant_conversation", {"result": "cancelled"})
+        return {"content": [{"type": "text", "text": "Home Assistant conversation request was cancelled."}]}
+    except aiohttp.ClientError:
+        _record_service_error("home_assistant_conversation", start_time, "network_client_error")
+        _audit("home_assistant_conversation", {"result": "network_client_error"})
+        return {"content": [{"type": "text", "text": "Failed to reach Home Assistant conversation endpoint."}]}
+    except Exception:
+        _record_service_error("home_assistant_conversation", start_time, "unexpected")
+        _audit("home_assistant_conversation", {"result": "unexpected"})
+        log.exception("Unexpected home_assistant_conversation failure")
+        return {"content": [{"type": "text", "text": "Unexpected Home Assistant conversation error."}]}
 
 
 async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
@@ -1310,6 +1601,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
     status = {
         "local_time": _now_local(),
         "home_assistant_configured": bool(_config and _config.has_home_assistant),
+        "home_conversation_enabled": bool(_home_conversation_enabled),
         "todoist_configured": bool(_config and str(_config.todoist_api_token).strip()),
         "pushover_configured": bool(
             _config
@@ -1326,9 +1618,11 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "deny_count": len(_tool_denylist),
             "home_permission_profile": _home_permission_profile,
             "home_require_confirm_execute": bool(_home_require_confirm_execute),
+            "home_conversation_enabled": bool(_home_conversation_enabled),
             "todoist_permission_profile": _todoist_permission_profile,
             "notification_permission_profile": _notification_permission_profile,
         },
+        "timers": _timer_status(),
         "memory": memory_status,
         "audit": _audit_status(),
         "recent_tools": recent_tools,
@@ -1692,6 +1986,142 @@ async def task_plan_next(args: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": text}]}
 
 
+async def timer_create(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("timer_create"):
+        record_summary("timer_create", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    duration = _duration_seconds(args.get("duration"))
+    if duration is None:
+        _record_service_error("timer_create", start_time, "invalid_data")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Duration is required and must be a positive value like 90, 90s, 5m, or 1h 30m.",
+                }
+            ]
+        }
+    _prune_timers()
+    if len(_timers) >= TIMER_MAX_ACTIVE:
+        _record_service_error("timer_create", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": f"Too many active timers ({TIMER_MAX_ACTIVE} max)."}]}
+    label = str(args.get("label", "")).strip()
+    timer_id = _allocate_timer_id()
+    now_wall = time.time()
+    now_mono = time.monotonic()
+    due_wall = now_wall + duration
+    due_mono = now_mono + duration
+    _timers[timer_id] = {
+        "id": timer_id,
+        "label": label,
+        "duration_sec": duration,
+        "created_at": now_wall,
+        "due_at": due_wall,
+        "due_mono": due_mono,
+    }
+    record_summary("timer_create", "ok", start_time, effect=f"timer_id={timer_id}", risk="low")
+    _audit(
+        "timer_create",
+        {
+            "result": "ok",
+            "timer_id": timer_id,
+            "duration_sec": duration,
+            "label": label,
+        },
+    )
+    due_local = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(due_wall))
+    label_text = f" '{label}'" if label else ""
+    return {
+        "content": [
+            {
+                "type": "text",
+                "text": f"Timer {timer_id}{label_text} set for {_format_duration(duration)} (due at {due_local}).",
+            }
+        ]
+    }
+
+
+async def timer_list(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("timer_list"):
+        record_summary("timer_list", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    include_expired = _as_bool(args.get("include_expired"), default=False)
+    if not include_expired:
+        _prune_timers()
+    now = time.monotonic()
+    rows = sorted(_timers.values(), key=lambda item: float(item.get("due_mono", now)))
+    if not rows:
+        record_summary("timer_list", "empty", start_time)
+        return {"content": [{"type": "text", "text": "No active timers."}]}
+    lines: list[str] = []
+    for payload in rows:
+        timer_id = int(payload.get("id", 0))
+        label = str(payload.get("label", "")).strip()
+        due_mono = float(payload.get("due_mono", now))
+        due_wall = float(payload.get("due_at", time.time()))
+        remaining = due_mono - now
+        if remaining <= 0.0:
+            if not include_expired:
+                continue
+            status = f"expired { _format_duration(abs(remaining)) } ago"
+        else:
+            status = f"due in {_format_duration(remaining)}"
+        due_local = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(due_wall))
+        label_part = f" ({label})" if label else ""
+        lines.append(f"- {timer_id}{label_part}: {status}; at {due_local}")
+    if not lines:
+        record_summary("timer_list", "empty", start_time)
+        return {"content": [{"type": "text", "text": "No active timers."}]}
+    record_summary("timer_list", "ok", start_time)
+    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+
+async def timer_cancel(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("timer_cancel"):
+        record_summary("timer_cancel", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    timer_id_raw = args.get("timer_id")
+    label = str(args.get("label", "")).strip()
+    parsed_timer_id = _as_exact_int(timer_id_raw) if timer_id_raw is not None else None
+    if timer_id_raw is not None and (parsed_timer_id is None or parsed_timer_id <= 0):
+        _record_service_error("timer_cancel", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "timer_id must be a positive integer."}]}
+    if parsed_timer_id is None and not label:
+        _record_service_error("timer_cancel", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "Provide timer_id or label to cancel a timer."}]}
+    _prune_timers()
+    selected_id: int | None = None
+    if parsed_timer_id is not None:
+        if parsed_timer_id in _timers:
+            selected_id = parsed_timer_id
+    else:
+        lowered = label.lower()
+        for payload in sorted(_timers.values(), key=lambda item: float(item.get("due_mono", 0.0))):
+            if str(payload.get("label", "")).strip().lower() == lowered:
+                selected_id = int(payload.get("id", 0))
+                break
+    if selected_id is None:
+        _record_service_error("timer_cancel", start_time, "not_found")
+        return {"content": [{"type": "text", "text": "Timer not found."}]}
+    removed = _timers.pop(selected_id, None)
+    if removed is None:
+        _record_service_error("timer_cancel", start_time, "not_found")
+        return {"content": [{"type": "text", "text": "Timer not found."}]}
+    record_summary("timer_cancel", "ok", start_time, effect=f"timer_id={selected_id}", risk="low")
+    _audit(
+        "timer_cancel",
+        {
+            "result": "ok",
+            "timer_id": selected_id,
+            "label": str(removed.get("label", "")),
+        },
+    )
+    return {"content": [{"type": "text", "text": f"Cancelled timer {selected_id}."}]}
+
+
 async def tool_summary(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("tool_summary"):
@@ -1739,6 +2169,12 @@ smart_home_state_tool = tool(
     "Get the current state of a Home Assistant entity.",
     SERVICE_TOOL_SCHEMAS["smart_home_state"],
 )(smart_home_state)
+
+home_assistant_conversation_tool = tool(
+    "home_assistant_conversation",
+    "Send a natural language command to Home Assistant's conversation API. Requires confirm=true.",
+    SERVICE_TOOL_SCHEMAS["home_assistant_conversation"],
+)(home_assistant_conversation)
 
 todoist_add_task_tool = tool(
     "todoist_add_task",
@@ -1837,6 +2273,24 @@ task_plan_next_tool = tool(
     SERVICE_TOOL_SCHEMAS["task_plan_next"],
 )(task_plan_next)
 
+timer_create_tool = tool(
+    "timer_create",
+    "Create a countdown timer.",
+    SERVICE_TOOL_SCHEMAS["timer_create"],
+)(timer_create)
+
+timer_list_tool = tool(
+    "timer_list",
+    "List active timers and their remaining time.",
+    SERVICE_TOOL_SCHEMAS["timer_list"],
+)(timer_list)
+
+timer_cancel_tool = tool(
+    "timer_cancel",
+    "Cancel an active timer by id or label.",
+    SERVICE_TOOL_SCHEMAS["timer_cancel"],
+)(timer_cancel)
+
 tool_summary_tool = tool(
     "tool_summary",
     "Return recent tool execution summaries (latency/outcome).",
@@ -1856,6 +2310,7 @@ def create_services_server():
         tools=[
             smart_home_tool,
             smart_home_state_tool,
+            home_assistant_conversation_tool,
             todoist_add_task_tool,
             todoist_list_tasks_tool,
             pushover_notify_tool,
@@ -1874,5 +2329,8 @@ def create_services_server():
             task_plan_update_tool,
             task_plan_summary_tool,
             task_plan_next_tool,
+            timer_create_tool,
+            timer_list_tool,
+            timer_cancel_tool,
         ],
     )

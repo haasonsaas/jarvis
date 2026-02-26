@@ -1,149 +1,162 @@
-# Jarvis Engineering TODO (Research-Grounded Execution Backlog)
+# Jarvis Feature Expansion TODO (Research-Backed)
 
 Last updated: 2026-02-26
 
-This backlog is intentionally extensive (50+ items) and is based on a fresh research pass of:
-- `openclaw/openclaw` workflow patterns (`ci.yml`, `workflow-sanity.yml`)
-- `home-assistant/core` CI orchestration patterns (`ci.yaml`)
-- current local repo architecture, tests, and CI layout
+This backlog replaces the completed hardening backlog and focuses on feature gaps found by comparing Jarvis against modern local assistant ecosystems (Home Assistant Assist/Conversation APIs, OVOS/Rhasspy-style voice stacks, and multi-surface assistants).
 
 ## Status legend
 - `[ ]` Not started
 - `[-]` In progress
 - `[x]` Implemented
 
----
-
-## 1) Safety and Policy Layer (10 items)
-
-- [x] `S01` Restrict mutating `smart_home` to an explicit domain allowlist; deny unknown domains by default.
-- [x] `S02` Add tests that unknown mutating domains are rejected before any HTTP request.
-- [x] `S03` Expand sensitive-domain set with policy rationale and tests.
-- [x] `S04` Normalize `domain` and `entity_id` inputs (trim/lower) before comparisons.
-- [x] `S05` Add tests for mixed-case + whitespace domain/entity inputs.
-- [x] `S06` Add explicit validation for empty/invalid `action` strings with normalized `invalid_data`.
-- [x] `S07` Add optional stricter mode for requiring `confirm=true` on all non-dry-run actions.
-- [x] `S08` Add tests for stricter confirm mode branches.
-- [x] `S09` Add policy diagnostics in `system_status` for strict-confirm mode.
-- [x] `S10` Add a policy decision trace field in audit records (`allowed|denied|dry_run`).
-
-Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools_services.py`, `tests/test_config.py`
+## Priority model
+- `P0`: core product gaps that materially block daily use
+- `P1`: major capabilities that unlock scale and ecosystem fit
+- `P2`: quality/operational improvements after core gaps are closed
 
 ---
 
-## 2) External Integration Reliability (10 items)
+## 1) Voice Attention and Conversation Control (10 items)
 
-- [x] `I01` Add bounded retry for `todoist_list_tasks` on transient network/timeout errors.
-- [x] `I02` Add jitter/backoff helper and tests for retry timing logic (unit-level, not sleep-heavy).
-- [x] `I03` Add explicit invalid-data checks for Todoist `labels` type/entries.
-- [x] `I04` Add explicit invalid-data checks for Todoist `priority` type/range before HTTP.
-- [x] `I05` Add explicit invalid-data checks for Pushover `priority` type/range before HTTP.
-- [x] `I06` Add optional default timeout env vars for Todoist/Pushover requests.
-- [x] `I07` Add config normalization and warnings for invalid timeout env var values.
-- [x] `I08` Add tests for timeout env var fallback behavior.
-- [x] `I09` Add richer list output formatting option (short vs verbose) for Todoist task listing.
-- [x] `I10` Add tests for short/verbose list formatting modes.
-
-Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools_services.py`, `tests/test_config.py`
+- [ ] `VA01` Add local wake-word support with configurable hotwords.
+- [ ] `VA02` Add wake-word sensitivity tuning and false-positive suppression.
+- [ ] `VA03` Add explicit sleep/wake modes (`always_listening`, `wake_word`, `push_to_talk`).
+- [ ] `VA04` Add interruption policy controls (barge-in thresholds per mode).
+- [ ] `VA05` Add per-room attention routing signals (when satellites are introduced).
+- [ ] `VA06` Add configurable end-of-turn timeout profiles (short/normal/long).
+- [ ] `VA07` Add “continue listening” follow-up window for multi-turn voice sessions.
+- [ ] `VA08` Add spoken confirmation grammar for dangerous actions (`confirm/deny/repeat`).
+- [ ] `VA09` Add wake-word and attention state visibility to `system_status`.
+- [ ] `VA10` Add voice state regression tests for wake/sleep/listen transitions.
 
 ---
 
-## 3) Audit and Privacy Hardening (8 items)
+## 2) Home Assistant Native Intent Layer (10 items)
 
-- [x] `A01` Expand sensitive key redaction aliases (`alarm_code`, `passcode`, `webhook_id`, `oauth_token`).
-- [x] `A02` Add regression tests for all new redaction aliases across nested objects/lists.
-- [x] `A03` Add audit schema helper to enforce metadata-only fields for notification/task integrations.
-- [x] `A04` Add cross-tool test verifying no raw message/content/title fields leak into audits.
-- [x] `A05` Add tests for audit rotation when existing backups already exist at max count.
-- [x] `A06` Add tests for rotation error handling when backup rename/unlink fails.
-- [x] `A07` Add system_status field exposing audit redaction mode enabled/disabled.
-- [x] `A08` Add doc update with redaction examples in runbooks.
-
-Files: `src/jarvis/tools/services.py`, `tests/test_tools_services.py`, `docs/operations/home-control-policy.md`, `docs/operations/integration-policy.md`
-
----
-
-## 4) Telemetry and Taxonomy (8 items)
-
-- [x] `T01` Add taxonomy reference doc with each error code and owning tool families.
-- [x] `T02` Add test asserting taxonomy doc examples stay in sync with constants.
-- [x] `T03` Track unknown summary detail count in telemetry snapshot.
-- [x] `T04` Add tests for unknown summary detail accounting.
-- [x] `T05` Add explicit counter for per-code service error totals in telemetry snapshot.
-- [x] `T06` Add tests for per-code aggregation stability.
-- [x] `T07` Add NaN/inf guard tests for telemetry averages.
-- [x] `T08` Add startup log line summarizing taxonomy sizes (service/storage subsets).
-
-Files: `src/jarvis/tool_errors.py`, `src/jarvis/__main__.py`, `tests/test_main_lifecycle.py`, `docs/operations/error-taxonomy.md`
+- [x] `HA01` Add Home Assistant conversation API tool (`/api/conversation/process`) for intent-level commands.
+- [x] `HA02` Add optional language/agent parameters for HA conversation calls.
+- [x] `HA03` Add structured response extraction from HA conversation payloads.
+- [ ] `HA04` Add Home Assistant to-do list integration tool path.
+- [ ] `HA05` Add Home Assistant timer integration tool path.
+- [ ] `HA06` Add entity capability discovery helper for safer action planning.
+- [ ] `HA07` Add optional area-aware commands (room/area targeting helper).
+- [ ] `HA08` Add HA conversation error taxonomy mapping and tests.
+- [ ] `HA09` Add policy profile controls for HA intent tool (`readonly|control`).
+- [ ] `HA10` Add HA intent runbook section with safe rollout checklist.
 
 ---
 
-## 5) CI and Workflow Evolution (12 items)
+## 3) Productivity Primitives (Timers, Reminders, Calendar) (10 items)
 
-- [x] `C01` Add docs-only change detection gate to skip test/fault jobs when safe.
-- [x] `C02` Add changed-scope filtering for path groups (services/tests/docs/workflows).
-- [x] `C03` Add `workflow_dispatch` inputs to CI for `lint-only`, `faults-only`, and `full`.
-- [x] `C04` Add optional coverage XML generation in CI (non-blocking artifact).
-- [x] `C05` Upload junit/pytest artifacts for easier failure triage.
-- [x] `C06` Add job-level timeout values for CI jobs to prevent hangs.
-- [x] `C07` Pin `actions/*` usages to full commit SHA (supply-chain hardening).
-- [x] `C08` Add a lightweight workflow to validate shell scripts (`shellcheck`) on PRs.
-- [x] `C09` Add a security workflow (`codeql` or equivalent) with weekly schedule.
-- [x] `C10` Add dependency update automation (`dependabot` config) for Python and GitHub Actions.
-- [x] `C11` Add a CI summary step that reports slowest tests.
-- [x] `C12` Add explicit CI check for executable bit + shebang consistency in scripts.
-
-Files: `.github/workflows/ci.yml`, `.github/workflows/workflow-sanity.yml`, `.github/dependabot.yml`, `scripts/`
+- [x] `PR01` Add timer creation tool with natural duration parsing (`5m`, `90s`, `1h`).
+- [x] `PR02` Add timer listing tool with remaining-time reporting.
+- [x] `PR03` Add timer cancel tool (by id and optionally by label).
+- [ ] `PR04` Add lightweight reminder creation tool with due timestamp parsing.
+- [ ] `PR05` Add reminder listing and completion flow.
+- [ ] `PR06` Add optional reminder notifications via Pushover.
+- [ ] `PR07` Add calendar read integration (Google/ICS or HA calendar bridge).
+- [ ] `PR08` Add “next event” conversational helper tool.
+- [ ] `PR09` Add persistence layer for timers/reminders across restarts.
+- [ ] `PR10` Add productivity tool regression tests and edge-case parsing tests.
 
 ---
 
-## 6) Test Architecture and Maintainability (8 items)
+## 4) Identity, Permissions, and Trust Controls (8 items)
 
-- [x] `Q01` Introduce shared `aiohttp` mock helpers in `tests/conftest.py`.
-- [x] `Q02` Refactor representative service tests to use shared HTTP helpers.
-- [x] `Q03` Refactor remaining duplicated HTTP mock blocks to shared helpers.
-- [x] `Q04` Parametrize timeout/cancelled/network error tests across integrations.
-- [x] `Q05` Add taxonomy-to-fault-selector contract test.
-- [x] `Q06` Add helper assertions for audit payload structure to reduce repeated code.
-- [x] `Q07` Split very long `tests/test_tools.py` into thematic modules.
-- [x] `Q08` Add marker strategy for fast/slow/fault tests and document usage.
-
-Files: `tests/conftest.py`, `tests/test_tools_robot.py`, `tests/test_tools_services.py`, `tests/test_*.py`
+- [ ] `ID01` Add user identity abstraction for voice/text request contexts.
+- [ ] `ID02` Add per-user permission profiles layered over global policy.
+- [ ] `ID03` Add approval handshake flow for high-risk commands.
+- [ ] `ID04` Add trusted-speaker shortcut path (optional biometric/speaker-id hook point).
+- [ ] `ID05` Add denied-action escalation guidance in user-facing responses.
+- [ ] `ID06` Add audit fields for requester identity and decision reason chain.
+- [ ] `ID07` Add tests for per-user allow/deny precedence.
+- [ ] `ID08` Add trust policy runbook for household/shared deployments.
 
 ---
 
-## 7) Documentation and Runbooks (8 items)
+## 5) Integrations and Channel Surface Expansion (8 items)
 
-- [x] `D01` Create external integrations runbook (Todoist/Pushover policy + troubleshooting).
-- [x] `D02` Update home-control runbook with redaction and cooldown semantics.
-- [x] `D03` Reconcile architecture diagram MCP/tool labels with current capabilities.
-- [x] `D04` Add runbook section for CI workflow intent and failure routing.
-- [x] `D05` Add operator checklist for first-time env setup validation.
-- [x] `D06` Add troubleshooting matrix mapping common errors to likely fixes.
-- [x] `D07` Add short section on audit location/rotation/redaction guarantees.
-- [x] `D08` Add release checklist doc for safe rollout of policy changes.
-
-Files: `README.md`, `docs/operations/home-control-policy.md`, `docs/operations/integration-policy.md`, `docs/operations/release-checklist.md`
+- [ ] `IN01` Add weather integration tool (provider-backed, configurable units).
+- [ ] `IN02` Add email summary/send integration with strict safety policy.
+- [ ] `IN03` Add Slack/Discord notification hooks (opt-in).
+- [ ] `IN04` Add webhook trigger tool with domain allowlist and auth controls.
+- [ ] `IN05` Add webhook inbound receiver for automation callbacks.
+- [ ] `IN06` Add media-control abstraction helper over HA media player actions.
+- [ ] `IN07` Add integration health probes surfaced in `system_status`.
+- [ ] `IN08` Add integration contract tests for each external service.
 
 ---
 
-## 8) Security and Dependency Hygiene (6 items)
+## 6) Skills and Extensibility Architecture (8 items)
 
-- [x] `H01` Add `pip-audit` (or equivalent) CI step on schedule and PR.
-- [x] `H02` Add secret scanning pre-commit/CI step and baseline handling.
-- [x] `H03` Add provenance notes for third-party actions/tools in workflows.
-- [x] `H04` Add policy for minimum pinned versions of critical dependencies.
-- [x] `H05` Add tests for config warnings on insecure/empty auth-like env combinations.
-- [x] `H06` Add monthly maintenance task list for dependency and workflow pin refresh.
-
-Files: `.github/workflows/*.yml`, `pyproject.toml`, `README.md`, `docs/operations/security-maintenance.md`, `tests/test_config.py`
+- [ ] `SK01` Add local skill/plugin discovery mechanism for service tools.
+- [ ] `SK02` Add signed/allowlisted skill loading policy.
+- [ ] `SK03` Add skill lifecycle commands (`enable`, `disable`, `list`, `version`).
+- [ ] `SK04` Add stable tool namespace conventions for third-party skills.
+- [ ] `SK05` Add skill capability metadata surfacing in `system_status`.
+- [ ] `SK06` Add skill sandboxing constraints for network/file access.
+- [ ] `SK07` Add integration tests for plugin load failures and graceful degradation.
+- [ ] `SK08` Add developer docs for writing and validating custom skills.
 
 ---
 
-## 9) Immediate Execution Queue
+## 7) Operator UX and Control Surfaces (8 items)
 
-- [x] `E01` Execute `C03` (manual workflow dispatch inputs and branch-safe toggles).
-- [x] `E02` Execute `Q03` (finish HTTP helper refactor sweep).
-- [x] `E03` Execute `Q05` (fault selector taxonomy contract test).
-- [x] `E04` Execute `D03` (README architecture sync).
-- [x] `E05` Execute `C07` (pin GitHub actions by SHA).
+- [ ] `UX01` Add minimal local web dashboard for runtime health and mode toggles.
+- [ ] `UX02` Add live view of recent tool executions and policy outcomes.
+- [ ] `UX03` Add audit viewer with server-side redaction guarantees.
+- [ ] `UX04` Add quick controls for motion/tts/home tools/wake mode.
+- [ ] `UX05` Add startup diagnostics page for missing/invalid config.
+- [ ] `UX06` Add structured JSON status endpoint for automation consumers.
+- [ ] `UX07` Add operator actions log in dashboard (who changed what, when).
+- [ ] `UX08` Add dashboard responsiveness tests (desktop/mobile).
+
+---
+
+## 8) Observability and Diagnostics (8 items)
+
+- [ ] `OB01` Add persistent telemetry storage for long-range trend analysis.
+- [ ] `OB02` Add metrics export endpoint (Prometheus/OpenMetrics format).
+- [ ] `OB03` Add percentile latency tracking (P50/P95/P99) for STT/LLM/TTS.
+- [ ] `OB04` Add structured event stream for state transitions.
+- [ ] `OB05` Add per-tool success/error rate snapshots over rolling windows.
+- [ ] `OB06` Add crash-restart counters and uptime tracking.
+- [ ] `OB07` Add anomaly detection hooks for repeated failure bursts.
+- [ ] `OB08` Add observability runbook for triage and SLO tuning.
+
+---
+
+## 9) Reliability, Fallbacks, and Runtime Resilience (8 items)
+
+- [ ] `RE01` Add model failover strategy (primary/secondary LLM routing).
+- [ ] `RE02` Add STT fallback chain and capability probes.
+- [ ] `RE03` Add TTS fallback chain (cloud/local optional).
+- [ ] `RE04` Add startup self-check gate with actionable failure messages.
+- [ ] `RE05` Add degraded mode responses when integrations are down.
+- [ ] `RE06` Add watchdog for stuck state loops (listening/thinking/speaking).
+- [ ] `RE07` Add graceful restart support preserving pending work items.
+- [ ] `RE08` Add soak tests covering failover and degraded behavior.
+
+---
+
+## 10) Security, Privacy, and Deployment Hygiene (8 items)
+
+- [ ] `SE01` Add encrypted-at-rest option for memory/audit stores.
+- [ ] `SE02` Add configurable data retention windows for memory/audit data.
+- [ ] `SE03` Add PII detection guardrails for memory writes.
+- [ ] `SE04` Add stricter token-scoping validation warnings on startup.
+- [ ] `SE05` Add outbound request domain allowlist enforcement for webhooks.
+- [ ] `SE06` Add signed release artifact verification and provenance docs.
+- [ ] `SE07` Add deploy-time security checklist automation.
+- [ ] `SE08` Add incident response runbook with rollback playbooks.
+
+---
+
+## 11) Immediate Execution Queue (Top-Down)
+
+- [x] `E01` Implement `HA01` + `HA02` + `HA03` (Home Assistant conversation API tool + schema + mapping + tests).
+- [x] `E02` Implement `PR01` + `PR02` + `PR03` (timer create/list/cancel tools + tests + status exposure).
+- [ ] `E03` Implement `HA08` + `HA09` (policy and taxonomy mapping for HA intent tool).
+- [ ] `E04` Implement `PR09` (persist timer/reminder data in `MemoryStore`).
+- [ ] `E05` Implement `UX06` (structured status endpoint behavior contract).
+- [ ] `E06` Update README/runbooks for new tools and safe operating guidance.
