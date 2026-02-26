@@ -895,7 +895,7 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
         _audit("smart_home_state", {"result": "missing_config"})
         return {"content": [{"type": "text", "text": "Home Assistant not configured."}]}
 
-    entity_id = str(args.get("entity_id", "")).strip()
+    entity_id = str(args.get("entity_id", "")).strip().lower()
     if not entity_id:
         _record_service_error("smart_home_state", start_time, "missing_entity")
         _audit("smart_home_state", {"result": "missing_entity"})

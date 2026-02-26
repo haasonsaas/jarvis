@@ -730,6 +730,19 @@ class TestServicesTools:
         assert "entity id required" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_smart_home_state_normalizes_entity_id(self):
+        from jarvis.tools import services
+
+        with patch(
+            "jarvis.tools.services._ha_get_state",
+            new=AsyncMock(return_value=({"state": "on", "attributes": {}}, None)),
+        ) as mock_get_state:
+            result = await services.smart_home_state({"entity_id": " Light.Kitchen "})
+
+        assert "state" in result["content"][0]["text"].lower()
+        mock_get_state.assert_awaited_once_with("light.kitchen")
+
+    @pytest.mark.asyncio
     async def test_smart_home_state_success_records_audit(self, monkeypatch, aiohttp_response, aiohttp_session_mock):
         from jarvis.tools import services
 
