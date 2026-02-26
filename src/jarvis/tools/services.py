@@ -686,13 +686,13 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("smart_home", start_time, "policy")
         return {"content": [{"type": "text", "text": "Sensitive action requires confirm=true when dry_run=false."}]}
 
-    if _cooldown_active(domain, action, entity_id):
-        tool_feedback("done")
-        record_summary("smart_home", "cooldown", start_time)
-        return {"content": [{"type": "text", "text": "Action cooldown active. Try again in a moment."}]}
-
     current_state = "unknown"
     if not dry_run:
+        if _cooldown_active(domain, action, entity_id):
+            tool_feedback("done")
+            record_summary("smart_home", "cooldown", start_time)
+            return {"content": [{"type": "text", "text": "Action cooldown active. Try again in a moment."}]}
+
         state_payload, state_error = await _ha_get_state(entity_id)
         if state_error is not None:
             _record_service_error("smart_home", start_time, state_error)
@@ -724,7 +724,6 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     if dry_run:
         tool_feedback("start")
         tool_feedback("done")
-        _touch_action(domain, action, entity_id)
         record_summary(
             "smart_home",
             "dry_run",

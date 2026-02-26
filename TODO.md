@@ -103,3 +103,14 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - [x] Bump `actionlint` installer pin to `1.7.11` in workflow-sanity.
 - Files:
   - `.github/workflows/workflow-sanity.yml`
+
+---
+
+## 7) Smart Home UX Safety
+
+### 7.1 Cooldown semantics (`P1`)
+- [x] Apply cooldown only to mutating executions (`dry_run=false`), not simulation calls.
+- [x] Ensure dry-run calls do not update cooldown history.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`

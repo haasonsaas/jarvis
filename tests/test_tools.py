@@ -283,25 +283,66 @@ class TestServicesTools:
         assert "DRY RUN" in text
 
     @pytest.mark.asyncio
-    async def test_smart_home_cooldown(self):
+    async def test_smart_home_cooldown_on_execute(self):
         from jarvis.tools import services
 
         services._action_last_seen.clear()
-        result = await services.smart_home({
-            "domain": "light",
-            "action": "turn_on",
-            "entity_id": "light.cooldown",
-            "dry_run": True,
-        })
-        assert "DRY RUN" in result["content"][0]["text"]
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            state_resp = AsyncMock()
+            state_resp.status = 200
+            state_resp.json = AsyncMock(return_value={"state": "off", "attributes": {}})
+            post_resp = AsyncMock()
+            post_resp.status = 200
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=state_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session.post = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=post_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
 
-        cooldown = await services.smart_home({
+            result = await services.smart_home({
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": "light.cooldown",
+                "dry_run": False,
+            })
+            assert "done:" in result["content"][0]["text"].lower()
+
+            cooldown = await services.smart_home({
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": "light.cooldown",
+                "dry_run": False,
+            })
+        assert "cooldown" in cooldown["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_dry_run_does_not_trigger_cooldown(self):
+        from jarvis.tools import services
+
+        services._action_last_seen.clear()
+        first = await services.smart_home({
             "domain": "light",
             "action": "turn_on",
-            "entity_id": "light.cooldown",
+            "entity_id": "light.cooldown_dry",
             "dry_run": True,
         })
-        assert "cooldown" in cooldown["content"][0]["text"].lower()
+        second = await services.smart_home({
+            "domain": "light",
+            "action": "turn_on",
+            "entity_id": "light.cooldown_dry",
+            "dry_run": True,
+        })
+
+        assert "dry run" in first["content"][0]["text"].lower()
+        assert "dry run" in second["content"][0]["text"].lower()
+        assert "light:turn_on:light.cooldown_dry" not in services._action_last_seen
 
     @pytest.mark.asyncio
     async def test_memory_tools(self, tmp_path):
