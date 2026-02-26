@@ -160,3 +160,14 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - Files:
   - `src/jarvis/__main__.py`
   - `tests/test_turn_taking.py`
+
+---
+
+## 12) Audit Coverage Consistency
+
+### 12.1 State-read audit logging (`P2`)
+- [x] Add audit entries for `smart_home_state` success and error branches.
+- [x] Add tests asserting audit records exist for both success and missing-entity cases.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`

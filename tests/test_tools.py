@@ -792,6 +792,49 @@ class TestServicesTools:
         assert "entity id required" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_smart_home_state_success_records_audit(self, monkeypatch):
+        from jarvis.tools import services
+
+        audit_calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = AsyncMock()
+            mock_resp.status = 200
+            mock_resp.json = AsyncMock(return_value={"state": "on", "attributes": {"friendly_name": "Kitchen"}})
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
+
+            result = await services.smart_home_state({"entity_id": "light.kitchen"})
+
+        assert "state" in result["content"][0]["text"].lower()
+        action, details = audit_calls[-1]
+        assert action == "smart_home_state"
+        assert details["result"] == "ok"
+        assert details["entity_id"] == "light.kitchen"
+        assert details["state"] == "on"
+
+    @pytest.mark.asyncio
+    async def test_smart_home_state_missing_entity_records_audit(self, monkeypatch):
+        from jarvis.tools import services
+
+        audit_calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
+
+        result = await services.smart_home_state({})
+
+        assert "entity id required" in result["content"][0]["text"].lower()
+        action, details = audit_calls[-1]
+        assert action == "smart_home_state"
+        assert details["result"] == "missing_entity"
+
+    @pytest.mark.asyncio
     async def test_todoist_add_task_requires_config(self):
         from jarvis.tools import services
 

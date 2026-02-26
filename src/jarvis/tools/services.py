@@ -789,22 +789,26 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("smart_home_state"):
         record_summary("smart_home_state", "denied", start_time, "policy")
+        _audit("smart_home_state", {"result": "denied", "reason": "policy"})
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
     from jarvis.tools.robot import tool_feedback
 
     if not _config or not _config.has_home_assistant:
         _record_service_error("smart_home_state", start_time, "missing_config")
+        _audit("smart_home_state", {"result": "missing_config"})
         return {"content": [{"type": "text", "text": "Home Assistant not configured."}]}
 
     entity_id = str(args.get("entity_id", "")).strip()
     if not entity_id:
         _record_service_error("smart_home_state", start_time, "missing_entity")
+        _audit("smart_home_state", {"result": "missing_entity"})
         return {"content": [{"type": "text", "text": "Entity id required."}]}
     tool_feedback("start")
     data, error_code = await _ha_get_state(entity_id)
     tool_feedback("done")
     if error_code is not None:
         _record_service_error("smart_home_state", start_time, error_code)
+        _audit("smart_home_state", {"result": error_code, "entity_id": entity_id})
         if error_code == "not_found":
             return {"content": [{"type": "text", "text": f"Entity not found: {entity_id}"}]}
         if error_code == "auth":
@@ -820,6 +824,14 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Unexpected Home Assistant error."}]}
     payload = data or {}
     record_summary("smart_home_state", "ok", start_time)
+    _audit(
+        "smart_home_state",
+        {
+            "result": "ok",
+            "entity_id": entity_id,
+            "state": payload.get("state", "unknown"),
+        },
+    )
     return {"content": [{"type": "text", "text": json.dumps({
         "state": payload.get("state", "unknown"),
         "attributes": payload.get("attributes", {}),
