@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-26
 
-This cycle focuses on silent-misconfiguration prevention, telemetry taxonomy consistency, and fault-test workflow coverage.
+This cycle focuses on config strictness, telemetry taxonomy consistency, fault-test workflow coverage, and CI enforcement.
 
 ## Status legend
 - `[ ]` Not started
@@ -15,25 +15,19 @@ This cycle focuses on silent-misconfiguration prevention, telemetry taxonomy con
 
 ### 1.1 Finite float env parsing (`P0`)
 - [x] Treat non-finite float strings (`nan`, `inf`, `-inf`) as invalid env values.
-- Why:
-  - Non-finite values can bypass range checks and silently degrade runtime behavior.
-- Acceptance criteria:
-  - `_env_float` falls back to default when parsed value is not finite.
-  - Config initialization does not propagate `nan`/`inf` from env.
-- Test plan:
-  - Add config tests for `DOA_TIMEOUT=nan` and `DOA_CHANGE_THRESHOLD=inf` fallback semantics.
-- Files:
-  - `src/jarvis/config.py`
-  - `tests/test_config.py`
 
 ### 1.2 Finite float startup diagnostics (`P1`)
 - [x] Mark non-finite float env values as invalid in startup warnings.
+
+### 1.3 Required env whitespace strictness (`P1`)
+- [x] Reject whitespace-only required env values and return stripped values for required keys.
 - Why:
-  - Operators should be told when numeric env input was ignored.
+  - `ANTHROPIC_API_KEY="   "` should be treated as missing, not accepted.
 - Acceptance criteria:
-  - `startup_warnings` contains entries for non-finite configured floats.
+  - `_require_env` raises when the value is blank after trimming.
+  - `_require_env` returns trimmed value for valid input.
 - Test plan:
-  - Extend startup warning assertions with `nan`/`inf` float inputs.
+  - Add config tests for whitespace-only and padded required env values.
 - Files:
   - `src/jarvis/config.py`
   - `tests/test_config.py`
@@ -44,38 +38,12 @@ This cycle focuses on silent-misconfiguration prevention, telemetry taxonomy con
 
 ### 2.1 Storage taxonomy completeness (`P1`)
 - [x] Count `missing_store` failures under storage-error telemetry.
-- Why:
-  - Missing backing store is a storage-class failure and should be measured with other storage errors.
-- Acceptance criteria:
-  - `_refresh_tool_error_counters` increments `storage_errors` for `missing_store`.
-- Test plan:
-  - Add lifecycle test with mixed `missing_store` and `storage_error` payloads.
-- Files:
-  - `src/jarvis/__main__.py`
-  - `tests/test_main_lifecycle.py`
 
 ### 2.2 Service taxonomy guardrail (`P1`)
 - [x] Centralize telemetry service-error code set to avoid drift within `__main__.py`.
-- Why:
-  - Inlined literals are easy to desynchronize from service module taxonomy evolution.
-- Acceptance criteria:
-  - Service and storage error detail sets are module constants used by refresh logic.
-- Test plan:
-  - Existing lifecycle taxonomy tests continue to pass.
-- Files:
-  - `src/jarvis/__main__.py`
-  - `tests/test_main_lifecycle.py`
 
 ### 2.3 Cross-module taxonomy drift test (`P1`)
 - [x] Add regression test ensuring telemetry error sets align with `SERVICE_ERROR_CODES`.
-- Why:
-  - Future service code changes should fail tests if telemetry counters are not updated.
-- Acceptance criteria:
-  - Unit test asserts telemetry service + storage sets partition service error taxonomy.
-- Test plan:
-  - Add lifecycle test importing both modules and comparing sets.
-- Files:
-  - `tests/test_main_lifecycle.py`
 
 ---
 
@@ -83,15 +51,18 @@ This cycle focuses on silent-misconfiguration prevention, telemetry taxonomy con
 
 ### 3.1 Fault target taxonomy coverage (`P2`)
 - [x] Expand `test-faults` selectors to include current normalized taxonomy values.
+
+### 3.2 CI enforcement for checks (`P1`)
+- [x] Add GitHub Actions workflow to run lint + tests on pushes and pull requests.
 - Why:
-  - Fault regression command should exercise the same failures we classify in telemetry.
+  - Local checks are useful but unenforced; CI should block regressions automatically.
 - Acceptance criteria:
-  - `make test-faults` and `scripts/test_faults.sh` include `missing_store`, `unknown_error`, `http_error`, and `network_client_error` selectors.
+  - Workflow runs on `push` and `pull_request`.
+  - Workflow installs dependencies and executes lint + tests.
 - Test plan:
-  - Run `scripts/test_faults.sh` and ensure suite passes.
+  - Validate YAML and keep local check scripts as CI commands.
 - Files:
-  - `Makefile`
-  - `scripts/test_faults.sh`
+  - `.github/workflows/ci.yml`
   - `README.md`
 
 ---

@@ -24,6 +24,20 @@ class TestConfig:
         with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
             Config()
 
+    def test_whitespace_only_anthropic_key_raises(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "   ")
+
+        from jarvis.config import Config
+        with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+            Config()
+
+    def test_required_env_value_is_trimmed(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "  sk-trimmed  ")
+
+        from jarvis.config import Config
+        c = Config()
+        assert c.anthropic_api_key == "sk-trimmed"
+
     def test_defaults(self, config):
         assert config.sample_rate == 16000
         assert config.vad_threshold == 0.5

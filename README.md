@@ -122,6 +122,9 @@ Equivalent scripts are available under `scripts/`:
 - `scripts/test_faults.sh`
 - `scripts/test_soak.sh`
 
+CI runs the same lint + test gates on every push and pull request via
+[`ci.yml`](.github/workflows/ci.yml).
+
 ## Project Structure
 
 ```

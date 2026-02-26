@@ -8,12 +8,12 @@ load_dotenv()
 
 def _require_env(name: str) -> str:
     val = os.environ.get(name)
-    if not val:
+    if val is None or not val.strip():
         raise RuntimeError(
             f"Missing required environment variable: {name}. "
             f"Copy .env.example to .env and fill it in."
         )
-    return val
+    return val.strip()
 
 
 def _env_bool(name: str) -> bool | None:
