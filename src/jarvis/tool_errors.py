@@ -28,6 +28,10 @@ TOOL_SERVICE_ERROR_CODES: set[str] = {
     "summary_unavailable",
     "unknown_error",
 }
+TOOL_STORAGE_ERROR_DETAILS: set[str] = {
+    "storage_error",
+    "missing_store",
+}
 
 
 def normalize_service_error_code(code: str) -> str:

@@ -34,7 +34,7 @@ from jarvis.audio.vad import VoiceActivityDetector, CHUNK_SAMPLES
 from jarvis.audio.stt import SpeechToText
 from jarvis.audio.tts import TextToSpeech
 from jarvis.brain import Brain
-from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES
+from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, TOOL_STORAGE_ERROR_DETAILS
 from jarvis.tools.robot import bind as bind_robot_tools
 from jarvis.tool_summary import list_summaries
 
@@ -58,10 +58,7 @@ CONFIRMATION_PHRASE = "Did you mean me?"
 AFFIRMATIONS = {"yes", "yeah", "yep", "yup", "correct", "affirmative", "sure", "please"}
 NEGATIONS = {"no", "nope", "nah", "negative"}
 TELEMETRY_LOG_EVERY_TURNS = 5
-TELEMETRY_STORAGE_ERROR_DETAILS = {
-    "storage_error",
-    "missing_store",
-}
+TELEMETRY_STORAGE_ERROR_DETAILS = TOOL_STORAGE_ERROR_DETAILS
 TELEMETRY_SERVICE_ERROR_DETAILS = TOOL_SERVICE_ERROR_CODES - TELEMETRY_STORAGE_ERROR_DETAILS
 
 

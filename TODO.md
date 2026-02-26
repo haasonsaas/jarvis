@@ -262,8 +262,13 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - [x] Extract shared service error taxonomy into side-effect-free module (`jarvis/tool_errors.py`).
 - [x] Rewire telemetry to import taxonomy from shared module instead of MCP services module.
 - [x] Keep `services.SERVICE_ERROR_CODES` as compatibility alias for existing call sites/tests.
+
+### 20.2 Shared storage-error subset extraction (`P1`)
+- [x] Define storage-error subset in shared taxonomy module and consume it in telemetry.
+- [x] Add regression assertion that telemetry storage-error set matches shared module constant.
 - Files:
   - `src/jarvis/tool_errors.py`
   - `src/jarvis/tools/services.py`
   - `src/jarvis/__main__.py`
+  - `tests/test_main_lifecycle.py`
   - `tests/test_tools.py`

@@ -157,6 +157,8 @@ def test_refresh_tool_error_counters_includes_network_taxonomy():
 
 def test_telemetry_error_taxonomy_matches_service_error_codes():
     from jarvis.tools.services import SERVICE_ERROR_CODES
+    from jarvis.tool_errors import TOOL_STORAGE_ERROR_DETAILS
 
+    assert TELEMETRY_STORAGE_ERROR_DETAILS == TOOL_STORAGE_ERROR_DETAILS
     assert TELEMETRY_STORAGE_ERROR_DETAILS.issubset(SERVICE_ERROR_CODES)
     assert TELEMETRY_SERVICE_ERROR_DETAILS == (SERVICE_ERROR_CODES - TELEMETRY_STORAGE_ERROR_DETAILS)
