@@ -95,6 +95,7 @@ class Brain:
                 "mcp__jarvis-robot__stop_motion",
                 "mcp__jarvis-services__smart_home",
                 "mcp__jarvis-services__smart_home_state",
+                "mcp__jarvis-services__home_assistant_capabilities",
                 "mcp__jarvis-services__home_assistant_conversation",
                 "mcp__jarvis-services__todoist_add_task",
                 "mcp__jarvis-services__todoist_list_tasks",

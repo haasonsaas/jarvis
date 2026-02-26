@@ -38,7 +38,7 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 - [x] `HA03` Add structured response extraction from HA conversation payloads.
 - [ ] `HA04` Add Home Assistant to-do list integration tool path.
 - [ ] `HA05` Add Home Assistant timer integration tool path.
-- [ ] `HA06` Add entity capability discovery helper for safer action planning.
+- [x] `HA06` Add entity capability discovery helper for safer action planning.
 - [ ] `HA07` Add optional area-aware commands (room/area targeting helper).
 - [x] `HA08` Add HA conversation error taxonomy mapping and tests.
 - [x] `HA09` Add policy profile controls for HA intent tool (`readonly|control`).

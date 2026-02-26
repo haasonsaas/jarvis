@@ -32,6 +32,10 @@ For `home_assistant_conversation` requests:
 - Requires `HOME_CONVERSATION_PERMISSION_PROFILE=control`.
 - Requires tool argument `confirm=true` on every request.
 
+For `home_assistant_capabilities` requests:
+- Read-only helper that fetches current entity state and available domain services.
+- Requires `entity_id`.
+
 ## 4) Transport/Service Validation
 - Preflight state read checks entity existence and auth before mutation.
 - Request outcomes are normalized into telemetry error taxonomy.

@@ -781,6 +781,59 @@ class TestServicesTools:
         assert details["result"] == "missing_entity"
 
     @pytest.mark.asyncio
+    async def test_home_assistant_capabilities_requires_entity_id(self):
+        from jarvis.tools import services
+
+        result = await services.home_assistant_capabilities({})
+        assert "entity id required" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_capabilities_success(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr(
+            "jarvis.tools.services._ha_get_state",
+            AsyncMock(return_value=({"state": "on", "attributes": {"friendly_name": "Kitchen"}}, None)),
+        )
+        monkeypatch.setattr(
+            "jarvis.tools.services._ha_get_domain_services",
+            AsyncMock(return_value=(["turn_on", "turn_off"], None)),
+        )
+
+        result = await services.home_assistant_capabilities({"entity_id": "light.kitchen"})
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["entity_id"] == "light.kitchen"
+        assert payload["state"] == "on"
+        assert "turn_on" in payload["available_services"]
+        assert "turn_off" in payload["available_services"]
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_capabilities_not_found(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr(
+            "jarvis.tools.services._ha_get_state",
+            AsyncMock(return_value=(None, "not_found")),
+        )
+        result = await services.home_assistant_capabilities({"entity_id": "light.missing"})
+        assert "entity not found" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_capabilities_service_catalog_invalid_json(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr(
+            "jarvis.tools.services._ha_get_state",
+            AsyncMock(return_value=({"state": "on", "attributes": {}}, None)),
+        )
+        monkeypatch.setattr(
+            "jarvis.tools.services._ha_get_domain_services",
+            AsyncMock(return_value=(None, "invalid_json")),
+        )
+        result = await services.home_assistant_capabilities({"entity_id": "light.kitchen"})
+        assert "invalid home assistant service catalog response" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_home_assistant_conversation_requires_feature_flag(self):
         from jarvis.tools import services
 
