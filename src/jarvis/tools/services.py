@@ -13,6 +13,7 @@ import math
 import random
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,9 @@ SYSTEM_STATUS_CONTRACT_VERSION = "1.0"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
+REMINDER_MAX_ACTIVE = 500
+CALENDAR_DEFAULT_WINDOW_HOURS = 24.0
+CALENDAR_MAX_WINDOW_HOURS = 24.0 * 31.0
 _DURATION_SEGMENT_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)",
     re.IGNORECASE,
@@ -76,6 +80,8 @@ _pushover_timeout_sec: float = 10.0
 _ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _timers: dict[int, dict[str, Any]] = {}
 _timer_id_seq: int = 1
+_reminders: dict[int, dict[str, Any]] = {}
+_reminder_id_seq: int = 1
 SENSITIVE_AUDIT_KEY_TOKENS = {
     "code",
     "pin",
@@ -96,6 +102,9 @@ AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
     "todoist_list_tasks": {"content", "description", "due_string", "message", "title"},
     "pushover_notify": {"message", "title", "content", "description", "body"},
     "home_assistant_conversation": {"text"},
+    "reminder_create": {"text"},
+    "reminder_list": {"text"},
+    "reminder_notify_due": {"text", "message", "title"},
 }
 
 SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -154,6 +163,35 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "required": ["text"],
     },
+    "home_assistant_todo": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "list, add, or remove"},
+            "entity_id": {"type": "string", "description": "Todo entity id, for example todo.shopping"},
+            "item": {"type": "string", "description": "Todo item text for add/remove actions"},
+            "item_id": {"type": "string", "description": "Optional uid for remove actions"},
+            "status": {"type": "string", "description": "Optional status filter for list actions"},
+        },
+        "required": ["action", "entity_id"],
+    },
+    "home_assistant_timer": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "state, start, pause, cancel, or finish"},
+            "entity_id": {"type": "string", "description": "Timer entity id, for example timer.kitchen"},
+            "duration": {"type": "string", "description": "Optional duration when action=start (HH:MM:SS)."},
+        },
+        "required": ["action", "entity_id"],
+    },
+    "home_assistant_area_entities": {
+        "type": "object",
+        "properties": {
+            "area": {"type": "string", "description": "Home Assistant area name."},
+            "domain": {"type": "string", "description": "Optional entity domain filter (light, switch, climate, etc.)."},
+            "include_states": {"type": "boolean", "description": "Include live entity states in response."},
+        },
+        "required": ["area"],
+    },
     "timer_create": {
         "type": "object",
         "properties": {
@@ -175,6 +213,54 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "timer_id": {"type": "integer"},
             "label": {"type": "string"},
+        },
+    },
+    "reminder_create": {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string"},
+            "due": {
+                "description": "Due timestamp as epoch seconds, ISO datetime, or relative duration like 'in 20m' / '45m'.",
+            },
+        },
+        "required": ["text", "due"],
+    },
+    "reminder_list": {
+        "type": "object",
+        "properties": {
+            "include_completed": {"type": "boolean"},
+            "limit": {"type": "integer"},
+        },
+    },
+    "reminder_complete": {
+        "type": "object",
+        "properties": {
+            "reminder_id": {"type": "integer"},
+        },
+        "required": ["reminder_id"],
+    },
+    "reminder_notify_due": {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer"},
+            "title": {"type": "string"},
+        },
+    },
+    "calendar_events": {
+        "type": "object",
+        "properties": {
+            "calendar_entity_id": {"type": "string"},
+            "start": {"type": "string", "description": "Optional start datetime (ISO)."},
+            "end": {"type": "string", "description": "Optional end datetime (ISO)."},
+            "window_hours": {"type": "number", "description": "Window size when end is omitted."},
+            "limit": {"type": "integer"},
+        },
+    },
+    "calendar_next_event": {
+        "type": "object",
+        "properties": {
+            "calendar_entity_id": {"type": "string"},
+            "window_hours": {"type": "number"},
         },
     },
     "todoist_add_task": {
@@ -321,9 +407,18 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "smart_home_state": {"entity_id"},
     "home_assistant_capabilities": {"entity_id"},
     "home_assistant_conversation": {"text"},
+    "home_assistant_todo": {"action", "entity_id"},
+    "home_assistant_timer": {"action", "entity_id"},
+    "home_assistant_area_entities": {"area"},
     "timer_create": {"duration"},
     "timer_list": set(),
     "timer_cancel": set(),
+    "reminder_create": {"text", "due"},
+    "reminder_list": set(),
+    "reminder_complete": {"reminder_id"},
+    "reminder_notify_due": set(),
+    "calendar_events": set(),
+    "calendar_next_event": set(),
     "todoist_add_task": {"content"},
     "todoist_list_tasks": set(),
     "pushover_notify": {"message"},
@@ -360,7 +455,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _home_conversation_permission_profile
     global _todoist_permission_profile, _notification_permission_profile
     global _todoist_timeout_sec, _pushover_timeout_sec
-    global _timer_id_seq
+    global _timer_id_seq, _reminder_id_seq
     _config = config
     _memory = memory_store
     _audit_log_max_bytes = int(config.audit_log_max_bytes)
@@ -389,7 +484,10 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _ha_state_cache.clear()
     _timers.clear()
     _timer_id_seq = 1
+    _reminders.clear()
+    _reminder_id_seq = 1
     _load_timers_from_store()
+    _load_reminders_from_store()
     global _tool_allowlist, _tool_denylist
     _tool_allowlist = list(config.tool_allowlist)
     _tool_denylist = list(config.tool_denylist)
@@ -405,7 +503,17 @@ def _tool_permitted(name: str) -> bool:
     if _notification_permission_profile == "off" and name == "pushover_notify":
         return False
     if _config is not None and not _config.home_enabled:
-        if name in {"smart_home", "smart_home_state"}:
+        if name in {
+            "smart_home",
+            "smart_home_state",
+            "home_assistant_capabilities",
+            "home_assistant_conversation",
+            "home_assistant_todo",
+            "home_assistant_timer",
+            "home_assistant_area_entities",
+            "calendar_events",
+            "calendar_next_event",
+        }:
             return False
     return is_tool_allowed(name, _tool_allowlist, _tool_denylist)
 
@@ -642,6 +750,78 @@ def _duration_seconds(value: Any) -> float | None:
     return min(total, TIMER_MAX_SECONDS)
 
 
+def _local_timezone():
+    tz = datetime.now().astimezone().tzinfo
+    return tz if tz is not None else timezone.utc
+
+
+def _parse_datetime_text(value: str) -> datetime | None:
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith(("Z", "z")):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        parsed = None
+    if parsed is None:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_local_timezone())
+    return parsed
+
+
+def _parse_due_timestamp(value: Any, *, now_ts: float | None = None) -> float | None:
+    now = time.time() if now_ts is None else float(now_ts)
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        candidate = float(value)
+        if not math.isfinite(candidate) or candidate <= 0.0:
+            return None
+        if candidate >= 1_000_000_000.0:
+            return candidate
+        return now + min(candidate, TIMER_MAX_SECONDS)
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    numeric = None
+    try:
+        numeric = float(text)
+    except ValueError:
+        numeric = None
+    if numeric is not None and math.isfinite(numeric) and numeric > 0.0:
+        if numeric >= 1_000_000_000.0:
+            return numeric
+        return now + min(numeric, TIMER_MAX_SECONDS)
+    if lowered.startswith("in "):
+        relative = _duration_seconds(lowered[3:])
+        if relative is not None:
+            return now + relative
+    relative = _duration_seconds(text)
+    if relative is not None:
+        return now + relative
+    parsed = _parse_datetime_text(text)
+    if parsed is None:
+        return None
+    return parsed.timestamp()
+
+
+def _timestamp_to_iso_utc(ts: float) -> str:
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def _format_duration(seconds: float) -> str:
     remaining = max(0, int(round(seconds)))
     hours, rem = divmod(remaining, 3600)
@@ -661,6 +841,13 @@ def _allocate_timer_id() -> int:
     timer_id = _timer_id_seq
     _timer_id_seq += 1
     return timer_id
+
+
+def _allocate_reminder_id() -> int:
+    global _reminder_id_seq
+    reminder_id = _reminder_id_seq
+    _reminder_id_seq += 1
+    return reminder_id
 
 
 def _retry_backoff_delay(
@@ -814,6 +1001,70 @@ def _load_timers_from_store() -> None:
         _timer_id_seq = max_id + 1
 
 
+def _reminder_status() -> dict[str, Any]:
+    now = time.time()
+    if _memory is not None:
+        try:
+            counts = _memory.reminder_counts()
+            pending = _memory.list_reminders(status="pending", now=now, limit=REMINDER_MAX_ACTIVE)
+        except Exception:
+            return {"pending_count": 0, "completed_count": 0, "due_count": 0, "next_due_in_sec": None}
+        due_count = sum(1 for entry in pending if float(entry.due_at) <= now)
+        next_due_in = None
+        if pending:
+            next_due = min(float(entry.due_at) for entry in pending)
+            next_due_in = max(0.0, next_due - now)
+        return {
+            "pending_count": int(counts.get("pending", 0)),
+            "completed_count": int(counts.get("completed", 0)),
+            "due_count": int(due_count),
+            "next_due_in_sec": next_due_in,
+        }
+    pending = [payload for payload in _reminders.values() if str(payload.get("status", "pending")) == "pending"]
+    completed_count = sum(
+        1 for payload in _reminders.values() if str(payload.get("status", "pending")) == "completed"
+    )
+    due_count = sum(1 for payload in pending if float(payload.get("due_at", 0.0)) <= now)
+    next_due_in = None
+    if pending:
+        next_due = min(float(payload.get("due_at", now)) for payload in pending)
+        next_due_in = max(0.0, next_due - now)
+    return {
+        "pending_count": len(pending),
+        "completed_count": int(completed_count),
+        "due_count": int(due_count),
+        "next_due_in_sec": next_due_in,
+    }
+
+
+def _load_reminders_from_store() -> None:
+    global _reminder_id_seq
+    if _memory is None:
+        return
+    now = time.time()
+    try:
+        pending = _memory.list_reminders(status="pending", now=now, limit=REMINDER_MAX_ACTIVE)
+        completed = _memory.list_reminders(status="completed", limit=REMINDER_MAX_ACTIVE)
+    except Exception:
+        log.warning("Failed to load persisted reminders", exc_info=True)
+        return
+    max_id = 0
+    for row in [*pending, *completed]:
+        reminder_id = int(row.id)
+        max_id = max(max_id, reminder_id)
+        _reminders[reminder_id] = {
+            "id": reminder_id,
+            "text": str(row.text),
+            "due_at": float(row.due_at),
+            "created_at": float(row.created_at),
+            "status": str(row.status),
+            "completed_at": float(row.completed_at) if row.completed_at is not None else None,
+            "notified_at": float(row.notified_at) if row.notified_at is not None else None,
+        }
+    if max_id >= _reminder_id_seq:
+        _reminder_id_seq = max_id + 1
+
+
 def _ha_headers() -> dict[str, str]:
     assert _config is not None
     return {"Authorization": f"Bearer {_config.hass_token}"}
@@ -917,6 +1168,128 @@ async def _ha_get_domain_services(domain: str) -> tuple[list[str] | None, str | 
         return None, "network_client_error"
     except Exception:
         return None, "unexpected"
+
+
+async def _ha_call_service(
+    domain: str,
+    service: str,
+    service_data: dict[str, Any],
+    *,
+    return_response: bool = False,
+    timeout_sec: float = 10.0,
+) -> tuple[list[Any] | None, str | None]:
+    assert _config is not None
+    suffix = "?return_response" if return_response else ""
+    url = f"{_config.hass_url}/api/services/{domain}/{service}{suffix}"
+    timeout = aiohttp.ClientTimeout(total=timeout_sec)
+    headers = {**_ha_headers(), "Content-Type": "application/json"}
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, headers=headers, json=service_data) as resp:
+                if resp.status in {200, 201}:
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        return None, "invalid_json"
+                    if not isinstance(data, list):
+                        return None, "invalid_json"
+                    return data, None
+                if resp.status == 401:
+                    return None, "auth"
+                if resp.status == 404:
+                    return None, "not_found"
+                return None, "http_error"
+    except asyncio.TimeoutError:
+        return None, "timeout"
+    except asyncio.CancelledError:
+        return None, "cancelled"
+    except aiohttp.ClientError:
+        return None, "network_client_error"
+    except Exception:
+        return None, "unexpected"
+
+
+async def _ha_get_json(
+    path: str,
+    *,
+    params: dict[str, str] | None = None,
+    timeout_sec: float = 10.0,
+) -> tuple[Any | None, str | None]:
+    assert _config is not None
+    url = f"{_config.hass_url}{path}"
+    timeout = aiohttp.ClientTimeout(total=timeout_sec)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=_ha_headers(), params=params or None) as resp:
+                if resp.status == 200:
+                    try:
+                        return await resp.json(), None
+                    except Exception:
+                        return None, "invalid_json"
+                if resp.status == 401:
+                    return None, "auth"
+                if resp.status == 404:
+                    return None, "not_found"
+                return None, "http_error"
+    except asyncio.TimeoutError:
+        return None, "timeout"
+    except asyncio.CancelledError:
+        return None, "cancelled"
+    except aiohttp.ClientError:
+        return None, "network_client_error"
+    except Exception:
+        return None, "unexpected"
+
+
+async def _ha_render_template(template_text: str, *, timeout_sec: float = 10.0) -> tuple[str | None, str | None]:
+    assert _config is not None
+    url = f"{_config.hass_url}/api/template"
+    timeout = aiohttp.ClientTimeout(total=timeout_sec)
+    headers = {**_ha_headers(), "Content-Type": "text/plain"}
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, headers=headers, data=template_text) as resp:
+                if resp.status == 200:
+                    try:
+                        return await resp.text(), None
+                    except Exception:
+                        return None, "invalid_json"
+                if resp.status == 401:
+                    return None, "auth"
+                if resp.status == 404:
+                    return None, "not_found"
+                return None, "http_error"
+    except asyncio.TimeoutError:
+        return None, "timeout"
+    except asyncio.CancelledError:
+        return None, "cancelled"
+    except aiohttp.ClientError:
+        return None, "network_client_error"
+    except Exception:
+        return None, "unexpected"
+
+
+def _collect_json_lists_by_key(value: Any, key: str) -> list[Any]:
+    results: list[Any] = []
+    if isinstance(value, dict):
+        for item_key, item_value in value.items():
+            if item_key == key and isinstance(item_value, list):
+                results.extend(item_value)
+            else:
+                results.extend(_collect_json_lists_by_key(item_value, key))
+    elif isinstance(value, list):
+        for item in value:
+            results.extend(_collect_json_lists_by_key(item, key))
+    return results
+
+
+def _parse_calendar_event_timestamp(value: Any) -> float | None:
+    if not isinstance(value, str):
+        return None
+    parsed = _parse_datetime_text(value)
+    if parsed is None:
+        return None
+    return parsed.timestamp()
 
 
 def _health_rollup(
@@ -1419,6 +1792,790 @@ async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Unexpected Home Assistant conversation error."}]}
 
 
+async def home_assistant_todo(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("home_assistant_todo"):
+        record_summary("home_assistant_todo", "denied", start_time, "policy")
+        _audit("home_assistant_todo", {"result": "denied", "reason": "policy"})
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _config or not _config.has_home_assistant:
+        _record_service_error("home_assistant_todo", start_time, "missing_config")
+        _audit("home_assistant_todo", {"result": "missing_config"})
+        return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
+
+    action = str(args.get("action", "")).strip().lower()
+    entity_id = str(args.get("entity_id", "")).strip().lower()
+    if action not in {"list", "add", "remove"}:
+        _record_service_error("home_assistant_todo", start_time, "invalid_data")
+        _audit("home_assistant_todo", {"result": "invalid_data", "field": "action"})
+        return {"content": [{"type": "text", "text": "Action must be one of: list, add, remove."}]}
+    if not entity_id:
+        _record_service_error("home_assistant_todo", start_time, "missing_fields")
+        _audit("home_assistant_todo", {"result": "missing_fields"})
+        return {"content": [{"type": "text", "text": "entity_id is required."}]}
+    if _home_permission_profile == "readonly" and action in {"add", "remove"}:
+        _record_service_error("home_assistant_todo", start_time, "policy")
+        _audit("home_assistant_todo", {"result": "denied", "reason": "readonly_profile", "action": action})
+        return {"content": [{"type": "text", "text": "Home Assistant write actions are blocked in HOME_PERMISSION_PROFILE=readonly."}]}
+
+    if action == "list":
+        payload, error_code = await _ha_call_service(
+            "todo",
+            "get_items",
+            {
+                "entity_id": entity_id,
+                **(
+                    {"status": str(args.get("status", "")).strip()}
+                    if str(args.get("status", "")).strip()
+                    else {}
+                ),
+            },
+            return_response=True,
+        )
+        if error_code is not None:
+            _record_service_error("home_assistant_todo", start_time, error_code)
+            _audit("home_assistant_todo", {"result": error_code, "action": action, "entity_id": entity_id})
+            if error_code == "auth":
+                return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+            if error_code == "not_found":
+                return {"content": [{"type": "text", "text": f"To-do entity or service not found: {entity_id}"}]}
+            if error_code == "timeout":
+                return {"content": [{"type": "text", "text": "Home Assistant to-do request timed out."}]}
+            if error_code == "cancelled":
+                return {"content": [{"type": "text", "text": "Home Assistant to-do request was cancelled."}]}
+            if error_code == "network_client_error":
+                return {"content": [{"type": "text", "text": "Failed to reach Home Assistant to-do service."}]}
+            if error_code == "invalid_json":
+                return {"content": [{"type": "text", "text": "Invalid Home Assistant to-do response."}]}
+            return {"content": [{"type": "text", "text": "Unexpected Home Assistant to-do error."}]}
+        items = [item for item in _collect_json_lists_by_key(payload, "items") if isinstance(item, dict)]
+        if not items:
+            record_summary("home_assistant_todo", "empty", start_time)
+            _audit("home_assistant_todo", {"result": "empty", "action": action, "entity_id": entity_id})
+            return {"content": [{"type": "text", "text": "No Home Assistant to-do items found."}]}
+        lines: list[str] = []
+        for item in items:
+            summary = str(item.get("summary") or item.get("item") or "").strip() or "(untitled)"
+            uid = str(item.get("uid") or item.get("id") or "").strip()
+            status = str(item.get("status", "")).strip()
+            due = str(item.get("due") or item.get("due_datetime") or "").strip()
+            meta: list[str] = []
+            if uid:
+                meta.append(f"id={uid}")
+            if status:
+                meta.append(f"status={status}")
+            if due:
+                meta.append(f"due={due}")
+            lines.append(f"- {summary}" + (f" ({'; '.join(meta)})" if meta else ""))
+        record_summary("home_assistant_todo", "ok", start_time)
+        _audit(
+            "home_assistant_todo",
+            {"result": "ok", "action": action, "entity_id": entity_id, "count": len(lines)},
+        )
+        return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+    item = str(args.get("item", "")).strip()
+    item_id = str(args.get("item_id", "")).strip()
+    if action == "add":
+        if not item:
+            _record_service_error("home_assistant_todo", start_time, "missing_fields")
+            _audit("home_assistant_todo", {"result": "missing_fields", "action": action})
+            return {"content": [{"type": "text", "text": "item is required when action=add."}]}
+        service = "add_item"
+        service_data = {"entity_id": entity_id, "item": item}
+        success_text = "Added Home Assistant to-do item."
+    else:
+        if not item and not item_id:
+            _record_service_error("home_assistant_todo", start_time, "missing_fields")
+            _audit("home_assistant_todo", {"result": "missing_fields", "action": action})
+            return {"content": [{"type": "text", "text": "item or item_id is required when action=remove."}]}
+        service = "remove_item"
+        service_data = {"entity_id": entity_id, "item": item_id or item}
+        success_text = "Removed Home Assistant to-do item."
+
+    _, error_code = await _ha_call_service("todo", service, service_data)
+    if error_code is not None:
+        _record_service_error("home_assistant_todo", start_time, error_code)
+        _audit("home_assistant_todo", {"result": error_code, "action": action, "entity_id": entity_id})
+        if error_code == "auth":
+            return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+        if error_code == "not_found":
+            return {"content": [{"type": "text", "text": "Home Assistant to-do entity or service not found."}]}
+        if error_code == "timeout":
+            return {"content": [{"type": "text", "text": "Home Assistant to-do request timed out."}]}
+        if error_code == "cancelled":
+            return {"content": [{"type": "text", "text": "Home Assistant to-do request was cancelled."}]}
+        if error_code == "network_client_error":
+            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant to-do service."}]}
+        if error_code == "invalid_json":
+            return {"content": [{"type": "text", "text": "Invalid Home Assistant to-do response."}]}
+        return {"content": [{"type": "text", "text": "Unexpected Home Assistant to-do error."}]}
+    record_summary("home_assistant_todo", "ok", start_time)
+    _audit(
+        "home_assistant_todo",
+        {
+            "result": "ok",
+            "action": action,
+            "entity_id": entity_id,
+            "item_length": len(item),
+            "item_id": item_id,
+        },
+    )
+    return {"content": [{"type": "text", "text": success_text}]}
+
+
+async def home_assistant_timer(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("home_assistant_timer"):
+        record_summary("home_assistant_timer", "denied", start_time, "policy")
+        _audit("home_assistant_timer", {"result": "denied", "reason": "policy"})
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _config or not _config.has_home_assistant:
+        _record_service_error("home_assistant_timer", start_time, "missing_config")
+        _audit("home_assistant_timer", {"result": "missing_config"})
+        return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
+
+    action = str(args.get("action", "")).strip().lower()
+    entity_id = str(args.get("entity_id", "")).strip().lower()
+    if action not in {"state", "start", "pause", "cancel", "finish"}:
+        _record_service_error("home_assistant_timer", start_time, "invalid_data")
+        _audit("home_assistant_timer", {"result": "invalid_data", "field": "action"})
+        return {"content": [{"type": "text", "text": "Action must be one of: state, start, pause, cancel, finish."}]}
+    if not entity_id:
+        _record_service_error("home_assistant_timer", start_time, "missing_fields")
+        _audit("home_assistant_timer", {"result": "missing_fields"})
+        return {"content": [{"type": "text", "text": "entity_id is required."}]}
+    if _home_permission_profile == "readonly" and action != "state":
+        _record_service_error("home_assistant_timer", start_time, "policy")
+        _audit("home_assistant_timer", {"result": "denied", "reason": "readonly_profile", "action": action})
+        return {"content": [{"type": "text", "text": "Home Assistant write actions are blocked in HOME_PERMISSION_PROFILE=readonly."}]}
+
+    if action == "state":
+        payload, error_code = await _ha_get_state(entity_id)
+        if error_code is not None:
+            _record_service_error("home_assistant_timer", start_time, error_code)
+            _audit("home_assistant_timer", {"result": error_code, "action": action, "entity_id": entity_id})
+            if error_code == "not_found":
+                return {"content": [{"type": "text", "text": f"Timer not found: {entity_id}"}]}
+            if error_code == "auth":
+                return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+            if error_code == "timeout":
+                return {"content": [{"type": "text", "text": "Home Assistant timer request timed out."}]}
+            if error_code == "cancelled":
+                return {"content": [{"type": "text", "text": "Home Assistant timer request was cancelled."}]}
+            if error_code == "network_client_error":
+                return {"content": [{"type": "text", "text": "Failed to reach Home Assistant timer endpoint."}]}
+            if error_code == "invalid_json":
+                return {"content": [{"type": "text", "text": "Invalid Home Assistant timer response."}]}
+            return {"content": [{"type": "text", "text": "Unexpected Home Assistant timer error."}]}
+        body = payload or {}
+        attributes = body.get("attributes", {}) if isinstance(body, dict) else {}
+        result = {
+            "entity_id": entity_id,
+            "state": body.get("state", "unknown") if isinstance(body, dict) else "unknown",
+            "remaining": attributes.get("remaining") if isinstance(attributes, dict) else None,
+            "duration": attributes.get("duration") if isinstance(attributes, dict) else None,
+            "finishes_at": attributes.get("finishes_at") if isinstance(attributes, dict) else None,
+        }
+        record_summary("home_assistant_timer", "ok", start_time)
+        _audit("home_assistant_timer", {"result": "ok", "action": action, "entity_id": entity_id})
+        return {"content": [{"type": "text", "text": json.dumps(result)}]}
+
+    service_map = {
+        "start": "start",
+        "pause": "pause",
+        "cancel": "cancel",
+        "finish": "finish",
+    }
+    service_data: dict[str, Any] = {"entity_id": entity_id}
+    if action == "start":
+        duration_text = str(args.get("duration", "")).strip()
+        if duration_text:
+            duration_seconds = _duration_seconds(duration_text)
+            if duration_seconds is not None:
+                total = max(1, int(round(duration_seconds)))
+                hours, rem = divmod(total, 3600)
+                minutes, seconds = divmod(rem, 60)
+                service_data["duration"] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            elif re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", duration_text):
+                service_data["duration"] = duration_text
+            else:
+                _record_service_error("home_assistant_timer", start_time, "invalid_data")
+                _audit("home_assistant_timer", {"result": "invalid_data", "field": "duration"})
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "duration must be HH:MM:SS or a relative duration like 5m.",
+                        }
+                    ]
+                }
+    _, error_code = await _ha_call_service("timer", service_map[action], service_data)
+    if error_code is not None:
+        _record_service_error("home_assistant_timer", start_time, error_code)
+        _audit("home_assistant_timer", {"result": error_code, "action": action, "entity_id": entity_id})
+        if error_code == "auth":
+            return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+        if error_code == "not_found":
+            return {"content": [{"type": "text", "text": "Home Assistant timer entity or service not found."}]}
+        if error_code == "timeout":
+            return {"content": [{"type": "text", "text": "Home Assistant timer request timed out."}]}
+        if error_code == "cancelled":
+            return {"content": [{"type": "text", "text": "Home Assistant timer request was cancelled."}]}
+        if error_code == "network_client_error":
+            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant timer endpoint."}]}
+        if error_code == "invalid_json":
+            return {"content": [{"type": "text", "text": "Invalid Home Assistant timer response."}]}
+        return {"content": [{"type": "text", "text": "Unexpected Home Assistant timer error."}]}
+    record_summary("home_assistant_timer", "ok", start_time)
+    _audit(
+        "home_assistant_timer",
+        {"result": "ok", "action": action, "entity_id": entity_id, "duration": service_data.get("duration")},
+    )
+    return {"content": [{"type": "text", "text": f"Home Assistant timer action executed: {action} on {entity_id}."}]}
+
+
+async def home_assistant_area_entities(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("home_assistant_area_entities"):
+        record_summary("home_assistant_area_entities", "denied", start_time, "policy")
+        _audit("home_assistant_area_entities", {"result": "denied", "reason": "policy"})
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _config or not _config.has_home_assistant:
+        _record_service_error("home_assistant_area_entities", start_time, "missing_config")
+        _audit("home_assistant_area_entities", {"result": "missing_config"})
+        return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
+
+    area = str(args.get("area", "")).strip()
+    if not area:
+        _record_service_error("home_assistant_area_entities", start_time, "missing_fields")
+        _audit("home_assistant_area_entities", {"result": "missing_fields"})
+        return {"content": [{"type": "text", "text": "area is required."}]}
+    domain_filter = str(args.get("domain", "")).strip().lower()
+    include_states = _as_bool(args.get("include_states"), default=False)
+
+    template = f"{{{{ area_entities({json.dumps(area)}) | join('\\n') }}}}"
+    rendered, error_code = await _ha_render_template(template)
+    if error_code is not None:
+        _record_service_error("home_assistant_area_entities", start_time, error_code)
+        _audit("home_assistant_area_entities", {"result": error_code, "area": area})
+        if error_code == "auth":
+            return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+        if error_code == "not_found":
+            return {"content": [{"type": "text", "text": "Home Assistant template endpoint not found."}]}
+        if error_code == "timeout":
+            return {"content": [{"type": "text", "text": "Home Assistant area lookup timed out."}]}
+        if error_code == "cancelled":
+            return {"content": [{"type": "text", "text": "Home Assistant area lookup was cancelled."}]}
+        if error_code == "network_client_error":
+            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant area lookup endpoint."}]}
+        return {"content": [{"type": "text", "text": "Unexpected Home Assistant area lookup error."}]}
+
+    raw_entities = [line.strip().lower() for line in (rendered or "").splitlines() if line.strip()]
+    entities = sorted(set(raw_entities))
+    if domain_filter:
+        entities = [entity for entity in entities if entity.startswith(f"{domain_filter}.")]
+    if not entities:
+        record_summary("home_assistant_area_entities", "empty", start_time)
+        _audit(
+            "home_assistant_area_entities",
+            {"result": "empty", "area": area, "domain": domain_filter},
+        )
+        return {"content": [{"type": "text", "text": "No entities found for that area filter."}]}
+
+    payload: dict[str, Any] = {"area": area, "domain": domain_filter or None, "entities": entities}
+    if include_states:
+        states: list[dict[str, Any]] = []
+        for entity_id in entities[:100]:
+            entity_state, state_error = await _ha_get_state(entity_id)
+            if state_error is not None:
+                continue
+            state_payload = entity_state or {}
+            attributes = state_payload.get("attributes")
+            friendly_name = ""
+            if isinstance(attributes, dict):
+                friendly_name = str(attributes.get("friendly_name", "")).strip()
+            states.append(
+                {
+                    "entity_id": entity_id,
+                    "friendly_name": friendly_name,
+                    "state": state_payload.get("state", "unknown"),
+                }
+            )
+        payload["states"] = states
+    record_summary("home_assistant_area_entities", "ok", start_time)
+    _audit(
+        "home_assistant_area_entities",
+        {
+            "result": "ok",
+            "area": area,
+            "domain": domain_filter,
+            "count": len(entities),
+            "include_states": include_states,
+        },
+    )
+    return {"content": [{"type": "text", "text": json.dumps(payload)}]}
+
+
+def _list_reminder_payloads(*, include_completed: bool, limit: int, now_ts: float) -> list[dict[str, Any]]:
+    if _memory is not None:
+        pending_rows = _memory.list_reminders(status="pending", now=now_ts, limit=limit)
+        completed_rows = _memory.list_reminders(status="completed", limit=limit) if include_completed else []
+        payloads = [
+            {
+                "id": int(row.id),
+                "text": str(row.text),
+                "due_at": float(row.due_at),
+                "created_at": float(row.created_at),
+                "status": str(row.status),
+                "completed_at": float(row.completed_at) if row.completed_at is not None else None,
+                "notified_at": float(row.notified_at) if row.notified_at is not None else None,
+            }
+            for row in [*pending_rows, *completed_rows]
+        ]
+    else:
+        payloads = list(_reminders.values())
+        if not include_completed:
+            payloads = [payload for payload in payloads if str(payload.get("status", "pending")) == "pending"]
+    payloads = sorted(payloads, key=lambda payload: float(payload.get("due_at", now_ts)))
+    return payloads[:limit]
+
+
+def _due_unnotified_reminder_payloads(*, limit: int, now_ts: float) -> list[dict[str, Any]]:
+    if _memory is not None:
+        rows = _memory.list_reminders(
+            status="pending",
+            due_only=True,
+            include_notified=False,
+            now=now_ts,
+            limit=limit,
+        )
+        return [
+            {
+                "id": int(row.id),
+                "text": str(row.text),
+                "due_at": float(row.due_at),
+                "created_at": float(row.created_at),
+                "status": str(row.status),
+                "completed_at": float(row.completed_at) if row.completed_at is not None else None,
+                "notified_at": float(row.notified_at) if row.notified_at is not None else None,
+            }
+            for row in rows
+        ]
+    rows = [
+        payload
+        for payload in _reminders.values()
+        if str(payload.get("status", "pending")) == "pending"
+        and float(payload.get("due_at", now_ts + 1.0)) <= now_ts
+        and payload.get("notified_at") is None
+    ]
+    rows = sorted(rows, key=lambda payload: float(payload.get("due_at", now_ts)))
+    return rows[:limit]
+
+
+async def reminder_create(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("reminder_create"):
+        record_summary("reminder_create", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    text = str(args.get("text", "")).strip()
+    if not text:
+        _record_service_error("reminder_create", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "Reminder text is required."}]}
+    now = time.time()
+    due_at = _parse_due_timestamp(args.get("due"), now_ts=now)
+    if due_at is None:
+        _record_service_error("reminder_create", start_time, "invalid_data")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Reminder due value must be epoch seconds, ISO datetime, or a relative duration like 'in 20m'.",
+                }
+            ]
+        }
+    if due_at <= now:
+        _record_service_error("reminder_create", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "Reminder due time must be in the future."}]}
+    pending_count = int(_reminder_status().get("pending_count", 0))
+    if pending_count >= REMINDER_MAX_ACTIVE:
+        _record_service_error("reminder_create", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": f"Too many pending reminders ({REMINDER_MAX_ACTIVE} max)."}]}
+
+    reminder_id: int
+    if _memory is not None:
+        try:
+            reminder_id = _memory.add_reminder(text=text, due_at=due_at, created_at=now)
+        except Exception:
+            _record_service_error("reminder_create", start_time, "storage_error")
+            return {"content": [{"type": "text", "text": "Reminder create failed: persistent storage unavailable."}]}
+    else:
+        reminder_id = _allocate_reminder_id()
+    _reminders[reminder_id] = {
+        "id": reminder_id,
+        "text": text,
+        "due_at": due_at,
+        "created_at": now,
+        "status": "pending",
+        "completed_at": None,
+        "notified_at": None,
+    }
+    due_local = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(due_at))
+    record_summary("reminder_create", "ok", start_time, effect=f"reminder_id={reminder_id}", risk="low")
+    _audit(
+        "reminder_create",
+        {
+            "result": "ok",
+            "reminder_id": reminder_id,
+            "text_length": len(text),
+            "due_at": due_at,
+        },
+    )
+    return {"content": [{"type": "text", "text": f"Reminder {reminder_id} set for {due_local}."}]}
+
+
+async def reminder_list(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("reminder_list"):
+        record_summary("reminder_list", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    include_completed = _as_bool(args.get("include_completed"), default=False)
+    limit = _as_int(args.get("limit", 20), 20, minimum=1, maximum=100)
+    now = time.time()
+    try:
+        payloads = _list_reminder_payloads(include_completed=include_completed, limit=limit, now_ts=now)
+    except Exception:
+        _record_service_error("reminder_list", start_time, "storage_error")
+        return {"content": [{"type": "text", "text": "Reminder list failed: persistent storage unavailable."}]}
+    if not payloads:
+        record_summary("reminder_list", "empty", start_time)
+        return {"content": [{"type": "text", "text": "No reminders found."}]}
+    lines: list[str] = []
+    for payload in payloads:
+        reminder_id = int(payload.get("id", 0))
+        text = str(payload.get("text", "")).strip() or "(untitled)"
+        status = str(payload.get("status", "pending"))
+        due_at = float(payload.get("due_at", now))
+        due_local = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(due_at))
+        if status == "completed":
+            completed_at = payload.get("completed_at")
+            completed_local = (
+                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(completed_at)))
+                if completed_at is not None
+                else "unknown"
+            )
+            lines.append(f"- {reminder_id}: {text} (completed at {completed_local}; due at {due_local})")
+            continue
+        remaining = due_at - now
+        if remaining <= 0.0:
+            when_text = f"overdue by {_format_duration(abs(remaining))}"
+        else:
+            when_text = f"due in {_format_duration(remaining)}"
+        lines.append(f"- {reminder_id}: {text} ({when_text}; at {due_local})")
+    record_summary("reminder_list", "ok", start_time)
+    _audit(
+        "reminder_list",
+        {"result": "ok", "count": len(lines), "include_completed": include_completed},
+    )
+    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+
+async def reminder_complete(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("reminder_complete"):
+        record_summary("reminder_complete", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    reminder_id = _as_exact_int(args.get("reminder_id"))
+    if reminder_id is None or reminder_id <= 0:
+        _record_service_error("reminder_complete", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "reminder_id must be a positive integer."}]}
+    if _memory is not None:
+        try:
+            completed = _memory.complete_reminder(reminder_id)
+        except Exception:
+            _record_service_error("reminder_complete", start_time, "storage_error")
+            return {"content": [{"type": "text", "text": "Reminder complete failed: persistent storage unavailable."}]}
+        if not completed:
+            _record_service_error("reminder_complete", start_time, "not_found")
+            return {"content": [{"type": "text", "text": "Reminder not found."}]}
+    else:
+        payload = _reminders.get(reminder_id)
+        if payload is None or str(payload.get("status", "pending")) != "pending":
+            _record_service_error("reminder_complete", start_time, "not_found")
+            return {"content": [{"type": "text", "text": "Reminder not found."}]}
+        payload["status"] = "completed"
+        payload["completed_at"] = time.time()
+    if reminder_id in _reminders:
+        _reminders[reminder_id]["status"] = "completed"
+        _reminders[reminder_id]["completed_at"] = time.time()
+    record_summary("reminder_complete", "ok", start_time, effect=f"reminder_id={reminder_id}", risk="low")
+    _audit("reminder_complete", {"result": "ok", "reminder_id": reminder_id})
+    return {"content": [{"type": "text", "text": f"Completed reminder {reminder_id}."}]}
+
+
+async def reminder_notify_due(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("reminder_notify_due"):
+        record_summary("reminder_notify_due", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _tool_permitted("pushover_notify"):
+        _record_service_error("reminder_notify_due", start_time, "policy")
+        _audit("reminder_notify_due", {"result": "denied", "reason": "pushover_policy"})
+        return {"content": [{"type": "text", "text": "Pushover notifications are disabled by policy."}]}
+    if not _config or not str(_config.pushover_api_token).strip() or not str(_config.pushover_user_key).strip():
+        _record_service_error("reminder_notify_due", start_time, "missing_config")
+        _audit("reminder_notify_due", {"result": "missing_config"})
+        return {"content": [{"type": "text", "text": "Pushover not configured. Set PUSHOVER_API_TOKEN and PUSHOVER_USER_KEY."}]}
+    limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=50)
+    title = str(args.get("title", "Jarvis reminders")).strip() or "Jarvis reminders"
+    now = time.time()
+    try:
+        due_payloads = _due_unnotified_reminder_payloads(limit=limit, now_ts=now)
+    except Exception:
+        _record_service_error("reminder_notify_due", start_time, "storage_error")
+        return {
+            "content": [
+                {"type": "text", "text": "Reminder notification dispatch failed: persistent storage unavailable."}
+            ]
+        }
+    if not due_payloads:
+        record_summary("reminder_notify_due", "empty", start_time)
+        _audit("reminder_notify_due", {"result": "empty", "limit": limit})
+        return {"content": [{"type": "text", "text": "No due reminders awaiting notification."}]}
+
+    sent = 0
+    failed = 0
+    for payload in due_payloads:
+        reminder_id = int(payload.get("id", 0))
+        text = str(payload.get("text", "")).strip() or "(untitled)"
+        due_local = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(payload.get("due_at", now))))
+        notify_result = await pushover_notify(
+            {"title": title, "priority": 0, "message": f"Reminder {reminder_id}: {text} (due {due_local})"}
+        )
+        notify_text = str(notify_result.get("content", [{}])[0].get("text", "")).strip().lower()
+        if "notification sent" not in notify_text:
+            failed += 1
+            continue
+        sent += 1
+        if _memory is not None:
+            try:
+                _memory.mark_reminder_notified(reminder_id, notified_at=time.time())
+            except Exception:
+                failed += 1
+                sent -= 1
+                continue
+        if reminder_id in _reminders:
+            _reminders[reminder_id]["notified_at"] = time.time()
+    if sent == 0 and failed > 0:
+        _record_service_error("reminder_notify_due", start_time, "api_error")
+        _audit("reminder_notify_due", {"result": "api_error", "sent": sent, "failed": failed})
+        return {"content": [{"type": "text", "text": "Unable to send due reminder notifications."}]}
+    record_summary("reminder_notify_due", "ok", start_time, effect=f"sent={sent}", risk="low")
+    _audit("reminder_notify_due", {"result": "ok", "sent": sent, "failed": failed})
+    return {
+        "content": [{"type": "text", "text": f"Due reminder notifications sent: {sent}" + (f" ({failed} failed)." if failed else ".")}]
+    }
+
+
+async def _calendar_fetch_events(
+    *,
+    calendar_entity_id: str | None,
+    start_ts: float,
+    end_ts: float,
+) -> tuple[list[dict[str, Any]] | None, str | None]:
+    params = {"start": _timestamp_to_iso_utc(start_ts), "end": _timestamp_to_iso_utc(end_ts)}
+    entity_ids: list[str]
+    if calendar_entity_id:
+        entity_ids = [calendar_entity_id]
+    else:
+        calendars_payload, calendars_error = await _ha_get_json("/api/calendars")
+        if calendars_error is not None:
+            return None, calendars_error
+        if not isinstance(calendars_payload, list):
+            return None, "invalid_json"
+        entity_ids = []
+        for item in calendars_payload:
+            if not isinstance(item, dict):
+                continue
+            entity = str(item.get("entity_id", "")).strip().lower()
+            if entity:
+                entity_ids.append(entity)
+        if not entity_ids:
+            return [], None
+    events: list[dict[str, Any]] = []
+    for entity_id in entity_ids:
+        payload, error_code = await _ha_get_json(f"/api/calendars/{entity_id}", params=params)
+        if error_code is not None:
+            return None, error_code
+        if not isinstance(payload, list):
+            return None, "invalid_json"
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            start_raw = item.get("start")
+            start_event = _parse_calendar_event_timestamp(start_raw)
+            if start_event is None:
+                continue
+            end_event = _parse_calendar_event_timestamp(item.get("end"))
+            all_day = isinstance(start_raw, str) and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", start_raw.strip()))
+            events.append(
+                {
+                    "entity_id": entity_id,
+                    "summary": str(item.get("summary", "")).strip() or "(untitled)",
+                    "location": str(item.get("location", "")).strip(),
+                    "description": str(item.get("description", "")).strip(),
+                    "start": start_raw,
+                    "end": item.get("end"),
+                    "start_ts": start_event,
+                    "end_ts": end_event,
+                    "all_day": all_day,
+                }
+            )
+    events.sort(key=lambda event: float(event.get("start_ts", start_ts)))
+    return events, None
+
+
+def _parse_calendar_window(args: dict[str, Any]) -> tuple[float | None, float | None]:
+    now = time.time()
+    start_raw = str(args.get("start", "")).strip()
+    end_raw = str(args.get("end", "")).strip()
+    start_ts = now
+    if start_raw:
+        parsed_start = _parse_due_timestamp(start_raw, now_ts=now)
+        if parsed_start is None:
+            return None, None
+        start_ts = parsed_start
+    if end_raw:
+        end_ts = _parse_due_timestamp(end_raw, now_ts=now)
+        if end_ts is None:
+            return None, None
+    else:
+        window_hours = _as_float(
+            args.get("window_hours", CALENDAR_DEFAULT_WINDOW_HOURS),
+            CALENDAR_DEFAULT_WINDOW_HOURS,
+            minimum=0.1,
+            maximum=CALENDAR_MAX_WINDOW_HOURS,
+        )
+        end_ts = start_ts + (window_hours * 3600.0)
+    if end_ts <= start_ts:
+        return None, None
+    return start_ts, end_ts
+
+
+async def calendar_events(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("calendar_events"):
+        record_summary("calendar_events", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _config or not _config.has_home_assistant:
+        _record_service_error("calendar_events", start_time, "missing_config")
+        return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
+    start_ts, end_ts = _parse_calendar_window(args)
+    if start_ts is None or end_ts is None:
+        _record_service_error("calendar_events", start_time, "invalid_data")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Invalid calendar window. Use valid ISO timestamps or relative durations for start/end.",
+                }
+            ]
+        }
+    limit = _as_int(args.get("limit", 20), 20, minimum=1, maximum=100)
+    calendar_entity_id = str(args.get("calendar_entity_id", "")).strip().lower() or None
+    events, error_code = await _calendar_fetch_events(
+        calendar_entity_id=calendar_entity_id,
+        start_ts=start_ts,
+        end_ts=end_ts,
+    )
+    if error_code is not None:
+        _record_service_error("calendar_events", start_time, error_code)
+        if error_code == "auth":
+            return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+        if error_code == "not_found":
+            return {"content": [{"type": "text", "text": "Calendar endpoint or entity not found."}]}
+        if error_code == "timeout":
+            return {"content": [{"type": "text", "text": "Calendar request timed out."}]}
+        if error_code == "cancelled":
+            return {"content": [{"type": "text", "text": "Calendar request was cancelled."}]}
+        if error_code == "network_client_error":
+            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant calendar endpoint."}]}
+        if error_code == "invalid_json":
+            return {"content": [{"type": "text", "text": "Invalid Home Assistant calendar response."}]}
+        return {"content": [{"type": "text", "text": "Unexpected Home Assistant calendar error."}]}
+    rows = (events or [])[:limit]
+    if not rows:
+        record_summary("calendar_events", "empty", start_time)
+        return {"content": [{"type": "text", "text": "No calendar events found in the selected window."}]}
+    lines: list[str] = []
+    for event in rows:
+        start_value = float(event.get("start_ts", start_ts))
+        if bool(event.get("all_day")):
+            when = time.strftime("%Y-%m-%d", time.localtime(start_value)) + " (all day)"
+        else:
+            when = time.strftime("%Y-%m-%d %H:%M", time.localtime(start_value))
+        summary = str(event.get("summary", "(untitled)"))
+        entity = str(event.get("entity_id", "calendar"))
+        location = str(event.get("location", "")).strip()
+        location_text = f" @ {location}" if location else ""
+        lines.append(f"- {when} | {summary} [{entity}]{location_text}")
+    record_summary("calendar_events", "ok", start_time)
+    return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+
+async def calendar_next_event(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("calendar_next_event"):
+        record_summary("calendar_next_event", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _config or not _config.has_home_assistant:
+        _record_service_error("calendar_next_event", start_time, "missing_config")
+        return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
+    window_hours = _as_float(
+        args.get("window_hours", CALENDAR_DEFAULT_WINDOW_HOURS),
+        CALENDAR_DEFAULT_WINDOW_HOURS,
+        minimum=0.1,
+        maximum=CALENDAR_MAX_WINDOW_HOURS,
+    )
+    now = time.time()
+    calendar_entity_id = str(args.get("calendar_entity_id", "")).strip().lower() or None
+    events, error_code = await _calendar_fetch_events(
+        calendar_entity_id=calendar_entity_id,
+        start_ts=now,
+        end_ts=now + (window_hours * 3600.0),
+    )
+    if error_code is not None:
+        _record_service_error("calendar_next_event", start_time, error_code)
+        if error_code == "auth":
+            return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+        if error_code == "not_found":
+            return {"content": [{"type": "text", "text": "Calendar endpoint or entity not found."}]}
+        if error_code == "timeout":
+            return {"content": [{"type": "text", "text": "Calendar request timed out."}]}
+        if error_code == "cancelled":
+            return {"content": [{"type": "text", "text": "Calendar request was cancelled."}]}
+        if error_code == "network_client_error":
+            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant calendar endpoint."}]}
+        if error_code == "invalid_json":
+            return {"content": [{"type": "text", "text": "Invalid Home Assistant calendar response."}]}
+        return {"content": [{"type": "text", "text": "Unexpected Home Assistant calendar error."}]}
+    if not events:
+        record_summary("calendar_next_event", "empty", start_time)
+        return {"content": [{"type": "text", "text": "No upcoming calendar events found."}]}
+    event = events[0]
+    start_value = float(event.get("start_ts", now))
+    if bool(event.get("all_day")):
+        when = time.strftime("%Y-%m-%d", time.localtime(start_value)) + " (all day)"
+    else:
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(start_value))
+    summary = str(event.get("summary", "(untitled)"))
+    entity = str(event.get("entity_id", "calendar"))
+    location = str(event.get("location", "")).strip()
+    location_text = f" at {location}" if location else ""
+    record_summary("calendar_next_event", "ok", start_time)
+    return {"content": [{"type": "text", "text": f"Next event: {summary} on {when}{location_text} [{entity}]."}]}
+
+
 async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("todoist_add_task"):
@@ -1818,6 +2975,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "notification_permission_profile": _notification_permission_profile,
         },
         "timers": _timer_status(),
+        "reminders": _reminder_status(),
         "memory": memory_status,
         "audit": _audit_status(),
         "recent_tools": recent_tools,
@@ -1848,6 +3006,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "persona_style",
             "tool_policy",
             "timers",
+            "reminders",
             "memory",
             "audit",
             "recent_tools",
@@ -1865,6 +3024,12 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
         ],
         "timers_required": [
             "active_count",
+            "next_due_in_sec",
+        ],
+        "reminders_required": [
+            "pending_count",
+            "completed_count",
+            "due_count",
             "next_due_in_sec",
         ],
         "health_required": [
@@ -2448,6 +3613,24 @@ home_assistant_conversation_tool = tool(
     SERVICE_TOOL_SCHEMAS["home_assistant_conversation"],
 )(home_assistant_conversation)
 
+home_assistant_todo_tool = tool(
+    "home_assistant_todo",
+    "Manage Home Assistant to-do entities (list/add/remove).",
+    SERVICE_TOOL_SCHEMAS["home_assistant_todo"],
+)(home_assistant_todo)
+
+home_assistant_timer_tool = tool(
+    "home_assistant_timer",
+    "Control Home Assistant timer entities (state/start/pause/cancel/finish).",
+    SERVICE_TOOL_SCHEMAS["home_assistant_timer"],
+)(home_assistant_timer)
+
+home_assistant_area_entities_tool = tool(
+    "home_assistant_area_entities",
+    "Resolve entities in a Home Assistant area, optionally including live state.",
+    SERVICE_TOOL_SCHEMAS["home_assistant_area_entities"],
+)(home_assistant_area_entities)
+
 todoist_add_task_tool = tool(
     "todoist_add_task",
     "Create a task in Todoist (project configurable via env).",
@@ -2569,6 +3752,42 @@ timer_cancel_tool = tool(
     SERVICE_TOOL_SCHEMAS["timer_cancel"],
 )(timer_cancel)
 
+reminder_create_tool = tool(
+    "reminder_create",
+    "Create a reminder with a due time.",
+    SERVICE_TOOL_SCHEMAS["reminder_create"],
+)(reminder_create)
+
+reminder_list_tool = tool(
+    "reminder_list",
+    "List reminders and due status.",
+    SERVICE_TOOL_SCHEMAS["reminder_list"],
+)(reminder_list)
+
+reminder_complete_tool = tool(
+    "reminder_complete",
+    "Mark a reminder as completed.",
+    SERVICE_TOOL_SCHEMAS["reminder_complete"],
+)(reminder_complete)
+
+reminder_notify_due_tool = tool(
+    "reminder_notify_due",
+    "Send Pushover notifications for due reminders that have not been notified yet.",
+    SERVICE_TOOL_SCHEMAS["reminder_notify_due"],
+)(reminder_notify_due)
+
+calendar_events_tool = tool(
+    "calendar_events",
+    "List calendar events from Home Assistant within a time window.",
+    SERVICE_TOOL_SCHEMAS["calendar_events"],
+)(calendar_events)
+
+calendar_next_event_tool = tool(
+    "calendar_next_event",
+    "Fetch the next upcoming calendar event from Home Assistant.",
+    SERVICE_TOOL_SCHEMAS["calendar_next_event"],
+)(calendar_next_event)
+
 tool_summary_tool = tool(
     "tool_summary",
     "Return recent tool execution summaries (latency/outcome).",
@@ -2590,6 +3809,9 @@ def create_services_server():
             smart_home_state_tool,
             home_assistant_capabilities_tool,
             home_assistant_conversation_tool,
+            home_assistant_todo_tool,
+            home_assistant_timer_tool,
+            home_assistant_area_entities_tool,
             todoist_add_task_tool,
             todoist_list_tasks_tool,
             pushover_notify_tool,
@@ -2612,5 +3834,11 @@ def create_services_server():
             timer_create_tool,
             timer_list_tool,
             timer_cancel_tool,
+            reminder_create_tool,
+            reminder_list_tool,
+            reminder_complete_tool,
+            reminder_notify_due_tool,
+            calendar_events_tool,
+            calendar_next_event_tool,
         ],
     )

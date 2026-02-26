@@ -99,6 +99,10 @@ Smart home safety defaults:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`
   - and tool argument `confirm=true`
+- Home Assistant helper tools:
+  - `home_assistant_todo` (`list|add|remove`) for native HA to-do entities
+  - `home_assistant_timer` (`state|start|pause|cancel|finish`) for HA timer entities
+  - `home_assistant_area_entities` for area-aware entity resolution
 - Automation consumers can use:
   - `system_status` (includes `schema_version`)
   - `system_status_contract` (stable required-field contract)
@@ -116,6 +120,11 @@ Smart home safety defaults:
   - `off` denies `pushover_notify`
   - `allow` enables `pushover_notify`
   - `PUSHOVER_TIMEOUT_SEC` controls request timeout (default `10.0`)
+- Productivity tools:
+  - timers: `timer_create`, `timer_list`, `timer_cancel`
+  - reminders: `reminder_create`, `reminder_list`, `reminder_complete`
+  - optional due reminder push dispatch: `reminder_notify_due`
+  - calendar read helpers via Home Assistant: `calendar_events`, `calendar_next_event`
 
 ### First-Time Operator Checklist
 

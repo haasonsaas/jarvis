@@ -36,13 +36,13 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 - [x] `HA01` Add Home Assistant conversation API tool (`/api/conversation/process`) for intent-level commands.
 - [x] `HA02` Add optional language/agent parameters for HA conversation calls.
 - [x] `HA03` Add structured response extraction from HA conversation payloads.
-- [ ] `HA04` Add Home Assistant to-do list integration tool path.
-- [ ] `HA05` Add Home Assistant timer integration tool path.
+- [x] `HA04` Add Home Assistant to-do list integration tool path.
+- [x] `HA05` Add Home Assistant timer integration tool path.
 - [x] `HA06` Add entity capability discovery helper for safer action planning.
-- [ ] `HA07` Add optional area-aware commands (room/area targeting helper).
+- [x] `HA07` Add optional area-aware commands (room/area targeting helper).
 - [x] `HA08` Add HA conversation error taxonomy mapping and tests.
 - [x] `HA09` Add policy profile controls for HA intent tool (`readonly|control`).
-- [ ] `HA10` Add HA intent runbook section with safe rollout checklist.
+- [x] `HA10` Add HA intent runbook section with safe rollout checklist.
 
 ---
 
@@ -51,13 +51,13 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 - [x] `PR01` Add timer creation tool with natural duration parsing (`5m`, `90s`, `1h`).
 - [x] `PR02` Add timer listing tool with remaining-time reporting.
 - [x] `PR03` Add timer cancel tool (by id and optionally by label).
-- [ ] `PR04` Add lightweight reminder creation tool with due timestamp parsing.
-- [ ] `PR05` Add reminder listing and completion flow.
-- [ ] `PR06` Add optional reminder notifications via Pushover.
-- [ ] `PR07` Add calendar read integration (Google/ICS or HA calendar bridge).
-- [ ] `PR08` Add “next event” conversational helper tool.
+- [x] `PR04` Add lightweight reminder creation tool with due timestamp parsing.
+- [x] `PR05` Add reminder listing and completion flow.
+- [x] `PR06` Add optional reminder notifications via Pushover.
+- [x] `PR07` Add calendar read integration (Google/ICS or HA calendar bridge).
+- [x] `PR08` Add “next event” conversational helper tool.
 - [x] `PR09` Add persistence layer for timers/reminders across restarts.
-- [ ] `PR10` Add productivity tool regression tests and edge-case parsing tests.
+- [x] `PR10` Add productivity tool regression tests and edge-case parsing tests.
 
 ---
 

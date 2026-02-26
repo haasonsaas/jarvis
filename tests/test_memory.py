@@ -251,3 +251,45 @@ def test_expire_timers_moves_due_rows_to_expired(tmp_path):
         assert counts["active"] == 0
     finally:
         store.close()
+
+
+def test_reminder_store_lifecycle(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        now = 1_700_000_000.0
+        reminder_id = store.add_reminder(
+            text="take medicine",
+            due_at=now + 300.0,
+            created_at=now,
+        )
+
+        pending = store.list_reminders(status="pending", now=now)
+        assert [reminder.id for reminder in pending] == [reminder_id]
+        assert pending[0].text == "take medicine"
+        assert pending[0].notified_at is None
+
+        assert store.mark_reminder_notified(reminder_id, notified_at=now + 60.0) is True
+        pending_after_notify = store.list_reminders(status="pending", include_notified=False, now=now)
+        assert pending_after_notify == []
+
+        assert store.complete_reminder(reminder_id, completed_at=now + 120.0) is True
+        assert store.complete_reminder(reminder_id, completed_at=now + 121.0) is False
+        completed = store.list_reminders(status="completed")
+        assert [reminder.id for reminder in completed] == [reminder_id]
+        assert completed[0].completed_at == pytest.approx(now + 120.0)
+    finally:
+        store.close()
+
+
+def test_list_reminders_due_only_filter(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        now = 1_700_000_000.0
+        _ = store.add_reminder(text="overdue", due_at=now - 5.0, created_at=now - 10.0)
+        _ = store.add_reminder(text="future", due_at=now + 600.0, created_at=now - 5.0)
+
+        due = store.list_reminders(status="pending", due_only=True, now=now)
+        assert len(due) == 1
+        assert due[0].text == "overdue"
+    finally:
+        store.close()

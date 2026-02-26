@@ -36,6 +36,22 @@ For `home_assistant_capabilities` requests:
 - Read-only helper that fetches current entity state and available domain services.
 - Requires `entity_id`.
 
+For `home_assistant_todo` requests:
+- `action` must be one of `list`, `add`, `remove`.
+- `list` is read-only and permitted in both profiles.
+- `add`/`remove` are blocked when `HOME_PERMISSION_PROFILE=readonly`.
+
+For `home_assistant_timer` requests:
+- `action` must be one of `state`, `start`, `pause`, `cancel`, `finish`.
+- `state` is read-only and always permitted.
+- `start`/`pause`/`cancel`/`finish` are blocked when `HOME_PERMISSION_PROFILE=readonly`.
+- `start` accepts `duration` as `HH:MM:SS` or compact duration (`5m`, `90s`, `1h 15m`).
+
+For `home_assistant_area_entities` requests:
+- Read-only helper for area-aware planning.
+- Resolves entities via Home Assistant template function `area_entities()`.
+- Optional domain filter narrows entity classes (for example `light`, `switch`).
+
 ## 4) Transport/Service Validation
 - Preflight state read checks entity existence and auth before mutation.
 - Request outcomes are normalized into telemetry error taxonomy.
@@ -75,6 +91,22 @@ Audit payload:
 ## Recommended Profiles
 - Development: `HOME_PERMISSION_PROFILE=readonly`
 - Trusted local automation: `HOME_PERMISSION_PROFILE=control`
+
+## HA Intent Rollout Checklist
+1. Start with `HOME_PERMISSION_PROFILE=readonly`.
+2. Keep `HOME_CONVERSATION_ENABLED=false` until entity inventory and permissions are validated.
+3. Validate area mappings with `home_assistant_area_entities` for each active room.
+4. Validate safe command plans with `home_assistant_capabilities` before execute flows.
+5. Exercise non-mutating paths first:
+   - `smart_home_state`
+   - `home_assistant_todo` with `action=list`
+   - `home_assistant_timer` with `action=state`
+6. If conversational control is needed:
+   - set `HOME_CONVERSATION_ENABLED=true`
+   - set `HOME_CONVERSATION_PERMISSION_PROFILE=control`
+   - require `confirm=true` in every call.
+7. Enable `HOME_REQUIRE_CONFIRM_EXECUTE=true` for shared/household deployments.
+8. Audit review: inspect `~/.jarvis/audit.jsonl` for redaction and expected policy decisions before moving to production.
 
 ## Troubleshooting
 - If actions are denied unexpectedly:

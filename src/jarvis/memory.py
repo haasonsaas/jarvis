@@ -60,6 +60,17 @@ class TimerEntry:
     cancelled_at: float | None
 
 
+@dataclass
+class ReminderEntry:
+    id: int
+    created_at: float
+    due_at: float
+    text: str
+    status: str
+    completed_at: float | None
+    notified_at: float | None
+
+
 class MemoryStore:
     def __init__(self, path: str) -> None:
         if path not in {":memory:", ""}:
@@ -159,6 +170,23 @@ class MemoryStore:
             """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_timers_status_due ON timers(status, due_at ASC);")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reminders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at REAL NOT NULL,
+                due_at REAL NOT NULL,
+                text TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                completed_at REAL,
+                notified_at REAL
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_reminders_status_due ON reminders(status, due_at ASC);")
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reminders_notify_due ON reminders(status, notified_at, due_at ASC);"
+        )
         try:
             cur.execute(
                 """
@@ -568,6 +596,96 @@ class MemoryStore:
                 counts[key] = int(row["c"])
         return counts
 
+    def add_reminder(
+        self,
+        *,
+        text: str,
+        due_at: float,
+        created_at: float | None = None,
+    ) -> int:
+        clean_text = text.strip()
+        if not clean_text:
+            raise ValueError("reminder text required")
+        if not math.isfinite(due_at):
+            raise ValueError("due_at must be finite")
+        created = time.time() if created_at is None else float(created_at)
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO reminders(created_at, due_at, text, status, completed_at, notified_at)
+            VALUES (?, ?, ?, 'pending', NULL, NULL)
+            """,
+            (created, float(due_at), clean_text),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def list_reminders(
+        self,
+        *,
+        status: str = "pending",
+        due_only: bool = False,
+        include_notified: bool = True,
+        now: float | None = None,
+        limit: int = 200,
+    ) -> list[ReminderEntry]:
+        clean_status = status.strip().lower()
+        if clean_status not in {"pending", "completed"}:
+            raise ValueError("status must be pending or completed")
+        limit = self._normalize_limit(limit, default=200)
+        where = "status = ?"
+        params: list[Any] = [clean_status]
+        if due_only:
+            now_ts = time.time() if now is None else float(now)
+            where += " AND due_at <= ?"
+            params.append(now_ts)
+        if clean_status == "pending" and not include_notified:
+            where += " AND notified_at IS NULL"
+        rows = self._conn.cursor().execute(
+            f"SELECT * FROM reminders WHERE {where} ORDER BY due_at ASC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+        return [self._row_to_reminder(row) for row in rows]
+
+    def complete_reminder(self, reminder_id: int, *, completed_at: float | None = None) -> bool:
+        completed = time.time() if completed_at is None else float(completed_at)
+        with self._conn:
+            cur = self._conn.cursor()
+            cur.execute(
+                """
+                UPDATE reminders
+                SET status = 'completed', completed_at = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (completed, int(reminder_id)),
+            )
+            return cur.rowcount > 0
+
+    def mark_reminder_notified(self, reminder_id: int, *, notified_at: float | None = None) -> bool:
+        notified = time.time() if notified_at is None else float(notified_at)
+        with self._conn:
+            cur = self._conn.cursor()
+            cur.execute(
+                """
+                UPDATE reminders
+                SET notified_at = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (notified, int(reminder_id)),
+            )
+            return cur.rowcount > 0
+
+    def reminder_counts(self) -> dict[str, int]:
+        rows = self._conn.cursor().execute(
+            "SELECT status, COUNT(*) AS c FROM reminders GROUP BY status",
+        ).fetchall()
+        counts = {"pending": 0, "completed": 0}
+        for row in rows:
+            key = str(row["status"])
+            if key in counts:
+                counts[key] = int(row["c"])
+        return counts
+
     def close(self) -> None:
         if self._closed:
             return
@@ -585,6 +703,7 @@ class MemoryStore:
             "vector": self._memory_enabled,
             "sources": source_counts,
             "timers": self.timer_counts(),
+            "reminders": self.reminder_counts(),
             "last_warm": self._last_warm,
             "last_sync": self._last_sync,
             "last_optimize": self._last_optimize,
@@ -636,6 +755,19 @@ class MemoryStore:
             label=str(row["label"] or ""),
             status=str(row["status"]),
             cancelled_at=float(cancelled_at) if cancelled_at is not None else None,
+        )
+
+    def _row_to_reminder(self, row: sqlite3.Row) -> ReminderEntry:
+        completed_at = row["completed_at"]
+        notified_at = row["notified_at"]
+        return ReminderEntry(
+            id=int(row["id"]),
+            created_at=float(row["created_at"]),
+            due_at=float(row["due_at"]),
+            text=str(row["text"]),
+            status=str(row["status"]),
+            completed_at=float(completed_at) if completed_at is not None else None,
+            notified_at=float(notified_at) if notified_at is not None else None,
         )
 
     @staticmethod

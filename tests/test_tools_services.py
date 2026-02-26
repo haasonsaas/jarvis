@@ -1003,6 +1003,216 @@ class TestServicesTools:
         )
 
     @pytest.mark.asyncio
+    async def test_home_assistant_todo_list_success(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr(
+            "jarvis.tools.services._ha_call_service",
+            AsyncMock(
+                return_value=(
+                    [
+                        {
+                            "service_response": {
+                                "todo.shopping": {
+                                    "items": [
+                                        {"summary": "Milk", "uid": "a1", "status": "needs_action"},
+                                        {"summary": "Eggs", "uid": "a2", "status": "completed"},
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    None,
+                )
+            ),
+        )
+
+        result = await services.home_assistant_todo({"action": "list", "entity_id": "todo.shopping"})
+        text = result["content"][0]["text"].lower()
+        assert "milk" in text
+        assert "eggs" in text
+        assert "id=a1" in text
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_todo_readonly_denies_add(self):
+        from jarvis.tools import services
+
+        cfg = services._config
+        assert cfg is not None
+        cfg.home_permission_profile = "readonly"
+        services.bind(cfg)
+
+        result = await services.home_assistant_todo(
+            {"action": "add", "entity_id": "todo.shopping", "item": "Milk"}
+        )
+        assert "readonly" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_timer_state_success(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr(
+            "jarvis.tools.services._ha_get_state",
+            AsyncMock(
+                return_value=(
+                    {
+                        "state": "active",
+                        "attributes": {"remaining": "0:04:00", "duration": "0:05:00", "finishes_at": "2026-01-01T00:00:00+00:00"},
+                    },
+                    None,
+                )
+            ),
+        )
+
+        result = await services.home_assistant_timer({"action": "state", "entity_id": "timer.kitchen"})
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["state"] == "active"
+        assert payload["remaining"] == "0:04:00"
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_timer_start_invalid_duration(self):
+        from jarvis.tools import services
+
+        result = await services.home_assistant_timer(
+            {"action": "start", "entity_id": "timer.kitchen", "duration": "soon"}
+        )
+        assert "hh:mm:ss" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_area_entities_success(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr(
+            "jarvis.tools.services._ha_render_template",
+            AsyncMock(return_value=("light.kitchen\nswitch.coffee\nlight.table\n", None)),
+        )
+        monkeypatch.setattr(
+            "jarvis.tools.services._ha_get_state",
+            AsyncMock(
+                side_effect=[
+                    ({"state": "on", "attributes": {"friendly_name": "Kitchen"}}, None),
+                    ({"state": "off", "attributes": {"friendly_name": "Table"}}, None),
+                ]
+            ),
+        )
+
+        result = await services.home_assistant_area_entities(
+            {"area": "Kitchen", "domain": "light", "include_states": True}
+        )
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["area"] == "Kitchen"
+        assert payload["entities"] == ["light.kitchen", "light.table"]
+        assert len(payload["states"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_reminder_create_list_complete_lifecycle(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        created = await services.reminder_create({"text": "Stretch", "due": "10m"})
+        created_text = created["content"][0]["text"]
+        reminder_id = int(created_text.split()[1])
+        assert "reminder" in created_text.lower()
+
+        listed = await services.reminder_list({})
+        assert "stretch" in listed["content"][0]["text"].lower()
+
+        completed = await services.reminder_complete({"reminder_id": reminder_id})
+        assert f"completed reminder {reminder_id}" in completed["content"][0]["text"].lower()
+
+        completed_list = await services.reminder_list({"include_completed": True})
+        assert "completed at" in completed_list["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_reminder_create_rejects_past_due_timestamp(self):
+        from jarvis.tools import services
+
+        result = await services.reminder_create({"text": "Past", "due": "2001-01-01T00:00:00Z"})
+        assert "future" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_reminder_notify_due_dispatches_and_marks_notified(self, tmp_path, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.pushover_api_token = "token"
+        cfg.pushover_user_key = "user"
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        reminder_id = store.add_reminder(text="Take break", due_at=time.time() - 30.0, created_at=time.time() - 60.0)
+        services._reminders[reminder_id] = {
+            "id": reminder_id,
+            "text": "Take break",
+            "due_at": time.time() - 30.0,
+            "created_at": time.time() - 60.0,
+            "status": "pending",
+            "completed_at": None,
+            "notified_at": None,
+        }
+
+        async def _fake_notify(args):
+            return {"content": [{"type": "text", "text": "Notification sent."}]}
+
+        monkeypatch.setattr("jarvis.tools.services.pushover_notify", _fake_notify)
+        result = await services.reminder_notify_due({"limit": 5})
+        assert "sent: 1" in result["content"][0]["text"].lower()
+
+        rows = store.list_reminders(status="pending", include_notified=False)
+        assert rows == []
+
+    @pytest.mark.asyncio
+    async def test_calendar_events_success(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr(
+            "jarvis.tools.services._calendar_fetch_events",
+            AsyncMock(
+                return_value=(
+                    [
+                        {
+                            "summary": "Standup",
+                            "entity_id": "calendar.work",
+                            "location": "Office",
+                            "start_ts": time.time() + 300.0,
+                            "all_day": False,
+                        }
+                    ],
+                    None,
+                )
+            ),
+        )
+        result = await services.calendar_events({"window_hours": 4})
+        text = result["content"][0]["text"].lower()
+        assert "standup" in text
+        assert "calendar.work" in text
+
+    @pytest.mark.asyncio
+    async def test_calendar_next_event_empty(self, monkeypatch):
+        from jarvis.tools import services
+
+        monkeypatch.setattr(
+            "jarvis.tools.services._calendar_fetch_events",
+            AsyncMock(return_value=([], None)),
+        )
+        result = await services.calendar_next_event({})
+        assert "no upcoming calendar events" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_calendar_events_invalid_window_rejected(self):
+        from jarvis.tools import services
+
+        result = await services.calendar_events({"start": "2026-01-02T00:00:00Z", "end": "2026-01-01T00:00:00Z"})
+        assert "invalid calendar window" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_timer_create_list_cancel_lifecycle(self):
         from jarvis.tools import services
 
@@ -2245,6 +2455,8 @@ class TestServicesTools:
         assert "pushover_configured" in payload
         assert "timers" in payload
         assert "active_count" in payload["timers"]
+        assert "reminders" in payload
+        assert "pending_count" in payload["reminders"]
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
 
     @pytest.mark.asyncio
@@ -2259,6 +2471,7 @@ class TestServicesTools:
         assert "tool_policy_required" in payload
         assert "home_conversation_permission_profile" in payload["tool_policy_required"]
         assert "timers_required" in payload
+        assert "reminders_required" in payload
 
     @pytest.mark.asyncio
     async def test_system_status_handles_recent_tools_failure(self, tmp_path, monkeypatch):
@@ -2532,6 +2745,10 @@ class TestServicesTools:
         assert schemas["task_plan_summary"]["properties"]["plan_id"]["type"] == "integer"
         assert schemas["task_plan_next"]["properties"]["plan_id"]["type"] == "integer"
         assert schemas["timer_cancel"]["properties"]["timer_id"]["type"] == "integer"
+        assert schemas["reminder_list"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["reminder_complete"]["properties"]["reminder_id"]["type"] == "integer"
+        assert schemas["reminder_notify_due"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["calendar_events"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary_text"]["properties"]["limit"]["type"] == "integer"
 
@@ -2569,9 +2786,14 @@ class TestServicesTools:
         for code in critical_codes:
             assert code in script_text
 
-    def test_error_taxonomy_doc_mentions_home_assistant_conversation_and_timers(self):
+    def test_error_taxonomy_doc_mentions_home_assistant_conversation_timers_reminders_calendar(self):
         project_root = Path(__file__).resolve().parents[1]
         taxonomy_doc = (project_root / "docs" / "operations" / "error-taxonomy.md").read_text()
         assert "home_assistant_conversation" in taxonomy_doc
         assert "timer_cancel" in taxonomy_doc
         assert "timer_*" in taxonomy_doc
+        assert "reminder_" in taxonomy_doc
+        assert "calendar_" in taxonomy_doc
+        assert "home_assistant_todo" in taxonomy_doc
+        assert "home_assistant_timer" in taxonomy_doc
+        assert "home_assistant_area_entities" in taxonomy_doc

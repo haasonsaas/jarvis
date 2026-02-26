@@ -111,6 +111,30 @@ Persisted audit details:
 - `timer_cancel` removes a timer by `timer_id` or exact `label`.
 - Timers are persisted in the memory store when memory is enabled and are restored on restart.
 
-## 9) Status Contract for Automation
+## 9) Local Productivity Reminders
+- `reminder_create` accepts:
+  - epoch seconds
+  - ISO datetime
+  - compact relative due values (`in 15m`, `45m`, `1h 30m`)
+- `reminder_list` shows pending reminders and due/overdue status; `include_completed=true` includes completed entries.
+- `reminder_complete` marks a pending reminder completed by `reminder_id`.
+- `reminder_notify_due` dispatches due reminder notifications through Pushover and marks reminders as notified to prevent duplicates.
+- Reminders are persisted in the memory store when memory is enabled.
+
+## 10) Home Assistant Calendar Bridge
+- `calendar_events` reads events from Home Assistant calendars in a caller-defined window.
+- `calendar_next_event` returns the next upcoming calendar event in the selected window.
+- Optional `calendar_entity_id` scopes reads to one calendar; otherwise all available calendars are queried.
+
+## 11) Home Assistant To-Do/Timer/Area Helpers
+- `home_assistant_todo` supports:
+  - `action=list` (read path)
+  - `action=add|remove` (write path, blocked in `HOME_PERMISSION_PROFILE=readonly`)
+- `home_assistant_timer` supports:
+  - `action=state` (read path)
+  - `action=start|pause|cancel|finish` (write path, blocked in `readonly`)
+- `home_assistant_area_entities` provides area-aware entity resolution for room-targeted planning.
+
+## 12) Status Contract for Automation
 - `system_status` includes `schema_version` for machine consumers.
 - `system_status_contract` returns required top-level sections and nested required keys used by automation checks.
