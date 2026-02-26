@@ -146,6 +146,25 @@ class TestServicesTools:
         assert "title" not in pushover
         assert pushover["message_length"] == 10
 
+        slack = services._metadata_only_audit_details(
+            "slack_notify",
+            {
+                "result": "ok",
+                "message": "secret content",
+                "message_length": 14,
+            },
+        )
+        discord = services._metadata_only_audit_details(
+            "discord_notify",
+            {
+                "result": "ok",
+                "message": "secret content",
+                "message_length": 14,
+            },
+        )
+        assert "message" not in slack
+        assert "message" not in discord
+
     @pytest.mark.asyncio
     async def test_smart_home_cooldown_on_execute(self, aiohttp_response, aiohttp_session_mock):
         from jarvis.tools import services
@@ -357,6 +376,25 @@ class TestServicesTools:
 
         result = await services.pushover_notify({"message": "hello"})
         assert "not permitted" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_notification_permission_profile_off_denies_channel_webhooks(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.notification_permission_profile = "off"
+        cfg.slack_webhook_url = "https://hooks.slack.test/abc"
+        cfg.discord_webhook_url = "https://discord.test/api/webhooks/abc"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        slack = await services.slack_notify({"message": "hello"})
+        discord = await services.discord_notify({"message": "hello"})
+        assert "not permitted" in slack["content"][0]["text"].lower()
+        assert "not permitted" in discord["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_smart_home_dry_run_explicit_false_with_confirm(self, aiohttp_response, aiohttp_session_mock):
@@ -1406,6 +1444,20 @@ class TestServicesTools:
         assert "pushover not configured" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_slack_notify_requires_config(self):
+        from jarvis.tools import services
+
+        result = await services.slack_notify({"message": "hello"})
+        assert "slack webhook not configured" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_discord_notify_requires_config(self):
+        from jarvis.tools import services
+
+        result = await services.discord_notify({"message": "hello"})
+        assert "discord webhook not configured" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_todoist_add_task_success(self, tmp_path, aiohttp_response, aiohttp_session_mock):
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
@@ -1801,6 +1853,48 @@ class TestServicesTools:
             result = await services.pushover_notify({"message": "hello"})
 
         assert "sent" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_slack_notify_success(self, tmp_path, aiohttp_response, aiohttp_session_mock):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.slack_webhook_url = "https://hooks.slack.test/abc"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = aiohttp_response(status=200, json_data={"ok": True})
+            mock_session = aiohttp_session_mock(post=mock_resp)
+            mock_session_cls.return_value = mock_session
+
+            result = await services.slack_notify({"message": "hello"})
+
+        assert "slack notification sent" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_discord_notify_success(self, tmp_path, aiohttp_response, aiohttp_session_mock):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.discord_webhook_url = "https://discord.test/api/webhooks/abc"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = aiohttp_response(status=204, json_data={})
+            mock_session = aiohttp_session_mock(post=mock_resp)
+            mock_session_cls.return_value = mock_session
+
+            result = await services.discord_notify({"message": "hello"})
+
+        assert "discord notification sent" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_pushover_notify_rejects_invalid_priority(self, tmp_path):
@@ -2546,6 +2640,7 @@ class TestServicesTools:
         assert "integrations" in payload
         assert "weather" in payload["integrations"]
         assert "webhook" in payload["integrations"]
+        assert "channels" in payload["integrations"]
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
 
     @pytest.mark.asyncio
@@ -2562,6 +2657,7 @@ class TestServicesTools:
         assert "timers_required" in payload
         assert "reminders_required" in payload
         assert "integrations_required" in payload
+        assert "channels" in payload["integrations_required"]
 
     @pytest.mark.asyncio
     async def test_system_status_handles_recent_tools_failure(self, tmp_path, monkeypatch):
@@ -2887,3 +2983,8 @@ class TestServicesTools:
         assert "home_assistant_todo" in taxonomy_doc
         assert "home_assistant_timer" in taxonomy_doc
         assert "home_assistant_area_entities" in taxonomy_doc
+        assert "media_control" in taxonomy_doc
+        assert "weather_lookup" in taxonomy_doc
+        assert "webhook_trigger" in taxonomy_doc
+        assert "slack_notify" in taxonomy_doc
+        assert "discord_notify" in taxonomy_doc

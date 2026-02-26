@@ -78,7 +78,7 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 
 - [x] `IN01` Add weather integration tool (provider-backed, configurable units).
 - [ ] `IN02` Add email summary/send integration with strict safety policy.
-- [ ] `IN03` Add Slack/Discord notification hooks (opt-in).
+- [x] `IN03` Add Slack/Discord notification hooks (opt-in).
 - [x] `IN04` Add webhook trigger tool with domain allowlist and auth controls.
 - [ ] `IN05` Add webhook inbound receiver for automation callbacks.
 - [x] `IN06` Add media-control abstraction helper over HA media player actions.
@@ -145,7 +145,7 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 - [ ] `SE02` Add configurable data retention windows for memory/audit data.
 - [ ] `SE03` Add PII detection guardrails for memory writes.
 - [ ] `SE04` Add stricter token-scoping validation warnings on startup.
-- [ ] `SE05` Add outbound request domain allowlist enforcement for webhooks.
+- [x] `SE05` Add outbound request domain allowlist enforcement for webhooks.
 - [ ] `SE06` Add signed release artifact verification and provenance docs.
 - [ ] `SE07` Add deploy-time security checklist automation.
 - [ ] `SE08` Add incident response runbook with rollback playbooks.

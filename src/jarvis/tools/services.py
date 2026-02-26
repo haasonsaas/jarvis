@@ -92,6 +92,8 @@ _weather_timeout_sec: float = 8.0
 _webhook_allowlist: list[str] = []
 _webhook_auth_token: str = ""
 _webhook_timeout_sec: float = 8.0
+_slack_webhook_url: str = ""
+_discord_webhook_url: str = ""
 _ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _timers: dict[int, dict[str, Any]] = {}
 _timer_id_seq: int = 1
@@ -116,6 +118,8 @@ AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
     "todoist_add_task": {"content", "description", "due_string", "message", "title"},
     "todoist_list_tasks": {"content", "description", "due_string", "message", "title"},
     "pushover_notify": {"message", "title", "content", "description", "body"},
+    "slack_notify": {"message", "title", "content", "description", "body"},
+    "discord_notify": {"message", "title", "content", "description", "body"},
     "home_assistant_conversation": {"text"},
     "reminder_create": {"text"},
     "reminder_list": {"text"},
@@ -235,6 +239,20 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "timeout_sec": {"type": "number"},
         },
         "required": ["url"],
+    },
+    "slack_notify": {
+        "type": "object",
+        "properties": {
+            "message": {"type": "string"},
+        },
+        "required": ["message"],
+    },
+    "discord_notify": {
+        "type": "object",
+        "properties": {
+            "message": {"type": "string"},
+        },
+        "required": ["message"],
     },
     "timer_create": {
         "type": "object",
@@ -457,6 +475,8 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "media_control": {"entity_id", "action"},
     "weather_lookup": {"location"},
     "webhook_trigger": {"url"},
+    "slack_notify": {"message"},
+    "discord_notify": {"message"},
     "timer_create": {"duration"},
     "timer_list": set(),
     "timer_cancel": set(),
@@ -504,6 +524,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _todoist_timeout_sec, _pushover_timeout_sec
     global _weather_units, _weather_timeout_sec
     global _webhook_allowlist, _webhook_auth_token, _webhook_timeout_sec
+    global _slack_webhook_url, _discord_webhook_url
     global _timer_id_seq, _reminder_id_seq
     _config = config
     _memory = memory_store
@@ -536,6 +557,8 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _webhook_allowlist = [str(host).strip().lower() for host in getattr(config, "webhook_allowlist", []) if str(host).strip()]
     _webhook_auth_token = str(getattr(config, "webhook_auth_token", "")).strip()
     _webhook_timeout_sec = float(getattr(config, "webhook_timeout_sec", 8.0))
+    _slack_webhook_url = str(getattr(config, "slack_webhook_url", "")).strip()
+    _discord_webhook_url = str(getattr(config, "discord_webhook_url", "")).strip()
     _action_last_seen.clear()
     _ha_state_cache.clear()
     _timers.clear()
@@ -556,7 +579,7 @@ def _tool_permitted(name: str) -> bool:
         return False
     if _todoist_permission_profile == "readonly" and name == "todoist_add_task":
         return False
-    if _notification_permission_profile == "off" and name == "pushover_notify":
+    if _notification_permission_profile == "off" and name in {"pushover_notify", "slack_notify", "discord_notify"}:
         return False
     if _config is not None and not _config.home_enabled:
         if name in {
@@ -1391,6 +1414,10 @@ def _integration_health_snapshot() -> dict[str, Any]:
             "allowlist_count": len(_webhook_allowlist),
             "auth_token_configured": bool(_webhook_auth_token),
             "timeout_sec": _webhook_timeout_sec,
+        },
+        "channels": {
+            "slack_configured": bool(_slack_webhook_url),
+            "discord_configured": bool(_discord_webhook_url),
         },
     }
 
@@ -2508,6 +2535,104 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Unexpected webhook trigger error."}]}
 
 
+async def slack_notify(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("slack_notify"):
+        record_summary("slack_notify", "denied", start_time, "policy")
+        _audit("slack_notify", {"result": "denied", "reason": "policy"})
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _slack_webhook_url:
+        _record_service_error("slack_notify", start_time, "missing_config")
+        _audit("slack_notify", {"result": "missing_config"})
+        return {"content": [{"type": "text", "text": "Slack webhook not configured. Set SLACK_WEBHOOK_URL."}]}
+    message = str(args.get("message", "")).strip()
+    if not message:
+        _record_service_error("slack_notify", start_time, "missing_fields")
+        _audit("slack_notify", {"result": "missing_fields"})
+        return {"content": [{"type": "text", "text": "message is required."}]}
+    timeout = aiohttp.ClientTimeout(total=_webhook_timeout_sec)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(_slack_webhook_url, json={"text": message}) as resp:
+                if 200 <= resp.status < 300:
+                    record_summary("slack_notify", "ok", start_time)
+                    _audit("slack_notify", {"result": "ok", "message_length": len(message)})
+                    return {"content": [{"type": "text", "text": "Slack notification sent."}]}
+                if resp.status in {401, 403}:
+                    _record_service_error("slack_notify", start_time, "auth")
+                    _audit("slack_notify", {"result": "auth", "status": resp.status})
+                    return {"content": [{"type": "text", "text": "Slack webhook authentication failed."}]}
+                _record_service_error("slack_notify", start_time, "http_error")
+                _audit("slack_notify", {"result": "http_error", "status": resp.status})
+                return {"content": [{"type": "text", "text": f"Slack webhook error ({resp.status})."}]}
+    except asyncio.TimeoutError:
+        _record_service_error("slack_notify", start_time, "timeout")
+        _audit("slack_notify", {"result": "timeout"})
+        return {"content": [{"type": "text", "text": "Slack webhook request timed out."}]}
+    except asyncio.CancelledError:
+        _record_service_error("slack_notify", start_time, "cancelled")
+        _audit("slack_notify", {"result": "cancelled"})
+        return {"content": [{"type": "text", "text": "Slack webhook request was cancelled."}]}
+    except aiohttp.ClientError:
+        _record_service_error("slack_notify", start_time, "network_client_error")
+        _audit("slack_notify", {"result": "network_client_error"})
+        return {"content": [{"type": "text", "text": "Failed to reach Slack webhook."}]}
+    except Exception:
+        _record_service_error("slack_notify", start_time, "unexpected")
+        _audit("slack_notify", {"result": "unexpected"})
+        log.exception("Unexpected slack_notify failure")
+        return {"content": [{"type": "text", "text": "Unexpected Slack webhook error."}]}
+
+
+async def discord_notify(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("discord_notify"):
+        record_summary("discord_notify", "denied", start_time, "policy")
+        _audit("discord_notify", {"result": "denied", "reason": "policy"})
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _discord_webhook_url:
+        _record_service_error("discord_notify", start_time, "missing_config")
+        _audit("discord_notify", {"result": "missing_config"})
+        return {"content": [{"type": "text", "text": "Discord webhook not configured. Set DISCORD_WEBHOOK_URL."}]}
+    message = str(args.get("message", "")).strip()
+    if not message:
+        _record_service_error("discord_notify", start_time, "missing_fields")
+        _audit("discord_notify", {"result": "missing_fields"})
+        return {"content": [{"type": "text", "text": "message is required."}]}
+    timeout = aiohttp.ClientTimeout(total=_webhook_timeout_sec)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(_discord_webhook_url, json={"content": message}) as resp:
+                if 200 <= resp.status < 300:
+                    record_summary("discord_notify", "ok", start_time)
+                    _audit("discord_notify", {"result": "ok", "message_length": len(message)})
+                    return {"content": [{"type": "text", "text": "Discord notification sent."}]}
+                if resp.status in {401, 403}:
+                    _record_service_error("discord_notify", start_time, "auth")
+                    _audit("discord_notify", {"result": "auth", "status": resp.status})
+                    return {"content": [{"type": "text", "text": "Discord webhook authentication failed."}]}
+                _record_service_error("discord_notify", start_time, "http_error")
+                _audit("discord_notify", {"result": "http_error", "status": resp.status})
+                return {"content": [{"type": "text", "text": f"Discord webhook error ({resp.status})."}]}
+    except asyncio.TimeoutError:
+        _record_service_error("discord_notify", start_time, "timeout")
+        _audit("discord_notify", {"result": "timeout"})
+        return {"content": [{"type": "text", "text": "Discord webhook request timed out."}]}
+    except asyncio.CancelledError:
+        _record_service_error("discord_notify", start_time, "cancelled")
+        _audit("discord_notify", {"result": "cancelled"})
+        return {"content": [{"type": "text", "text": "Discord webhook request was cancelled."}]}
+    except aiohttp.ClientError:
+        _record_service_error("discord_notify", start_time, "network_client_error")
+        _audit("discord_notify", {"result": "network_client_error"})
+        return {"content": [{"type": "text", "text": "Failed to reach Discord webhook."}]}
+    except Exception:
+        _record_service_error("discord_notify", start_time, "unexpected")
+        _audit("discord_notify", {"result": "unexpected"})
+        log.exception("Unexpected discord_notify failure")
+        return {"content": [{"type": "text", "text": "Unexpected Discord webhook error."}]}
+
+
 def _list_reminder_payloads(*, include_completed: bool, limit: int, now_ts: float) -> list[dict[str, Any]]:
     if _memory is not None:
         pending_rows = _memory.list_reminders(status="pending", now=now_ts, limit=limit)
@@ -3431,6 +3556,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "pushover",
             "weather",
             "webhook",
+            "channels",
         ],
         "health_required": [
             "health_level",
@@ -4049,6 +4175,18 @@ webhook_trigger_tool = tool(
     SERVICE_TOOL_SCHEMAS["webhook_trigger"],
 )(webhook_trigger)
 
+slack_notify_tool = tool(
+    "slack_notify",
+    "Send a Slack notification via incoming webhook.",
+    SERVICE_TOOL_SCHEMAS["slack_notify"],
+)(slack_notify)
+
+discord_notify_tool = tool(
+    "discord_notify",
+    "Send a Discord notification via webhook.",
+    SERVICE_TOOL_SCHEMAS["discord_notify"],
+)(discord_notify)
+
 todoist_add_task_tool = tool(
     "todoist_add_task",
     "Create a task in Todoist (project configurable via env).",
@@ -4233,6 +4371,8 @@ def create_services_server():
             media_control_tool,
             weather_lookup_tool,
             webhook_trigger_tool,
+            slack_notify_tool,
+            discord_notify_tool,
             todoist_add_task_tool,
             todoist_list_tasks_tool,
             pushover_notify_tool,

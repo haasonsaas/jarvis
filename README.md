@@ -89,6 +89,7 @@ cp .env.example .env
 # Optional: PUSHOVER_API_TOKEN / PUSHOVER_USER_KEY / NOTIFICATION_PERMISSION_PROFILE
 # Optional: WEATHER_UNITS=metric|imperial / WEATHER_TIMEOUT_SEC
 # Optional: WEBHOOK_ALLOWLIST=example.com,api.example.com / WEBHOOK_AUTH_TOKEN / WEBHOOK_TIMEOUT_SEC
+# Optional: SLACK_WEBHOOK_URL / DISCORD_WEBHOOK_URL
 ```
 
 Smart home safety defaults:
@@ -120,9 +121,12 @@ Smart home safety defaults:
   - `todoist_list_tasks` supports `format=short|verbose` (default `short`)
 - Pushover integration:
   - `NOTIFICATION_PERMISSION_PROFILE=off|allow`
-  - `off` denies `pushover_notify`
-  - `allow` enables `pushover_notify`
+  - `off` denies `pushover_notify`, `slack_notify`, and `discord_notify`
+  - `allow` enables all channel notification tools
   - `PUSHOVER_TIMEOUT_SEC` controls request timeout (default `10.0`)
+- Slack/Discord hooks:
+  - `slack_notify` uses `SLACK_WEBHOOK_URL`
+  - `discord_notify` uses `DISCORD_WEBHOOK_URL`
 - Productivity tools:
   - timers: `timer_create`, `timer_list`, `timer_cancel`
   - reminders: `reminder_create`, `reminder_list`, `reminder_complete`

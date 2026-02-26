@@ -141,6 +141,8 @@ class Config:
     webhook_allowlist: list[str] = field(default_factory=lambda: _env_list("WEBHOOK_ALLOWLIST"))
     webhook_auth_token: str = field(default_factory=lambda: os.environ.get("WEBHOOK_AUTH_TOKEN", ""))
     webhook_timeout_sec: float = field(default_factory=lambda: _env_positive_float("WEBHOOK_TIMEOUT_SEC", 8.0))
+    slack_webhook_url: str = field(default_factory=lambda: os.environ.get("SLACK_WEBHOOK_URL", ""))
+    discord_webhook_url: str = field(default_factory=lambda: os.environ.get("DISCORD_WEBHOOK_URL", ""))
 
     # Quick toggles
     motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)

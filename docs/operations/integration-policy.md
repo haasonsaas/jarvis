@@ -151,15 +151,23 @@ Persisted audit details:
   - if `WEBHOOK_AUTH_TOKEN` is set and no `Authorization` header is provided, the tool adds `Authorization: Bearer <token>`.
 - Runtime request timeout defaults to `WEBHOOK_TIMEOUT_SEC`.
 
-## 14) Integration Health Snapshot
+## 14) Slack/Discord Channel Hooks
+- `slack_notify` posts to `SLACK_WEBHOOK_URL`.
+- `discord_notify` posts to `DISCORD_WEBHOOK_URL`.
+- Channel hooks are opt-in and follow `NOTIFICATION_PERMISSION_PROFILE`:
+  - `off`: deny channel sends
+  - `allow`: permit channel sends
+
+## 15) Integration Health Snapshot
 - `system_status` includes an `integrations` block with current configuration state for:
   - `home_assistant`
   - `todoist`
   - `pushover`
   - `weather`
   - `webhook`
+  - `channels`
 - `system_status_contract` includes `integrations_required` for automation consumers.
 
-## 15) Status Contract for Automation
+## 16) Status Contract for Automation
 - `system_status` includes `schema_version` for machine consumers.
 - `system_status_contract` returns required top-level sections and nested required keys used by automation checks.
