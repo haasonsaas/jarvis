@@ -28,12 +28,26 @@ class ToolSummaryStore:
             self._items.appendleft(summary)
 
     def list(self, limit: int | float | str = 10) -> list[dict[str, object]]:
-        try:
-            parsed_limit = int(limit)
-        except (TypeError, ValueError, OverflowError):
+        parsed_limit = 10
+        if isinstance(limit, bool):
             parsed_limit = 10
-        if isinstance(limit, float) and not math.isfinite(limit):
-            parsed_limit = 10
+        elif isinstance(limit, int):
+            parsed_limit = limit
+        elif isinstance(limit, float):
+            if math.isfinite(limit) and limit.is_integer():
+                parsed_limit = int(limit)
+        elif isinstance(limit, str):
+            text = limit.strip()
+            if text and (text.isdigit() or (text.startswith(("+", "-")) and text[1:].isdigit())):
+                try:
+                    parsed_limit = int(text)
+                except ValueError:
+                    parsed_limit = 10
+        else:
+            try:
+                parsed_limit = int(limit)
+            except (TypeError, ValueError, OverflowError):
+                parsed_limit = 10
         parsed_limit = max(1, min(200, parsed_limit))
         with self._lock:
             snapshot = list(self._items)[:parsed_limit]

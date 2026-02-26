@@ -37,6 +37,16 @@ def test_list_limit_handles_non_finite_values():
     assert len(items_inf) == 1
 
 
+def test_list_limit_rejects_bool_and_fractional_values():
+    store = ToolSummaryStore()
+    store.add(_summary("a"))
+    store.add(_summary("b"))
+    items_bool = store.list(True)
+    items_fractional = store.list(1.8)
+    assert len(items_bool) == 2
+    assert len(items_fractional) == 2
+
+
 def test_record_summary_clamps_non_finite_start_time():
     record_summary("nan_case", "ok", math.nan)
     payload = list_summaries(1)[0]

@@ -57,15 +57,18 @@ This cycle focuses on config strictness, telemetry taxonomy consistency, task-pl
 
 ### 4.1 Strict limit normalization in MemoryStore (`P1`)
 - [x] Apply strict integer limit parsing inside `MemoryStore` for direct callers.
+
+### 4.2 Strict limit normalization in ToolSummaryStore (`P2`)
+- [x] Apply strict integer limit parsing inside `ToolSummaryStore` for direct callers.
 - Why:
-  - Store methods should be safe even when invoked outside service wrappers.
+  - Summary retrieval should be consistent with other strict limit parsing and avoid bool/fraction coercion.
 - Acceptance criteria:
-  - `search_v2`, `search`, `recent`, and `list_summaries` reject bool/fractional limits and use defaults.
+  - `ToolSummaryStore.list` rejects bool/fractional limits and uses defaults.
 - Test plan:
-  - Add direct `MemoryStore` tests for bool and fractional limits.
+  - Add tests for `limit=True` and `limit=1.8` fallback behavior.
 - Files:
-  - `src/jarvis/memory.py`
-  - `tests/test_memory.py`
+  - `src/jarvis/tool_summary.py`
+  - `tests/test_tool_summary.py`
 
 ---
 
