@@ -54,7 +54,8 @@ An embodied AI assistant inspired by Jarvis from Iron Man, running on the
 ┌──────────────────┐     ┌──────────────────┐
 │  Face Tracker    │     │   Audit Log      │
 │  YOLOv8 → face   │────►│   jarvis_audit   │
-│  position signal │     │   .jsonl         │
+│  position signal │     │ ~/.jarvis/audit  │
+│                  │     │   .jsonl         │
 └──────────────────┘     └──────────────────┘
 ```
 

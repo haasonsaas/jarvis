@@ -287,3 +287,8 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - [x] Add explicit fault-subset step in CI workflow (`make test-faults`).
 - Files:
   - `.github/workflows/ci.yml`
+
+### 21.3 README architecture consistency (`P2`)
+- [x] Align architecture diagram audit log path/name with runtime (`~/.jarvis/audit.jsonl`).
+- Files:
+  - `README.md`
