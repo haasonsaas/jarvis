@@ -237,6 +237,40 @@ class TestConfig:
         assert c.weather_timeout_sec == 4.5
         assert c.webhook_timeout_sec == 9.0
 
+    def test_retention_env_values_fall_back_to_defaults_when_invalid(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("MEMORY_RETENTION_DAYS", "-1")
+        monkeypatch.setenv("AUDIT_RETENTION_DAYS", "-5")
+        from jarvis.config import Config
+
+        c = Config()
+        assert c.memory_retention_days == 0.0
+        assert c.audit_retention_days == 0.0
+        text = "\n".join(c.startup_warnings)
+        assert "MEMORY_RETENTION_DAYS invalid" in text
+        assert "AUDIT_RETENTION_DAYS invalid" in text
+
+    def test_startup_warnings_flag_short_tokens_and_insecure_webhooks(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("HASS_URL", "http://ha.local:8123")
+        monkeypatch.setenv("HASS_TOKEN", "short")
+        monkeypatch.setenv("TODOIST_API_TOKEN", "tiny")
+        monkeypatch.setenv("PUSHOVER_API_TOKEN", "small")
+        monkeypatch.setenv("PUSHOVER_USER_KEY", "user")
+        monkeypatch.setenv("WEBHOOK_AUTH_TOKEN", "token")
+        monkeypatch.setenv("SLACK_WEBHOOK_URL", "http://slack.test/hook")
+        monkeypatch.setenv("DISCORD_WEBHOOK_URL", "http://discord.test/hook")
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "HASS_TOKEN appears unusually short" in text
+        assert "TODOIST_API_TOKEN appears unusually short" in text
+        assert "PUSHOVER_API_TOKEN appears unusually short" in text
+        assert "WEBHOOK_AUTH_TOKEN is set while WEBHOOK_ALLOWLIST is empty" in text
+        assert "SLACK_WEBHOOK_URL should use https." in text
+        assert "DISCORD_WEBHOOK_URL should use https." in text
+
     def test_startup_warning_for_partial_home_assistant_config(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         monkeypatch.setenv("HASS_URL", "http://ha.local:8123")

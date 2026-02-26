@@ -2641,6 +2641,8 @@ class TestServicesTools:
         assert "weather" in payload["integrations"]
         assert "webhook" in payload["integrations"]
         assert "channels" in payload["integrations"]
+        assert "retention_policy" in payload
+        assert "memory_retention_days" in payload["retention_policy"]
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
 
     @pytest.mark.asyncio
@@ -2658,6 +2660,7 @@ class TestServicesTools:
         assert "reminders_required" in payload
         assert "integrations_required" in payload
         assert "channels" in payload["integrations_required"]
+        assert "retention_policy_required" in payload
 
     @pytest.mark.asyncio
     async def test_system_status_handles_recent_tools_failure(self, tmp_path, monkeypatch):

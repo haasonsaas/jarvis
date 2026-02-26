@@ -55,3 +55,14 @@ Run this once per month:
 6. Confirm docs are current:
    - This runbook
    - `docs/operations/release-checklist.md`
+
+## 4) Runtime Credential and Retention Guards
+
+- Startup now emits warnings for potentially unsafe credential posture:
+  - unusually short API tokens (`HASS_TOKEN`, `TODOIST_API_TOKEN`, `PUSHOVER_API_TOKEN`)
+  - insecure webhook URLs for Slack/Discord (`http://` instead of `https://`)
+  - `WEBHOOK_AUTH_TOKEN` configured without a `WEBHOOK_ALLOWLIST`
+- Retention windows are configurable:
+  - `MEMORY_RETENTION_DAYS`
+  - `AUDIT_RETENTION_DAYS`
+- A value of `0` disables pruning; positive values apply automatic startup pruning.

@@ -90,6 +90,7 @@ cp .env.example .env
 # Optional: WEATHER_UNITS=metric|imperial / WEATHER_TIMEOUT_SEC
 # Optional: WEBHOOK_ALLOWLIST=example.com,api.example.com / WEBHOOK_AUTH_TOKEN / WEBHOOK_TIMEOUT_SEC
 # Optional: SLACK_WEBHOOK_URL / DISCORD_WEBHOOK_URL
+# Optional: MEMORY_RETENTION_DAYS / AUDIT_RETENTION_DAYS (0 disables pruning)
 ```
 
 Smart home safety defaults:

@@ -293,3 +293,62 @@ def test_list_reminders_due_only_filter(tmp_path):
         assert due[0].text == "overdue"
     finally:
         store.close()
+
+
+def test_prune_retention_removes_old_non_active_data(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        cutoff = 1_700_000_000.0
+        old_ts = cutoff - 10_000.0
+        new_ts = cutoff + 10_000.0
+
+        old_memory = store.add_memory("old memory")
+        new_memory = store.add_memory("new memory")
+        store._conn.execute("UPDATE memory SET created_at = ? WHERE id = ?", (old_ts, old_memory))
+        store._conn.execute("UPDATE memory SET created_at = ? WHERE id = ?", (new_ts, new_memory))
+
+        old_plan = store.add_task_plan("old plan", ["a"])
+        new_plan = store.add_task_plan("new plan", ["b"])
+        store._conn.execute("UPDATE task_plans SET created_at = ? WHERE id = ?", (old_ts, old_plan))
+        store._conn.execute("UPDATE task_plans SET created_at = ? WHERE id = ?", (new_ts, new_plan))
+
+        store.upsert_summary("old_topic", "old summary")
+        store.upsert_summary("new_topic", "new summary")
+        store._conn.execute("UPDATE memory_summaries SET updated_at = ? WHERE topic = 'old_topic'", (old_ts,))
+        store._conn.execute("UPDATE memory_summaries SET updated_at = ? WHERE topic = 'new_topic'", (new_ts,))
+
+        old_timer = store.add_timer(due_at=old_ts + 60.0, duration_sec=60.0, label="old", created_at=old_ts)
+        _ = store.cancel_timer(old_timer, cancelled_at=old_ts + 30.0)
+        _ = store.add_timer(due_at=new_ts + 60.0, duration_sec=60.0, label="new-active", created_at=old_ts)
+
+        old_reminder = store.add_reminder(text="old completed", due_at=old_ts + 120.0, created_at=old_ts)
+        _ = store.complete_reminder(old_reminder, completed_at=old_ts + 300.0)
+        _ = store.add_reminder(text="old pending", due_at=old_ts + 180.0, created_at=old_ts)
+
+        store._conn.commit()
+
+        deleted = store.prune_retention(cutoff_ts=cutoff)
+        assert deleted["memory"] >= 1
+        assert deleted["task_plans"] >= 1
+        assert deleted["task_steps"] >= 1
+        assert deleted["memory_summaries"] >= 1
+        assert deleted["timers"] >= 1
+        assert deleted["reminders"] >= 1
+
+        remaining_memory = [row.id for row in store.recent(limit=10)]
+        assert new_memory in remaining_memory
+        assert old_memory not in remaining_memory
+
+        plans = store.list_task_plans(open_only=False)
+        assert any(plan.id == new_plan for plan in plans)
+        assert all(plan.id != old_plan for plan in plans)
+
+        summaries = store.list_summaries(limit=10)
+        topics = {item.topic for item in summaries}
+        assert "new_topic" in topics
+        assert "old_topic" not in topics
+
+        active_timers = store.list_timers(status="active", include_expired=True, now=cutoff + 1.0)
+        assert any(timer.label == "new-active" for timer in active_timers)
+    finally:
+        store.close()

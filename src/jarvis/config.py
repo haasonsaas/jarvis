@@ -48,6 +48,13 @@ def _env_positive_float(name: str, default: float) -> float:
     return parsed
 
 
+def _env_nonnegative_float(name: str, default: float) -> float:
+    parsed = _env_float(name, default)
+    if parsed < 0.0:
+        return default
+    return parsed
+
+
 def _env_int(name: str, default: int) -> int:
     val = os.environ.get(name)
     if val is None or not val.strip():
@@ -143,6 +150,8 @@ class Config:
     webhook_timeout_sec: float = field(default_factory=lambda: _env_positive_float("WEBHOOK_TIMEOUT_SEC", 8.0))
     slack_webhook_url: str = field(default_factory=lambda: os.environ.get("SLACK_WEBHOOK_URL", ""))
     discord_webhook_url: str = field(default_factory=lambda: os.environ.get("DISCORD_WEBHOOK_URL", ""))
+    memory_retention_days: float = field(default_factory=lambda: _env_nonnegative_float("MEMORY_RETENTION_DAYS", 0.0))
+    audit_retention_days: float = field(default_factory=lambda: _env_nonnegative_float("AUDIT_RETENTION_DAYS", 0.0))
 
     # Quick toggles
     motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)
@@ -187,6 +196,10 @@ class Config:
             raise ValueError("weather_timeout_sec must be > 0")
         if self.webhook_timeout_sec <= 0.0:
             raise ValueError("webhook_timeout_sec must be > 0")
+        if self.memory_retention_days < 0.0:
+            raise ValueError("memory_retention_days must be >= 0")
+        if self.audit_retention_days < 0.0:
+            raise ValueError("audit_retention_days must be >= 0")
         self.startup_warnings = self._collect_startup_warnings()
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
@@ -321,12 +334,26 @@ class Config:
             and not has_pushover_user
         ):
             warnings.append("NOTIFICATION_PERMISSION_PROFILE=allow set while Pushover credentials are empty.")
+        if has_hass_token and len(self.hass_token.strip()) < 20:
+            warnings.append("HASS_TOKEN appears unusually short; verify token scope and rotation policy.")
+        if has_todoist_token and len(self.todoist_api_token.strip()) < 20:
+            warnings.append("TODOIST_API_TOKEN appears unusually short; verify token scope.")
+        if has_pushover_token and len(self.pushover_api_token.strip()) < 20:
+            warnings.append("PUSHOVER_API_TOKEN appears unusually short; verify credential scope.")
+        if self.webhook_auth_token.strip() and not self.webhook_allowlist:
+            warnings.append("WEBHOOK_AUTH_TOKEN is set while WEBHOOK_ALLOWLIST is empty; webhook_trigger will remain blocked.")
+        if self.slack_webhook_url.strip() and not self.slack_webhook_url.strip().lower().startswith("https://"):
+            warnings.append("SLACK_WEBHOOK_URL should use https.")
+        if self.discord_webhook_url.strip() and not self.discord_webhook_url.strip().lower().startswith("https://"):
+            warnings.append("DISCORD_WEBHOOK_URL should use https.")
         checks: list[tuple[str, str, str]] = [
             ("DOA_CHANGE_THRESHOLD", "float", str(self.doa_change_threshold)),
             ("DOA_TIMEOUT", "float", str(self.doa_timeout)),
             ("MEMORY_SEARCH_LIMIT", "int", str(self.memory_search_limit)),
             ("AUDIT_LOG_MAX_BYTES", "int", str(self.audit_log_max_bytes)),
             ("AUDIT_LOG_BACKUPS", "int", str(self.audit_log_backups)),
+            ("MEMORY_RETENTION_DAYS", "nonnegative_float", str(self.memory_retention_days)),
+            ("AUDIT_RETENTION_DAYS", "nonnegative_float", str(self.audit_retention_days)),
             ("TODOIST_TIMEOUT_SEC", "positive_float", str(self.todoist_timeout_sec)),
             ("PUSHOVER_TIMEOUT_SEC", "positive_float", str(self.pushover_timeout_sec)),
             ("WEATHER_TIMEOUT_SEC", "positive_float", str(self.weather_timeout_sec)),
@@ -337,12 +364,14 @@ class Config:
             if raw is None or not raw.strip():
                 continue
             try:
-                if kind in {"float", "positive_float"}:
+                if kind in {"float", "positive_float", "nonnegative_float"}:
                     parsed = float(raw)
                     if not math.isfinite(parsed):
                         raise ValueError("non-finite float")
                     if kind == "positive_float" and parsed <= 0.0:
                         raise ValueError("non-positive float")
+                    if kind == "nonnegative_float" and parsed < 0.0:
+                        raise ValueError("negative float")
                 else:
                     int(raw)
             except ValueError:

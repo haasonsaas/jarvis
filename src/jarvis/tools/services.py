@@ -94,6 +94,8 @@ _webhook_auth_token: str = ""
 _webhook_timeout_sec: float = 8.0
 _slack_webhook_url: str = ""
 _discord_webhook_url: str = ""
+_memory_retention_days: float = 0.0
+_audit_retention_days: float = 0.0
 _ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _timers: dict[int, dict[str, Any]] = {}
 _timer_id_seq: int = 1
@@ -525,6 +527,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _weather_units, _weather_timeout_sec
     global _webhook_allowlist, _webhook_auth_token, _webhook_timeout_sec
     global _slack_webhook_url, _discord_webhook_url
+    global _memory_retention_days, _audit_retention_days
     global _timer_id_seq, _reminder_id_seq
     _config = config
     _memory = memory_store
@@ -559,6 +562,8 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _webhook_timeout_sec = float(getattr(config, "webhook_timeout_sec", 8.0))
     _slack_webhook_url = str(getattr(config, "slack_webhook_url", "")).strip()
     _discord_webhook_url = str(getattr(config, "discord_webhook_url", "")).strip()
+    _memory_retention_days = max(0.0, float(getattr(config, "memory_retention_days", 0.0)))
+    _audit_retention_days = max(0.0, float(getattr(config, "audit_retention_days", 0.0)))
     _action_last_seen.clear()
     _ha_state_cache.clear()
     _timers.clear()
@@ -572,6 +577,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _tool_denylist = list(config.tool_denylist)
     # Ensure audit dir exists
     AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    _apply_retention_policies()
 
 
 def _tool_permitted(name: str) -> bool:
@@ -1022,6 +1028,57 @@ def _audit_status() -> dict[str, Any]:
         "redaction_key_count": len(SENSITIVE_AUDIT_KEY_TOKENS),
         "metadata_only_actions": sorted(AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS),
     }
+
+
+def _prune_audit_file(path: Path, *, cutoff_ts: float) -> int:
+    if not path.exists():
+        return 0
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return 0
+    kept: list[str] = []
+    removed = 0
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except Exception:
+            removed += 1
+            continue
+        ts = payload.get("timestamp")
+        if isinstance(ts, (int, float)) and float(ts) >= cutoff_ts:
+            kept.append(json.dumps(payload, default=str))
+        else:
+            removed += 1
+    if removed <= 0:
+        return 0
+    try:
+        if kept:
+            path.write_text("\n".join(kept) + "\n")
+        else:
+            path.unlink(missing_ok=True)
+    except OSError:
+        return 0
+    return removed
+
+
+def _apply_retention_policies() -> None:
+    now = time.time()
+    if _memory is not None and _memory_retention_days > 0.0:
+        cutoff = now - (_memory_retention_days * 86_400.0)
+        try:
+            _memory.prune_retention(cutoff_ts=cutoff)
+        except Exception:
+            log.warning("Failed to apply memory retention policy", exc_info=True)
+    if _audit_retention_days > 0.0:
+        cutoff = now - (_audit_retention_days * 86_400.0)
+        paths = [AUDIT_LOG] + [AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.{idx}") for idx in range(1, _audit_log_backups + 1)]
+        for path in paths:
+            removed = _prune_audit_file(path, cutoff_ts=cutoff)
+            if removed > 0:
+                log.info("Applied audit retention policy to %s (removed=%d)", path, removed)
 
 
 def _prune_timers(now_mono: float | None = None) -> None:
@@ -3493,6 +3550,10 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         "timers": _timer_status(),
         "reminders": _reminder_status(),
         "integrations": _integration_health_snapshot(),
+        "retention_policy": {
+            "memory_retention_days": _memory_retention_days,
+            "audit_retention_days": _audit_retention_days,
+        },
         "memory": memory_status,
         "audit": _audit_status(),
         "recent_tools": recent_tools,
@@ -3525,6 +3586,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "timers",
             "reminders",
             "integrations",
+            "retention_policy",
             "memory",
             "audit",
             "recent_tools",
@@ -3557,6 +3619,10 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "weather",
             "webhook",
             "channels",
+        ],
+        "retention_policy_required": [
+            "memory_retention_days",
+            "audit_retention_days",
         ],
         "health_required": [
             "health_level",

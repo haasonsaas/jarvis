@@ -686,6 +686,40 @@ class MemoryStore:
                 counts[key] = int(row["c"])
         return counts
 
+    def prune_retention(self, *, cutoff_ts: float) -> dict[str, int]:
+        cutoff = float(cutoff_ts)
+        deleted = {
+            "memory": 0,
+            "task_plans": 0,
+            "task_steps": 0,
+            "memory_summaries": 0,
+            "timers": 0,
+            "reminders": 0,
+        }
+        with self._conn:
+            cur = self._conn.cursor()
+            if self._fts_enabled:
+                cur.execute("DELETE FROM memory_fts WHERE rowid IN (SELECT id FROM memory WHERE created_at < ?)", (cutoff,))
+            if self._memory_enabled:
+                cur.execute("DELETE FROM memory_vec WHERE rowid IN (SELECT id FROM memory WHERE created_at < ?)", (cutoff,))
+            cur.execute("DELETE FROM memory WHERE created_at < ?", (cutoff,))
+            deleted["memory"] = int(cur.rowcount)
+
+            cur.execute("DELETE FROM task_steps WHERE plan_id IN (SELECT id FROM task_plans WHERE created_at < ?)", (cutoff,))
+            deleted["task_steps"] = int(cur.rowcount)
+            cur.execute("DELETE FROM task_plans WHERE created_at < ?", (cutoff,))
+            deleted["task_plans"] = int(cur.rowcount)
+
+            cur.execute("DELETE FROM memory_summaries WHERE updated_at < ?", (cutoff,))
+            deleted["memory_summaries"] = int(cur.rowcount)
+
+            cur.execute("DELETE FROM timers WHERE created_at < ? AND status != 'active'", (cutoff,))
+            deleted["timers"] = int(cur.rowcount)
+
+            cur.execute("DELETE FROM reminders WHERE created_at < ? AND status = 'completed'", (cutoff,))
+            deleted["reminders"] = int(cur.rowcount)
+        return deleted
+
     def close(self) -> None:
         if self._closed:
             return
