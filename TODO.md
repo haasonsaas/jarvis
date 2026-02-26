@@ -76,14 +76,14 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 
 ## 5) Integrations and Channel Surface Expansion (8 items)
 
-- [ ] `IN01` Add weather integration tool (provider-backed, configurable units).
+- [x] `IN01` Add weather integration tool (provider-backed, configurable units).
 - [ ] `IN02` Add email summary/send integration with strict safety policy.
 - [ ] `IN03` Add Slack/Discord notification hooks (opt-in).
-- [ ] `IN04` Add webhook trigger tool with domain allowlist and auth controls.
+- [x] `IN04` Add webhook trigger tool with domain allowlist and auth controls.
 - [ ] `IN05` Add webhook inbound receiver for automation callbacks.
-- [ ] `IN06` Add media-control abstraction helper over HA media player actions.
-- [ ] `IN07` Add integration health probes surfaced in `system_status`.
-- [ ] `IN08` Add integration contract tests for each external service.
+- [x] `IN06` Add media-control abstraction helper over HA media player actions.
+- [x] `IN07` Add integration health probes surfaced in `system_status`.
+- [x] `IN08` Add integration contract tests for each external service.
 
 ---
 

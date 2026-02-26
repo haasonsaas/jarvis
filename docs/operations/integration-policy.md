@@ -134,7 +134,32 @@ Persisted audit details:
   - `action=state` (read path)
   - `action=start|pause|cancel|finish` (write path, blocked in `readonly`)
 - `home_assistant_area_entities` provides area-aware entity resolution for room-targeted planning.
+- `media_control` provides a safer media abstraction for `media_player` entities:
+  - supported actions: `play`, `pause`, `turn_on`, `turn_off`, `toggle`, `mute`, `unmute`, `volume_set`
+  - `volume_set` validates `volume` in `[0.0, 1.0]`
 
-## 12) Status Contract for Automation
+## 12) Weather
+- `weather_lookup` uses Open-Meteo geocoding + forecast APIs.
+- `WEATHER_UNITS=metric|imperial` controls default response units.
+- Runtime request timeout is controlled by `WEATHER_TIMEOUT_SEC`.
+
+## 13) Webhooks (Outbound)
+- `webhook_trigger` enforces:
+  - `https` URLs only
+  - host matching against `WEBHOOK_ALLOWLIST` (exact host or subdomain match)
+- Optional auth injection:
+  - if `WEBHOOK_AUTH_TOKEN` is set and no `Authorization` header is provided, the tool adds `Authorization: Bearer <token>`.
+- Runtime request timeout defaults to `WEBHOOK_TIMEOUT_SEC`.
+
+## 14) Integration Health Snapshot
+- `system_status` includes an `integrations` block with current configuration state for:
+  - `home_assistant`
+  - `todoist`
+  - `pushover`
+  - `weather`
+  - `webhook`
+- `system_status_contract` includes `integrations_required` for automation consumers.
+
+## 15) Status Contract for Automation
 - `system_status` includes `schema_version` for machine consumers.
 - `system_status_contract` returns required top-level sections and nested required keys used by automation checks.

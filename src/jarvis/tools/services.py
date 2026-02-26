@@ -16,6 +16,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import aiohttp
 from claude_agent_sdk import tool, create_sdk_mcp_server
@@ -43,7 +44,16 @@ HA_MUTATING_ALLOWED_ACTIONS: dict[str, set[str]] = {
     "lock": {"lock", "unlock"},
     "cover": {"open_cover", "close_cover", "stop_cover"},
     "climate": {"set_temperature", "set_hvac_mode", "set_fan_mode"},
-    "media_player": {"turn_on", "turn_off", "toggle", "volume_set", "media_play", "media_pause", "play_media"},
+    "media_player": {
+        "turn_on",
+        "turn_off",
+        "toggle",
+        "volume_set",
+        "volume_mute",
+        "media_play",
+        "media_pause",
+        "play_media",
+    },
     "alarm_control_panel": {"arm_home", "arm_away", "disarm"},
 }
 TODOIST_LIST_MAX_RETRIES = 2
@@ -77,6 +87,11 @@ _todoist_permission_profile: str = "control"
 _notification_permission_profile: str = "allow"
 _todoist_timeout_sec: float = 10.0
 _pushover_timeout_sec: float = 10.0
+_weather_units: str = "metric"
+_weather_timeout_sec: float = 8.0
+_webhook_allowlist: list[str] = []
+_webhook_auth_token: str = ""
+_webhook_timeout_sec: float = 8.0
 _ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _timers: dict[int, dict[str, Any]] = {}
 _timer_id_seq: int = 1
@@ -191,6 +206,35 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "include_states": {"type": "boolean", "description": "Include live entity states in response."},
         },
         "required": ["area"],
+    },
+    "media_control": {
+        "type": "object",
+        "properties": {
+            "entity_id": {"type": "string", "description": "media_player entity id"},
+            "action": {"type": "string", "description": "play, pause, stop, volume_set, mute, unmute"},
+            "volume": {"type": "number", "description": "Volume level between 0.0 and 1.0 for volume_set."},
+            "dry_run": {"type": "boolean"},
+        },
+        "required": ["entity_id", "action"],
+    },
+    "weather_lookup": {
+        "type": "object",
+        "properties": {
+            "location": {"type": "string"},
+            "units": {"type": "string", "description": "metric or imperial"},
+        },
+        "required": ["location"],
+    },
+    "webhook_trigger": {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string"},
+            "method": {"type": "string"},
+            "payload": {"type": "object"},
+            "headers": {"type": "object"},
+            "timeout_sec": {"type": "number"},
+        },
+        "required": ["url"],
     },
     "timer_create": {
         "type": "object",
@@ -410,6 +454,9 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "home_assistant_todo": {"action", "entity_id"},
     "home_assistant_timer": {"action", "entity_id"},
     "home_assistant_area_entities": {"area"},
+    "media_control": {"entity_id", "action"},
+    "weather_lookup": {"location"},
+    "webhook_trigger": {"url"},
     "timer_create": {"duration"},
     "timer_list": set(),
     "timer_cancel": set(),
@@ -455,6 +502,8 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _home_conversation_permission_profile
     global _todoist_permission_profile, _notification_permission_profile
     global _todoist_timeout_sec, _pushover_timeout_sec
+    global _weather_units, _weather_timeout_sec
+    global _webhook_allowlist, _webhook_auth_token, _webhook_timeout_sec
     global _timer_id_seq, _reminder_id_seq
     _config = config
     _memory = memory_store
@@ -480,6 +529,13 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
         _notification_permission_profile = "allow"
     _todoist_timeout_sec = float(getattr(config, "todoist_timeout_sec", 10.0))
     _pushover_timeout_sec = float(getattr(config, "pushover_timeout_sec", 10.0))
+    _weather_units = str(getattr(config, "weather_units", "metric")).strip().lower()
+    if _weather_units not in {"metric", "imperial"}:
+        _weather_units = "metric"
+    _weather_timeout_sec = float(getattr(config, "weather_timeout_sec", 8.0))
+    _webhook_allowlist = [str(host).strip().lower() for host in getattr(config, "webhook_allowlist", []) if str(host).strip()]
+    _webhook_auth_token = str(getattr(config, "webhook_auth_token", "")).strip()
+    _webhook_timeout_sec = float(getattr(config, "webhook_timeout_sec", 8.0))
     _action_last_seen.clear()
     _ha_state_cache.clear()
     _timers.clear()
@@ -496,7 +552,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
 
 
 def _tool_permitted(name: str) -> bool:
-    if _home_permission_profile == "readonly" and name == "smart_home":
+    if _home_permission_profile == "readonly" and name in {"smart_home", "media_control"}:
         return False
     if _todoist_permission_profile == "readonly" and name == "todoist_add_task":
         return False
@@ -511,6 +567,7 @@ def _tool_permitted(name: str) -> bool:
             "home_assistant_todo",
             "home_assistant_timer",
             "home_assistant_area_entities",
+            "media_control",
             "calendar_events",
             "calendar_next_event",
         }:
@@ -1290,6 +1347,52 @@ def _parse_calendar_event_timestamp(value: Any) -> float | None:
     if parsed is None:
         return None
     return parsed.timestamp()
+
+
+def _webhook_host_allowed(url: str) -> bool:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return False
+    if not _webhook_allowlist:
+        return False
+    for allowed in _webhook_allowlist:
+        if host == allowed:
+            return True
+        if host.endswith(f".{allowed}"):
+            return True
+    return False
+
+
+def _integration_health_snapshot() -> dict[str, Any]:
+    home_configured = bool(_config and _config.has_home_assistant)
+    todoist_configured = bool(_config and str(_config.todoist_api_token).strip())
+    pushover_configured = bool(_config and str(_config.pushover_api_token).strip() and str(_config.pushover_user_key).strip())
+    return {
+        "home_assistant": {
+            "configured": home_configured,
+            "home_enabled": bool(_config and _config.home_enabled),
+            "permission_profile": _home_permission_profile,
+        },
+        "todoist": {
+            "configured": todoist_configured,
+            "permission_profile": _todoist_permission_profile,
+        },
+        "pushover": {
+            "configured": pushover_configured,
+            "permission_profile": _notification_permission_profile,
+        },
+        "weather": {
+            "provider": "open-meteo",
+            "units_default": _weather_units,
+            "timeout_sec": _weather_timeout_sec,
+        },
+        "webhook": {
+            "allowlist_count": len(_webhook_allowlist),
+            "auth_token_configured": bool(_webhook_auth_token),
+            "timeout_sec": _webhook_timeout_sec,
+        },
+    }
 
 
 def _health_rollup(
@@ -2115,6 +2218,294 @@ async def home_assistant_area_entities(args: dict[str, Any]) -> dict[str, Any]:
         },
     )
     return {"content": [{"type": "text", "text": json.dumps(payload)}]}
+
+
+async def media_control(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("media_control"):
+        record_summary("media_control", "denied", start_time, "policy")
+        _audit("media_control", {"result": "denied", "reason": "policy"})
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _config or not _config.has_home_assistant:
+        _record_service_error("media_control", start_time, "missing_config")
+        _audit("media_control", {"result": "missing_config"})
+        return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
+    entity_id = str(args.get("entity_id", "")).strip().lower()
+    action = str(args.get("action", "")).strip().lower()
+    if not entity_id.startswith("media_player."):
+        _record_service_error("media_control", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "entity_id must be a media_player entity."}]}
+    action_map = {
+        "play": ("media_play", {}),
+        "pause": ("media_pause", {}),
+        "turn_on": ("turn_on", {}),
+        "turn_off": ("turn_off", {}),
+        "toggle": ("toggle", {}),
+        "mute": ("volume_mute", {"is_volume_muted": True}),
+        "unmute": ("volume_mute", {"is_volume_muted": False}),
+        "volume_set": ("volume_set", {}),
+    }
+    if action not in action_map:
+        _record_service_error("media_control", start_time, "invalid_data")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "action must be one of: play, pause, turn_on, turn_off, toggle, mute, unmute, volume_set.",
+                }
+            ]
+        }
+    service, data = action_map[action]
+    payload_data = dict(data)
+    if action == "volume_set":
+        volume = _as_float(args.get("volume"), float("nan"))
+        if not math.isfinite(volume) or volume < 0.0 or volume > 1.0:
+            _record_service_error("media_control", start_time, "invalid_data")
+            return {"content": [{"type": "text", "text": "volume must be a number between 0.0 and 1.0 for volume_set."}]}
+        payload_data["volume_level"] = volume
+    dry_run = _as_bool(args.get("dry_run"), default=False)
+    if dry_run:
+        record_summary("media_control", "dry_run", start_time)
+        _audit(
+            "media_control",
+            {"result": "dry_run", "entity_id": entity_id, "action": action, "data": payload_data},
+        )
+        return {"content": [{"type": "text", "text": f"DRY RUN: media_player.{service} on {entity_id} with {payload_data}"}]}
+    service_data = {"entity_id": entity_id, **payload_data}
+    _, error_code = await _ha_call_service("media_player", service, service_data)
+    if error_code is not None:
+        _record_service_error("media_control", start_time, error_code)
+        _audit("media_control", {"result": error_code, "entity_id": entity_id, "action": action})
+        if error_code == "auth":
+            return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+        if error_code == "not_found":
+            return {"content": [{"type": "text", "text": "Media player entity or service not found."}]}
+        if error_code == "timeout":
+            return {"content": [{"type": "text", "text": "Media control request timed out."}]}
+        if error_code == "cancelled":
+            return {"content": [{"type": "text", "text": "Media control request was cancelled."}]}
+        if error_code == "network_client_error":
+            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant media endpoint."}]}
+        return {"content": [{"type": "text", "text": "Unexpected Home Assistant media control error."}]}
+    record_summary("media_control", "ok", start_time, effect=f"{service} {entity_id}", risk="low")
+    _audit("media_control", {"result": "ok", "entity_id": entity_id, "action": action})
+    return {"content": [{"type": "text", "text": f"Media action executed: {action} on {entity_id}."}]}
+
+
+async def weather_lookup(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("weather_lookup"):
+        record_summary("weather_lookup", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    location = str(args.get("location", "")).strip()
+    if not location:
+        _record_service_error("weather_lookup", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "location is required."}]}
+    units = str(args.get("units", _weather_units)).strip().lower() or _weather_units
+    if units not in {"metric", "imperial"}:
+        _record_service_error("weather_lookup", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "units must be metric or imperial."}]}
+    geocode_params = {
+        "name": location,
+        "count": "1",
+        "language": "en",
+        "format": "json",
+    }
+    timeout = aiohttp.ClientTimeout(total=_weather_timeout_sec)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get("https://geocoding-api.open-meteo.com/v1/search", params=geocode_params) as resp:
+                if resp.status != 200:
+                    _record_service_error("weather_lookup", start_time, "http_error")
+                    return {"content": [{"type": "text", "text": f"Weather geocoding error ({resp.status})."}]}
+                geocode = await resp.json()
+            if not isinstance(geocode, dict):
+                _record_service_error("weather_lookup", start_time, "invalid_json")
+                return {"content": [{"type": "text", "text": "Invalid weather geocoding response."}]}
+            results = geocode.get("results")
+            if not isinstance(results, list) or not results or not isinstance(results[0], dict):
+                record_summary("weather_lookup", "empty", start_time)
+                return {"content": [{"type": "text", "text": f"No weather match found for '{location}'."}]}
+            place = results[0]
+            latitude = place.get("latitude")
+            longitude = place.get("longitude")
+            if not isinstance(latitude, (int, float)) or not isinstance(longitude, (int, float)):
+                _record_service_error("weather_lookup", start_time, "invalid_json")
+                return {"content": [{"type": "text", "text": "Invalid weather geocoding response."}]}
+            forecast_params = {
+                "latitude": str(float(latitude)),
+                "longitude": str(float(longitude)),
+                "current": "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m",
+                "temperature_unit": "fahrenheit" if units == "imperial" else "celsius",
+                "wind_speed_unit": "mph" if units == "imperial" else "kmh",
+            }
+            async with session.get("https://api.open-meteo.com/v1/forecast", params=forecast_params) as resp:
+                if resp.status != 200:
+                    _record_service_error("weather_lookup", start_time, "http_error")
+                    return {"content": [{"type": "text", "text": f"Weather forecast error ({resp.status})."}]}
+                forecast = await resp.json()
+    except asyncio.TimeoutError:
+        _record_service_error("weather_lookup", start_time, "timeout")
+        return {"content": [{"type": "text", "text": "Weather request timed out."}]}
+    except asyncio.CancelledError:
+        _record_service_error("weather_lookup", start_time, "cancelled")
+        return {"content": [{"type": "text", "text": "Weather request was cancelled."}]}
+    except aiohttp.ClientError:
+        _record_service_error("weather_lookup", start_time, "network_client_error")
+        return {"content": [{"type": "text", "text": "Failed to reach weather provider."}]}
+    except Exception:
+        _record_service_error("weather_lookup", start_time, "unexpected")
+        log.exception("Unexpected weather_lookup failure")
+        return {"content": [{"type": "text", "text": "Unexpected weather lookup error."}]}
+
+    if not isinstance(forecast, dict):
+        _record_service_error("weather_lookup", start_time, "invalid_json")
+        return {"content": [{"type": "text", "text": "Invalid weather forecast response."}]}
+    current = forecast.get("current")
+    if not isinstance(current, dict):
+        _record_service_error("weather_lookup", start_time, "invalid_json")
+        return {"content": [{"type": "text", "text": "Invalid weather forecast response."}]}
+    temperature = current.get("temperature_2m")
+    apparent = current.get("apparent_temperature")
+    humidity = current.get("relative_humidity_2m")
+    wind = current.get("wind_speed_10m")
+    code = _as_exact_int(current.get("weather_code"))
+    code_map = {
+        0: "clear",
+        1: "mostly clear",
+        2: "partly cloudy",
+        3: "overcast",
+        45: "fog",
+        48: "fog",
+        51: "drizzle",
+        53: "drizzle",
+        55: "drizzle",
+        61: "rain",
+        63: "rain",
+        65: "heavy rain",
+        71: "snow",
+        73: "snow",
+        75: "heavy snow",
+        95: "thunderstorm",
+    }
+    condition = code_map.get(code, "unknown conditions")
+    place_name = str(place.get("name", location)).strip() or location
+    country = str(place.get("country", "")).strip()
+    place_label = f"{place_name}, {country}" if country else place_name
+    temp_unit = "F" if units == "imperial" else "C"
+    wind_unit = "mph" if units == "imperial" else "km/h"
+    record_summary("weather_lookup", "ok", start_time)
+    return {
+        "content": [
+            {
+                "type": "text",
+                "text": (
+                    f"{place_label}: {temperature}°{temp_unit}, feels like {apparent}°{temp_unit}, "
+                    f"{condition}, humidity {humidity}%, wind {wind} {wind_unit}."
+                ),
+            }
+        ]
+    }
+
+
+async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("webhook_trigger"):
+        record_summary("webhook_trigger", "denied", start_time, "policy")
+        _audit("webhook_trigger", {"result": "denied", "reason": "policy"})
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    url = str(args.get("url", "")).strip()
+    if not url:
+        _record_service_error("webhook_trigger", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "url is required."}]}
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "https":
+        _record_service_error("webhook_trigger", start_time, "policy")
+        _audit("webhook_trigger", {"result": "denied", "reason": "https_required"})
+        return {"content": [{"type": "text", "text": "Webhook URL must use https."}]}
+    if not _webhook_host_allowed(url):
+        _record_service_error("webhook_trigger", start_time, "policy")
+        _audit("webhook_trigger", {"result": "denied", "reason": "allowlist", "host": parsed.hostname or ""})
+        return {"content": [{"type": "text", "text": "Webhook host is not in WEBHOOK_ALLOWLIST."}]}
+    method = str(args.get("method", "POST")).strip().upper() or "POST"
+    if method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+        _record_service_error("webhook_trigger", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "method must be one of GET, POST, PUT, PATCH, DELETE."}]}
+    payload = args.get("payload")
+    if payload is not None and not isinstance(payload, dict):
+        _record_service_error("webhook_trigger", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "payload must be an object when provided."}]}
+    headers_raw = args.get("headers")
+    if headers_raw is not None and not isinstance(headers_raw, dict):
+        _record_service_error("webhook_trigger", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "headers must be an object when provided."}]}
+    headers: dict[str, str] = {}
+    for key, value in (headers_raw or {}).items():
+        clean_key = str(key).strip()
+        if not clean_key:
+            continue
+        headers[clean_key] = str(value)
+    if _webhook_auth_token and not any(key.lower() == "authorization" for key in headers):
+        headers["Authorization"] = f"Bearer {_webhook_auth_token}"
+    timeout_sec = _as_float(
+        args.get("timeout_sec", _webhook_timeout_sec),
+        _webhook_timeout_sec,
+        minimum=0.1,
+        maximum=30.0,
+    )
+    timeout = aiohttp.ClientTimeout(total=timeout_sec)
+    request_kwargs: dict[str, Any] = {"headers": headers or None}
+    if method in {"POST", "PUT", "PATCH"}:
+        request_kwargs["json"] = payload or {}
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.request(method, url, **request_kwargs) as resp:
+                body = await resp.text()
+                if 200 <= resp.status < 300:
+                    record_summary("webhook_trigger", "ok", start_time)
+                    _audit(
+                        "webhook_trigger",
+                        {
+                            "result": "ok",
+                            "method": method,
+                            "host": parsed.hostname or "",
+                            "status": resp.status,
+                            "response_length": len(body),
+                        },
+                    )
+                    body_preview = body[:200]
+                    suffix = f" body={body_preview}" if body_preview else ""
+                    return {"content": [{"type": "text", "text": f"Webhook delivered ({resp.status}).{suffix}"}]}
+                if resp.status in {401, 403}:
+                    _record_service_error("webhook_trigger", start_time, "auth")
+                    _audit(
+                        "webhook_trigger",
+                        {"result": "auth", "method": method, "host": parsed.hostname or "", "status": resp.status},
+                    )
+                    return {"content": [{"type": "text", "text": "Webhook authentication failed."}]}
+                _record_service_error("webhook_trigger", start_time, "http_error")
+                _audit(
+                    "webhook_trigger",
+                    {"result": "http_error", "method": method, "host": parsed.hostname or "", "status": resp.status},
+                )
+                return {"content": [{"type": "text", "text": f"Webhook request failed ({resp.status})."}]}
+    except asyncio.TimeoutError:
+        _record_service_error("webhook_trigger", start_time, "timeout")
+        _audit("webhook_trigger", {"result": "timeout", "method": method, "host": parsed.hostname or ""})
+        return {"content": [{"type": "text", "text": "Webhook request timed out."}]}
+    except asyncio.CancelledError:
+        _record_service_error("webhook_trigger", start_time, "cancelled")
+        _audit("webhook_trigger", {"result": "cancelled", "method": method, "host": parsed.hostname or ""})
+        return {"content": [{"type": "text", "text": "Webhook request was cancelled."}]}
+    except aiohttp.ClientError:
+        _record_service_error("webhook_trigger", start_time, "network_client_error")
+        _audit("webhook_trigger", {"result": "network_client_error", "method": method, "host": parsed.hostname or ""})
+        return {"content": [{"type": "text", "text": "Failed to reach webhook endpoint."}]}
+    except Exception:
+        _record_service_error("webhook_trigger", start_time, "unexpected")
+        _audit("webhook_trigger", {"result": "unexpected", "method": method, "host": parsed.hostname or ""})
+        log.exception("Unexpected webhook_trigger failure")
+        return {"content": [{"type": "text", "text": "Unexpected webhook trigger error."}]}
 
 
 def _list_reminder_payloads(*, include_completed: bool, limit: int, now_ts: float) -> list[dict[str, Any]]:
@@ -2976,6 +3367,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         },
         "timers": _timer_status(),
         "reminders": _reminder_status(),
+        "integrations": _integration_health_snapshot(),
         "memory": memory_status,
         "audit": _audit_status(),
         "recent_tools": recent_tools,
@@ -3007,6 +3399,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "tool_policy",
             "timers",
             "reminders",
+            "integrations",
             "memory",
             "audit",
             "recent_tools",
@@ -3031,6 +3424,13 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "completed_count",
             "due_count",
             "next_due_in_sec",
+        ],
+        "integrations_required": [
+            "home_assistant",
+            "todoist",
+            "pushover",
+            "weather",
+            "webhook",
         ],
         "health_required": [
             "health_level",
@@ -3631,6 +4031,24 @@ home_assistant_area_entities_tool = tool(
     SERVICE_TOOL_SCHEMAS["home_assistant_area_entities"],
 )(home_assistant_area_entities)
 
+media_control_tool = tool(
+    "media_control",
+    "Control media_player entities with a simplified action interface.",
+    SERVICE_TOOL_SCHEMAS["media_control"],
+)(media_control)
+
+weather_lookup_tool = tool(
+    "weather_lookup",
+    "Fetch current weather using the Open-Meteo provider.",
+    SERVICE_TOOL_SCHEMAS["weather_lookup"],
+)(weather_lookup)
+
+webhook_trigger_tool = tool(
+    "webhook_trigger",
+    "Send an outbound webhook request to an allowlisted host.",
+    SERVICE_TOOL_SCHEMAS["webhook_trigger"],
+)(webhook_trigger)
+
 todoist_add_task_tool = tool(
     "todoist_add_task",
     "Create a task in Todoist (project configurable via env).",
@@ -3812,6 +4230,9 @@ def create_services_server():
             home_assistant_todo_tool,
             home_assistant_timer_tool,
             home_assistant_area_entities_tool,
+            media_control_tool,
+            weather_lookup_tool,
+            webhook_trigger_tool,
             todoist_add_task_tool,
             todoist_list_tasks_tool,
             pushover_notify_tool,

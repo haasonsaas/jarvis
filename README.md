@@ -87,6 +87,8 @@ cp .env.example .env
 # Optional: TODOIST_API_TOKEN / TODOIST_PROJECT_ID / TODOIST_PERMISSION_PROFILE
 # Optional: TODOIST_TIMEOUT_SEC=10.0 / PUSHOVER_TIMEOUT_SEC=10.0
 # Optional: PUSHOVER_API_TOKEN / PUSHOVER_USER_KEY / NOTIFICATION_PERMISSION_PROFILE
+# Optional: WEATHER_UNITS=metric|imperial / WEATHER_TIMEOUT_SEC
+# Optional: WEBHOOK_ALLOWLIST=example.com,api.example.com / WEBHOOK_AUTH_TOKEN / WEBHOOK_TIMEOUT_SEC
 ```
 
 Smart home safety defaults:
@@ -103,6 +105,7 @@ Smart home safety defaults:
   - `home_assistant_todo` (`list|add|remove`) for native HA to-do entities
   - `home_assistant_timer` (`state|start|pause|cancel|finish`) for HA timer entities
   - `home_assistant_area_entities` for area-aware entity resolution
+  - `media_control` for simplified `media_player` actions (`play`, `pause`, `volume_set`, etc.)
 - Automation consumers can use:
   - `system_status` (includes `schema_version`)
   - `system_status_contract` (stable required-field contract)
@@ -125,6 +128,11 @@ Smart home safety defaults:
   - reminders: `reminder_create`, `reminder_list`, `reminder_complete`
   - optional due reminder push dispatch: `reminder_notify_due`
   - calendar read helpers via Home Assistant: `calendar_events`, `calendar_next_event`
+- Weather integration:
+  - `weather_lookup` (Open-Meteo backend; `WEATHER_UNITS=metric|imperial`)
+- Webhook integration:
+  - `webhook_trigger` enforces `https` + `WEBHOOK_ALLOWLIST` domain policy
+  - optional bearer token injection via `WEBHOOK_AUTH_TOKEN`
 
 ### First-Time Operator Checklist
 

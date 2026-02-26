@@ -1105,6 +1105,92 @@ class TestServicesTools:
         assert len(payload["states"]) == 2
 
     @pytest.mark.asyncio
+    async def test_media_control_dry_run(self):
+        from jarvis.tools import services
+
+        result = await services.media_control(
+            {"entity_id": "media_player.office", "action": "play", "dry_run": True}
+        )
+        assert "dry run" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_weather_lookup_success(self, aiohttp_response, aiohttp_session_mock):
+        from jarvis.tools import services
+
+        geocode_resp = aiohttp_response(
+            status=200,
+            json_data={
+                "results": [
+                    {
+                        "name": "San Francisco",
+                        "country": "United States",
+                        "latitude": 37.77,
+                        "longitude": -122.42,
+                    }
+                ]
+            },
+        )
+        forecast_resp = aiohttp_response(
+            status=200,
+            json_data={
+                "current": {
+                    "temperature_2m": 64,
+                    "apparent_temperature": 62,
+                    "relative_humidity_2m": 55,
+                    "weather_code": 2,
+                    "wind_speed_10m": 10,
+                }
+            },
+        )
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_session_cls.return_value = aiohttp_session_mock(get=[geocode_resp, forecast_resp])
+            result = await services.weather_lookup({"location": "San Francisco"})
+        text = result["content"][0]["text"].lower()
+        assert "san francisco" in text
+        assert "partly cloudy" in text
+
+    @pytest.mark.asyncio
+    async def test_webhook_trigger_enforces_allowlist(self):
+        from jarvis.tools import services
+
+        cfg = services._config
+        assert cfg is not None
+        cfg.webhook_allowlist = ["example.com"]
+        services.bind(cfg)
+        result = await services.webhook_trigger({"url": "https://malicious.test/hook"})
+        assert "allowlist" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_webhook_trigger_success_injects_auth_token(self):
+        from jarvis.tools import services
+
+        cfg = services._config
+        assert cfg is not None
+        cfg.webhook_allowlist = ["example.com"]
+        cfg.webhook_auth_token = "secret-token"
+        services.bind(cfg)
+
+        response = AsyncMock()
+        response.status = 200
+        response.text = AsyncMock(return_value="ok")
+        context = AsyncMock()
+        context.__aenter__ = AsyncMock(return_value=response)
+        context.__aexit__ = AsyncMock(return_value=False)
+
+        session = AsyncMock()
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock(return_value=False)
+        session.request = MagicMock(return_value=context)
+
+        with patch("aiohttp.ClientSession", return_value=session):
+            result = await services.webhook_trigger(
+                {"url": "https://api.example.com/hooks/jarvis", "method": "POST", "payload": {"ok": True}}
+            )
+        assert "webhook delivered" in result["content"][0]["text"].lower()
+        call_headers = session.request.call_args.kwargs["headers"]
+        assert call_headers["Authorization"] == "Bearer secret-token"
+
+    @pytest.mark.asyncio
     async def test_reminder_create_list_complete_lifecycle(self, tmp_path):
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
@@ -2457,6 +2543,9 @@ class TestServicesTools:
         assert "active_count" in payload["timers"]
         assert "reminders" in payload
         assert "pending_count" in payload["reminders"]
+        assert "integrations" in payload
+        assert "weather" in payload["integrations"]
+        assert "webhook" in payload["integrations"]
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
 
     @pytest.mark.asyncio
@@ -2472,6 +2561,7 @@ class TestServicesTools:
         assert "home_conversation_permission_profile" in payload["tool_policy_required"]
         assert "timers_required" in payload
         assert "reminders_required" in payload
+        assert "integrations_required" in payload
 
     @pytest.mark.asyncio
     async def test_system_status_handles_recent_tools_failure(self, tmp_path, monkeypatch):

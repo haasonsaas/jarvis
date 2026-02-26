@@ -7,27 +7,27 @@ Canonical tool error taxonomy shared by service tools and telemetry.
 | Error code | Owning tool families |
 |---|---|
 | `api_error` | `pushover_notify`, `reminder_notify_due` |
-| `auth` | `smart_home`, `smart_home_state`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify` |
-| `cancelled` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify` |
-| `http_error` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify` |
-| `invalid_data` | `smart_home`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `timer_*`, `reminder_*`, `calendar_*`, `task_plan_*`, `memory_*` |
-| `invalid_json` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify` |
+| `auth` | `smart_home`, `smart_home_state`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `webhook_trigger` |
+| `cancelled` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `weather_lookup`, `webhook_trigger` |
+| `http_error` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `weather_lookup`, `webhook_trigger` |
+| `invalid_data` | `smart_home`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `media_control`, `weather_lookup`, `webhook_trigger`, `timer_*`, `reminder_*`, `calendar_*`, `task_plan_*`, `memory_*` |
+| `invalid_json` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `weather_lookup` |
 | `invalid_plan` | `task_plan_*` |
 | `invalid_status` | `task_plan_update` |
 | `invalid_steps` | `task_plan_create` |
 | `missing_config` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `reminder_notify_due` |
 | `missing_entity` | `smart_home_state`, `home_assistant_capabilities` |
-| `missing_fields` | `smart_home`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `timer_cancel`, `reminder_create`, `reminder_complete`, `todoist_add_task`, `pushover_notify` |
+| `missing_fields` | `smart_home`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `weather_lookup`, `webhook_trigger`, `timer_cancel`, `reminder_create`, `reminder_complete`, `todoist_add_task`, `pushover_notify` |
 | `missing_plan` | `task_plan_*` |
 | `missing_query` | `memory_search` |
 | `missing_store` | `memory_*`, `task_plan_*` |
 | `missing_text` | `memory_add` |
-| `network_client_error` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify` |
+| `network_client_error` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `weather_lookup`, `webhook_trigger` |
 | `not_found` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `timer_cancel`, `reminder_complete`, `task_plan_*`, `calendar_*` |
-| `policy` | cross-cutting tool policy enforcement (`smart_home*`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `reminder_notify_due`, allow/deny lists) |
+| `policy` | cross-cutting tool policy enforcement (`smart_home*`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `media_control`, `webhook_trigger`, `reminder_notify_due`, allow/deny lists) |
 | `storage_error` | `memory_*`, `task_plan_*`, `timer_*`, `reminder_*` |
 | `summary_unavailable` | `tool_summary*`, `system_status` |
-| `timeout` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify` |
+| `timeout` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `weather_lookup`, `webhook_trigger` |
 | `unexpected` | cross-cutting runtime guard |
 | `unknown_error` | fallback normalization bucket |
 

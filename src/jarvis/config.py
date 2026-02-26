@@ -136,6 +136,11 @@ class Config:
     pushover_user_key: str = field(default_factory=lambda: os.environ.get("PUSHOVER_USER_KEY", ""))
     notification_permission_profile: str = field(default_factory=lambda: os.environ.get("NOTIFICATION_PERMISSION_PROFILE", "allow"))
     pushover_timeout_sec: float = field(default_factory=lambda: _env_positive_float("PUSHOVER_TIMEOUT_SEC", 10.0))
+    weather_units: str = field(default_factory=lambda: os.environ.get("WEATHER_UNITS", "metric"))
+    weather_timeout_sec: float = field(default_factory=lambda: _env_positive_float("WEATHER_TIMEOUT_SEC", 8.0))
+    webhook_allowlist: list[str] = field(default_factory=lambda: _env_list("WEBHOOK_ALLOWLIST"))
+    webhook_auth_token: str = field(default_factory=lambda: os.environ.get("WEBHOOK_AUTH_TOKEN", ""))
+    webhook_timeout_sec: float = field(default_factory=lambda: _env_positive_float("WEBHOOK_TIMEOUT_SEC", 8.0))
 
     # Quick toggles
     motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)
@@ -176,6 +181,10 @@ class Config:
             raise ValueError("todoist_timeout_sec must be > 0")
         if self.pushover_timeout_sec <= 0.0:
             raise ValueError("pushover_timeout_sec must be > 0")
+        if self.weather_timeout_sec <= 0.0:
+            raise ValueError("weather_timeout_sec must be > 0")
+        if self.webhook_timeout_sec <= 0.0:
+            raise ValueError("webhook_timeout_sec must be > 0")
         self.startup_warnings = self._collect_startup_warnings()
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
@@ -185,6 +194,7 @@ class Config:
         )
         self.todoist_permission_profile = self._normalize_todoist_permission_profile(self.todoist_permission_profile)
         self.notification_permission_profile = self._normalize_notification_permission_profile(self.notification_permission_profile)
+        self.weather_units = self._normalize_weather_units(self.weather_units)
         if _env_is_set("BACKCHANNEL_STYLE") and self.backchannel_style == "balanced":
             raw = os.environ.get("BACKCHANNEL_STYLE", "")
             if raw.strip().lower() not in {"quiet", "balanced", "expressive"}:
@@ -212,6 +222,10 @@ class Config:
             raw = os.environ.get("NOTIFICATION_PERMISSION_PROFILE", "")
             if raw.strip().lower() not in {"off", "allow"}:
                 self.startup_warnings.append("NOTIFICATION_PERMISSION_PROFILE invalid; using allow.")
+        if _env_is_set("WEATHER_UNITS") and self.weather_units == "metric":
+            raw = os.environ.get("WEATHER_UNITS", "")
+            if raw.strip().lower() not in {"metric", "imperial"}:
+                self.startup_warnings.append("WEATHER_UNITS invalid; using metric.")
 
     @staticmethod
     def _normalize_backchannel_style(style: str) -> str:
@@ -254,6 +268,13 @@ class Config:
         if normalized in {"off", "allow"}:
             return normalized
         return "allow"
+
+    @staticmethod
+    def _normalize_weather_units(units: str) -> str:
+        normalized = (units or "metric").strip().lower()
+        if normalized in {"metric", "imperial"}:
+            return normalized
+        return "metric"
 
     def _collect_startup_warnings(self) -> list[str]:
         warnings: list[str] = []
@@ -306,6 +327,8 @@ class Config:
             ("AUDIT_LOG_BACKUPS", "int", str(self.audit_log_backups)),
             ("TODOIST_TIMEOUT_SEC", "positive_float", str(self.todoist_timeout_sec)),
             ("PUSHOVER_TIMEOUT_SEC", "positive_float", str(self.pushover_timeout_sec)),
+            ("WEATHER_TIMEOUT_SEC", "positive_float", str(self.weather_timeout_sec)),
+            ("WEBHOOK_TIMEOUT_SEC", "positive_float", str(self.webhook_timeout_sec)),
         ]
         for name, kind, fallback in checks:
             raw = os.environ.get(name)
