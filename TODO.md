@@ -50,36 +50,43 @@ This cycle focuses on config strictness, telemetry taxonomy consistency, task-pl
 
 ### 3.4 Reject boolean coercion in robot numeric parsers (`P1`)
 - [x] Prevent `True/False` from being implicitly accepted as float intensity/motion inputs.
-- Why:
-  - Boolean coercion can unintentionally produce maximum-strength motion values (`True -> 1.0`).
-- Acceptance criteria:
-  - Robot `_as_float` treats bools as invalid and falls back to defaults.
-- Test plan:
-  - Add robot-tool tests for bool numeric inputs in `embody` and `run_macro`.
-- Files:
-  - `src/jarvis/tools/robot.py`
-  - `tests/test_tools.py`
 
 ---
 
-## 4) Brain Reliability
+## 4) Store-Level Input Hardening
 
-### 4.1 Memory context lookup fault tolerance (`P1`)
+### 4.1 Strict limit normalization in MemoryStore (`P1`)
+- [x] Apply strict integer limit parsing inside `MemoryStore` for direct callers.
+- Why:
+  - Store methods should be safe even when invoked outside service wrappers.
+- Acceptance criteria:
+  - `search_v2`, `search`, `recent`, and `list_summaries` reject bool/fractional limits and use defaults.
+- Test plan:
+  - Add direct `MemoryStore` tests for bool and fractional limits.
+- Files:
+  - `src/jarvis/memory.py`
+  - `tests/test_memory.py`
+
+---
+
+## 5) Brain Reliability
+
+### 5.1 Memory context lookup fault tolerance (`P1`)
 - [x] Prevent memory lookup failures from aborting response generation.
 
 ---
 
-## 5) Developer Workflow
+## 6) Developer Workflow
 
-### 5.1 Fault target taxonomy coverage (`P2`)
+### 6.1 Fault target taxonomy coverage (`P2`)
 - [x] Expand `test-faults` selectors to include current normalized taxonomy values.
 
-### 5.2 CI enforcement for checks (`P1`)
+### 6.2 CI enforcement for checks (`P1`)
 - [x] Add GitHub Actions workflow to run lint + tests on pushes and pull requests.
 
 ---
 
-## 6) Execution Result
+## 7) Execution Result
 - [x] Lint clean: `uv run ruff check src tests`
 - [x] Test suite green: `uv run pytest -q`
 - [x] Fault subset green: `scripts/test_faults.sh`

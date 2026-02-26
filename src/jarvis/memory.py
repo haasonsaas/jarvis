@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sqlite3
@@ -214,7 +215,7 @@ class MemoryStore:
         cleaned = query.strip()
         if not cleaned:
             return []
-        limit = max(1, min(MAX_QUERY_LIMIT, int(limit)))
+        limit = self._normalize_limit(limit, default=5)
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         keyword_rows = self._search_keyword(
             cleaned,
@@ -243,7 +244,7 @@ class MemoryStore:
         cleaned = query.strip()
         if not cleaned:
             return []
-        limit = max(1, min(MAX_QUERY_LIMIT, int(limit)))
+        limit = self._normalize_limit(limit, default=5)
         cur = self._conn.cursor()
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         if self._fts_enabled:
@@ -270,7 +271,7 @@ class MemoryStore:
         return [self._row_to_memory(row) for row in rows]
 
     def recent(self, *, limit: int = 5, kind: str | None = None, sources: list[str] | None = None) -> list[MemoryEntry]:
-        limit = max(1, min(MAX_QUERY_LIMIT, int(limit)))
+        limit = self._normalize_limit(limit, default=5)
         cur = self._conn.cursor()
         source_clause, source_params = self._source_filter(sources)
         if kind:
@@ -426,7 +427,7 @@ class MemoryStore:
         self._conn.commit()
 
     def list_summaries(self, *, limit: int = 5) -> list[MemorySummary]:
-        limit = max(1, min(MAX_QUERY_LIMIT, int(limit)))
+        limit = self._normalize_limit(limit, default=5)
         cur = self._conn.cursor()
         rows = cur.execute(
             "SELECT * FROM memory_summaries ORDER BY updated_at DESC LIMIT ?",
@@ -509,6 +510,30 @@ class MemoryStore:
             sensitivity=float(row["sensitivity"]),
             source=str(row["source"]),
         )
+
+    @staticmethod
+    def _normalize_limit(value: Any, *, default: int = 5) -> int:
+        parsed = default
+        if isinstance(value, bool):
+            parsed = default
+        elif isinstance(value, int):
+            parsed = value
+        elif isinstance(value, float):
+            if math.isfinite(value) and value.is_integer():
+                parsed = int(value)
+        elif isinstance(value, str):
+            text = value.strip()
+            if text and (text.isdigit() or (text.startswith(("+", "-")) and text[1:].isdigit())):
+                try:
+                    parsed = int(text)
+                except ValueError:
+                    parsed = default
+        else:
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError, OverflowError):
+                parsed = default
+        return max(1, min(MAX_QUERY_LIMIT, parsed))
 
     def _build_fts_query(self, text: str) -> str:
         tokens = re.findall(r"\w+", text.lower())

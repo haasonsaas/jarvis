@@ -111,6 +111,28 @@ def test_search_limits_are_clamped_in_store(tmp_path):
         store.close()
 
 
+def test_recent_bool_limit_uses_default_store_limit(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        for idx in range(10):
+            store.add_memory(f"memory {idx}")
+        rows = store.recent(limit=True)
+        assert len(rows) == 5
+    finally:
+        store.close()
+
+
+def test_search_fractional_limit_uses_default_store_limit(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        for idx in range(10):
+            store.add_memory(f"memory {idx}")
+        rows = store.search_v2("memory", limit=2.7)
+        assert len(rows) == 5
+    finally:
+        store.close()
+
+
 def test_memory_optimize_and_vacuum_update_status(tmp_path):
     store = MemoryStore(str(tmp_path / "memory.sqlite"))
     try:
