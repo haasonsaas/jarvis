@@ -90,6 +90,7 @@ Smart home safety defaults:
 - `HOME_PERMISSION_PROFILE=readonly` disables mutating `smart_home` actions but keeps `smart_home_state`.
 - Operational runbook: [`docs/operations/home-control-policy.md`](docs/operations/home-control-policy.md).
 - Integration runbook: [`docs/operations/integration-policy.md`](docs/operations/integration-policy.md).
+- Release checklist: [`docs/operations/release-checklist.md`](docs/operations/release-checklist.md).
 - Todoist integration:
   - `TODOIST_PERMISSION_PROFILE=readonly|control`
   - `readonly` allows `todoist_list_tasks` and denies `todoist_add_task`
@@ -98,6 +99,23 @@ Smart home safety defaults:
   - `NOTIFICATION_PERMISSION_PROFILE=off|allow`
   - `off` denies `pushover_notify`
   - `allow` enables `pushover_notify`
+
+### First-Time Operator Checklist
+
+1. Copy `.env.example` to `.env`, then set required keys: `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY`.
+2. If using integrations, set both values for each pair:
+   - `HASS_URL` and `HASS_TOKEN`
+   - `PUSHOVER_API_TOKEN` and `PUSHOVER_USER_KEY`
+3. Choose explicit permission profiles before first run:
+   - `HOME_PERMISSION_PROFILE=readonly` (recommended first boot)
+   - `TODOIST_PERMISSION_PROFILE=readonly`
+   - `NOTIFICATION_PERMISSION_PROFILE=off`
+4. Run local validation gates:
+   - `make check`
+   - `make test-faults`
+5. Start in simulation mode and confirm no startup warnings are emitted:
+   - `uv run python -m jarvis --sim --no-vision`
+6. If Home Assistant is enabled, run a `dry_run=true` smart-home request first before any live execute.
 
 ## Usage
 
@@ -146,6 +164,18 @@ Workflow linting and YAML hygiene run via
 [`workflow-sanity.yml`](.github/workflows/workflow-sanity.yml).
 Nightly soak coverage is scheduled in
 [`nightly-soak.yml`](.github/workflows/nightly-soak.yml).
+
+### CI Workflow Intent and Failure Routing
+
+| Workflow | Intent | Failure routing (first stop) |
+|---|---|---|
+| `ci.yml` / `lint` | Static checks (`ruff`) | `src/`, `tests/`, and Python style issues in the failing path |
+| `ci.yml` / `tests` | Full regression (`pytest`) | Failing test module and corresponding implementation area |
+| `ci.yml` / `faults` | Fault-injection taxonomy + error-path contract | `tests/test_tools.py` fault tests and `src/jarvis/tools/services.py` normalization paths |
+| `workflow-sanity.yml` | Workflow hygiene (`actionlint`, tabs, script executability/shebang) | `.github/workflows/*` and `scripts/*.sh` |
+| `shellcheck.yml` | Shell script linting | `scripts/*.sh` syntax/quoting/safety |
+| `security.yml` | Scheduled/PR CodeQL scan | Security findings in SARIF report; route by file ownership |
+| `nightly-soak.yml` | Long-run stability signal | `tests/test_main_audio.py -k soak`, audio/runtime regressions |
 
 ## Project Structure
 

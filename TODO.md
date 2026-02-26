@@ -117,11 +117,11 @@ Files: `tests/conftest.py`, `tests/test_tools.py`, `tests/test_*.py`
 - [x] `D01` Create external integrations runbook (Todoist/Pushover policy + troubleshooting).
 - [x] `D02` Update home-control runbook with redaction and cooldown semantics.
 - [x] `D03` Reconcile architecture diagram MCP/tool labels with current capabilities.
-- [ ] `D04` Add runbook section for CI workflow intent and failure routing.
-- [ ] `D05` Add operator checklist for first-time env setup validation.
-- [ ] `D06` Add troubleshooting matrix mapping common errors to likely fixes.
-- [ ] `D07` Add short section on audit location/rotation/redaction guarantees.
-- [ ] `D08` Add release checklist doc for safe rollout of policy changes.
+- [x] `D04` Add runbook section for CI workflow intent and failure routing.
+- [x] `D05` Add operator checklist for first-time env setup validation.
+- [x] `D06` Add troubleshooting matrix mapping common errors to likely fixes.
+- [x] `D07` Add short section on audit location/rotation/redaction guarantees.
+- [x] `D08` Add release checklist doc for safe rollout of policy changes.
 
 Files: `README.md`, `docs/operations/home-control-policy.md`, `docs/operations/integration-policy.md`, `docs/operations/release-checklist.md`
 

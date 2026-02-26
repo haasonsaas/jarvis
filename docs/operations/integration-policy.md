@@ -47,11 +47,29 @@ This runbook covers operational setup and policy behavior for Todoist and Pushov
   - `pushover_configured`
   - policy snapshot for todoist/notification profiles
 
-## 5) Security and Audit
-- Todoist and Pushover audits intentionally store metadata only.
-- Smart-home service payloads are sensitive-key redacted before audit write.
+## 5) Audit Location, Rotation, and Redaction Guarantees
+- Audit path: `~/.jarvis/audit.jsonl`
+- Rotation settings:
+  - `AUDIT_LOG_MAX_BYTES` default is `1000000`
+  - `AUDIT_LOG_BACKUPS` default is `3`
+  - Backups roll as `audit.jsonl.1` through `audit.jsonl.N`
+- Todoist and Pushover audits intentionally store metadata-only summaries.
+- Smart-home payload data is redacted by sensitive key token matching before audit write (`token`, `secret`, `code`, `pin`, `password`, etc.).
+- Redacted values are persisted as `***REDACTED***`.
 
-## 6) Troubleshooting
+## 6) Troubleshooting Matrix
+
+| Symptom | Likely cause | Operator action |
+|---|---|---|
+| `Todoist not configured. Set TODOIST_API_TOKEN.` | Missing/empty `TODOIST_API_TOKEN` | Set token in `.env` and restart process |
+| `Todoist authentication failed. Check TODOIST_API_TOKEN.` | Invalid or revoked Todoist token | Rotate token and retest with `todoist_list_tasks` |
+| `Pushover not configured. Set PUSHOVER_API_TOKEN and PUSHOVER_USER_KEY.` | One or both Pushover fields are missing | Set both values and restart process |
+| `Notification policy blocks pushover_notify` (tool denied) | `NOTIFICATION_PERMISSION_PROFILE=off` | Switch to `allow` if operationally approved |
+| `Todoist policy blocks todoist_add_task` (tool denied) | `TODOIST_PERMISSION_PROFILE=readonly` | Switch to `control` for write access |
+| `invalid_json` result from Todoist/Pushover path | Upstream payload shape changed or transient invalid response | Retry once, then inspect API response and update parser tests |
+| Repeated `http_error` / `network_client_error` | Upstream outage, DNS, connectivity, or timeout issue | Validate network path, check service status page, rerun `make test-faults` |
+
+## 7) Triage Flow
 1. Check credential env vars are set and non-empty.
 2. Check profile env vars:
    - `TODOIST_PERMISSION_PROFILE`
