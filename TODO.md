@@ -241,3 +241,15 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - [x] Document exact Todoist and notification profile values and behavior in README safety section.
 - Files:
   - `README.md`
+
+---
+
+## 19) Home Action Idempotency Correctness
+
+### 19.1 `turn_off` no-op criteria (`P1`)
+- [x] Only short-circuit `turn_off` as no-op when current state is explicitly `off`.
+- [x] Do not no-op for `unknown`/`unavailable`; allow execution attempt.
+- [x] Add regression test proving `turn_off` executes when state is `unknown`.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`

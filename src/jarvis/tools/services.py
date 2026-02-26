@@ -730,7 +730,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         if action == "turn_on" and current_state not in {"off", "unavailable", "unknown"}:
             record_summary("smart_home", "noop", start_time, effect=f"already_on {entity_id}", risk="low")
             return {"content": [{"type": "text", "text": f"No-op: {entity_id} is already {current_state}."}]}
-        if action == "turn_off" and current_state in {"off", "unavailable", "unknown"}:
+        if action == "turn_off" and current_state == "off":
             record_summary("smart_home", "noop", start_time, effect=f"already_off {entity_id}", risk="low")
             return {"content": [{"type": "text", "text": f"No-op: {entity_id} is already {current_state}."}]}
 

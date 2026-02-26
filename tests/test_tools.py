@@ -623,6 +623,39 @@ class TestServicesTools:
         mock_session.post.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_smart_home_turn_off_unknown_state_executes(self):
+        from jarvis.tools.services import smart_home
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            state_resp = AsyncMock()
+            state_resp.status = 200
+            state_resp.json = AsyncMock(return_value={"state": "unknown", "attributes": {}})
+            post_resp = AsyncMock()
+            post_resp.status = 200
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=state_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session.post = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=post_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
+
+            result = await smart_home({
+                "domain": "light",
+                "action": "turn_off",
+                "entity_id": "light.kitchen",
+                "dry_run": False,
+            })
+
+        assert "done:" in result["content"][0]["text"].lower()
+        mock_session.post.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_smart_home_success_invalidates_cached_entity_state(self):
         from jarvis.tools import services
 
