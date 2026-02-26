@@ -16,16 +16,16 @@ This backlog is intentionally extensive (50+ items) and is based on a fresh rese
 
 ## 1) Safety and Policy Layer (10 items)
 
-- [ ] `S01` Restrict mutating `smart_home` to an explicit domain allowlist; deny unknown domains by default.
-- [ ] `S02` Add tests that unknown mutating domains are rejected before any HTTP request.
-- [ ] `S03` Expand sensitive-domain set with policy rationale and tests.
-- [ ] `S04` Normalize `domain` and `entity_id` inputs (trim/lower) before comparisons.
-- [ ] `S05` Add tests for mixed-case + whitespace domain/entity inputs.
-- [ ] `S06` Add explicit validation for empty/invalid `action` strings with normalized `invalid_data`.
-- [ ] `S07` Add optional stricter mode for requiring `confirm=true` on all non-dry-run actions.
-- [ ] `S08` Add tests for stricter confirm mode branches.
-- [ ] `S09` Add policy diagnostics in `system_status` for strict-confirm mode.
-- [ ] `S10` Add a policy decision trace field in audit records (`allowed|denied|dry_run`).
+- [x] `S01` Restrict mutating `smart_home` to an explicit domain allowlist; deny unknown domains by default.
+- [x] `S02` Add tests that unknown mutating domains are rejected before any HTTP request.
+- [x] `S03` Expand sensitive-domain set with policy rationale and tests.
+- [x] `S04` Normalize `domain` and `entity_id` inputs (trim/lower) before comparisons.
+- [x] `S05` Add tests for mixed-case + whitespace domain/entity inputs.
+- [x] `S06` Add explicit validation for empty/invalid `action` strings with normalized `invalid_data`.
+- [x] `S07` Add optional stricter mode for requiring `confirm=true` on all non-dry-run actions.
+- [x] `S08` Add tests for stricter confirm mode branches.
+- [x] `S09` Add policy diagnostics in `system_status` for strict-confirm mode.
+- [x] `S10` Add a policy decision trace field in audit records (`allowed|denied|dry_run`).
 
 Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools.py`, `tests/test_config.py`
 

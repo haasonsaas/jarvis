@@ -16,9 +16,13 @@ For `smart_home` requests:
 - `domain`, `action`, and `entity_id` are required.
 - `entity_id` domain must match `domain`.
 - Known domain/action pairs are validated before execution.
-- Sensitive domains (`lock`, `alarm_control_panel`, `cover`) require:
+- Sensitive domains (`lock`, `alarm_control_panel`, `cover`, `climate`) require:
   - `dry_run=false`
   - `confirm=true`
+- Rationale:
+  - `lock`, `alarm_control_panel`, `cover`: physical security and access impact.
+  - `climate`: safety/comfort impact and higher blast radius in shared spaces.
+- Optional strict mode: `HOME_REQUIRE_CONFIRM_EXECUTE=true` requires `confirm=true` for every non-dry-run execute, regardless of domain.
 - Idempotency short-circuits:
   - `turn_on` returns no-op if already on.
   - `turn_off` returns no-op if already off.

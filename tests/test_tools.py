@@ -324,6 +324,7 @@ class TestServicesTools:
         assert payload["list"][4]["passcode"] == "***REDACTED***"
         assert payload["label"] == "front"
         assert payload["nested"]["brightness"] == 10
+        assert details["policy_decision"] == "dry_run"
 
     def test_metadata_only_audit_helper_strips_raw_fields(self):
         from jarvis.tools import services
@@ -589,16 +590,142 @@ class TestServicesTools:
         assert "DRY RUN" not in text
 
     @pytest.mark.asyncio
-    async def test_smart_home_sensitive_execute_requires_confirm(self):
-        from jarvis.tools.services import smart_home
+    async def test_smart_home_sensitive_execute_requires_confirm(self, monkeypatch):
+        from jarvis.tools import services
 
-        result = await smart_home({
+        audit_calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
+
+        result = await services.smart_home({
             "domain": "lock",
             "action": "unlock",
             "entity_id": "lock.front_door",
             "dry_run": False,
         })
         assert "requires confirm=true" in result["content"][0]["text"].lower()
+        _, details = audit_calls[-1]
+        assert details["policy_decision"] == "denied"
+        assert details["reason"] == "sensitive_confirm_required"
+
+    @pytest.mark.asyncio
+    async def test_smart_home_climate_execute_requires_confirm(self):
+        from jarvis.tools.services import smart_home
+
+        result = await smart_home({
+            "domain": "climate",
+            "action": "set_hvac_mode",
+            "entity_id": "climate.thermostat",
+            "dry_run": False,
+        })
+        assert "requires confirm=true" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_rejects_unknown_domain_before_http(self):
+        from jarvis.tools.services import smart_home
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await smart_home(
+                {
+                    "domain": "script",
+                    "action": "turn_on",
+                    "entity_id": "script.movie_mode",
+                    "dry_run": True,
+                }
+            )
+
+        assert "unsupported domain" in result["content"][0]["text"].lower()
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_normalizes_domain_action_entity_inputs(self):
+        from jarvis.tools.services import smart_home
+
+        result = await smart_home(
+            {
+                "domain": " Light ",
+                "action": " Turn_On ",
+                "entity_id": " LIGHT.KITCHEN ",
+                "dry_run": True,
+            }
+        )
+        assert "dry run" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("action", ["", " ", "turn on", "turn-on", "turn.on"])
+    async def test_smart_home_rejects_invalid_action_format(self, action):
+        from jarvis.tools.services import smart_home
+
+        result = await smart_home(
+            {
+                "domain": "light",
+                "action": action,
+                "entity_id": "light.kitchen",
+                "dry_run": True,
+            }
+        )
+        assert "snake_case service name" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_strict_confirm_mode_denies_unconfirmed_execute(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.home_require_confirm_execute = True
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await services.smart_home(
+                {
+                    "domain": "light",
+                    "action": "turn_on",
+                    "entity_id": "light.strict_mode",
+                    "dry_run": False,
+                }
+            )
+
+        assert "home_require_confirm_execute=true" in result["content"][0]["text"].lower()
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_strict_confirm_mode_allows_confirmed_execute(
+        self, tmp_path, monkeypatch, aiohttp_response, aiohttp_session_mock
+    ):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.home_require_confirm_execute = True
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        audit_calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            state_resp = aiohttp_response(status=200, json_data={"state": "off", "attributes": {}})
+            post_resp = aiohttp_response(status=200)
+            mock_session = aiohttp_session_mock(get=state_resp, post=post_resp)
+            mock_session_cls.return_value = mock_session
+
+            result = await services.smart_home(
+                {
+                    "domain": "light",
+                    "action": "turn_on",
+                    "entity_id": "light.strict_mode_ok",
+                    "dry_run": False,
+                    "confirm": True,
+                }
+            )
+
+        assert "done:" in result["content"][0]["text"].lower()
+        _, details = audit_calls[-1]
+        assert details["policy_decision"] == "allowed"
 
     @pytest.mark.asyncio
     async def test_smart_home_rejects_entity_domain_mismatch(self):
@@ -1514,6 +1641,7 @@ class TestServicesTools:
         payload = json.loads(result["content"][0]["text"])
         assert "local_time" in payload
         assert "tool_policy" in payload
+        assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
         assert "memory" in payload
         assert "audit" in payload
         assert payload["audit"]["redaction_enabled"] is True

@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 AUDIT_LOG = Path.home() / ".jarvis" / "audit.jsonl"
 
 # Domains that always default to dry_run
-SENSITIVE_DOMAINS = {"lock", "alarm_control_panel", "cover"}
+SENSITIVE_DOMAINS = {"lock", "alarm_control_panel", "cover", "climate"}
 ACTION_COOLDOWN_SEC = 2.0
 ACTION_HISTORY_RETENTION_SEC = 3600.0
 ACTION_HISTORY_MAX_ENTRIES = 2000
@@ -52,6 +52,7 @@ _tool_denylist: list[str] = []
 _audit_log_max_bytes: int = 1_000_000
 _audit_log_backups: int = 3
 _home_permission_profile: str = "control"
+_home_require_confirm_execute: bool = False
 _todoist_permission_profile: str = "control"
 _notification_permission_profile: str = "allow"
 _ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
@@ -282,7 +283,7 @@ def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _config, _memory, _audit_log_max_bytes, _audit_log_backups
-    global _home_permission_profile, _todoist_permission_profile, _notification_permission_profile
+    global _home_permission_profile, _home_require_confirm_execute, _todoist_permission_profile, _notification_permission_profile
     _config = config
     _memory = memory_store
     _audit_log_max_bytes = int(config.audit_log_max_bytes)
@@ -290,6 +291,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _home_permission_profile = str(getattr(config, "home_permission_profile", "control")).strip().lower()
     if _home_permission_profile not in {"readonly", "control"}:
         _home_permission_profile = "control"
+    _home_require_confirm_execute = bool(getattr(config, "home_require_confirm_execute", False))
     _todoist_permission_profile = str(getattr(config, "todoist_permission_profile", "control")).strip().lower()
     if _todoist_permission_profile not in {"readonly", "control"}:
         _todoist_permission_profile = "control"
@@ -613,7 +615,7 @@ def _ha_invalidate_state(entity_id: str) -> None:
 def _ha_action_allowed(domain: str, action: str) -> bool:
     allowed = HA_MUTATING_ALLOWED_ACTIONS.get(domain)
     if allowed is None:
-        return True
+        return False
     return action in allowed
 
 
@@ -684,16 +686,22 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("smart_home", start_time, "missing_config")
         return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
 
-    domain = str(args.get("domain", "")).strip()
-    action = str(args.get("action", "")).strip()
-    entity_id = str(args.get("entity_id", "")).strip()
+    domain = str(args.get("domain", "")).strip().lower()
+    action = str(args.get("action", "")).strip().lower()
+    entity_id = str(args.get("entity_id", "")).strip().lower()
     data = args.get("data", {})
-    if not domain or not action or not entity_id:
+    if not domain or not entity_id:
         _record_service_error("smart_home", start_time, "missing_fields")
-        return {"content": [{"type": "text", "text": "Domain, action, and entity_id are required."}]}
+        return {"content": [{"type": "text", "text": "Domain and entity_id are required."}]}
+    if not action or any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789_" for ch in action):
+        _record_service_error("smart_home", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "Action must be a non-empty snake_case service name."}]}
     if not isinstance(data, dict):
         _record_service_error("smart_home", start_time, "invalid_data")
         return {"content": [{"type": "text", "text": "Service data must be an object."}]}
+    if domain not in HA_MUTATING_ALLOWED_ACTIONS:
+        _record_service_error("smart_home", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": f"Unsupported domain for smart_home: {domain}"}]}
     entity_domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
     if not entity_domain or entity_domain != domain:
         _record_service_error("smart_home", start_time, "invalid_data")
@@ -704,8 +712,39 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     # Force dry_run for sensitive domains unless explicitly set to false
     dry_run = _as_bool(args.get("dry_run"), default=domain in SENSITIVE_DOMAINS)
     confirm = _as_bool(args.get("confirm"), default=False)
+    if _home_require_confirm_execute and not dry_run and not confirm:
+        _record_service_error("smart_home", start_time, "policy")
+        _audit(
+            "smart_home",
+            {
+                "domain": domain,
+                "action": action,
+                "entity_id": entity_id,
+                "data": _redact_sensitive_for_audit(data),
+                "dry_run": dry_run,
+                "confirm": confirm,
+                "state": "unknown",
+                "policy_decision": "denied",
+                "reason": "strict_confirm_required",
+            },
+        )
+        return {"content": [{"type": "text", "text": "Action requires confirm=true when HOME_REQUIRE_CONFIRM_EXECUTE=true."}]}
     if domain in SENSITIVE_DOMAINS and not dry_run and not confirm:
         _record_service_error("smart_home", start_time, "policy")
+        _audit(
+            "smart_home",
+            {
+                "domain": domain,
+                "action": action,
+                "entity_id": entity_id,
+                "data": _redact_sensitive_for_audit(data),
+                "dry_run": dry_run,
+                "confirm": confirm,
+                "state": "unknown",
+                "policy_decision": "denied",
+                "reason": "sensitive_confirm_required",
+            },
+        )
         return {"content": [{"type": "text", "text": "Sensitive action requires confirm=true when dry_run=false."}]}
 
     current_state = "unknown"
@@ -741,6 +780,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     _audit("smart_home", {
         "domain": domain, "action": action, "entity_id": entity_id,
         "data": _redact_sensitive_for_audit(data), "dry_run": dry_run, "confirm": confirm, "state": current_state,
+        "policy_decision": "dry_run" if dry_run else "allowed",
     })
 
     if dry_run:
@@ -1177,6 +1217,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "allow_count": len(_tool_allowlist),
             "deny_count": len(_tool_denylist),
             "home_permission_profile": _home_permission_profile,
+            "home_require_confirm_execute": bool(_home_require_confirm_execute),
             "todoist_permission_profile": _todoist_permission_profile,
             "notification_permission_profile": _notification_permission_profile,
         },

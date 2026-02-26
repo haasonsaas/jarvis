@@ -116,6 +116,7 @@ class Config:
     audit_log_max_bytes: int = field(default_factory=lambda: _env_int("AUDIT_LOG_MAX_BYTES", 1_000_000))
     audit_log_backups: int = field(default_factory=lambda: _env_int("AUDIT_LOG_BACKUPS", 3))
     home_permission_profile: str = field(default_factory=lambda: os.environ.get("HOME_PERMISSION_PROFILE", "control"))
+    home_require_confirm_execute: bool = field(default_factory=lambda: _env_bool("HOME_REQUIRE_CONFIRM_EXECUTE") or False)
     todoist_api_token: str = field(default_factory=lambda: os.environ.get("TODOIST_API_TOKEN", ""))
     todoist_project_id: str = field(default_factory=lambda: os.environ.get("TODOIST_PROJECT_ID", ""))
     todoist_permission_profile: str = field(default_factory=lambda: os.environ.get("TODOIST_PERMISSION_PROFILE", "control"))
@@ -282,6 +283,7 @@ class Config:
             "MOTION_ENABLED",
             "HAND_TRACK_ENABLED",
             "HOME_ENABLED",
+            "HOME_REQUIRE_CONFIRM_EXECUTE",
         ]
         for name in bool_checks:
             raw = os.environ.get(name)

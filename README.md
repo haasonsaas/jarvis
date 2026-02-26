@@ -81,13 +81,15 @@ cp .env.example .env
 # Fill in: ANTHROPIC_API_KEY, ELEVENLABS_API_KEY
 # Optional: HASS_URL, HASS_TOKEN for smart home
 # Optional: HOME_PERMISSION_PROFILE=readonly (state only) or control (default)
+# Optional: HOME_REQUIRE_CONFIRM_EXECUTE=true (require confirm=true on all executes)
 # Optional: TODOIST_API_TOKEN / TODOIST_PROJECT_ID / TODOIST_PERMISSION_PROFILE
 # Optional: PUSHOVER_API_TOKEN / PUSHOVER_USER_KEY / NOTIFICATION_PERMISSION_PROFILE
 ```
 
 Smart home safety defaults:
-- Sensitive domains (`lock`, `alarm_control_panel`, `cover`) require `confirm=true` when `dry_run=false`.
+- Sensitive domains (`lock`, `alarm_control_panel`, `cover`, `climate`) require `confirm=true` when `dry_run=false`.
 - `HOME_PERMISSION_PROFILE=readonly` disables mutating `smart_home` actions but keeps `smart_home_state`.
+- `HOME_REQUIRE_CONFIRM_EXECUTE=true` enforces `confirm=true` for all non-dry-run `smart_home` actions.
 - Operational runbook: [`docs/operations/home-control-policy.md`](docs/operations/home-control-policy.md).
 - Integration runbook: [`docs/operations/integration-policy.md`](docs/operations/integration-policy.md).
 - Release checklist: [`docs/operations/release-checklist.md`](docs/operations/release-checklist.md).

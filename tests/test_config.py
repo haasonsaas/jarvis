@@ -125,6 +125,7 @@ class TestConfig:
         monkeypatch.setenv("BACKCHANNEL_STYLE", "LOUD")
         monkeypatch.setenv("PERSONA_STYLE", "chatty")
         monkeypatch.setenv("HOME_ENABLED", "maybe")
+        monkeypatch.setenv("HOME_REQUIRE_CONFIRM_EXECUTE", "sometimes")
         monkeypatch.setenv("HOME_PERMISSION_PROFILE", "execute-all")
         monkeypatch.setenv("TODOIST_PERMISSION_PROFILE", "write-all")
         monkeypatch.setenv("NOTIFICATION_PERMISSION_PROFILE", "enabled")
@@ -138,6 +139,7 @@ class TestConfig:
         assert "BACKCHANNEL_STYLE invalid" in text
         assert "PERSONA_STYLE invalid" in text
         assert "HOME_ENABLED invalid boolean" in text
+        assert "HOME_REQUIRE_CONFIRM_EXECUTE invalid boolean" in text
         assert "HOME_PERMISSION_PROFILE invalid" in text
         assert "TODOIST_PERMISSION_PROFILE invalid" in text
         assert "NOTIFICATION_PERMISSION_PROFILE invalid" in text
@@ -151,6 +153,15 @@ class TestConfig:
         c = Config()
         assert c.home_enabled is True
         assert c.memory_enabled is True
+        assert c.home_require_confirm_execute is False
+
+    def test_home_require_confirm_execute_env_true(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("HOME_REQUIRE_CONFIRM_EXECUTE", "true")
+        from jarvis.config import Config
+
+        c = Config()
+        assert c.home_require_confirm_execute is True
 
     def test_non_finite_float_env_values_fall_back_to_defaults(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
