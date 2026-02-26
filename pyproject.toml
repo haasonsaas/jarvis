@@ -36,3 +36,8 @@ packages = ["src/jarvis"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "fast: quick unit and integration tests suitable for local iteration",
+    "fault: failure-path and fault-injection focused tests",
+    "slow: long-running soak or stability tests",
+]

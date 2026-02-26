@@ -5,7 +5,7 @@ check:
 	uv run pytest -q
 
 test-fast:
-	uv run pytest -q tests/test_config.py tests/test_memory.py tests/test_tools.py
+	uv run pytest -q tests/test_config.py tests/test_memory.py tests/test_tools_robot.py tests/test_tools_services.py
 
 test-faults:
 	./scripts/test_faults.sh

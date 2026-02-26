@@ -120,6 +120,7 @@ async def test_listen_loop_uses_to_thread_for_input_read():
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_tts_barge_in_soak_harness_stability():
     class FakeTTS:
         async def stream_chunks_async(self, sentence: str):

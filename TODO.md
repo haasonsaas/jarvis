@@ -27,7 +27,7 @@ This backlog is intentionally extensive (50+ items) and is based on a fresh rese
 - [x] `S09` Add policy diagnostics in `system_status` for strict-confirm mode.
 - [x] `S10` Add a policy decision trace field in audit records (`allowed|denied|dry_run`).
 
-Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools.py`, `tests/test_config.py`
+Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools_services.py`, `tests/test_config.py`
 
 ---
 
@@ -44,7 +44,7 @@ Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools
 - [x] `I09` Add richer list output formatting option (short vs verbose) for Todoist task listing.
 - [x] `I10` Add tests for short/verbose list formatting modes.
 
-Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools.py`, `tests/test_config.py`
+Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools_services.py`, `tests/test_config.py`
 
 ---
 
@@ -59,7 +59,7 @@ Files: `src/jarvis/tools/services.py`, `src/jarvis/config.py`, `tests/test_tools
 - [x] `A07` Add system_status field exposing audit redaction mode enabled/disabled.
 - [x] `A08` Add doc update with redaction examples in runbooks.
 
-Files: `src/jarvis/tools/services.py`, `tests/test_tools.py`, `docs/operations/home-control-policy.md`, `docs/operations/integration-policy.md`
+Files: `src/jarvis/tools/services.py`, `tests/test_tools_services.py`, `docs/operations/home-control-policy.md`, `docs/operations/integration-policy.md`
 
 ---
 
@@ -102,13 +102,13 @@ Files: `.github/workflows/ci.yml`, `.github/workflows/workflow-sanity.yml`, `.gi
 - [x] `Q01` Introduce shared `aiohttp` mock helpers in `tests/conftest.py`.
 - [x] `Q02` Refactor representative service tests to use shared HTTP helpers.
 - [x] `Q03` Refactor remaining duplicated HTTP mock blocks to shared helpers.
-- [ ] `Q04` Parametrize timeout/cancelled/network error tests across integrations.
+- [x] `Q04` Parametrize timeout/cancelled/network error tests across integrations.
 - [x] `Q05` Add taxonomy-to-fault-selector contract test.
-- [ ] `Q06` Add helper assertions for audit payload structure to reduce repeated code.
-- [ ] `Q07` Split very long `tests/test_tools.py` into thematic modules.
-- [ ] `Q08` Add marker strategy for fast/slow/fault tests and document usage.
+- [x] `Q06` Add helper assertions for audit payload structure to reduce repeated code.
+- [x] `Q07` Split very long `tests/test_tools.py` into thematic modules.
+- [x] `Q08` Add marker strategy for fast/slow/fault tests and document usage.
 
-Files: `tests/conftest.py`, `tests/test_tools.py`, `tests/test_*.py`
+Files: `tests/conftest.py`, `tests/test_tools_robot.py`, `tests/test_tools_services.py`, `tests/test_*.py`
 
 ---
 

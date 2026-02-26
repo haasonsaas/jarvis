@@ -158,6 +158,11 @@ make test-faults
 
 # Soak/stability subset
 make test-soak
+
+# Marker-based subsets
+uv run pytest -q -m fast
+uv run pytest -q -m fault
+uv run pytest -q -m slow
 ```
 
 Equivalent scripts are available under `scripts/`:
@@ -179,7 +184,7 @@ Nightly soak coverage is scheduled in
 |---|---|---|
 | `ci.yml` / `lint` | Static checks (`ruff`) | `src/`, `tests/`, and Python style issues in the failing path |
 | `ci.yml` / `tests` | Full regression (`pytest`) | Failing test module and corresponding implementation area |
-| `ci.yml` / `faults` | Fault-injection taxonomy + error-path contract | `tests/test_tools.py` fault tests and `src/jarvis/tools/services.py` normalization paths |
+| `ci.yml` / `faults` | Fault-injection taxonomy + error-path contract | `tests/test_tools_services.py` fault tests and `src/jarvis/tools/services.py` normalization paths |
 | `workflow-sanity.yml` | Workflow hygiene (`actionlint`, tabs, script executability/shebang) | `.github/workflows/*` and `scripts/*.sh` |
 | `shellcheck.yml` | Shell script linting | `scripts/*.sh` syntax/quoting/safety |
 | `security.yml` | Scheduled/PR CodeQL scan | Security findings in SARIF report; route by file ownership |
