@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from jarvis.__main__ import Jarvis, TELEMETRY_SERVICE_ERROR_DETAILS, TELEMETRY_STORAGE_ERROR_DETAILS
 
@@ -81,6 +81,26 @@ def test_startup_summary_lines_include_core_status():
     assert "Config warnings: 0" in joined
     assert "Tool policy: allow=1 deny=2" in joined
     assert "Error taxonomy: total=" in joined
+
+
+def test_start_requires_sounddevice_for_local_tts_playback():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._started = False
+    jarvis.robot = SimpleNamespace(connect=MagicMock(), sim=True)
+    jarvis.presence = SimpleNamespace(start=MagicMock())
+    jarvis.config = SimpleNamespace(
+        motion_enabled=False,
+        sample_rate=16000,
+    )
+    jarvis.args = SimpleNamespace(no_vision=True)
+    jarvis.tts = object()
+    jarvis.stop = MagicMock()
+
+    with patch("jarvis.__main__.sd", None), patch("jarvis.__main__._SOUNDDEVICE_IMPORT_ERROR", "PortAudio missing"):
+        with pytest.raises(RuntimeError, match="local audio playback"):
+            Jarvis.start(jarvis)
+
+    jarvis.stop.assert_called_once()
 
 
 def test_error_taxonomy_doc_matches_constants():

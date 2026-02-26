@@ -24,7 +24,6 @@ from collections import deque
 from contextlib import suppress
 
 import numpy as np
-import sounddevice as sd
 from scipy.signal import resample_poly
 
 from jarvis.config import Config
@@ -37,6 +36,13 @@ from jarvis.brain import Brain
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, TOOL_STORAGE_ERROR_DETAILS
 from jarvis.tools.robot import bind as bind_robot_tools
 from jarvis.tool_summary import list_summaries
+
+_SOUNDDEVICE_IMPORT_ERROR: str | None = None
+try:
+    import sounddevice as sd
+except Exception as e:  # pragma: no cover - exercised via runtime guard tests
+    sd = None  # type: ignore[assignment]
+    _SOUNDDEVICE_IMPORT_ERROR = str(e)
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +66,15 @@ NEGATIONS = {"no", "nope", "nah", "negative"}
 TELEMETRY_LOG_EVERY_TURNS = 5
 TELEMETRY_STORAGE_ERROR_DETAILS = TOOL_STORAGE_ERROR_DETAILS
 TELEMETRY_SERVICE_ERROR_DETAILS = TOOL_SERVICE_ERROR_CODES - TELEMETRY_STORAGE_ERROR_DETAILS
+
+
+def _require_sounddevice(feature: str) -> None:
+    if sd is not None:
+        return
+    detail = f" ({_SOUNDDEVICE_IMPORT_ERROR})" if _SOUNDDEVICE_IMPORT_ERROR else ""
+    raise RuntimeError(
+        f"sounddevice is unavailable; {feature} requires PortAudio.{detail}"
+    )
 
 
 def _to_mono(audio: np.ndarray) -> np.ndarray:
@@ -241,6 +256,7 @@ class Jarvis:
                 )
             else:
                 if self.tts is not None:
+                    _require_sounddevice("local audio playback")
                     # Open persistent audio output stream
                     self._output_stream = sd.OutputStream(
                         samplerate=self.config.sample_rate,
@@ -560,6 +576,7 @@ class Jarvis:
                         await self._enqueue_utterance(audio)
 
         if not self._use_robot_audio:
+            _require_sounddevice("local microphone capture")
             with sd.InputStream(
                 samplerate=self.config.sample_rate,
                 channels=1,

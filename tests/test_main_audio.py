@@ -108,7 +108,9 @@ async def test_listen_loop_uses_to_thread_for_input_read():
     async def _fake_to_thread(fn, *args, **kwargs):
         return fn(*args, **kwargs)
 
-    with patch("jarvis.__main__.sd.InputStream", FakeInputStream), \
+    fake_sd = SimpleNamespace(InputStream=FakeInputStream)
+
+    with patch("jarvis.__main__.sd", fake_sd), \
          patch("jarvis.__main__.asyncio.to_thread", side_effect=_fake_to_thread) as mock_to_thread:
         task = asyncio.create_task(Jarvis._listen_loop(jarvis))
         await asyncio.sleep(0.02)
@@ -117,6 +119,17 @@ async def test_listen_loop_uses_to_thread_for_input_read():
             await task
 
     assert mock_to_thread.called
+
+
+@pytest.mark.asyncio
+async def test_listen_loop_local_audio_requires_sounddevice():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._use_robot_audio = False
+    jarvis.config = SimpleNamespace(sample_rate=16000)
+
+    with patch("jarvis.__main__.sd", None), patch("jarvis.__main__._SOUNDDEVICE_IMPORT_ERROR", "PortAudio library not found"):
+        with pytest.raises(RuntimeError, match="local microphone capture"):
+            await Jarvis._listen_loop(jarvis)
 
 
 @pytest.mark.asyncio
