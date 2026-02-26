@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-26
 
-This cycle focuses on config strictness, telemetry taxonomy consistency, task-plan validation, CI enforcement, brain memory-failure resilience, and numeric input safety.
+This cycle focuses on config strictness, telemetry taxonomy consistency, task-plan validation, CI enforcement, brain reliability, and numeric input safety.
 
 ## Status legend
 - `[ ]` Not started
@@ -44,12 +44,15 @@ This cycle focuses on config strictness, telemetry taxonomy consistency, task-pl
 
 ### 3.2 Reject boolean coercion in numeric parsers (`P1`)
 - [x] Prevent `True/False` from being implicitly accepted as numeric values for service tool params.
+
+### 3.3 Reject fractional values for integer params (`P1`)
+- [x] Treat non-integer numeric limits as invalid and use safe defaults.
 - Why:
-  - Python bools are ints; `True` can silently become `1` and alter limits/weights unexpectedly.
+  - Silent truncation (e.g. `2.9 -> 2`) can produce surprising behavior and hidden intent mismatch.
 - Acceptance criteria:
-  - `_as_int` and `_as_float` treat booleans as invalid and use defaults.
+  - `_as_int` rejects non-integer floats and non-integer numeric strings.
 - Test plan:
-  - Add tests for `memory_add(sensitivity=True)` and `memory_recent(limit=True)` fallback behavior.
+  - Add tests for fractional limits in `memory_recent` and `memory_search`.
 - Files:
   - `src/jarvis/tools/services.py`
   - `tests/test_tools.py`

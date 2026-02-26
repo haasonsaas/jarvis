@@ -348,6 +348,22 @@ def _as_bool(value: Any, default: bool = False) -> bool:
 def _as_int(value: Any, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
     if isinstance(value, bool):
         parsed = default
+    elif isinstance(value, int):
+        parsed = value
+    elif isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            parsed = default
+        else:
+            parsed = int(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if text and (text.isdigit() or (text.startswith(("+", "-")) and text[1:].isdigit())):
+            try:
+                parsed = int(text)
+            except ValueError:
+                parsed = default
+        else:
+            parsed = default
     else:
         try:
             parsed = int(value)

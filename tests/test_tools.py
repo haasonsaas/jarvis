@@ -702,6 +702,46 @@ class TestServicesTools:
         assert captured["limit"] == 5
 
     @pytest.mark.asyncio
+    async def test_memory_recent_fractional_limit_uses_default(self, tmp_path, monkeypatch):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        captured: dict[str, int] = {}
+        original_recent = store.recent
+
+        def wrapped_recent(*, limit: int = 5, kind=None, sources=None):
+            captured["limit"] = limit
+            return original_recent(limit=limit, kind=kind, sources=sources)
+
+        monkeypatch.setattr(store, "recent", wrapped_recent)
+        await services.memory_add({"text": "hello"})
+        await services.memory_recent({"limit": 2.9})
+        assert captured["limit"] == 5
+
+    @pytest.mark.asyncio
+    async def test_memory_search_fractional_limit_uses_default(self, tmp_path, monkeypatch):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        captured: dict[str, int] = {}
+        original_search = store.search_v2
+
+        def wrapped_search(query, *, limit: int = 5, **kwargs):
+            captured["limit"] = limit
+            return original_search(query, limit=limit, **kwargs)
+
+        monkeypatch.setattr(store, "search_v2", wrapped_search)
+        await services.memory_add({"text": "hello world"})
+        await services.memory_search({"query": "hello", "limit": 3.4})
+        assert captured["limit"] == 5
+
+    @pytest.mark.asyncio
     async def test_memory_status_handles_storage_error(self, tmp_path, monkeypatch):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
