@@ -24,7 +24,7 @@ Canonical tool error taxonomy shared by service tools and telemetry.
 | `missing_text` | `memory_add` |
 | `network_client_error` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `slack_notify`, `discord_notify`, `email_send`, `weather_lookup`, `webhook_trigger` |
 | `not_found` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `timer_cancel`, `reminder_complete`, `task_plan_*`, `calendar_*` |
-| `policy` | cross-cutting tool policy enforcement (`smart_home*`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `media_control`, `slack_notify`, `discord_notify`, `email_send`, `webhook_trigger`, `reminder_notify_due`, allow/deny lists) |
+| `policy` | cross-cutting tool policy enforcement (`smart_home*`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `media_control`, `slack_notify`, `discord_notify`, `email_send`, `memory_add` PII guardrails, `webhook_trigger`, `reminder_notify_due`, allow/deny lists) |
 | `storage_error` | `memory_*`, `task_plan_*`, `timer_*`, `reminder_*` |
 | `summary_unavailable` | `tool_summary*`, `system_status` |
 | `timeout` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `slack_notify`, `discord_notify`, `weather_lookup`, `webhook_trigger` |

@@ -149,6 +149,7 @@ class TestConfig:
         monkeypatch.setenv("HOME_ENABLED", "maybe")
         monkeypatch.setenv("HOME_REQUIRE_CONFIRM_EXECUTE", "sometimes")
         monkeypatch.setenv("HOME_CONVERSATION_ENABLED", "perhaps")
+        monkeypatch.setenv("MEMORY_PII_GUARDRAILS_ENABLED", "unknown")
         monkeypatch.setenv("HOME_PERMISSION_PROFILE", "execute-all")
         monkeypatch.setenv("HOME_CONVERSATION_PERMISSION_PROFILE", "execute-all")
         monkeypatch.setenv("TODOIST_PERMISSION_PROFILE", "write-all")
@@ -172,6 +173,7 @@ class TestConfig:
         assert "HOME_ENABLED invalid boolean" in text
         assert "HOME_REQUIRE_CONFIRM_EXECUTE invalid boolean" in text
         assert "HOME_CONVERSATION_ENABLED invalid boolean" in text
+        assert "MEMORY_PII_GUARDRAILS_ENABLED invalid boolean" in text
         assert "HOME_PERMISSION_PROFILE invalid" in text
         assert "HOME_CONVERSATION_PERMISSION_PROFILE invalid" in text
         assert "TODOIST_PERMISSION_PROFILE invalid" in text
@@ -185,6 +187,7 @@ class TestConfig:
         monkeypatch.setenv("HOME_ENABLED", "invalid")
         monkeypatch.setenv("MEMORY_ENABLED", "invalid")
         monkeypatch.setenv("HOME_CONVERSATION_ENABLED", "invalid")
+        monkeypatch.setenv("MEMORY_PII_GUARDRAILS_ENABLED", "invalid")
         from jarvis.config import Config
 
         c = Config()
@@ -192,6 +195,7 @@ class TestConfig:
         assert c.memory_enabled is True
         assert c.home_require_confirm_execute is False
         assert c.home_conversation_enabled is False
+        assert c.memory_pii_guardrails_enabled is True
 
     def test_home_require_confirm_execute_env_true(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

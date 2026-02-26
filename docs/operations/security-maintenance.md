@@ -65,4 +65,7 @@ Run this once per month:
 - Retention windows are configurable:
   - `MEMORY_RETENTION_DAYS`
   - `AUDIT_RETENTION_DAYS`
+- Memory-write PII guardrails:
+  - `MEMORY_PII_GUARDRAILS_ENABLED=true|false`
+  - default behavior blocks memory writes that look like SSNs, card-like numbers, phone numbers, or email addresses unless explicitly overridden.
 - A value of `0` disables pruning; positive values apply automatic startup pruning.

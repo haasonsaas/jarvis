@@ -143,7 +143,7 @@ This backlog replaces the completed hardening backlog and focuses on feature gap
 
 - [ ] `SE01` Add encrypted-at-rest option for memory/audit stores.
 - [x] `SE02` Add configurable data retention windows for memory/audit data.
-- [ ] `SE03` Add PII detection guardrails for memory writes.
+- [x] `SE03` Add PII detection guardrails for memory writes.
 - [x] `SE04` Add stricter token-scoping validation warnings on startup.
 - [x] `SE05` Add outbound request domain allowlist enforcement for webhooks.
 - [ ] `SE06` Add signed release artifact verification and provenance docs.

@@ -73,6 +73,12 @@ _DURATION_SEGMENT_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)",
     re.IGNORECASE,
 )
+_PII_PATTERNS = [
+    re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),  # US SSN
+    re.compile(r"\b(?:\d[ -]*?){13,16}\b"),  # payment-card-like sequence
+    re.compile(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"),  # phone-like sequence
+    re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),  # email
+]
 
 _config: Config | None = None
 _memory: MemoryStore | None = None
@@ -107,6 +113,7 @@ _slack_webhook_url: str = ""
 _discord_webhook_url: str = ""
 _memory_retention_days: float = 0.0
 _audit_retention_days: float = 0.0
+_memory_pii_guardrails_enabled: bool = True
 _ha_state_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _timers: dict[int, dict[str, Any]] = {}
 _timer_id_seq: int = 1
@@ -395,6 +402,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "importance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "sensitivity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "source": {"type": "string"},
+            "allow_pii": {"type": "boolean"},
         },
         "required": ["text"],
     },
@@ -561,6 +569,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _webhook_allowlist, _webhook_auth_token, _webhook_timeout_sec
     global _slack_webhook_url, _discord_webhook_url
     global _memory_retention_days, _audit_retention_days
+    global _memory_pii_guardrails_enabled
     global _timer_id_seq, _reminder_id_seq
     _config = config
     _memory = memory_store
@@ -608,6 +617,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _discord_webhook_url = str(getattr(config, "discord_webhook_url", "")).strip()
     _memory_retention_days = max(0.0, float(getattr(config, "memory_retention_days", 0.0)))
     _audit_retention_days = max(0.0, float(getattr(config, "audit_retention_days", 0.0)))
+    _memory_pii_guardrails_enabled = bool(getattr(config, "memory_pii_guardrails_enabled", True))
     _action_last_seen.clear()
     _ha_state_cache.clear()
     _timers.clear()
@@ -715,6 +725,13 @@ def _metadata_only_audit_details(action: str, details: dict[str, Any]) -> dict[s
             continue
         sanitized[key_text] = value
     return sanitized
+
+
+def _contains_pii(text: str) -> bool:
+    sample = text.strip()
+    if not sample:
+        return False
+    return any(pattern.search(sample) is not None for pattern in _PII_PATTERNS)
 
 
 def _format_tool_summaries(items: list[dict[str, object]]) -> str:
@@ -3718,6 +3735,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "todoist_permission_profile": _todoist_permission_profile,
             "notification_permission_profile": _notification_permission_profile,
             "email_permission_profile": _email_permission_profile,
+            "memory_pii_guardrails_enabled": _memory_pii_guardrails_enabled,
         },
         "timers": _timer_status(),
         "reminders": _reminder_status(),
@@ -3774,6 +3792,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "todoist_permission_profile",
             "notification_permission_profile",
             "email_permission_profile",
+            "memory_pii_guardrails_enabled",
         ],
         "timers_required": [
             "active_count",
@@ -3821,6 +3840,17 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
     if not text:
         _record_service_error("memory_add", start_time, "missing_text")
         return {"content": [{"type": "text", "text": "Memory text required."}]}
+    allow_pii = _as_bool(args.get("allow_pii"), default=False)
+    if _memory_pii_guardrails_enabled and not allow_pii and _contains_pii(text):
+        _record_service_error("memory_add", start_time, "policy")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Potential PII detected in memory text. Use allow_pii=true only when intentional.",
+                }
+            ]
+        }
     tags_raw = args.get("tags")
     tags = [str(tag) for tag in tags_raw] if isinstance(tags_raw, list) else []
     kind = str(args.get("kind", "note"))

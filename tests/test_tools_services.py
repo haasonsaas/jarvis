@@ -294,6 +294,21 @@ class TestServicesTools:
         assert "non-empty step" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_memory_add_blocks_pii_by_default(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        blocked = await services.memory_add({"text": "My SSN is 123-45-6789"})
+        assert "potential pii detected" in blocked["content"][0]["text"].lower()
+
+        allowed = await services.memory_add({"text": "My SSN is 123-45-6789", "allow_pii": True})
+        assert "stored" in allowed["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_task_plan_list_parses_open_only_string(self, tmp_path):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
@@ -2699,6 +2714,7 @@ class TestServicesTools:
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
         assert isinstance(payload["tool_policy"]["home_conversation_enabled"], bool)
+        assert isinstance(payload["tool_policy"]["memory_pii_guardrails_enabled"], bool)
         assert payload["tool_policy"]["home_conversation_permission_profile"] in {"readonly", "control"}
         assert payload["tool_policy"]["email_permission_profile"] in {"readonly", "control"}
         assert "memory" in payload
@@ -2733,6 +2749,7 @@ class TestServicesTools:
         assert "tool_policy_required" in payload
         assert "home_conversation_permission_profile" in payload["tool_policy_required"]
         assert "email_permission_profile" in payload["tool_policy_required"]
+        assert "memory_pii_guardrails_enabled" in payload["tool_policy_required"]
         assert "timers_required" in payload
         assert "reminders_required" in payload
         assert "integrations_required" in payload

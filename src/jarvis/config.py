@@ -117,6 +117,7 @@ class Config:
     memory_decay_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_DECAY_ENABLED") or False)
     memory_mmr_lambda: float = field(default_factory=lambda: _env_float("MEMORY_MMR_LAMBDA", 0.7))
     memory_mmr_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_MMR_ENABLED") or False)
+    memory_pii_guardrails_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_PII_GUARDRAILS_ENABLED") is not False)
 
     # Tool policy
     tool_allowlist: list[str] = field(default_factory=lambda: _env_list("TOOL_ALLOWLIST"))
@@ -418,6 +419,7 @@ class Config:
             "MEMORY_ENABLED",
             "MEMORY_DECAY_ENABLED",
             "MEMORY_MMR_ENABLED",
+            "MEMORY_PII_GUARDRAILS_ENABLED",
             "MOTION_ENABLED",
             "HAND_TRACK_ENABLED",
             "HOME_ENABLED",
