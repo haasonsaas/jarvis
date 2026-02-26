@@ -1074,9 +1074,11 @@ async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
                             data = await resp.json()
                         except Exception:
                             _record_service_error("todoist_list_tasks", start_time, "invalid_json")
+                            _audit("todoist_list_tasks", {"result": "invalid_json"})
                             return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
                         if not isinstance(data, list):
                             _record_service_error("todoist_list_tasks", start_time, "invalid_json")
+                            _audit("todoist_list_tasks", {"result": "invalid_json"})
                             return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
                         if any(not isinstance(item, dict) for item in data):
                             _record_service_error("todoist_list_tasks", start_time, "invalid_json")

@@ -830,6 +830,74 @@ class TestServicesTools:
 
         assert "invalid todoist response" in result["content"][0]["text"].lower()
 
+    @pytest.mark.asyncio
+    async def test_todoist_list_tasks_invalid_json_records_audit(
+        self,
+        tmp_path,
+        monkeypatch,
+        aiohttp_response,
+        aiohttp_session_mock,
+    ):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        audit_calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = aiohttp_response(status=200, json_side_effect=ValueError("bad json"))
+            mock_session = aiohttp_session_mock(get=mock_resp)
+            mock_session_cls.return_value = mock_session
+
+            result = await services.todoist_list_tasks({"limit": 1})
+
+        assert "invalid todoist response" in result["content"][0]["text"].lower()
+        action, details = audit_calls[-1]
+        assert action == "todoist_list_tasks"
+        _assert_audit_payload(details, required={"result"})
+        assert details["result"] == "invalid_json"
+
+    @pytest.mark.asyncio
+    async def test_todoist_list_tasks_non_list_payload_records_audit(
+        self,
+        tmp_path,
+        monkeypatch,
+        aiohttp_response,
+        aiohttp_session_mock,
+    ):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        audit_calls: list[tuple[str, dict]] = []
+        monkeypatch.setattr("jarvis.tools.services._audit", lambda action, details: audit_calls.append((action, details)))
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = aiohttp_response(status=200, json_data={"content": "Buy coffee"})
+            mock_session = aiohttp_session_mock(get=mock_resp)
+            mock_session_cls.return_value = mock_session
+
+            result = await services.todoist_list_tasks({"limit": 1})
+
+        assert "invalid todoist response" in result["content"][0]["text"].lower()
+        action, details = audit_calls[-1]
+        assert action == "todoist_list_tasks"
+        _assert_audit_payload(details, required={"result"})
+        assert details["result"] == "invalid_json"
+
     def test_retry_backoff_delay_bounds_and_jitter(self):
         from jarvis.tools import services
 
