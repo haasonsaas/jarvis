@@ -192,6 +192,10 @@ class Config:
 
     def _collect_startup_warnings(self) -> list[str]:
         warnings: list[str] = []
+        has_hass_url = bool((self.hass_url or "").strip())
+        has_hass_token = bool((self.hass_token or "").strip())
+        if has_hass_url != has_hass_token:
+            warnings.append("Home Assistant config incomplete; set both HASS_URL and HASS_TOKEN.")
         checks: list[tuple[str, str, str]] = [
             ("DOA_CHANGE_THRESHOLD", "float", str(self.doa_change_threshold)),
             ("DOA_TIMEOUT", "float", str(self.doa_timeout)),

@@ -145,3 +145,13 @@ class TestConfig:
         c = Config()
         assert c.doa_timeout == 1.0
         assert c.doa_change_threshold == 0.04
+
+    def test_startup_warning_for_partial_home_assistant_config(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("HASS_URL", "http://ha.local:8123")
+        monkeypatch.delenv("HASS_TOKEN", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "home assistant config incomplete" in text.lower()

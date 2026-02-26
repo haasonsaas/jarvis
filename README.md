@@ -129,6 +129,8 @@ Equivalent scripts are available under `scripts/`:
 
 CI runs the same lint + test gates on every push and pull request via
 [`ci.yml`](.github/workflows/ci.yml).
+Nightly soak coverage is scheduled in
+[`nightly-soak.yml`](.github/workflows/nightly-soak.yml).
 
 ## Project Structure
 
