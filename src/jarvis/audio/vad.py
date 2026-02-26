@@ -8,6 +8,7 @@ requirement of the Silero model and cannot be changed.
 from __future__ import annotations
 
 import logging
+import warnings
 import numpy as np
 import torch
 
@@ -27,7 +28,15 @@ class VoiceActivityDetector:
             raise ValueError("Silero VAD requires 16kHz audio")
 
         torch.set_num_threads(1)  # small model, threading overhead hurts
-        self._model = load_silero_vad()
+        # silero-vad currently triggers a known torch.jit.load deprecation warning.
+        # Suppress that specific noise here so tests/logs surface actionable warnings.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"`torch\.jit\.load` is deprecated\..*",
+                category=DeprecationWarning,
+            )
+            self._model = load_silero_vad()
         self._sample_rate = sample_rate
         self._threshold = threshold
 

@@ -2,6 +2,7 @@
 
 import pytest
 import numpy as np
+import warnings
 from unittest.mock import MagicMock, patch
 
 
@@ -18,6 +19,29 @@ class TestVoiceActivityDetector:
         mock_load.assert_called_once()
         mock_vad_iter.assert_called_once()
         assert vad._threshold == 0.6
+
+    @patch("jarvis.audio.vad.load_silero_vad")
+    @patch("jarvis.audio.vad.VADIterator")
+    def test_init_suppresses_known_torch_jit_deprecation(self, mock_vad_iter, mock_load):
+        mock_model = MagicMock()
+
+        def _load_with_warning():
+            warnings.warn(
+                "`torch.jit.load` is deprecated. Please switch to `torch.export`.",
+                DeprecationWarning,
+                stacklevel=1,
+            )
+            return mock_model
+
+        mock_load.side_effect = _load_with_warning
+
+        from jarvis.audio.vad import VoiceActivityDetector
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            VoiceActivityDetector(threshold=0.5)
+
+        assert caught == []
 
     @patch("jarvis.audio.vad.load_silero_vad")
     @patch("jarvis.audio.vad.VADIterator")
