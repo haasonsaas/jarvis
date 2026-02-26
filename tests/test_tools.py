@@ -553,6 +553,42 @@ class TestServicesTools:
         mock_session.post.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_smart_home_success_invalidates_cached_entity_state(self):
+        from jarvis.tools import services
+
+        services._ha_state_cache.clear()
+        services._ha_state_cache["light.kitchen"] = (float("inf"), {"state": "off"})
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            state_resp = AsyncMock()
+            state_resp.status = 200
+            state_resp.json = AsyncMock(return_value={"state": "off", "attributes": {}})
+            mock_resp = AsyncMock()
+            mock_resp.status = 200
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=state_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session.post = MagicMock(return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_resp),
+                __aexit__=AsyncMock(return_value=False),
+            ))
+            mock_session_cls.return_value = mock_session
+
+            result = await services.smart_home({
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": "light.kitchen",
+                "dry_run": False,
+            })
+
+        assert "done:" in result["content"][0]["text"].lower()
+        assert "light.kitchen" not in services._ha_state_cache
+
+    @pytest.mark.asyncio
     async def test_smart_home_no_config(self):
         from jarvis.tools import services
         services._config = None
@@ -1519,3 +1555,14 @@ class TestServicesTools:
         assert set(services.SERVICE_TOOL_SCHEMAS) == set(services.SERVICE_RUNTIME_REQUIRED_FIELDS)
         for name, schema in services.SERVICE_TOOL_SCHEMAS.items():
             assert _schema_required_fields(schema) == services.SERVICE_RUNTIME_REQUIRED_FIELDS[name]
+
+    def test_bind_clears_action_history(self, config):
+        from jarvis.tools import services
+
+        services._action_last_seen.clear()
+        services._action_last_seen["light:turn_on:light.kitchen"] = 123.0
+        assert services._action_last_seen
+
+        services.bind(config)
+
+        assert services._action_last_seen == {}

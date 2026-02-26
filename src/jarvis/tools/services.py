@@ -300,6 +300,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     ).strip().lower()
     if _notification_permission_profile not in {"off", "allow"}:
         _notification_permission_profile = "allow"
+    _action_last_seen.clear()
     _ha_state_cache.clear()
     global _tool_allowlist, _tool_denylist
     _tool_allowlist = list(config.tool_allowlist)
@@ -583,6 +584,10 @@ def _ha_cached_state(entity_id: str) -> dict[str, Any] | None:
     return payload
 
 
+def _ha_invalidate_state(entity_id: str) -> None:
+    _ha_state_cache.pop(entity_id, None)
+
+
 def _ha_action_allowed(domain: str, action: str) -> bool:
     allowed = HA_MUTATING_ALLOWED_ACTIONS.get(domain)
     if allowed is None:
@@ -744,6 +749,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
             async with session.post(url, headers=headers, json=payload) as resp:
                 if resp.status == 200:
                     tool_feedback("done")
+                    _ha_invalidate_state(entity_id)
                     _touch_action(domain, action, entity_id)
                     record_summary(
                         "smart_home",

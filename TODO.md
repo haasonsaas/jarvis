@@ -70,3 +70,19 @@ This wave focuses on gaps found during deeper review: audit parity for newly-add
 - [x] Lint clean: `uv run ruff check src tests`
 - [x] Test suite green: `uv run pytest -q`
 - [x] Fault subset green: `make test-faults`
+
+---
+
+## 5) Home Assistant Runtime Correctness
+
+### 5.1 Rebind state reset (`P1`)
+- [x] Clear action cooldown history in `bind()` so stale in-memory state does not survive profile/config rebinds.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
+
+### 5.2 State cache invalidation on mutation (`P1`)
+- [x] Invalidate cached entity state after successful mutating `smart_home` service call to prevent stale follow-up reads.
+- Files:
+  - `src/jarvis/tools/services.py`
+  - `tests/test_tools.py`
