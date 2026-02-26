@@ -179,6 +179,8 @@ def _as_bool(value: Any, default: bool = False) -> bool:
 
 
 def _as_float(value: Any, default: float) -> float:
+    if isinstance(value, bool):
+        return default
     try:
         parsed = float(value)
     except (TypeError, ValueError):

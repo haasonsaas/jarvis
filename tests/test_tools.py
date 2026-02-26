@@ -99,6 +99,22 @@ class TestRobotTools:
         assert presence.signals.intent_glance_yaw == 0.0
 
     @pytest.mark.asyncio
+    async def test_embody_bool_numeric_fields_use_defaults(self, presence):
+        from jarvis.tools.robot import embody
+
+        await embody({
+            "intent": "answer",
+            "prosody": "calm",
+            "nod": True,
+            "tilt": False,
+            "glance_yaw": True,
+        })
+
+        assert presence.signals.intent_nod == 0.0
+        assert presence.signals.intent_tilt == 0.0
+        assert presence.signals.intent_glance_yaw == 0.0
+
+    @pytest.mark.asyncio
     async def test_play_emotion_sim(self):
         from jarvis.tools.robot import play_emotion
 
@@ -155,6 +171,17 @@ class TestRobotTools:
 
         result = await run_macro({"name": "acknowledge", "intensity": 1.0})
         assert "Macro queued" in result["content"][0]["text"]
+
+    @pytest.mark.asyncio
+    async def test_run_macro_bool_intensity_uses_default(self, mock_robot):
+        from jarvis.tools.robot import run_macro
+
+        mock_runner = MagicMock()
+        mock_robot.run_macro = mock_runner
+        await run_macro({"name": "acknowledge", "intensity": True})
+
+        _, kwargs = mock_runner.call_args
+        assert kwargs["intensity"] == 1.0
 
     @pytest.mark.asyncio
     async def test_run_sequence_parses_blocking_string(self, mock_robot):

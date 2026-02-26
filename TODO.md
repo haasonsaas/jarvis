@@ -42,19 +42,22 @@ This cycle focuses on config strictness, telemetry taxonomy consistency, task-pl
 ### 3.1 Exact integer validation for task-plan identifiers (`P1`)
 - [x] Reject fractional plan IDs and step indices (no implicit truncation).
 
-### 3.2 Reject boolean coercion in numeric parsers (`P1`)
+### 3.2 Reject boolean coercion in service numeric parsers (`P1`)
 - [x] Prevent `True/False` from being implicitly accepted as numeric values for service tool params.
 
-### 3.3 Reject fractional values for integer params (`P1`)
+### 3.3 Reject fractional values for integer service params (`P1`)
 - [x] Treat non-integer numeric limits as invalid and use safe defaults.
+
+### 3.4 Reject boolean coercion in robot numeric parsers (`P1`)
+- [x] Prevent `True/False` from being implicitly accepted as float intensity/motion inputs.
 - Why:
-  - Silent truncation (e.g. `2.9 -> 2`) can produce surprising behavior and hidden intent mismatch.
+  - Boolean coercion can unintentionally produce maximum-strength motion values (`True -> 1.0`).
 - Acceptance criteria:
-  - `_as_int` rejects non-integer floats and non-integer numeric strings.
+  - Robot `_as_float` treats bools as invalid and falls back to defaults.
 - Test plan:
-  - Add tests for fractional limits in `memory_recent` and `memory_search`.
+  - Add robot-tool tests for bool numeric inputs in `embody` and `run_macro`.
 - Files:
-  - `src/jarvis/tools/services.py`
+  - `src/jarvis/tools/robot.py`
   - `tests/test_tools.py`
 
 ---
