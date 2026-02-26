@@ -103,6 +103,8 @@ class Brain:
                 "mcp__jarvis-services__media_control",
                 "mcp__jarvis-services__weather_lookup",
                 "mcp__jarvis-services__webhook_trigger",
+                "mcp__jarvis-services__webhook_inbound_list",
+                "mcp__jarvis-services__webhook_inbound_clear",
                 "mcp__jarvis-services__slack_notify",
                 "mcp__jarvis-services__discord_notify",
                 "mcp__jarvis-services__email_send",

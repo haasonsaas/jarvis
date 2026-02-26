@@ -1360,6 +1360,27 @@ class TestServicesTools:
         assert call_headers["Authorization"] == "Bearer secret-token"
 
     @pytest.mark.asyncio
+    async def test_webhook_inbound_list_and_clear(self):
+        from jarvis.tools import services
+
+        services._inbound_webhook_events.clear()
+        services.record_inbound_webhook_event(
+            payload={"event": "doorbell"},
+            headers={"x-test": "1"},
+            source="ha",
+            path="/api/webhook/inbound",
+        )
+        listed = await services.webhook_inbound_list({"limit": 10})
+        payload = json.loads(listed["content"][0]["text"])
+        assert payload
+        assert payload[0]["source"] == "ha"
+
+        cleared = await services.webhook_inbound_clear({})
+        assert "cleared inbound webhook events" in cleared["content"][0]["text"].lower()
+        empty = await services.webhook_inbound_list({"limit": 10})
+        assert json.loads(empty["content"][0]["text"]) == []
+
+    @pytest.mark.asyncio
     async def test_reminder_create_list_complete_lifecycle(self, tmp_path):
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
@@ -2808,7 +2829,7 @@ class TestServicesTools:
 
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.1"
+        assert payload["schema_version"] == "1.2"
         assert "local_time" in payload
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
@@ -2830,6 +2851,9 @@ class TestServicesTools:
         assert "active_count" in payload["timers"]
         assert "reminders" in payload
         assert "pending_count" in payload["reminders"]
+        assert "voice_attention" in payload
+        assert "mode" in payload["voice_attention"]
+        assert "active_room" in payload["voice_attention"]
         assert "integrations" in payload
         assert "weather" in payload["integrations"]
         assert "webhook" in payload["integrations"]
@@ -2839,6 +2863,8 @@ class TestServicesTools:
         assert isinstance(payload["identity"]["enabled"], bool)
         assert isinstance(payload["identity"]["trusted_user_count"], int)
         assert isinstance(payload["identity"]["user_profiles"], dict)
+        assert "skills" in payload
+        assert "observability" in payload
         assert "retention_policy" in payload
         assert "memory_retention_days" in payload["retention_policy"]
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
@@ -2849,10 +2875,13 @@ class TestServicesTools:
 
         result = await services.system_status_contract({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.1"
+        assert payload["schema_version"] == "1.2"
         assert "top_level_required" in payload
         assert "tool_policy" in payload["top_level_required"]
         assert "identity" in payload["top_level_required"]
+        assert "voice_attention" in payload["top_level_required"]
+        assert "skills" in payload["top_level_required"]
+        assert "observability" in payload["top_level_required"]
         assert "tool_policy_required" in payload
         assert "home_conversation_permission_profile" in payload["tool_policy_required"]
         assert "email_permission_profile" in payload["tool_policy_required"]
@@ -2862,12 +2891,15 @@ class TestServicesTools:
         assert "identity_require_approval" in payload["tool_policy_required"]
         assert "timers_required" in payload
         assert "reminders_required" in payload
+        assert "voice_attention_required" in payload
         assert "integrations_required" in payload
         assert "email" in payload["integrations_required"]
         assert "channels" in payload["integrations_required"]
         assert "identity_required" in payload
         assert "enabled" in payload["identity_required"]
         assert "user_profiles" in payload["identity_required"]
+        assert "skills_required" in payload
+        assert "observability_required" in payload
         assert "retention_policy_required" in payload
 
     @pytest.mark.asyncio
@@ -3147,6 +3179,7 @@ class TestServicesTools:
         assert schemas["reminder_notify_due"]["properties"]["limit"]["type"] == "integer"
         assert schemas["calendar_events"]["properties"]["limit"]["type"] == "integer"
         assert schemas["email_summary"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["webhook_inbound_list"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary_text"]["properties"]["limit"]["type"] == "integer"
 

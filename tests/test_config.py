@@ -91,6 +91,18 @@ class TestConfig:
         c = Config(persona_style="chatty")
         assert c.persona_style == "composed"
 
+    def test_wake_mode_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(wake_mode="invalid-mode")
+        assert c.wake_mode == "always_listening"
+
+    def test_voice_timeout_profile_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(voice_timeout_profile="dynamic")
+        assert c.voice_timeout_profile == "normal"
+
     def test_home_permission_profile_normalizes(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         from jarvis.config import Config

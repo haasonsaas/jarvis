@@ -120,6 +120,21 @@ class Config:
     sample_rate: int = 16000
     doa_change_threshold: float = field(default_factory=lambda: _env_float("DOA_CHANGE_THRESHOLD", 0.04))
     doa_timeout: float = field(default_factory=lambda: _env_float("DOA_TIMEOUT", 1.0))
+    wake_mode: str = field(default_factory=lambda: os.environ.get("WAKE_MODE", "always_listening"))
+    wake_words: list[str] = field(default_factory=lambda: _env_list("WAKE_WORDS") or ["jarvis"])
+    wake_word_sensitivity: float = field(default_factory=lambda: _env_float("WAKE_WORD_SENSITIVITY", 0.82))
+    voice_followup_window_sec: float = field(default_factory=lambda: _env_positive_float("VOICE_FOLLOWUP_WINDOW_SEC", 6.0))
+    voice_timeout_profile: str = field(default_factory=lambda: os.environ.get("VOICE_TIMEOUT_PROFILE", "normal"))
+    voice_timeout_short_sec: float = field(default_factory=lambda: _env_positive_float("VOICE_TIMEOUT_SHORT_SEC", 0.55))
+    voice_timeout_normal_sec: float = field(default_factory=lambda: _env_positive_float("VOICE_TIMEOUT_NORMAL_SEC", 0.8))
+    voice_timeout_long_sec: float = field(default_factory=lambda: _env_positive_float("VOICE_TIMEOUT_LONG_SEC", 1.2))
+    barge_threshold_always_listening: float = field(
+        default_factory=lambda: _env_float("BARGE_THRESHOLD_ALWAYS_LISTENING", 0.4)
+    )
+    barge_threshold_wake_word: float = field(default_factory=lambda: _env_float("BARGE_THRESHOLD_WAKE_WORD", 0.45))
+    barge_threshold_push_to_talk: float = field(default_factory=lambda: _env_float("BARGE_THRESHOLD_PUSH_TO_TALK", 0.5))
+    voice_min_post_wake_chars: int = field(default_factory=lambda: _env_int("VOICE_MIN_POST_WAKE_CHARS", 4))
+    voice_room_default: str = field(default_factory=lambda: os.environ.get("VOICE_ROOM_DEFAULT", "main"))
 
     # Vision
     yolo_model: str = "yolov8n-face.pt"
@@ -207,6 +222,25 @@ class Config:
             raise ValueError("doa_change_threshold must be > 0")
         if self.doa_timeout <= 0.0:
             raise ValueError("doa_timeout must be > 0")
+        if self.wake_word_sensitivity < 0.5 or self.wake_word_sensitivity > 0.99:
+            raise ValueError("wake_word_sensitivity must be between 0.5 and 0.99")
+        if self.voice_followup_window_sec <= 0.0:
+            raise ValueError("voice_followup_window_sec must be > 0")
+        if self.voice_timeout_short_sec <= 0.0:
+            raise ValueError("voice_timeout_short_sec must be > 0")
+        if self.voice_timeout_normal_sec <= 0.0:
+            raise ValueError("voice_timeout_normal_sec must be > 0")
+        if self.voice_timeout_long_sec <= 0.0:
+            raise ValueError("voice_timeout_long_sec must be > 0")
+        for value, label in [
+            (self.barge_threshold_always_listening, "barge_threshold_always_listening"),
+            (self.barge_threshold_wake_word, "barge_threshold_wake_word"),
+            (self.barge_threshold_push_to_talk, "barge_threshold_push_to_talk"),
+        ]:
+            if value < 0.05 or value > 0.95:
+                raise ValueError(f"{label} must be between 0.05 and 0.95")
+        if self.voice_min_post_wake_chars < 1:
+            raise ValueError("voice_min_post_wake_chars must be >= 1")
         if self.face_track_fps <= 0:
             raise ValueError("face_track_fps must be > 0")
         if self.memory_search_limit < 1:
@@ -242,6 +276,8 @@ class Config:
         self.startup_warnings = self._collect_startup_warnings()
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
+        self.wake_mode = self._normalize_wake_mode(self.wake_mode)
+        self.voice_timeout_profile = self._normalize_voice_timeout_profile(self.voice_timeout_profile)
         self.home_permission_profile = self._normalize_home_permission_profile(self.home_permission_profile)
         self.home_conversation_permission_profile = self._normalize_home_conversation_permission_profile(
             self.home_conversation_permission_profile
@@ -262,6 +298,14 @@ class Config:
             raw = os.environ.get("PERSONA_STYLE", "")
             if raw.strip().lower() not in {"terse", "composed", "friendly"}:
                 self.startup_warnings.append("PERSONA_STYLE invalid; using composed.")
+        if _env_is_set("WAKE_MODE") and self.wake_mode == "always_listening":
+            raw = os.environ.get("WAKE_MODE", "")
+            if raw.strip().lower() not in {"always_listening", "wake_word", "push_to_talk"}:
+                self.startup_warnings.append("WAKE_MODE invalid; using always_listening.")
+        if _env_is_set("VOICE_TIMEOUT_PROFILE") and self.voice_timeout_profile == "normal":
+            raw = os.environ.get("VOICE_TIMEOUT_PROFILE", "")
+            if raw.strip().lower() not in {"short", "normal", "long"}:
+                self.startup_warnings.append("VOICE_TIMEOUT_PROFILE invalid; using normal.")
         if _env_is_set("HOME_PERMISSION_PROFILE") and self.home_permission_profile == "control":
             raw = os.environ.get("HOME_PERMISSION_PROFILE", "")
             if raw.strip().lower() not in {"readonly", "control"}:
@@ -324,6 +368,20 @@ class Config:
         if normalized in {"terse", "composed", "friendly"}:
             return normalized
         return "composed"
+
+    @staticmethod
+    def _normalize_wake_mode(mode: str) -> str:
+        normalized = (mode or "always_listening").strip().lower()
+        if normalized in {"always_listening", "wake_word", "push_to_talk"}:
+            return normalized
+        return "always_listening"
+
+    @staticmethod
+    def _normalize_voice_timeout_profile(profile: str) -> str:
+        normalized = (profile or "normal").strip().lower()
+        if normalized in {"short", "normal", "long"}:
+            return normalized
+        return "normal"
 
     @staticmethod
     def _normalize_home_permission_profile(profile: str) -> str:
@@ -473,6 +531,15 @@ class Config:
         checks: list[tuple[str, str, str]] = [
             ("DOA_CHANGE_THRESHOLD", "float", str(self.doa_change_threshold)),
             ("DOA_TIMEOUT", "float", str(self.doa_timeout)),
+            ("WAKE_WORD_SENSITIVITY", "float", str(self.wake_word_sensitivity)),
+            ("VOICE_FOLLOWUP_WINDOW_SEC", "positive_float", str(self.voice_followup_window_sec)),
+            ("VOICE_TIMEOUT_SHORT_SEC", "positive_float", str(self.voice_timeout_short_sec)),
+            ("VOICE_TIMEOUT_NORMAL_SEC", "positive_float", str(self.voice_timeout_normal_sec)),
+            ("VOICE_TIMEOUT_LONG_SEC", "positive_float", str(self.voice_timeout_long_sec)),
+            ("BARGE_THRESHOLD_ALWAYS_LISTENING", "float", str(self.barge_threshold_always_listening)),
+            ("BARGE_THRESHOLD_WAKE_WORD", "float", str(self.barge_threshold_wake_word)),
+            ("BARGE_THRESHOLD_PUSH_TO_TALK", "float", str(self.barge_threshold_push_to_talk)),
+            ("VOICE_MIN_POST_WAKE_CHARS", "int", str(self.voice_min_post_wake_chars)),
             ("MEMORY_SEARCH_LIMIT", "int", str(self.memory_search_limit)),
             ("AUDIT_LOG_MAX_BYTES", "int", str(self.audit_log_max_bytes)),
             ("AUDIT_LOG_BACKUPS", "int", str(self.audit_log_backups)),

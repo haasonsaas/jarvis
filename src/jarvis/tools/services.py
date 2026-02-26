@@ -63,7 +63,7 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
-SYSTEM_STATUS_CONTRACT_VERSION = "1.1"
+SYSTEM_STATUS_CONTRACT_VERSION = "1.2"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
@@ -128,6 +128,11 @@ _timer_id_seq: int = 1
 _reminders: dict[int, dict[str, Any]] = {}
 _reminder_id_seq: int = 1
 _email_history: list[dict[str, Any]] = []
+_runtime_voice_state: dict[str, Any] = {}
+_runtime_observability_state: dict[str, Any] = {}
+_runtime_skills_state: dict[str, Any] = {}
+_inbound_webhook_events: list[dict[str, Any]] = []
+_inbound_webhook_seq: int = 1
 SENSITIVE_AUDIT_KEY_TOKENS = {
     "code",
     "pin",
@@ -300,6 +305,16 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "approval_code": {"type": "string"},
         },
         "required": ["url"],
+    },
+    "webhook_inbound_list": {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer"},
+        },
+    },
+    "webhook_inbound_clear": {
+        "type": "object",
+        "properties": {},
     },
     "slack_notify": {
         "type": "object",
@@ -573,6 +588,8 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "media_control": {"entity_id", "action"},
     "weather_lookup": {"location"},
     "webhook_trigger": {"url"},
+    "webhook_inbound_list": set(),
+    "webhook_inbound_clear": set(),
     "slack_notify": {"message"},
     "discord_notify": {"message"},
     "email_send": {"subject", "body"},
@@ -614,6 +631,21 @@ SERVICE_ERROR_CODES = TOOL_SERVICE_ERROR_CODES
 def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
     normalized = normalize_service_error_code(code)
     record_summary(tool_name, "error", start_time, normalized)
+
+
+def set_runtime_voice_state(state: dict[str, Any]) -> None:
+    global _runtime_voice_state
+    _runtime_voice_state = {str(key): value for key, value in state.items()} if isinstance(state, dict) else {}
+
+
+def set_runtime_observability_state(state: dict[str, Any]) -> None:
+    global _runtime_observability_state
+    _runtime_observability_state = {str(key): value for key, value in state.items()} if isinstance(state, dict) else {}
+
+
+def set_runtime_skills_state(state: dict[str, Any]) -> None:
+    global _runtime_skills_state
+    _runtime_skills_state = {str(key): value for key, value in state.items()} if isinstance(state, dict) else {}
 
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
@@ -707,6 +739,9 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _reminders.clear()
     _reminder_id_seq = 1
     _email_history.clear()
+    _runtime_voice_state.clear()
+    _runtime_observability_state.clear()
+    _runtime_skills_state.clear()
     _load_timers_from_store()
     _load_reminders_from_store()
     global _tool_allowlist, _tool_denylist
@@ -1728,6 +1763,40 @@ def _webhook_host_allowed(url: str) -> bool:
     return False
 
 
+def record_inbound_webhook_event(
+    *,
+    payload: Any,
+    headers: dict[str, Any] | None = None,
+    source: str = "unknown",
+    path: str = "/",
+) -> int:
+    global _inbound_webhook_seq
+    event_id = _inbound_webhook_seq
+    _inbound_webhook_seq += 1
+    entry = {
+        "id": event_id,
+        "timestamp": time.time(),
+        "source": str(source),
+        "path": str(path),
+        "headers": {str(key): str(value) for key, value in (headers or {}).items()},
+        "payload": payload if isinstance(payload, (dict, list, str, int, float, bool, type(None))) else str(payload),
+    }
+    _inbound_webhook_events.append(entry)
+    if len(_inbound_webhook_events) > 500:
+        del _inbound_webhook_events[:-500]
+    _audit(
+        "webhook_inbound",
+        {
+            "result": "ok",
+            "event_id": event_id,
+            "source": entry["source"],
+            "path": entry["path"],
+            "header_count": len(entry["headers"]),
+        },
+    )
+    return event_id
+
+
 def _integration_health_snapshot() -> dict[str, Any]:
     home_configured = bool(_config and _config.has_home_assistant)
     todoist_configured = bool(_config and str(_config.todoist_api_token).strip())
@@ -1755,6 +1824,7 @@ def _integration_health_snapshot() -> dict[str, Any]:
             "allowlist_count": len(_webhook_allowlist),
             "auth_token_configured": bool(_webhook_auth_token),
             "timeout_sec": _webhook_timeout_sec,
+            "inbound_events": len(_inbound_webhook_events),
         },
         "email": {
             "configured": bool(_email_smtp_host and _email_from and _email_default_to),
@@ -1780,6 +1850,39 @@ def _identity_status_snapshot() -> dict[str, Any]:
         "profile_count": len(_identity_user_profiles),
         "user_profiles": {user: _identity_user_profiles[user] for user in sorted(_identity_user_profiles)},
     }
+
+
+def _voice_attention_snapshot() -> dict[str, Any]:
+    if not _runtime_voice_state:
+        return {
+            "mode": "unknown",
+            "followup_active": False,
+            "sleeping": False,
+            "active_room": "unknown",
+        }
+    return {str(key): value for key, value in _runtime_voice_state.items()}
+
+
+def _observability_snapshot() -> dict[str, Any]:
+    if not _runtime_observability_state:
+        return {
+            "enabled": False,
+            "uptime_sec": 0.0,
+            "restart_count": 0,
+            "alerts": [],
+        }
+    return {str(key): value for key, value in _runtime_observability_state.items()}
+
+
+def _skills_status_snapshot() -> dict[str, Any]:
+    if not _runtime_skills_state:
+        return {
+            "enabled": False,
+            "loaded_count": 0,
+            "enabled_count": 0,
+            "skills": [],
+        }
+    return {str(key): value for key, value in _runtime_skills_state.items()}
 
 
 def _health_rollup(
@@ -3087,6 +3190,29 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Unexpected webhook trigger error."}]}
 
 
+async def webhook_inbound_list(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("webhook_inbound_list"):
+        record_summary("webhook_inbound_list", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    limit = _as_int(args.get("limit", 20), 20, minimum=1, maximum=200)
+    rows = list(reversed(_inbound_webhook_events))[:limit]
+    record_summary("webhook_inbound_list", "ok", start_time)
+    return {"content": [{"type": "text", "text": json.dumps(rows, default=str)}]}
+
+
+async def webhook_inbound_clear(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("webhook_inbound_clear"):
+        record_summary("webhook_inbound_clear", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    count = len(_inbound_webhook_events)
+    _inbound_webhook_events.clear()
+    record_summary("webhook_inbound_clear", "ok", start_time)
+    _audit("webhook_inbound_clear", {"result": "ok", "cleared_count": count})
+    return {"content": [{"type": "text", "text": f"Cleared inbound webhook events: {count}."}]}
+
+
 async def slack_notify(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("slack_notify"):
@@ -4260,8 +4386,11 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         },
         "timers": _timer_status(),
         "reminders": _reminder_status(),
+        "voice_attention": _voice_attention_snapshot(),
         "integrations": _integration_health_snapshot(),
         "identity": identity_status,
+        "skills": _skills_status_snapshot(),
+        "observability": _observability_snapshot(),
         "retention_policy": {
             "memory_retention_days": _memory_retention_days,
             "audit_retention_days": _audit_retention_days,
@@ -4297,8 +4426,11 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "tool_policy",
             "timers",
             "reminders",
+            "voice_attention",
             "integrations",
             "identity",
+            "skills",
+            "observability",
             "retention_policy",
             "memory",
             "audit",
@@ -4330,6 +4462,12 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "due_count",
             "next_due_in_sec",
         ],
+        "voice_attention_required": [
+            "mode",
+            "followup_active",
+            "sleeping",
+            "active_room",
+        ],
         "integrations_required": [
             "home_assistant",
             "todoist",
@@ -4349,6 +4487,18 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "trusted_users",
             "profile_count",
             "user_profiles",
+        ],
+        "skills_required": [
+            "enabled",
+            "loaded_count",
+            "enabled_count",
+            "skills",
+        ],
+        "observability_required": [
+            "enabled",
+            "uptime_sec",
+            "restart_count",
+            "alerts",
         ],
         "retention_policy_required": [
             "memory_retention_days",
@@ -4982,6 +5132,18 @@ webhook_trigger_tool = tool(
     SERVICE_TOOL_SCHEMAS["webhook_trigger"],
 )(webhook_trigger)
 
+webhook_inbound_list_tool = tool(
+    "webhook_inbound_list",
+    "List recently received inbound webhook callback events.",
+    SERVICE_TOOL_SCHEMAS["webhook_inbound_list"],
+)(webhook_inbound_list)
+
+webhook_inbound_clear_tool = tool(
+    "webhook_inbound_clear",
+    "Clear stored inbound webhook callback events.",
+    SERVICE_TOOL_SCHEMAS["webhook_inbound_clear"],
+)(webhook_inbound_clear)
+
 slack_notify_tool = tool(
     "slack_notify",
     "Send a Slack notification via incoming webhook.",
@@ -5190,6 +5352,8 @@ def create_services_server():
             media_control_tool,
             weather_lookup_tool,
             webhook_trigger_tool,
+            webhook_inbound_list_tool,
+            webhook_inbound_clear_tool,
             slack_notify_tool,
             discord_notify_tool,
             email_send_tool,

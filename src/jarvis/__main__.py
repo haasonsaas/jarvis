@@ -35,7 +35,9 @@ from jarvis.audio.tts import TextToSpeech
 from jarvis.brain import Brain
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, TOOL_STORAGE_ERROR_DETAILS
 from jarvis.tools.robot import bind as bind_robot_tools
+from jarvis.tools.services import set_runtime_voice_state
 from jarvis.tool_summary import list_summaries
+from jarvis.voice_attention import VoiceAttentionConfig, VoiceAttentionController
 
 _SOUNDDEVICE_IMPORT_ERROR: str | None = None
 try:
@@ -47,7 +49,7 @@ except Exception as e:  # pragma: no cover - exercised via runtime guard tests
 log = logging.getLogger(__name__)
 
 # Audio constants
-SILENCE_TIMEOUT = 0.8   # seconds of silence before end-of-utterance
+SILENCE_TIMEOUT = 0.8   # fallback silence timeout if voice attention controller is unavailable
 MIN_UTTERANCE = 0.3     # minimum utterance length in seconds
 TURN_TAKING_THRESHOLD = 0.55
 TURN_TAKING_BARGE_IN_THRESHOLD = 0.4
@@ -143,6 +145,24 @@ class Jarvis:
         if getattr(args, "no_hands", False):
             self.config.hand_track_enabled = False
 
+        self._voice_attention = VoiceAttentionController(
+            VoiceAttentionConfig(
+                wake_words=list(self.config.wake_words),
+                mode=self.config.wake_mode,
+                wake_word_sensitivity=self.config.wake_word_sensitivity,
+                followup_window_sec=self.config.voice_followup_window_sec,
+                timeout_profile=self.config.voice_timeout_profile,
+                timeout_short_sec=self.config.voice_timeout_short_sec,
+                timeout_normal_sec=self.config.voice_timeout_normal_sec,
+                timeout_long_sec=self.config.voice_timeout_long_sec,
+                barge_threshold_always_listening=self.config.barge_threshold_always_listening,
+                barge_threshold_wake_word=self.config.barge_threshold_wake_word,
+                barge_threshold_push_to_talk=self.config.barge_threshold_push_to_talk,
+                min_post_wake_chars=self.config.voice_min_post_wake_chars,
+                room_default=self.config.voice_room_default,
+            )
+        )
+
         # Bind tools to robot + presence
         bind_robot_tools(self.robot, self.presence, self.config)
 
@@ -212,6 +232,7 @@ class Jarvis:
             "fallback_responses": 0.0,
         }
         self._telemetry_error_counts: dict[str, float] = {}
+        self._publish_voice_status()
 
     def start(self) -> None:
         """Initialize all subsystems."""
@@ -266,6 +287,7 @@ class Jarvis:
                     self._output_stream.start()
 
             log.info("Jarvis is online.")
+            self._publish_voice_status()
         except Exception:
             self.stop()
             raise
@@ -275,11 +297,15 @@ class Jarvis:
         tts_reason = "enabled" if tts_enabled else "disabled (no ELEVENLABS_API_KEY or --no-tts)"
         memory_state = "enabled" if self.config.memory_enabled else "disabled"
         warning_count = len(getattr(self.config, "startup_warnings", []))
+        voice = getattr(self, "_voice_attention", None)
+        wake_mode = getattr(voice, "mode", "always_listening")
+        timeout_profile = getattr(voice, "timeout_profile", "normal")
         return [
             f"Mode: {'simulation' if self.robot.sim else 'hardware'}",
             f"Motion: {'on' if self.config.motion_enabled else 'off'} | Vision: {'on' if not self.args.no_vision and not self.robot.sim else 'off'} | Hands: {'on' if self.config.hand_track_enabled else 'off'}",
             f"Home tools: {'on' if self.config.home_enabled else 'off'}",
             f"Home conversation: {'on' if self.config.home_conversation_enabled else 'off'}",
+            f"Wake mode: {wake_mode} | timeout profile: {timeout_profile}",
             f"TTS: {tts_reason}",
             f"Memory: {memory_state} ({self.config.memory_path})",
             f"Persona style: {self.config.persona_style}",
@@ -287,6 +313,23 @@ class Jarvis:
             f"Tool policy: allow={len(self.config.tool_allowlist)} deny={len(self.config.tool_denylist)}",
             f"Error taxonomy: total={len(TOOL_SERVICE_ERROR_CODES)} service={len(TELEMETRY_SERVICE_ERROR_DETAILS)} storage={len(TELEMETRY_STORAGE_ERROR_DETAILS)}",
         ]
+
+    def _publish_voice_status(self) -> None:
+        voice = self._voice_controller()
+        status = voice.status()
+        try:
+            status["presence_state"] = str(self.presence.signals.state.value)
+        except Exception:
+            status["presence_state"] = "unknown"
+        set_runtime_voice_state(status)
+
+    def _voice_controller(self) -> VoiceAttentionController:
+        voice = getattr(self, "_voice_attention", None)
+        if voice is not None:
+            return voice
+        fallback = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))
+        self._voice_attention = fallback
+        return fallback
 
     def _refresh_tool_error_counters(self) -> None:
         try:
@@ -380,6 +423,7 @@ class Jarvis:
         with suppress(Exception):
             self.robot.disconnect()
         self._started = False
+        set_runtime_voice_state({"mode": "offline", "followup_active": False, "sleeping": False, "active_room": "unknown"})
         log.info("Jarvis offline.")
 
     async def run(self) -> None:
@@ -412,15 +456,29 @@ class Jarvis:
                     self._telemetry["stt_latency_count"] += 1.0
                 if not text.strip():
                     self.presence.signals.state = State.IDLE
+                    self._publish_voice_status()
                     continue
+
+                decision = self._voice_controller().process_transcript(text)
+                if decision.reply:
+                    if self.tts:
+                        await self._tts_queue.put((self._active_response_id, decision.reply, True, 0.0))
+                    else:
+                        print(f"  JARVIS: {decision.reply}")
+                if not decision.accepted:
+                    self.presence.signals.state = State.IDLE
+                    self._publish_voice_status()
+                    continue
+                text = decision.text
 
                 if self._awaiting_confirmation:
                     normalized = text.strip().lower()
-                    if normalized in AFFIRMATIONS and self._pending_text:
+                    intent = self._voice_controller().confirmation_intent(normalized)
+                    if intent == "confirm" and self._pending_text:
                         self._awaiting_confirmation = False
                         text = self._pending_text
                         self._pending_text = None
-                    elif normalized in NEGATIONS:
+                    elif intent == "deny":
                         self._awaiting_confirmation = False
                         self._pending_text = None
                         if self.tts:
@@ -428,6 +486,23 @@ class Jarvis:
                         else:
                             print("  JARVIS: Understood.")
                         self.presence.signals.state = State.IDLE
+                        self._publish_voice_status()
+                        continue
+                    elif intent == "repeat":
+                        if self.tts:
+                            await self._tts_queue.put(
+                                (
+                                    self._active_response_id,
+                                    "Please say confirm to proceed or deny to cancel.",
+                                    True,
+                                    0.0,
+                                )
+                            )
+                        else:
+                            print("  JARVIS: Please say confirm to proceed or deny to cancel.")
+                        self.presence.signals.state = State.LISTENING
+                        self._awaiting_confirmation = True
+                        self._publish_voice_status()
                         continue
                     else:
                         self._awaiting_confirmation = False
@@ -442,6 +517,7 @@ class Jarvis:
                     else:
                         print(f"  JARVIS: {CONFIRMATION_PHRASE}")
                     self.presence.signals.state = State.LISTENING
+                    self._publish_voice_status()
                     continue
 
                 # Get response from Claude and play it
@@ -513,6 +589,7 @@ class Jarvis:
             doa_angle, doa_speech = self.robot.get_doa()
             now = time.monotonic()
             self._last_doa_speech = doa_speech
+            self._voice_controller().update_room_from_doa(doa_angle)
             if doa_angle is not None:
                 if doa_speech is None or doa_speech:
                     if self._last_doa_angle is None or abs(doa_angle - self._last_doa_angle) >= self.config.doa_change_threshold:
@@ -559,7 +636,7 @@ class Jarvis:
                 chunks.append(chunk_16k)
                 if silence_start is None:
                     silence_start = time.monotonic()
-                elif time.monotonic() - silence_start > SILENCE_TIMEOUT:
+                elif time.monotonic() - silence_start > self._voice_controller().silence_timeout():
                     audio = np.concatenate(chunks) if chunks else np.array([], dtype=np.float32)
 
                     # Reset for the next utterance.
@@ -575,6 +652,8 @@ class Jarvis:
                     duration = len(audio) / self.config.sample_rate
                     if duration >= MIN_UTTERANCE:
                         await self._enqueue_utterance(audio)
+
+            self._publish_voice_status()
 
         if not self._use_robot_audio:
             _require_sounddevice("local microphone capture")
@@ -726,8 +805,10 @@ class Jarvis:
                 self._speaking = False
             if not self._barge_in.is_set():
                 self.presence.signals.state = State.IDLE
+                self._voice_controller().continue_listening()
             if self._filler_task is not None:
                 self._filler_task.cancel()
+            self._publish_voice_status()
 
     async def _tts_loop(self) -> None:
         """Consume sentences and play TTS in order, with barge-in support."""
@@ -791,7 +872,10 @@ class Jarvis:
 
         doa_score = 1.0 if doa_speech else 0.0
         score = (0.55 * conf) + (0.3 * doa_score) + (0.15 * attention)
-        threshold = TURN_TAKING_BARGE_IN_THRESHOLD if assistant_busy else TURN_TAKING_THRESHOLD
+        if assistant_busy:
+            threshold = self._voice_controller().barge_in_threshold()
+        else:
+            threshold = TURN_TAKING_THRESHOLD
 
         if assistant_busy:
             if doa_speech is True:
