@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 50 (Proactive Trust Decomposition)
+# Jarvis TODO — Wave 51 (Planner Engine Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,70 +8,68 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 26
-- Completed: 26
+- Total items: 29
+- Completed: 29
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W50-A01` Confirm Wave 49 merged and tree is clean before edits.
-- [x] `W50-A02` Re-profile remaining largest service-domain modules.
-- [x] `W50-A03` Select `services_domains/trust.py` for decomposition.
-- [x] `W50-A04` Preserve `proactive_assistant` API behavior and action contract.
+- [x] `W51-A01` Confirm Wave 50 merged and workspace baseline.
+- [x] `W51-A02` Re-profile remaining large service-domain hotspots.
+- [x] `W51-A03` Select `services_domains/planner_engine_domain.py` for decomposition.
+- [x] `W51-A04` Preserve `planner_engine` tool contract and action outputs.
 
 ## B) Decomposition design
 
-- [x] `W50-B01` Define `trust_proactive_briefing.py` for `briefing` + `event_digest`.
-- [x] `W50-B02` Define `trust_proactive_nudges.py` for `anomaly_scan` + `nudge_decision`.
-- [x] `W50-B03` Define `trust_proactive_followthrough.py` for `routine_suggestions` + `follow_through`.
-- [x] `W50-B04` Keep `trust.py` as thin dispatcher and policy gate.
+- [x] `W51-B01` Define `planner_engine_plan_graph.py` for plan/graph/self-critique actions.
+- [x] `W51-B02` Define `planner_engine_deferred.py` for deferred scheduling/listing.
+- [x] `W51-B03` Define `planner_engine_autonomy.py` for autonomy lifecycle actions.
+- [x] `W51-B04` Keep `planner_engine_domain.py` as a dispatcher with policy gate.
 
 ## C) Extraction implementation
 
-- [x] `W50-C01` Create `services_domains/trust_proactive_briefing.py`.
-- [x] `W50-C02` Move `briefing` action logic.
-- [x] `W50-C03` Move `event_digest` action logic.
-- [x] `W50-C04` Create `services_domains/trust_proactive_nudges.py`.
-- [x] `W50-C05` Move `anomaly_scan` action logic.
-- [x] `W50-C06` Move `nudge_decision` action logic and runtime dedupe helpers.
-- [x] `W50-C07` Create `services_domains/trust_proactive_followthrough.py`.
-- [x] `W50-C08` Move `routine_suggestions` action logic.
-- [x] `W50-C09` Move `follow_through` action logic.
-- [x] `W50-C10` Rewrite `trust.py` as a small action dispatcher.
+- [x] `W51-C01` Create `services_domains/planner_engine_plan_graph.py`.
+- [x] `W51-C02` Move `plan`, `task_graph_create`, `task_graph_update`, `task_graph_resume`.
+- [x] `W51-C03` Move `self_critique`.
+- [x] `W51-C04` Create `services_domains/planner_engine_deferred.py`.
+- [x] `W51-C05` Move `deferred_schedule` and `deferred_list`.
+- [x] `W51-C06` Create `services_domains/planner_engine_autonomy.py`.
+- [x] `W51-C07` Move `autonomy_schedule`, `autonomy_checkpoint`, `autonomy_cycle`, `autonomy_status`.
+- [x] `W51-C08` Rewrite `planner_engine_domain.py` as thin action dispatcher.
 
 ## D) Boundaries
 
-- [x] `W50-D01` Add import-boundary check for `trust_proactive_briefing`.
-- [x] `W50-D02` Add import-boundary check for `trust_proactive_nudges`.
-- [x] `W50-D03` Add import-boundary check for `trust_proactive_followthrough`.
+- [x] `W51-D01` Add import-boundary check for `planner_engine_plan_graph`.
+- [x] `W51-D02` Add import-boundary check for `planner_engine_deferred`.
+- [x] `W51-D03` Add import-boundary check for `planner_engine_autonomy`.
 
 ## E) Validation
 
-- [x] `W50-E01` Run focused lint on touched trust/proactive modules + boundary file.
-- [x] `W50-E02` Run targeted pytest for proactive assistant actions + boundaries.
-- [x] `W50-E03` Run full `make check`.
-- [x] `W50-E04` Run full `make security-gate`.
-- [x] `W50-E05` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W51-E01` Run focused lint on planner-engine modules + boundary test file.
+- [x] `W51-E02` Run targeted pytest for planner engine actions + import boundaries.
+- [x] `W51-E03` Run full `make check`.
+- [x] `W51-E04` Run full `make security-gate`.
+- [x] `W51-E05` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W50-F01` Capture post-split line-count outcomes.
-- [x] `W50-F02` Commit and push Wave 50.
+- [x] `W51-F01` Capture post-split line-count outcomes.
+- [x] `W51-F02` Commit and push Wave 51.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Proactive trust decomposition:
-  - `services_domains/trust.py`: `419 -> 56` lines (dispatcher)
-  - New `services_domains/trust_proactive_briefing.py`: `101` lines
-  - New `services_domains/trust_proactive_nudges.py`: `299` lines
-  - New `services_domains/trust_proactive_followthrough.py`: `89` lines
+- Planner engine decomposition:
+  - `services_domains/planner_engine_domain.py`: `415 -> 69` lines (dispatcher)
+  - New `services_domains/planner_engine_plan_graph.py`: `195` lines
+  - New `services_domains/planner_engine_deferred.py`: `55` lines
+  - New `services_domains/planner_engine_autonomy.py`: `254` lines
 - Boundary enforcement:
-  - Added import-boundary coverage for all new proactive trust modules.
+  - Added import-boundary coverage for all new planner engine modules.
 - Validation status:
-  - `make check`: `639 passed`
-  - `make security-gate`: `639 passed`; fault subset `3 passed`
+  - `make check`: `642 passed`
+  - `make security-gate`: `642 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
