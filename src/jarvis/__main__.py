@@ -131,6 +131,20 @@ CORRECTION_TERMS = {
     "rather",
     "change that",
 }
+FOLLOWUP_CARRYOVER_MAX_AGE_SEC = 120.0
+FOLLOWUP_CARRYOVER_PREFIX_TERMS = (
+    "and ",
+    "also ",
+    "then ",
+    "what about",
+    "how about",
+    "plus ",
+    "as well",
+    "same for",
+)
+FOLLOWUP_CARRYOVER_REFERENCE_TERMS = {"it", "that", "this", "them", "there", "one", "same"}
+FOLLOWUP_CARRYOVER_SHORT_REPLY_MAX_WORDS = 8
+FOLLOWUP_CARRYOVER_ACK_TERMS = {"yes", "yep", "yeah", "no", "nope", "ok", "okay", "thanks", "thank", "sure"}
 TURN_CHOREOGRAPHY_CUES: dict[State, dict[str, float | str]] = {
     State.IDLE: {"label": "idle_reset", "turn_lean": 0.0, "turn_tilt": 0.0, "turn_glance_yaw": 0.0},
     State.LISTENING: {"label": "listen_lean_in", "turn_lean": 1.5, "turn_tilt": -1.0, "turn_glance_yaw": -3.0},
@@ -303,6 +317,12 @@ class Jarvis:
         self._last_doa_speech: bool | None = None
         self._awaiting_confirmation = False
         self._pending_text: str | None = None
+        self._followup_carryover: dict[str, Any] = {
+            "text": "",
+            "intent": "",
+            "timestamp": 0.0,
+            "unresolved": False,
+        }
         self._turn_choreography: dict[str, Any] = {
             "phase": str(State.IDLE.value),
             "label": "idle_reset",
@@ -1006,6 +1026,105 @@ class Jarvis:
             return True
         return bool(re.search(r"\b(?:no|nope|nah)\b.+\b(?:meant|wanted|said)\b", phrase))
 
+    def _is_followup_carryover_candidate(self, text: str, *, now_ts: float | None = None) -> bool:
+        phrase = str(text or "").strip().lower()
+        if not phrase:
+            return False
+        context = getattr(self, "_followup_carryover", {})
+        if not isinstance(context, dict):
+            return False
+        previous_text = str(context.get("text", "")).strip()
+        previous_intent = str(context.get("intent", "")).strip().lower()
+        unresolved = bool(context.get("unresolved", False))
+        try:
+            previous_ts = float(context.get("timestamp", 0.0))
+        except (TypeError, ValueError):
+            previous_ts = 0.0
+        if not math.isfinite(previous_ts) or previous_ts < 0.0:
+            previous_ts = 0.0
+        if not previous_text or previous_intent not in {"action", "hybrid"}:
+            return False
+        if now_ts is None:
+            now_value = time.time()
+        else:
+            try:
+                now_value = float(now_ts)
+            except (TypeError, ValueError):
+                now_value = time.time()
+        if not math.isfinite(now_value):
+            now_value = time.time()
+        if (now_value - previous_ts) > FOLLOWUP_CARRYOVER_MAX_AGE_SEC:
+            return False
+        if len(phrase) > 220:
+            return False
+        if any(phrase.startswith(prefix) for prefix in FOLLOWUP_CARRYOVER_PREFIX_TERMS):
+            return True
+        word_list = [token for token in re.findall(r"[a-z0-9']+", phrase)]
+        words = set(word_list)
+        if words & FOLLOWUP_CARRYOVER_REFERENCE_TERMS:
+            return True
+        if not unresolved:
+            return False
+        if phrase.endswith("?"):
+            return False
+        if not word_list or len(word_list) > FOLLOWUP_CARRYOVER_SHORT_REPLY_MAX_WORDS:
+            return False
+        if words.issubset(FOLLOWUP_CARRYOVER_ACK_TERMS):
+            return False
+        if words & ACTION_INTENT_TERMS:
+            return False
+        if word_list[0] in QUESTION_START_TERMS:
+            return False
+        return True
+
+    def _with_followup_carryover(self, text: str, *, now_ts: float | None = None) -> tuple[str, bool]:
+        if not self._is_followup_carryover_candidate(text, now_ts=now_ts):
+            return text, False
+        context = getattr(self, "_followup_carryover", {})
+        previous_text = str(context.get("text", "")).strip()[:220]
+        unresolved = bool(context.get("unresolved", False))
+        policy = (
+            "Previous request may still have unresolved slots; preserve target/entity context unless user overrides."
+            if unresolved
+            else "Preserve prior action context unless the user explicitly overrides target or scope."
+        )
+        augmented = (
+            f"{text}\n\nFollow-up intent carryover:\n"
+            f"Previous request: {previous_text}\n"
+            f"{policy}"
+        )
+        return augmented, True
+
+    def _update_followup_carryover(
+        self,
+        text: str,
+        intent_class: str,
+        *,
+        resolved: bool | None,
+        now_ts: float | None = None,
+    ) -> None:
+        phrase = str(text or "").strip()
+        if not phrase:
+            return
+        intent = str(intent_class or "").strip().lower()
+        unresolved = intent in {"action", "hybrid"} and resolved is not True
+        if now_ts is None:
+            timestamp = time.time()
+        else:
+            try:
+                timestamp = float(now_ts)
+            except (TypeError, ValueError):
+                timestamp = time.time()
+        if not math.isfinite(timestamp) or timestamp < 0.0:
+            timestamp = time.time()
+        payload = {
+            "text": phrase[:280],
+            "intent": intent,
+            "timestamp": timestamp,
+            "unresolved": unresolved,
+        }
+        self._followup_carryover = payload
+
     @staticmethod
     def _turn_tool_summaries_since(started_at: float) -> list[dict[str, Any]]:
         with suppress(Exception):
@@ -1105,6 +1224,7 @@ class Jarvis:
         tool_summaries: list[dict[str, Any]],
         lifecycle: str,
         used_brain_response: bool,
+        followup_carryover_applied: bool = False,
     ) -> None:
         self._turn_trace_seq += 1
         now = time.time()
@@ -1133,6 +1253,7 @@ class Jarvis:
             "lifecycle": str(lifecycle),
             "intent": str(intent_class),
             "transcript": str(user_text).strip()[:400],
+            "followup_carryover_applied": bool(followup_carryover_applied),
             "latencies_ms": {
                 "stt": stt_ms,
                 "llm_first_sentence": llm_ms,
@@ -1545,6 +1666,13 @@ class Jarvis:
                         self._telemetry["intent_completion_total"] += 1.0
                         if completion_outcome:
                             self._telemetry["intent_completion_success"] += 1.0
+                    correction_succeeded = not bool(result.get("isError", False))
+                    self._update_followup_carryover(
+                        text,
+                        intent_class,
+                        resolved=correction_succeeded,
+                        now_ts=turn_started_at,
+                    )
                     reply = str(result.get("content", [{}])[0].get("text", "")).strip() or "Done."
                     if self.tts:
                         await self._tts_queue.put((self._active_response_id, reply, True, 0.0))
@@ -1563,6 +1691,7 @@ class Jarvis:
                         tool_summaries=turn_tool_summaries,
                         lifecycle="memory_correction",
                         used_brain_response=False,
+                        followup_carryover_applied=False,
                     )
                     continue
 
@@ -1570,6 +1699,12 @@ class Jarvis:
                     self._awaiting_confirmation = True
                     self._pending_text = text
                     self._telemetry["fallback_responses"] += 1.0
+                    self._update_followup_carryover(
+                        text,
+                        intent_class,
+                        resolved=False,
+                        now_ts=turn_started_at,
+                    )
                     if self.tts:
                         await self._tts_queue.put((self._active_response_id, CONFIRMATION_PHRASE, True, 0.0))
                     else:
@@ -1587,12 +1722,17 @@ class Jarvis:
                         tool_summaries=[],
                         lifecycle="confirmation_requested",
                         used_brain_response=False,
+                        followup_carryover_applied=False,
                     )
                     continue
 
                 # Get response from Claude and play it
                 self._telemetry["turns"] += 1.0
-                await self._respond_and_speak(text)
+                response_prompt_text, followup_carryover_applied = self._with_followup_carryover(
+                    text,
+                    now_ts=turn_started_at,
+                )
+                await self._respond_and_speak(response_prompt_text)
                 response_success = bool(self._response_started and not self._barge_in.is_set())
                 llm_first_sentence_ms = (
                     (self._first_sentence_at - self._response_start_at) * 1000.0
@@ -1609,12 +1749,23 @@ class Jarvis:
                     self._telemetry["intent_answer_total"] += 1.0
                     if response_success:
                         self._telemetry["intent_answer_success"] += 1.0
+                completion_outcome: bool | None = None
                 if intent_class in {"action", "hybrid"}:
                     completion_outcome = self._completion_success_from_summaries(turn_tool_summaries)
                     if completion_outcome is not None:
                         self._telemetry["intent_completion_total"] += 1.0
                         if completion_outcome:
                             self._telemetry["intent_completion_success"] += 1.0
+                if intent_class in {"action", "hybrid"}:
+                    resolved: bool | None = completion_outcome is True
+                else:
+                    resolved = True
+                self._update_followup_carryover(
+                    text,
+                    intent_class,
+                    resolved=resolved,
+                    now_ts=turn_started_at,
+                )
                 self._record_conversation_trace(
                     user_text=text,
                     intent_class=intent_class,
@@ -1626,6 +1777,7 @@ class Jarvis:
                     tool_summaries=turn_tool_summaries,
                     lifecycle="completed",
                     used_brain_response=True,
+                    followup_carryover_applied=followup_carryover_applied,
                 )
                 if int(self._telemetry["turns"]) % TELEMETRY_LOG_EVERY_TURNS == 0:
                     self._refresh_tool_error_counters()

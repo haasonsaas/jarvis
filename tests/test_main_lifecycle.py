@@ -113,6 +113,77 @@ def test_looks_like_user_correction():
     assert Jarvis._looks_like_user_correction("What time is it?") is False
 
 
+def test_followup_carryover_candidate_accepts_short_slot_reply_when_previous_request_unresolved():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._followup_carryover = {
+        "text": "Turn on the lights in the living room.",
+        "intent": "action",
+        "timestamp": 100.0,
+        "unresolved": True,
+    }
+
+    assert Jarvis._is_followup_carryover_candidate(jarvis, "the bedroom", now_ts=130.0) is True
+
+
+def test_followup_carryover_candidate_rejects_explicit_new_action():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._followup_carryover = {
+        "text": "Turn on the lights in the living room.",
+        "intent": "action",
+        "timestamp": 100.0,
+        "unresolved": True,
+    }
+
+    assert Jarvis._is_followup_carryover_candidate(jarvis, "turn on the kitchen lights", now_ts=130.0) is False
+
+
+def test_with_followup_carryover_augments_prompt_for_unresolved_followup():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._followup_carryover = {
+        "text": "Set the bedroom lights to warm white.",
+        "intent": "action",
+        "timestamp": 200.0,
+        "unresolved": True,
+    }
+
+    augmented, applied = Jarvis._with_followup_carryover(jarvis, "and in the office", now_ts=220.0)
+    assert applied is True
+    assert "Follow-up intent carryover:" in augmented
+    assert "Previous request: Set the bedroom lights to warm white." in augmented
+    assert "unresolved slots" in augmented
+
+
+def test_with_followup_carryover_skips_acknowledgement_only_replies():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._followup_carryover = {
+        "text": "Set the bedroom lights to warm white.",
+        "intent": "action",
+        "timestamp": 200.0,
+        "unresolved": True,
+    }
+
+    augmented, applied = Jarvis._with_followup_carryover(jarvis, "okay", now_ts=220.0)
+    assert applied is False
+    assert augmented == "okay"
+
+
+def test_update_followup_carryover_tracks_resolution_status():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._followup_carryover = {}
+
+    Jarvis._update_followup_carryover(jarvis, "Turn on the porch light.", "action", resolved=False, now_ts=300.0)
+    assert jarvis._followup_carryover["unresolved"] is True
+    assert jarvis._followup_carryover["intent"] == "action"
+    assert jarvis._followup_carryover["timestamp"] == 300.0
+
+    Jarvis._update_followup_carryover(jarvis, "Turn on the porch light.", "action", resolved=True, now_ts=320.0)
+    assert jarvis._followup_carryover["unresolved"] is False
+
+    Jarvis._update_followup_carryover(jarvis, "What is the weather?", "answer", resolved=None, now_ts=340.0)
+    assert jarvis._followup_carryover["unresolved"] is False
+    assert jarvis._followup_carryover["intent"] == "answer"
+
+
 def test_apply_turn_choreography_sets_presence_bias_fields():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis.presence = SimpleNamespace(signals=SimpleNamespace(turn_lean=0.0, turn_tilt=0.0, turn_glance_yaw=0.0))

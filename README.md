@@ -136,6 +136,9 @@ Smart home safety defaults:
   - `direct` for stable factual prompts.
 - Wake-word false-trigger suppression supports calibration profiles (`default`, `quiet_room`, `noisy_room`, `tv_room`, `far_field`):
   - profile tunes wake sensitivity, minimum post-wake phrase length, and adaptive suppression window after repeated wake-only triggers.
+- Follow-up intent carryover preserves unresolved action context across short multi-turn replies:
+  - short fragments like `the bedroom` or `and in the office` inherit prior unresolved action targets.
+  - explicit new action phrasing (e.g. `turn on the kitchen lights`) remains a new request.
 - Home Assistant conversation tool requires both:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`
