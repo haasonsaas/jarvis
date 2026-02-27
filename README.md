@@ -126,6 +126,10 @@ Smart home safety defaults:
   - `brief` for urgent/short-answer requests,
   - `deep` for explicit detailed walkthrough requests,
   - `normal` otherwise.
+- First-response strategy auto-selects per request:
+  - `answer` for direct questions,
+  - `act` for explicit action requests,
+  - `clarify` when an action request is ambiguous (`it/that/this` targets).
 - Home Assistant conversation tool requires both:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`

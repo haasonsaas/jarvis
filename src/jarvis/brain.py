@@ -130,6 +130,34 @@ RESPONSE_MODE_DEEP_TERMS = {
     "tradeoffs",
     "pros and cons",
 }
+FIRST_RESPONSE_ACTION_TERMS = {
+    "turn",
+    "set",
+    "open",
+    "close",
+    "lock",
+    "unlock",
+    "arm",
+    "disarm",
+    "send",
+    "notify",
+    "remind",
+    "create",
+    "update",
+    "delete",
+    "add",
+    "trigger",
+    "play",
+    "pause",
+}
+FIRST_RESPONSE_QUESTION_STARTS = {"what", "when", "where", "who", "why", "how", "is", "are", "can", "could", "would"}
+FIRST_RESPONSE_AMBIGUOUS_REFERENCES = {"it", "that", "this", "them", "there", "one", "something", "thing"}
+FIRST_RESPONSE_INSTRUCTIONS = {
+    "answer": "Lead with the direct answer in the first sentence.",
+    "act": "Acknowledge briefly, then state the exact action you will take before calling tools.",
+    "clarify": "Ask one clarifying question before any tool call, then wait for the answer.",
+    "acknowledge": "Acknowledge and ask for the minimum missing detail needed to proceed.",
+}
 
 
 class Brain:
@@ -276,6 +304,27 @@ class Brain:
         instruction = RESPONSE_MODE_INSTRUCTIONS.get(mode, RESPONSE_MODE_INSTRUCTIONS["normal"])
         return f"Mode={mode}. {instruction}"
 
+    def _first_response_strategy(self, user_text: str) -> str:
+        sample = str(user_text or "").strip().lower()
+        if not sample:
+            return "acknowledge"
+        words = {token for token in re.findall(r"[a-z0-9']+", sample)}
+        has_action = bool(words & FIRST_RESPONSE_ACTION_TERMS)
+        has_question = sample.endswith("?") or any(sample.startswith(f"{token} ") for token in FIRST_RESPONSE_QUESTION_STARTS)
+        has_ambiguous_reference = bool(words & FIRST_RESPONSE_AMBIGUOUS_REFERENCES)
+        if has_action and has_ambiguous_reference:
+            return "clarify"
+        if has_action:
+            return "act"
+        if has_question:
+            return "answer"
+        return "acknowledge"
+
+    def _first_response_instruction(self, user_text: str) -> str:
+        strategy = self._first_response_strategy(user_text)
+        instruction = FIRST_RESPONSE_INSTRUCTIONS.get(strategy, FIRST_RESPONSE_INSTRUCTIONS["acknowledge"])
+        return f"Strategy={strategy}. {instruction}"
+
     def _interaction_contract_context(self) -> str:
         rules = INTERACTION_CONTRACT.get("response_order", ()) + INTERACTION_CONTRACT.get("ambiguity_and_safety", ())
         if not rules:
@@ -330,6 +379,10 @@ class Brain:
                 memory_context = "\n".join(memory_lines)
                 if memory_context:
                     user_text = f"{user_text}\n\nContext (memory):\n{memory_context}"
+
+        first_response_instruction = self._first_response_instruction(query_text)
+        if first_response_instruction:
+            user_text = f"{user_text}\n\nFirst response strategy:\n{first_response_instruction}"
 
         response_mode_instruction = self._response_mode_instruction(query_text)
         if response_mode_instruction:
