@@ -44,3 +44,21 @@ Tune Jarvis personality for higher trust and "assistant presence" without degrad
 - Run human-eval A/B sessions for `jarvis` vs `composed`.
 - Tune social/safety posture classifiers using real transcripts.
 - Add weekly drift checks for over-verbosity and confirmation friction.
+
+## A/B harness workflow (Wave 31)
+
+- Default prompt set: `docs/evals/personality-ab-prompts.json`
+- Run local A/B evaluation:
+  - `./scripts/personality_ab_eval.py --prompts docs/evals/personality-ab-prompts.json --label-a composed --label-b jarvis --output-dir .artifacts/quality --markdown --enforce`
+- Run CI wrapper:
+  - `./scripts/test_personality.sh`
+  - `make test-personality`
+
+### Drift metrics emitted
+
+- `verbosity_violation_rate` (target `<= 0.25`)
+- `confirmation_friction_rate` (target `<= 0.20`)
+- `high_risk_confirmation_coverage` (target `>= 0.80`)
+- Cross-variant drift checks:
+  - `brevity_drift_ratio` (B vs A, target `<= 0.35`)
+  - `confirmation_friction_drift` (B - A, target `<= 0.10`)

@@ -339,6 +339,12 @@ make test-faults
 # Soak/stability subset
 make test-soak
 
+# Extended soak profile (simulation + fault profiles + checkpoint/retry validation)
+make test-soak-extended
+
+# Personality A/B drift checks (brevity + confirmation friction)
+make test-personality
+
 # Deployment/security gate (lint + tests + fault subset + workflow pin checks)
 make security-gate
 
@@ -357,6 +363,10 @@ Equivalent scripts are available under `scripts/`:
 - `scripts/test_sim.sh`
 - `scripts/test_faults.sh`
 - `scripts/test_soak.sh`
+- `scripts/test_soak_extended.sh`
+- `scripts/run_soak_profile.py`
+- `scripts/test_personality.sh`
+- `scripts/personality_ab_eval.py`
 - `scripts/security_gate.sh`
 - `scripts/jarvis_readiness.sh`
 

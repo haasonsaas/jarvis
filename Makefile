@@ -1,4 +1,4 @@
-.PHONY: check test-fast test-sim test-faults test-fault-profiles test-soak security-gate \
+.PHONY: check test-fast test-sim test-faults test-fault-profiles test-soak test-soak-extended test-personality security-gate \
 	bootstrap quality-report eval-dataset release-channel-check release-acceptance readiness
 
 check:
@@ -18,7 +18,13 @@ test-fault-profiles:
 	./scripts/run_fault_profiles.sh all
 
 test-soak:
-	uv run pytest -q tests/test_main_audio.py -k soak
+	./scripts/test_soak.sh
+
+test-soak-extended:
+	./scripts/test_soak_extended.sh full
+
+test-personality:
+	./scripts/test_personality.sh
 
 security-gate:
 	./scripts/security_gate.sh
