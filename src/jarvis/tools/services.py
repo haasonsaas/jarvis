@@ -124,24 +124,24 @@ from jarvis.tools.services_recovery_runtime import (
     write_dead_letter_entries as _runtime_write_dead_letter_entries,
     write_recovery_journal_entry as _runtime_write_recovery_journal_entry,
 )
-from jarvis.tools.services_audit_runtime import (
-    apply_retention_policies as _runtime_apply_retention_policies,
-    audit as _runtime_audit,
-    audit_decision_explanation as _runtime_audit_decision_explanation,
-    audit_outcome as _runtime_audit_outcome,
-    audit_reason_code as _runtime_audit_reason_code,
-    audit_status as _runtime_audit_status,
-    configure_audit_encryption as _runtime_configure_audit_encryption,
-    contains_pii as _runtime_contains_pii,
-    decode_audit_line as _runtime_decode_audit_line,
-    encrypt_audit_line as _runtime_encrypt_audit_line,
-    humanize_chain_token as _runtime_humanize_chain_token,
-    metadata_only_audit_details as _runtime_metadata_only_audit_details,
-    prune_audit_file as _runtime_prune_audit_file,
-    redact_sensitive_for_audit as _runtime_redact_sensitive_for_audit,
-    rotate_audit_log_if_needed as _runtime_rotate_audit_log_if_needed,
-    sanitize_inbound_headers as _runtime_sanitize_inbound_headers,
-    sanitize_inbound_payload as _runtime_sanitize_inbound_payload,
+from jarvis.tools.services_audit_facade_runtime import (
+    apply_retention_policies as _facade_apply_retention_policies,
+    audit as _facade_audit,
+    audit_decision_explanation as _facade_audit_decision_explanation,
+    audit_outcome as _facade_audit_outcome,
+    audit_reason_code as _facade_audit_reason_code,
+    audit_status as _facade_audit_status,
+    configure_audit_encryption as _facade_configure_audit_encryption,
+    contains_pii as _facade_contains_pii,
+    decode_audit_line as _facade_decode_audit_line,
+    encrypt_audit_line as _facade_encrypt_audit_line,
+    humanize_chain_token as _facade_humanize_chain_token,
+    metadata_only_audit_details as _facade_metadata_only_audit_details,
+    prune_audit_file as _facade_prune_audit_file,
+    redact_sensitive_for_audit as _facade_redact_sensitive_for_audit,
+    rotate_audit_log_if_needed as _facade_rotate_audit_log_if_needed,
+    sanitize_inbound_headers as _facade_sanitize_inbound_headers,
+    sanitize_inbound_payload as _facade_sanitize_inbound_payload,
 )
 from jarvis.tools.services_schedule_runtime import (
     allocate_reminder_id as _runtime_allocate_reminder_id,
@@ -556,69 +556,26 @@ def _tool_permitted(name: str) -> bool:
     return is_tool_allowed(name, _tool_allowlist, _tool_denylist)
 
 
-def _configure_audit_encryption(*, enabled: bool, key: str) -> None:
-    _runtime_configure_audit_encryption(_services_module(), enabled=enabled, key=key)
-
-
-def _encrypt_audit_line(payload: dict[str, Any]) -> str:
-    return _runtime_encrypt_audit_line(_services_module(), payload)
-
-
-def _decode_audit_line(line: str) -> dict[str, Any] | None:
-    return _runtime_decode_audit_line(_services_module(), line)
+_configure_audit_encryption = _facade_configure_audit_encryption
+_encrypt_audit_line = _facade_encrypt_audit_line
+_decode_audit_line = _facade_decode_audit_line
 
 
 def decode_audit_entry_line(line: str) -> dict[str, Any] | None:
     return _decode_audit_line(line)
 
 
-def _audit_outcome(details: dict[str, Any]) -> str:
-    return _runtime_audit_outcome(details)
-
-
-def _audit_reason_code(details: dict[str, Any]) -> str:
-    return _runtime_audit_reason_code(details)
-
-
-def _humanize_chain_token(token: str) -> str:
-    return _runtime_humanize_chain_token(token)
-
-
-def _audit_decision_explanation(action: str, details: dict[str, Any]) -> str:
-    return _runtime_audit_decision_explanation(_services_module(), action, details)
-
-
-def _audit(action: str, details: dict) -> None:
-    _runtime_audit(_services_module(), action, details)
-
-
-def _rotate_audit_log_if_needed() -> None:
-    _runtime_rotate_audit_log_if_needed(_services_module())
-
-
-def _redact_sensitive_for_audit(value: Any, *, key_hint: str | None = None) -> Any:
-    return _runtime_redact_sensitive_for_audit(_services_module(), value, key_hint=key_hint)
-
-
-def _metadata_only_audit_details(action: str, details: dict[str, Any]) -> dict[str, Any]:
-    return _runtime_metadata_only_audit_details(_services_module(), action, details)
-
-
-def _sanitize_inbound_headers(headers: dict[str, Any] | None) -> dict[str, str]:
-    return _runtime_sanitize_inbound_headers(_services_module(), headers)
-
-
-def _sanitize_inbound_payload(value: Any, *, key_hint: str | None = None, depth: int = 0) -> Any:
-    return _runtime_sanitize_inbound_payload(
-        _services_module(),
-        value,
-        key_hint=key_hint,
-        depth=depth,
-    )
-
-
-def _contains_pii(text: str) -> bool:
-    return _runtime_contains_pii(_services_module(), text)
+_audit_outcome = _facade_audit_outcome
+_audit_reason_code = _facade_audit_reason_code
+_humanize_chain_token = _facade_humanize_chain_token
+_audit_decision_explanation = _facade_audit_decision_explanation
+_audit = _facade_audit
+_rotate_audit_log_if_needed = _facade_rotate_audit_log_if_needed
+_redact_sensitive_for_audit = _facade_redact_sensitive_for_audit
+_metadata_only_audit_details = _facade_metadata_only_audit_details
+_sanitize_inbound_headers = _facade_sanitize_inbound_headers
+_sanitize_inbound_payload = _facade_sanitize_inbound_payload
+_contains_pii = _facade_contains_pii
 
 
 def _identity_context(args: dict[str, Any] | None) -> dict[str, Any]:
@@ -954,8 +911,7 @@ def _touch_action(domain: str, action: str, entity_id: str) -> None:
     _runtime_touch_action(_services_module(), domain, action, entity_id)
 
 
-def _audit_status() -> dict[str, Any]:
-    return _runtime_audit_status(_services_module())
+_audit_status = _facade_audit_status
 
 
 def _read_recovery_journal_entries() -> list[dict[str, Any]]:
@@ -1064,12 +1020,8 @@ def _tool_response_success(text: str) -> bool:
     return _runtime_tool_response_success(text)
 
 
-def _prune_audit_file(path: Path, *, cutoff_ts: float) -> int:
-    return _runtime_prune_audit_file(_services_module(), path, cutoff_ts=cutoff_ts)
-
-
-def _apply_retention_policies() -> None:
-    _runtime_apply_retention_policies(_services_module())
+_prune_audit_file = _facade_prune_audit_file
+_apply_retention_policies = _facade_apply_retention_policies
 
 
 def _prune_timers(now_mono: float | None = None) -> None:
