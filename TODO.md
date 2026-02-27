@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 51 (Planner Engine Decomposition)
+# Jarvis TODO — Wave 52 (Home Orchestrator Decomposition)
 
 Last updated: 2026-02-27
 
@@ -16,60 +16,61 @@ Last updated: 2026-02-27
 
 ## A) Scope and baseline
 
-- [x] `W51-A01` Confirm Wave 50 merged and workspace baseline.
-- [x] `W51-A02` Re-profile remaining large service-domain hotspots.
-- [x] `W51-A03` Select `services_domains/planner_engine_domain.py` for decomposition.
-- [x] `W51-A04` Preserve `planner_engine` tool contract and action outputs.
+- [x] `W52-A01` Confirm Wave 51 merged and baseline clean.
+- [x] `W52-A02` Re-profile remaining large service-domain modules.
+- [x] `W52-A03` Select `services_domains/home_orchestrator.py` for decomposition.
+- [x] `W52-A04` Preserve `home_orchestrator` API/action behavior.
 
 ## B) Decomposition design
 
-- [x] `W51-B01` Define `planner_engine_plan_graph.py` for plan/graph/self-critique actions.
-- [x] `W51-B02` Define `planner_engine_deferred.py` for deferred scheduling/listing.
-- [x] `W51-B03` Define `planner_engine_autonomy.py` for autonomy lifecycle actions.
-- [x] `W51-B04` Keep `planner_engine_domain.py` as a dispatcher with policy gate.
+- [x] `W52-B01` Define `home_orch_plan_exec.py` for planning/execution/area policies.
+- [x] `W52-B02` Define `home_orch_automation.py` for automation lifecycle actions.
+- [x] `W52-B03` Define `home_orch_tasks.py` for task start/update/list.
+- [x] `W52-B04` Keep `home_orchestrator.py` as dispatcher with policy gate.
 
 ## C) Extraction implementation
 
-- [x] `W51-C01` Create `services_domains/planner_engine_plan_graph.py`.
-- [x] `W51-C02` Move `plan`, `task_graph_create`, `task_graph_update`, `task_graph_resume`.
-- [x] `W51-C03` Move `self_critique`.
-- [x] `W51-C04` Create `services_domains/planner_engine_deferred.py`.
-- [x] `W51-C05` Move `deferred_schedule` and `deferred_list`.
-- [x] `W51-C06` Create `services_domains/planner_engine_autonomy.py`.
-- [x] `W51-C07` Move `autonomy_schedule`, `autonomy_checkpoint`, `autonomy_cycle`, `autonomy_status`.
-- [x] `W51-C08` Rewrite `planner_engine_domain.py` as thin action dispatcher.
+- [x] `W52-C01` Create `services_domains/home_orch_plan_exec.py`.
+- [x] `W52-C02` Move `plan` and `execute` action logic.
+- [x] `W52-C03` Move `area_policy_set` and `area_policy_list` action logic.
+- [x] `W52-C04` Create `services_domains/home_orch_automation.py`.
+- [x] `W52-C05` Move `automation_suggest` and `automation_create`.
+- [x] `W52-C06` Move `automation_apply`, `automation_rollback`, and `automation_status`.
+- [x] `W52-C07` Create `services_domains/home_orch_tasks.py`.
+- [x] `W52-C08` Move `task_start`, `task_update`, and `task_list`.
+- [x] `W52-C09` Rewrite `home_orchestrator.py` as thin dispatcher.
 
 ## D) Boundaries
 
-- [x] `W51-D01` Add import-boundary check for `planner_engine_plan_graph`.
-- [x] `W51-D02` Add import-boundary check for `planner_engine_deferred`.
-- [x] `W51-D03` Add import-boundary check for `planner_engine_autonomy`.
+- [x] `W52-D01` Add import-boundary check for `home_orch_plan_exec`.
+- [x] `W52-D02` Add import-boundary check for `home_orch_automation`.
+- [x] `W52-D03` Add import-boundary check for `home_orch_tasks`.
 
 ## E) Validation
 
-- [x] `W51-E01` Run focused lint on planner-engine modules + boundary test file.
-- [x] `W51-E02` Run targeted pytest for planner engine actions + import boundaries.
-- [x] `W51-E03` Run full `make check`.
-- [x] `W51-E04` Run full `make security-gate`.
-- [x] `W51-E05` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W52-E01` Run focused lint on home orchestrator modules + boundary tests.
+- [x] `W52-E02` Run targeted pytest for home orchestrator action groups + boundaries.
+- [x] `W52-E03` Run full `make check`.
+- [x] `W52-E04` Run full `make security-gate`.
+- [x] `W52-E05` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W51-F01` Capture post-split line-count outcomes.
-- [x] `W51-F02` Commit and push Wave 51.
+- [x] `W52-F01` Capture post-split line-count outcomes.
+- [x] `W52-F02` Commit and push Wave 52.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Planner engine decomposition:
-  - `services_domains/planner_engine_domain.py`: `415 -> 69` lines (dispatcher)
-  - New `services_domains/planner_engine_plan_graph.py`: `195` lines
-  - New `services_domains/planner_engine_deferred.py`: `55` lines
-  - New `services_domains/planner_engine_autonomy.py`: `254` lines
+- Home orchestrator decomposition:
+  - `services_domains/home_orchestrator.py`: `398 -> 72` lines (dispatcher)
+  - New `services_domains/home_orch_plan_exec.py`: `118` lines
+  - New `services_domains/home_orch_automation.py`: `288` lines
+  - New `services_domains/home_orch_tasks.py`: `77` lines
 - Boundary enforcement:
-  - Added import-boundary coverage for all new planner engine modules.
+  - Added import-boundary coverage for all new home-orchestrator modules.
 - Validation status:
-  - `make check`: `642 passed`
-  - `make security-gate`: `642 passed`; fault subset `3 passed`
+  - `make check`: `645 passed`
+  - `make security-gate`: `645 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
