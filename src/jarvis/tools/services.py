@@ -47,9 +47,9 @@ from jarvis.tools.service_policy import (
     HIGH_RISK_INTENT_TERMS,
     EXPLICIT_TARGET_TERMS,
     AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS,  # noqa: F401  # accessed by runtime module via services alias
-    MEMORY_SCOPE_TAG_PREFIX,
-    MEMORY_SCOPES,
-    MEMORY_QUERY_SCOPE_HINTS,
+    MEMORY_SCOPE_TAG_PREFIX,  # noqa: F401  # accessed by runtime module via services alias
+    MEMORY_SCOPES,  # noqa: F401  # accessed by runtime module via services alias
+    MEMORY_QUERY_SCOPE_HINTS,  # noqa: F401  # accessed by runtime module via services alias
     AUDIT_REASON_MESSAGES,  # noqa: F401  # accessed by runtime module via services alias
 )
 from jarvis.tools.service_schemas import (
@@ -150,6 +150,23 @@ from jarvis.tools.services_schedule_runtime import (
     reminder_status as _runtime_reminder_status,
     timer_status as _runtime_timer_status,
     timestamp_to_iso_utc as _runtime_timestamp_to_iso_utc,
+)
+from jarvis.tools.services_memory_runtime import (
+    expansion_payload_response as _runtime_expansion_payload_response,
+    infer_memory_scope as _runtime_infer_memory_scope,
+    json_payload_response as _runtime_json_payload_response,
+    memory_confidence_label as _runtime_memory_confidence_label,
+    memory_confidence_score as _runtime_memory_confidence_score,
+    memory_entry_scope as _runtime_memory_entry_scope,
+    memory_policy_scopes_for_query as _runtime_memory_policy_scopes_for_query,
+    memory_requested_scopes as _runtime_memory_requested_scopes,
+    memory_scope_for_add as _runtime_memory_scope_for_add,
+    memory_scope_from_tags as _runtime_memory_scope_from_tags,
+    memory_scope_tag as _runtime_memory_scope_tag,
+    memory_scope_tags as _runtime_memory_scope_tags,
+    memory_source_trail as _runtime_memory_source_trail,
+    memory_visible_tags as _runtime_memory_visible_tags,
+    normalize_memory_scope as _runtime_normalize_memory_scope,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -1794,136 +1811,69 @@ async def get_time(args: dict[str, Any]) -> dict[str, Any]:
 # ── Memory + planning ───────────────────────────────────────
 
 def _normalize_memory_scope(value: Any) -> str | None:
-    text = str(value or "").strip().lower()
-    if text in MEMORY_SCOPES:
-        return text
-    return None
+    return _runtime_normalize_memory_scope(_services_module(), value)
 
 
 def _memory_scope_tag(scope: str) -> str:
-    return f"{MEMORY_SCOPE_TAG_PREFIX}{scope}"
+    return _runtime_memory_scope_tag(_services_module(), scope)
 
 
 def _memory_scope_from_tags(tags: list[str] | None) -> str | None:
-    for tag in tags or []:
-        text = str(tag).strip().lower()
-        if text.startswith(MEMORY_SCOPE_TAG_PREFIX):
-            scope = text[len(MEMORY_SCOPE_TAG_PREFIX):]
-            if scope in MEMORY_SCOPES:
-                return scope
-    return None
+    return _runtime_memory_scope_from_tags(_services_module(), tags)
 
 
 def _infer_memory_scope(*, kind: str, source: str) -> str:
-    kind_text = str(kind or "").strip().lower()
-    source_text = str(source or "").strip().lower()
-    if kind_text in {"person", "contact", "people"}:
-        return "people"
-    if kind_text in {"project", "plan", "task", "task_plan"}:
-        return "projects"
-    if kind_text in {"rule", "household_rule", "policy"}:
-        return "household_rules"
-    if source_text in {"profile", "user"} or kind_text in {"profile", "preference"}:
-        return "preferences"
-    if source_text.startswith("integration.home") or source_text.startswith("integration.hass"):
-        return "household_rules"
-    return "preferences"
+    return _runtime_infer_memory_scope(kind=kind, source=source)
 
 
 def _memory_scope_for_add(*, kind: str, source: str, tags: list[str], requested_scope: Any) -> str:
-    explicit = _normalize_memory_scope(requested_scope)
-    if explicit:
-        return explicit
-    tagged = _memory_scope_from_tags(tags)
-    if tagged:
-        return tagged
-    return _infer_memory_scope(kind=kind, source=source)
+    return _runtime_memory_scope_for_add(
+        _services_module(),
+        kind=kind,
+        source=source,
+        tags=tags,
+        requested_scope=requested_scope,
+    )
 
 
 def _memory_scope_tags(tags: list[str], scope: str) -> list[str]:
-    cleaned = [str(tag).strip() for tag in tags if str(tag).strip()]
-    filtered = [tag for tag in cleaned if not tag.lower().startswith(MEMORY_SCOPE_TAG_PREFIX)]
-    filtered.append(_memory_scope_tag(scope))
-    return filtered
+    return _runtime_memory_scope_tags(_services_module(), tags, scope)
 
 
 def _memory_visible_tags(tags: list[str]) -> list[str]:
-    return [tag for tag in tags if not str(tag).strip().lower().startswith(MEMORY_SCOPE_TAG_PREFIX)]
+    return _runtime_memory_visible_tags(_services_module(), tags)
 
 
 def _memory_entry_scope(entry: MemoryEntry) -> str:
-    tagged = _memory_scope_from_tags(entry.tags)
-    if tagged:
-        return tagged
-    return _infer_memory_scope(kind=str(entry.kind), source=str(entry.source))
+    return _runtime_memory_entry_scope(_services_module(), entry)
 
 
 def _memory_policy_scopes_for_query(query: str) -> list[str]:
-    tokens = {token for token in re.findall(r"[a-z0-9_']+", str(query or "").lower()) if token}
-    if not tokens:
-        return sorted(MEMORY_SCOPES)
-    for scope, hints in MEMORY_QUERY_SCOPE_HINTS.items():
-        if tokens & hints:
-            return sorted({scope, "preferences"})
-    return sorted(MEMORY_SCOPES)
+    return _runtime_memory_policy_scopes_for_query(_services_module(), query)
 
 
 def _memory_requested_scopes(scopes_value: Any, *, query: str = "") -> list[str]:
-    if isinstance(scopes_value, list):
-        cleaned = []
-        for item in scopes_value:
-            scope = _normalize_memory_scope(item)
-            if scope and scope not in cleaned:
-                cleaned.append(scope)
-        if cleaned:
-            return cleaned
-    fallback_single = _normalize_memory_scope(scopes_value)
-    if fallback_single:
-        return [fallback_single]
-    return _memory_policy_scopes_for_query(query)
+    return _runtime_memory_requested_scopes(_services_module(), scopes_value, query=query)
 
 
 def _memory_confidence_score(entry: MemoryEntry, *, now_ts: float | None = None) -> float:
-    now = time.time() if now_ts is None else float(now_ts)
-    age_days = max(0.0, (now - float(entry.created_at)) / 86_400.0)
-    recency = math.exp(-(age_days / 30.0))
-    source_text = str(getattr(entry, "source", "")).strip().lower()
-    if source_text.startswith("integration.") or source_text in {"user", "profile", "operator", "system"}:
-        source_confidence = 0.9
-    elif source_text:
-        source_confidence = 0.7
-    else:
-        source_confidence = 0.5
-    retrieval_score = float(getattr(entry, "score", 0.0) or 0.0)
-    if not math.isfinite(retrieval_score) or retrieval_score <= 0.0:
-        retrieval_score = float(getattr(entry, "importance", 0.5) or 0.5)
-    sensitivity = _as_float(getattr(entry, "sensitivity", 0.0), 0.0, minimum=0.0, maximum=1.0)
-    confidence = (0.55 * retrieval_score) + (0.30 * recency) + (0.15 * source_confidence)
-    confidence *= max(0.4, 1.0 - (0.35 * sensitivity))
-    return _as_float(confidence, 0.0, minimum=0.0, maximum=1.0)
+    return _runtime_memory_confidence_score(_services_module(), entry, now_ts=now_ts)
 
 
 def _memory_confidence_label(score: float) -> str:
-    if score >= 0.8:
-        return "high"
-    if score >= 0.6:
-        return "medium"
-    return "low"
+    return _runtime_memory_confidence_label(score)
 
 
 def _memory_source_trail(entry: MemoryEntry) -> str:
-    source = str(getattr(entry, "source", "")).strip() or "unknown"
-    created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(entry.created_at)))
-    return f"id={entry.id};source={source};created_at={created}"
+    return _runtime_memory_source_trail(entry)
 
 
 def _json_payload_response(payload: dict[str, Any]) -> dict[str, Any]:
-    return {"content": [{"type": "text", "text": json.dumps(payload, default=str)}]}
+    return _runtime_json_payload_response(payload)
 
 
 def _expansion_payload_response(payload: dict[str, Any]) -> dict[str, Any]:
-    _persist_expansion_state()
-    return _json_payload_response(payload)
+    return _runtime_expansion_payload_response(_services_module(), payload)
 
 
 
