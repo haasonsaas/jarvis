@@ -23,6 +23,9 @@ import pytest
         ("jarvis.tools.services_governance_runtime", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.trust_memory", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.trust_identity", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.home_state", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.home_orchestrator", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.home_control", "jarvis.tools.services"),
     ],
 )
 def test_runtime_module_import_boundary(module_name: str, blocked_module: str) -> None:

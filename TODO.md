@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 39 (Domain Decomposition: Trust + Governance)
+# Jarvis TODO — Wave 40 (Home Domain Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,77 +8,71 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 28
-- Completed: 28
+- Total items: 26
+- Completed: 26
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W39-A01` Confirm post-W38 baseline and identify largest remaining domain files.
-- [x] `W39-A02` Define refactor objective: split trust domain by responsibility.
-- [x] `W39-A03` Define refactor objective: split governance status/contract builders.
+- [x] `W40-A01` Identify next largest post-W39 hotspot by line count.
+- [x] `W40-A02` Select `services_domains/home.py` for decomposition.
+- [x] `W40-A03` Define split boundaries that preserve existing tool entrypoints.
 
-## B) Trust domain decomposition
+## B) Home domain split
 
-- [x] `W39-B01` Extract all memory handlers into `services_domains/trust_memory.py`.
-- [x] `W39-B02` Extract memory-governance helper logic into `trust_memory.py`.
-- [x] `W39-B03` Extract identity trust handlers into `services_domains/trust_identity.py`.
-- [x] `W39-B04` Reduce `services_domains/trust.py` to proactive-only handlers.
-- [x] `W39-B05` Preserve `_services()` lazy module resolution pattern in all new modules.
+- [x] `W40-B01` Create `services_domains/home_state.py` for state/capabilities handlers.
+- [x] `W40-B02` Move `smart_home_state` into `home_state.py`.
+- [x] `W40-B03` Move `home_assistant_capabilities` into `home_state.py`.
+- [x] `W40-B04` Create `services_domains/home_orchestrator.py` for orchestration handler.
+- [x] `W40-B05` Move `home_orchestrator` into `home_orchestrator.py`.
+- [x] `W40-B06` Create `services_domains/home_control.py` for smart-home control and HA tool handlers.
+- [x] `W40-B07` Move `smart_home` into `home_control.py`.
+- [x] `W40-B08` Move `home_assistant_conversation` into `home_control.py`.
+- [x] `W40-B09` Move `home_assistant_todo` into `home_control.py`.
+- [x] `W40-B10` Move `home_assistant_timer` into `home_control.py`.
+- [x] `W40-B11` Move `home_assistant_area_entities` into `home_control.py`.
+- [x] `W40-B12` Move `media_control` into `home_control.py`.
 
-## C) Service wiring updates
+## C) Compatibility and API stability
 
-- [x] `W39-C01` Update `services.py` compatibility exports to import memory handlers from `trust_memory.py`.
-- [x] `W39-C02` Update `services.py` compatibility exports to import identity handlers from `trust_identity.py`.
-- [x] `W39-C03` Keep `proactive_assistant` export sourced from `trust.py`.
-- [x] `W39-C04` Update MCP server registration imports in `services_server.py` for new modules.
+- [x] `W40-C01` Replace `services_domains/home.py` with compatibility re-exports.
+- [x] `W40-C02` Preserve existing import sites in `services.py` and `services_server.py` without API break.
+- [x] `W40-C03` Add explicit `__all__` in compatibility module for stable export surface.
 
-## D) Governance decomposition
+## D) Safety boundaries and tests
 
-- [x] `W39-D01` Add `services_governance_runtime.py` for shared status runtime helpers.
-- [x] `W39-D02` Move tool-policy status snapshot builder into runtime helper module.
-- [x] `W39-D03` Move scorecard-context construction into runtime helper module.
-- [x] `W39-D04` Move system-status payload construction into runtime helper module.
-- [x] `W39-D05` Move full system-status contract payload template into runtime helper module.
-- [x] `W39-D06` Rewire governance domain handlers to call runtime helper functions.
+- [x] `W40-D01` Extend import-boundary tests for `home_state`.
+- [x] `W40-D02` Extend import-boundary tests for `home_orchestrator`.
+- [x] `W40-D03` Extend import-boundary tests for `home_control`.
+- [x] `W40-D04` Run targeted home-domain pytest scenarios across all moved handlers.
 
-## E) Boundary and safety checks
+## E) Quality gates
 
-- [x] `W39-E01` Extend import boundary tests for `trust_memory` module.
-- [x] `W39-E02` Extend import boundary tests for `trust_identity` module.
-- [x] `W39-E03` Extend import boundary tests for `services_governance_runtime` module.
-- [x] `W39-E04` Keep service API surface unchanged for existing tests/callers.
+- [x] `W40-E01` Run focused lint on new/changed home domain modules.
+- [x] `W40-E02` Run `make check` full suite.
+- [x] `W40-E03` Run `make security-gate`.
+- [x] `W40-E04` Run `./scripts/jarvis_readiness.sh fast`.
 
-## F) Validation
+## F) Release loop
 
-- [x] `W39-F01` Run focused lint for changed files.
-- [x] `W39-F02` Run targeted pytest for trust/governance/system-status behavior.
-- [x] `W39-F03` Run `make check` full suite.
-- [x] `W39-F04` Run `make security-gate`.
-- [x] `W39-F05` Run `./scripts/jarvis_readiness.sh fast`.
-
-## G) Release loop
-
-- [x] `W39-G01` Update TODO completion snapshot with decomposition outcomes.
-- [x] `W39-G02` Commit and push Wave 39 refactor set.
+- [x] `W40-F01` Update TODO completion snapshot with measured size changes.
+- [x] `W40-F02` Commit and push Wave 40.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Domain decomposition completed:
-  - `services_domains/trust.py`: `1173 -> 419` lines (proactive only)
-  - New `services_domains/trust_memory.py`: memory + governance handlers
-  - New `services_domains/trust_identity.py`: identity trust handlers
-- Governance decomposition completed:
-  - `services_domains/governance.py`: `1131 -> 649` lines
-  - New `services_governance_runtime.py`: status/contract context and payload builders
-- Wiring preserved:
-  - Compatibility exports in `services.py` unchanged at call surface.
-  - MCP tool registration in `services_server.py` updated to new domain modules.
+- Home domain decomposition completed:
+  - `services_domains/home.py`: `1801 -> 29` lines (compatibility exports only)
+  - New `services_domains/home_state.py`: `186` lines
+  - New `services_domains/home_orchestrator.py`: `398` lines
+  - New `services_domains/home_control.py`: `1243` lines
+- Behavior continuity:
+  - Existing tool API/registration surface preserved through compatibility exports.
+  - Targeted tool tests for moved handlers remained green.
 - Validation status:
-  - `make check`: `603 passed`
-  - `make security-gate`: `603 passed`; fault subset `3 passed`
+  - `make check`: `606 passed`
+  - `make security-gate`: `606 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
