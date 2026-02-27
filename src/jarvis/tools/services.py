@@ -11,7 +11,7 @@ import hashlib  # noqa: F401  # accessed by domain modules via services module a
 import hmac  # noqa: F401  # accessed by domain modules via services module alias
 import json  # noqa: F401  # accessed by domain modules via services module alias
 import logging
-import math
+import math  # noqa: F401  # accessed by domain modules via services module alias
 import re  # noqa: F401  # accessed by domain modules via services module alias
 import smtplib  # noqa: F401  # accessed by domain modules via services module alias
 import sys
@@ -25,15 +25,14 @@ import aiohttp  # noqa: F401
 
 from jarvis.config import Config
 from jarvis.skills import SkillRegistry
-from jarvis.tool_policy import is_tool_allowed
 from jarvis.tool_summary import record_summary, list_summaries  # noqa: F401  # accessed via services module alias
 from jarvis.memory import MemoryStore
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, normalize_service_error_code
 from jarvis.tools.service_policy import (
     SENSITIVE_DOMAINS,  # noqa: F401  # compatibility export for domain modules
-    HA_MUTATING_ALLOWED_ACTIONS,
+    HA_MUTATING_ALLOWED_ACTIONS,  # noqa: F401  # compatibility export for tests/importers
     INTEGRATION_TOOL_MAP,  # noqa: F401  # accessed by runtime module via services alias
-    SAFE_MODE_BLOCKED_TOOLS,
+    SAFE_MODE_BLOCKED_TOOLS,  # noqa: F401  # compatibility export for tests/importers
     SENSITIVE_AUDIT_KEY_TOKENS,  # noqa: F401  # accessed by runtime module via services alias
     INBOUND_REDACT_HEADER_TOKENS,  # noqa: F401  # accessed by runtime module via services alias
     INBOUND_MAX_STRING_CHARS,  # noqa: F401  # accessed by runtime module via services alias
@@ -241,6 +240,18 @@ from jarvis.tools.services_home_policy_runtime import (
     extract_area_from_entity as _runtime_extract_area_from_entity,
     home_action_is_loud as _runtime_home_action_is_loud,
     home_area_policy_violation as _runtime_home_area_policy_violation,
+)
+from jarvis.tools.services_core_runtime import (
+    format_tool_summaries as _runtime_format_tool_summaries,
+    now_local as _runtime_now_local,
+    record_service_error as _runtime_record_service_error,
+    tool_permitted as _runtime_tool_permitted,
+)
+from jarvis.tools.services_ha_cache_runtime import (
+    ha_action_allowed as _runtime_ha_action_allowed,
+    ha_cached_state as _runtime_ha_cached_state,
+    ha_headers as _runtime_ha_headers,
+    ha_invalidate_state as _runtime_ha_invalidate_state,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -484,11 +495,14 @@ def _services_module() -> Any:
 
 
 def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
-    normalized = normalize_service_error_code(code)
-    integration = _integration_for_tool(tool_name)
-    if integration is not None:
-        _integration_record_failure(integration, normalized)
-    record_summary(tool_name, "error", start_time, normalized)
+    _runtime_record_service_error(
+        _services_module(),
+        tool_name,
+        start_time,
+        code,
+        normalize_service_error_code_fn=normalize_service_error_code,
+        record_summary_fn=record_summary,
+    )
 
 
 def set_runtime_voice_state(state: dict[str, Any]) -> None:
@@ -521,38 +535,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
 
 
 def _tool_permitted(name: str) -> bool:
-    if _safe_mode_enabled and name in SAFE_MODE_BLOCKED_TOOLS:
-        return False
-    if _home_permission_profile == "readonly" and name in {"smart_home", "media_control"}:
-        return False
-    if _todoist_permission_profile == "readonly" and name == "todoist_add_task":
-        return False
-    if _email_permission_profile == "readonly" and name == "email_send":
-        return False
-    if _notification_permission_profile == "off" and name in {"pushover_notify", "slack_notify", "discord_notify"}:
-        return False
-    if (
-        name.startswith("skills_")
-        and name != "skills_list"
-        and _skill_registry is not None
-        and not _skill_registry.enabled
-    ):
-        return False
-    if _config is not None and not _config.home_enabled:
-        if name in {
-            "smart_home",
-            "smart_home_state",
-            "home_assistant_capabilities",
-            "home_assistant_conversation",
-            "home_assistant_todo",
-            "home_assistant_timer",
-            "home_assistant_area_entities",
-            "media_control",
-            "calendar_events",
-            "calendar_next_event",
-        }:
-            return False
-    return is_tool_allowed(name, _tool_allowlist, _tool_denylist)
+    return _runtime_tool_permitted(_services_module(), name)
 
 
 _configure_audit_encryption = _facade_configure_audit_encryption
@@ -601,34 +584,11 @@ _preview_gate = _facade_preview_gate
 
 
 def _format_tool_summaries(items: list[dict[str, object]]) -> str:
-    if not items:
-        return "No recent tool activity."
-    lines = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name", "tool"))
-        status = str(item.get("status", "unknown"))
-        try:
-            duration = float(item.get("duration_ms", 0.0))
-        except (TypeError, ValueError):
-            duration = 0.0
-        if not math.isfinite(duration):
-            duration = 0.0
-        detail = item.get("detail")
-        effect = item.get("effect")
-        risk = item.get("risk")
-        detail_text = f" ({detail})" if detail else ""
-        effect_text = f" effect={effect}" if effect else ""
-        risk_text = f" risk={risk}" if risk else ""
-        lines.append(f"- {name}: {status} ({duration:.0f}ms){detail_text}{effect_text}{risk_text}")
-    if not lines:
-        return "No recent tool activity."
-    return "\n".join(lines)
+    return _runtime_format_tool_summaries(items)
 
 
 def _now_local() -> str:
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    return _runtime_now_local()
 
 
 _as_bool = _facade_as_bool
@@ -816,30 +776,19 @@ _load_reminders_from_store = _facade_load_reminders_from_store
 
 
 def _ha_headers() -> dict[str, str]:
-    assert _config is not None
-    return {"Authorization": f"Bearer {_config.hass_token}"}
+    return _runtime_ha_headers(_services_module())
 
 
 def _ha_cached_state(entity_id: str) -> dict[str, Any] | None:
-    item = _ha_state_cache.get(entity_id)
-    if item is None:
-        return None
-    expires_at, payload = item
-    if expires_at < time.monotonic():
-        _ha_state_cache.pop(entity_id, None)
-        return None
-    return payload
+    return _runtime_ha_cached_state(_services_module(), entity_id)
 
 
 def _ha_invalidate_state(entity_id: str) -> None:
-    _ha_state_cache.pop(entity_id, None)
+    _runtime_ha_invalidate_state(_services_module(), entity_id)
 
 
 def _ha_action_allowed(domain: str, action: str) -> bool:
-    allowed = HA_MUTATING_ALLOWED_ACTIONS.get(domain)
-    if allowed is None:
-        return False
-    return action in allowed
+    return _runtime_ha_action_allowed(domain, action)
 
 
 _ha_get_state = _facade_ha_get_state

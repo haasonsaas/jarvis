@@ -19,7 +19,6 @@ import logging
 import time
 import threading
 from pathlib import Path
-from collections import deque
 from contextlib import suppress
 from typing import Any
 
@@ -33,9 +32,7 @@ from jarvis.audio.vad import VoiceActivityDetector, CHUNK_SAMPLES
 from jarvis.audio.stt import SpeechToText
 from jarvis.audio.tts import TextToSpeech
 from jarvis.brain import Brain
-from jarvis.observability import ObservabilityStore
 from jarvis.operator_server import OperatorServer
-from jarvis.skills import SkillRegistry
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES
 from jarvis.tools.robot import bind as bind_robot_tools
 from jarvis.tools import services as service_tools
@@ -159,6 +156,13 @@ from jarvis.runtime_multimodal import (
     multimodal_grounding_snapshot_for_runtime as _runtime_multimodal_grounding_snapshot_for_runtime,
 )
 from jarvis.runtime_watchdog import watchdog_loop as _runtime_watchdog_loop
+from jarvis.runtime_bootstrap import (
+    apply_cli_overrides as _runtime_apply_cli_overrides,
+    build_observability_store as _runtime_build_observability_store,
+    build_skill_registry as _runtime_build_skill_registry,
+    build_voice_attention_controller as _runtime_build_voice_attention_controller,
+    initialize_runtime_fields as _runtime_initialize_runtime_fields,
+)
 from jarvis.runtime_entrypoint import (
     maybe_run_backup_or_restore as _runtime_maybe_run_backup_or_restore,
     run_jarvis_event_loop as _runtime_run_jarvis_event_loop,
@@ -255,42 +259,12 @@ class Jarvis:
         # Presence loop (the soul)
         self.presence = PresenceLoop(self.robot)
         self.presence.set_backchannel_style(self.config.backchannel_style)
-        if getattr(args, "no_motion", False):
-            self.config.motion_enabled = False
-        if getattr(args, "no_home", False):
-            self.config.home_enabled = False
-        if getattr(args, "no_hands", False):
-            self.config.hand_track_enabled = False
+        _runtime_apply_cli_overrides(self.config, args)
 
-        self._voice_attention = VoiceAttentionController(
-            VoiceAttentionConfig(
-                wake_words=list(self.config.wake_words),
-                mode=self.config.wake_mode,
-                wake_calibration_profile=self.config.wake_calibration_profile,
-                wake_word_sensitivity=self.config.wake_word_sensitivity,
-                followup_window_sec=self.config.voice_followup_window_sec,
-                timeout_profile=self.config.voice_timeout_profile,
-                timeout_short_sec=self.config.voice_timeout_short_sec,
-                timeout_normal_sec=self.config.voice_timeout_normal_sec,
-                timeout_long_sec=self.config.voice_timeout_long_sec,
-                barge_threshold_always_listening=self.config.barge_threshold_always_listening,
-                barge_threshold_wake_word=self.config.barge_threshold_wake_word,
-                barge_threshold_push_to_talk=self.config.barge_threshold_push_to_talk,
-                min_post_wake_chars=self.config.voice_min_post_wake_chars,
-                room_default=self.config.voice_room_default,
-            )
-        )
+        self._voice_attention = _runtime_build_voice_attention_controller(self.config)
         self._runtime_state_path = Path(self.config.runtime_state_path).expanduser()
 
-        self._skills = SkillRegistry(
-            skills_dir=self.config.skills_dir,
-            allowlist=self.config.skills_allowlist,
-            require_signature=self.config.skills_require_signature,
-            signature_key=self.config.skills_signature_key,
-            enabled=self.config.skills_enabled,
-            state_path=self.config.skills_state_path,
-        )
-        self._skills.discover()
+        self._skills = _runtime_build_skill_registry(self.config)
         service_tools.set_skill_registry(self._skills)
         set_runtime_skills_state(self._skills.status_snapshot())
 
@@ -318,14 +292,7 @@ class Jarvis:
         # Brain
         self.brain = Brain(self.config, self.presence)
 
-        self._observability: ObservabilityStore | None = None
-        if self.config.observability_enabled:
-            self._observability = ObservabilityStore(
-                db_path=self.config.observability_db_path,
-                state_path=self.config.observability_state_path,
-                event_log_path=self.config.observability_event_log_path,
-                failure_burst_threshold=self.config.observability_failure_burst_threshold,
-            )
+        self._observability = _runtime_build_observability_store(self.config)
         self._last_observability_snapshot_at = 0.0
 
         # Face tracker (lazy init)
@@ -341,90 +308,13 @@ class Jarvis:
         self._robot_input_sr = self.config.sample_rate
         self._robot_output_sr = self.config.sample_rate
 
-        self._last_doa_angle: float | None = None
-        self._last_doa_update: float = 0.0
-        self._last_doa_speech: bool | None = None
-        self._awaiting_confirmation = False
-        self._pending_text: str | None = None
-        self._awaiting_repair_confirmation = False
-        self._repair_candidate_text: str | None = None
-        self._followup_carryover: dict[str, Any] = {
-            "text": "",
-            "intent": "",
-            "timestamp": 0.0,
-            "unresolved": False,
-        }
-        self._turn_choreography: dict[str, Any] = {
-            "phase": str(State.IDLE.value),
-            "label": "idle_reset",
-            "turn_lean": 0.0,
-            "turn_tilt": 0.0,
-            "turn_glance_yaw": 0.0,
-            "updated_at": time.time(),
-        }
-
-        self._tts_queue: asyncio.Queue[tuple[int, str, bool, float]] = asyncio.Queue()
-        self._tts_task: asyncio.Task[None] | None = None
-        self._watchdog_task: asyncio.Task[None] | None = None
-        self._response_id = 0
-        self._active_response_id = 0
-        self._response_started = False
-        self._first_sentence_at: float | None = None
-        self._first_audio_at: float | None = None
-        self._response_start_at: float | None = None
-        self._filler_task: asyncio.Task[None] | None = None
-        self._tts_gain = 1.0
-
-        self._utterance_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=1)
-        self._listen_task: asyncio.Task[None] | None = None
-        self._operator_server: OperatorServer | None = None
-
-        # Audio output stream (persistent, avoids open/close per chunk)
-        self._output_stream: sd.OutputStream | None = None
-        self._started = False
-        self._telemetry: dict[str, float] = {
-            "turns": 0.0,
-            "barge_ins": 0.0,
-            "stt_latency_total_ms": 0.0,
-            "stt_latency_count": 0.0,
-            "llm_first_sentence_total_ms": 0.0,
-            "llm_first_sentence_count": 0.0,
-            "tts_first_audio_total_ms": 0.0,
-            "tts_first_audio_count": 0.0,
-            "service_errors": 0.0,
-            "storage_errors": 0.0,
-            "unknown_summary_details": 0.0,
-            "fallback_responses": 0.0,
-            "intent_turns_total": 0.0,
-            "intent_answer_turns": 0.0,
-            "intent_action_turns": 0.0,
-            "intent_hybrid_turns": 0.0,
-            "intent_answer_total": 0.0,
-            "intent_answer_success": 0.0,
-            "intent_completion_total": 0.0,
-            "intent_completion_success": 0.0,
-            "intent_corrections": 0.0,
-            "preference_update_turns": 0.0,
-            "preference_update_fields": 0.0,
-            "multimodal_turns": 0.0,
-            "multimodal_confidence_total": 0.0,
-            "multimodal_low_confidence_turns": 0.0,
-        }
-        self._telemetry_error_counts: dict[str, float] = {}
-        self._conversation_traces: deque[dict[str, Any]] = deque(maxlen=CONVERSATION_TRACE_MAXLEN)
-        self._turn_trace_seq = 0
-        self._episodic_timeline: deque[dict[str, Any]] = deque(maxlen=EPISODIC_TIMELINE_MAXLEN)
-        self._episode_seq = 0
-        self._voice_user_profiles: dict[str, dict[str, str]] = {}
-        self._last_learned_preferences: dict[str, Any] = {}
-        self._active_control_preset = "custom"
-        self._personality_preview_snapshot: dict[str, str] | None = None
-        self._stt_diagnostics: dict[str, Any] = self._default_stt_diagnostics()
-        self._runtime_invariant_checked_at = 0.0
-        self._runtime_invariant_checked_monotonic = 0.0
-        self._runtime_invariant_violations_total = 0
-        self._runtime_invariant_auto_heals_total = 0
-        self._runtime_invariant_recent: deque[dict[str, Any]] = deque(maxlen=RUNTIME_INVARIANT_HISTORY_MAXLEN)
+        _runtime_initialize_runtime_fields(
+            self,
+            state_idle_value=str(State.IDLE.value),
+            conversation_trace_maxlen=CONVERSATION_TRACE_MAXLEN,
+            episodic_timeline_maxlen=EPISODIC_TIMELINE_MAXLEN,
+            runtime_invariant_history_maxlen=RUNTIME_INVARIANT_HISTORY_MAXLEN,
+        )
         self._load_runtime_state()
         self._publish_voice_status()
         self._publish_skills_status()

@@ -52,3 +52,9 @@ Jarvis observability covers:
 
 - Observability DB and event log are local files; include them in host backup policy.
 - If disk pressure increases, rotate/trim event log and archive DB snapshots out of band.
+
+## Related Runbooks
+
+- `campaign-execution-runbook.md`
+- `integrations-degradation-runbook.md`
+- `autonomy-checkpoint-runbook.md`

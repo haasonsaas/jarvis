@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -101,3 +102,37 @@ def test_run_soak_profile_live_has_extended_phases_and_artifact_checks():
     assert checks["phase_names"] == ["sim_baseline"]
     assert checks["expected_total_phase_count"] == 6
     assert checks["cycle_phase_counts"] == {"1": 1}
+
+
+def test_run_fault_campaign_profile_matrix_contract():
+    project_root = Path(__file__).resolve().parents[1]
+    module = _load_script_module("run_fault_campaign_script", project_root / "scripts" / "run_fault_campaign.py")
+
+    assert module._normalize_profiles("all") == ["quick", "network", "storage", "contract"]
+    assert module._normalize_profiles("quick,network,quick") == ["quick", "network"]
+    assert module._profile_tag(["quick", "network"]) == "quick-network"
+    with pytest.raises(ValueError):
+        module._normalize_profiles("quick,invalid")
+
+    phases = module._phase_commands(["quick", "storage"])
+    assert [name for name, _ in phases] == ["fault_quick", "fault_storage"]
+    assert phases[0][1] == ["./scripts/run_fault_profiles.sh", "quick"]
+
+
+def test_assistant_contract_dataset_has_adversarial_coverage():
+    project_root = Path(__file__).resolve().parents[1]
+    dataset_path = project_root / "docs" / "evals" / "assistant-contract.json"
+    payload = json.loads(dataset_path.read_text(encoding="utf-8"))
+    cases = payload.get("cases")
+    assert isinstance(cases, list)
+    assert len(cases) >= 180
+
+    case_ids = {str(case.get("id", "")) for case in cases if isinstance(case, dict)}
+    required_ids = {
+        "adv_prompt_injection_policy_override",
+        "adv_identity_spoof_requester_mismatch",
+        "adv_checkpoint_bypass_requires_token",
+        "adv_circuit_breaker_short_circuit",
+        "adv_plan_preview_token_ttl_enforced",
+    }
+    assert required_ids.issubset(case_ids)

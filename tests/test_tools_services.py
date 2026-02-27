@@ -71,6 +71,33 @@ class TestServicesTools:
         services._record_service_error("smart_home", 0.0, "not_a_known_code")
         assert calls == [("smart_home", "error", "unknown_error")]
 
+    def test_tool_permitted_blocks_mutating_tools_in_safe_mode(self):
+        from jarvis.tools import services
+
+        services.set_safe_mode(True)
+        assert services._tool_permitted("timer_create") is False
+        services.set_safe_mode(False)
+        assert services._tool_permitted("timer_create") is True
+
+    def test_ha_cache_helpers_expire_entries_and_validate_actions(self):
+        from jarvis.tools import services
+
+        services._ha_state_cache.clear()
+        services._ha_state_cache["light.kitchen"] = (
+            time.monotonic() - 1.0,
+            {"state": "on"},
+        )
+        services._ha_state_cache["light.office"] = (
+            time.monotonic() + 60.0,
+            {"state": "off"},
+        )
+
+        assert services._ha_cached_state("light.kitchen") is None
+        assert "light.kitchen" not in services._ha_state_cache
+        assert services._ha_cached_state("light.office") == {"state": "off"}
+        assert services._ha_action_allowed("light", "turn_on") is True
+        assert services._ha_action_allowed("light", "invalid_action") is False
+
     @pytest.mark.asyncio
     async def test_smart_home_dry_run_for_locks(self):
         from jarvis.tools.services import smart_home
@@ -3893,6 +3920,26 @@ class TestServicesTools:
         assert "discord_notify" in taxonomy_doc
         assert "email_send" in taxonomy_doc
 
+    def test_operations_runbooks_cover_operator_autonomy_integrations_and_campaigns(self):
+        project_root = Path(__file__).resolve().parents[1]
+        operator_doc = (project_root / "docs" / "operations" / "operator-control-runbook.md").read_text()
+        autonomy_doc = (project_root / "docs" / "operations" / "autonomy-checkpoint-runbook.md").read_text()
+        integrations_doc = (project_root / "docs" / "operations" / "integrations-degradation-runbook.md").read_text()
+        campaign_doc = (project_root / "docs" / "operations" / "campaign-execution-runbook.md").read_text()
+        incident_doc = (project_root / "docs" / "operations" / "incident-response.md").read_text()
+        observability_doc = (project_root / "docs" / "operations" / "observability-runbook.md").read_text()
+
+        assert "system_status" in operator_doc
+        assert "identity_trust" in operator_doc
+        assert "planner_engine" in autonomy_doc
+        assert "autonomy_checkpoint" in autonomy_doc
+        assert "dead_letter_replay" in integrations_doc
+        assert "integration_hub" in integrations_doc
+        assert "make test-soak-campaign" in campaign_doc
+        assert "make test-fault-campaign" in campaign_doc
+        assert "operator-control-runbook.md" in incident_doc
+        assert "campaign-execution-runbook.md" in observability_doc
+
     @pytest.mark.asyncio
     async def test_skills_lifecycle_tools(self, tmp_path):
         from jarvis.skills import SkillRegistry
@@ -4477,6 +4524,9 @@ class TestServicesTools:
         assert (project_root / "scripts" / "release_acceptance.sh").exists()
         assert (project_root / "scripts" / "check_release_channel.py").exists()
         assert (project_root / "scripts" / "jarvis_readiness.sh").exists()
+        assert (project_root / "scripts" / "run_fault_campaign.py").exists()
+        assert (project_root / "scripts" / "test_fault_campaign.sh").exists()
+        assert (project_root / "scripts" / "test_soak_campaign.sh").exists()
         assert (project_root / ".github" / "workflows" / "assistant-quality-report.yml").exists()
         assert (project_root / ".github" / "workflows" / "release-acceptance.yml").exists()
         assert (project_root / ".github" / "workflows" / "jarvis-readiness.yml").exists()
@@ -4485,3 +4535,5 @@ class TestServicesTools:
         assert "eval-dataset" in makefile_text
         assert "release-acceptance" in makefile_text
         assert "readiness" in makefile_text
+        assert "test-fault-campaign" in makefile_text
+        assert "test-soak-campaign" in makefile_text

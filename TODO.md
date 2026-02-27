@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/107 Runtime Decomposition
+# Jarvis TODO — Wave 112/112 Runtime Maturity Sweep
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 287
-- Completed: 287
+- Total items: 327
+- Completed: 327
 - Remaining: 0
 
 ---
@@ -412,6 +412,63 @@ Last updated: 2026-02-27
 - [x] `W107-AK06` Extend import-boundary coverage for `runtime_entrypoint`.
 - [x] `W107-AK07` Run full quality/security/readiness gates.
 - [x] `W107-AK08` Update TODO + tranche snapshot.
+
+---
+
+## AU) Wave 108 (completed): `Jarvis.__init__` bootstrap decomposition
+
+- [x] `W108-AU01` Profile `Jarvis.__init__` and identify highest-churn inline bootstrap/state blocks.
+- [x] `W108-AU02` Extract lifecycle-safe bootstrap helpers into a dedicated runtime module (no behavior drift).
+- [x] `W108-AU03` Move telemetry/default runtime-state seed construction behind helper functions.
+- [x] `W108-AU04` Move CLI/config override and voice-attention bootstrap into helper functions.
+- [x] `W108-AU05` Preserve all existing `Jarvis` fields and startup side effects (`_load_runtime_state`, status publication).
+- [x] `W108-AU06` Add/extend import-boundary tests for the new runtime bootstrap module.
+- [x] `W108-AU07` Run focused `__main__` + lifecycle + runtime state tests.
+- [x] `W108-AU08` Run full quality/security/readiness gates.
+
+## AV) Wave 109 (completed): `services.py` residual core decomposition
+
+- [x] `W109-AV01` Profile residual non-facade helpers in `services.py` and choose extraction boundary.
+- [x] `W109-AV02` Extract permission/error/time formatting helpers to a dedicated runtime helper module.
+- [x] `W109-AV03` Extract HA cache/header/action-allow helpers to a dedicated runtime helper module.
+- [x] `W109-AV04` Keep `services.py` compatibility aliases and external helper names unchanged.
+- [x] `W109-AV05` Extend import-boundary coverage for new services runtime helper modules.
+- [x] `W109-AV06` Run focused services regression tests (policy/error/home/calendar/system status paths).
+- [x] `W109-AV07` Run `uv run pytest -q tests/test_import_boundaries.py`.
+- [x] `W109-AV08` Run full quality/security/readiness gates.
+
+## AW) Wave 110 (completed): adversarial eval contract expansion
+
+- [x] `W110-AW01` Audit current eval coverage by capability/risk family and identify adversarial gaps.
+- [x] `W110-AW02` Add adversarial prompt-injection and tool-escalation denial cases.
+- [x] `W110-AW03` Add identity spoofing/approval-code bypass and guest-capability abuse cases.
+- [x] `W110-AW04` Add checkpoint/autonomy/policy-override abuse and rollback-integrity cases.
+- [x] `W110-AW05` Add malformed/edge payload cases (invalid numbers, empty identifiers, ambiguous targets).
+- [x] `W110-AW06` Keep strict acceptance green (`--strict --min-pass-rate 1.0 --max-failed 0`).
+- [x] `W110-AW07` Add/extend tests asserting dataset size floor and adversarial IDs presence.
+- [x] `W110-AW08` Run full quality/security/readiness gates.
+
+## AX) Wave 111 (completed): long-running soak/fault campaign automation
+
+- [x] `W111-AX01` Define repeatable medium/long soak campaign wrappers for `run_soak_profile.py`.
+- [x] `W111-AX02` Add repeatable fault campaign wrappers for `run_fault_profiles.sh` execution matrix.
+- [x] `W111-AX03` Add Makefile targets for the new soak/fault campaign wrappers.
+- [x] `W111-AX04` Ensure generated artifact names encode profile/repeat/phase set for retention clarity.
+- [x] `W111-AX05` Add release-tooling tests that validate campaign phase composition/contract.
+- [x] `W111-AX06` Execute at least one campaign smoke run and verify artifact schema.
+- [x] `W111-AX07` Run `actionlint` to validate workflow syntax and expression contexts.
+- [x] `W111-AX08` Run full quality/security/readiness gates.
+
+## AY) Wave 112 (completed): production operator/autonomy runbooks
+
+- [x] `W112-AY01` Add operator-control incident runbook (auth mode drift, control rollback, audit capture).
+- [x] `W112-AY02` Add autonomy/checkpoint runbook (pause, checkpoint, resume, reconcile, rollback).
+- [x] `W112-AY03` Add integrations degradation runbook (circuit breakers, DLQ replay, release channel fallback).
+- [x] `W112-AY04` Add campaign execution runbook (soak/fault cadence and artifact retention policy).
+- [x] `W112-AY05` Cross-link new runbooks from existing incident/observability docs.
+- [x] `W112-AY06` Add tests that assert critical runbook docs exist and mention key commands/tool names.
+- [x] `W112-AY07` Run docs-linked release/readiness checks.
+- [x] `W112-AY08` Run full quality/security/readiness gates.
 
 ---
 

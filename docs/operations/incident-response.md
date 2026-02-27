@@ -49,3 +49,10 @@
 - Add/expand regression tests for the failed path.
 - Update runbooks and alert thresholds.
 - Document root cause, remediation, and follow-up owner/date.
+
+## Related Runbooks
+
+- `operator-control-runbook.md`
+- `autonomy-checkpoint-runbook.md`
+- `integrations-degradation-runbook.md`
+- `campaign-execution-runbook.md`
