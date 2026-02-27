@@ -175,6 +175,7 @@ Smart home safety defaults:
   - The dashboard root (`/`) remains reachable and supports token entry for browser-based API calls.
   - `GET /api/control-schema` returns action/payload requirements for automation clients.
   - `GET /api/conversation-trace` returns live turn flow/tool/policy/latency trace rows used by the dashboard panel.
+  - `/api/status` now includes `episodic_timeline` snapshots for recent important turns/actions.
   - Control actions include explicit sleep/wake toggles via `set_sleeping` (`sleeping=true|false`).
   - Personality controls support live preview and rollback: `preview_personality`, `commit_personality_preview`, `rollback_personality_preview`.
 - Release checklist: [`docs/operations/release-checklist.md`](docs/operations/release-checklist.md).

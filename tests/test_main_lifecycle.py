@@ -3,6 +3,7 @@
 import json
 import pytest
 from pathlib import Path
+from collections import deque
 from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -242,6 +243,38 @@ def test_confidence_pause_respects_voice_profile_pace():
     fast = Jarvis._confidence_pause(jarvis, "All set.")
 
     assert slow > fast
+
+
+def test_record_conversation_trace_writes_episodic_snapshot_for_action_turn():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._turn_trace_seq = 0
+    jarvis._conversation_traces = deque(maxlen=50)
+    jarvis._episodic_timeline = deque(maxlen=50)
+    jarvis._episode_seq = 0
+    jarvis._observability = None
+    jarvis.presence = SimpleNamespace(attention_source=lambda: "face")
+    jarvis._turn_choreography = {}
+
+    Jarvis._record_conversation_trace(
+        jarvis,
+        user_text="Turn on the porch light.",
+        intent_class="action",
+        turn_started_at=0.0,
+        stt_latency_ms=25.0,
+        llm_first_sentence_ms=40.0,
+        tts_first_audio_ms=55.0,
+        response_success=True,
+        tool_summaries=[{"name": "smart_home_control", "status": "ok", "duration_ms": 12.0}],
+        lifecycle="completed",
+        used_brain_response=True,
+    )
+
+    assert len(jarvis._conversation_traces) == 1
+    assert len(jarvis._episodic_timeline) == 1
+    episode = jarvis._episodic_timeline[0]
+    assert episode["intent"] == "action"
+    assert "porch light" in episode["summary"].lower()
+    assert episode["tool_count"] == 1
 
 
 def test_apply_turn_choreography_sets_presence_bias_fields():
@@ -704,6 +737,23 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     save_target._pending_text = "arm the system"
     save_target._awaiting_repair_confirmation = True
     save_target._repair_candidate_text = "turn on the porch lights"
+    save_target._episode_seq = 4
+    save_target._episodic_timeline = deque(
+        [
+            {
+                "episode_id": 4,
+                "timestamp": 1700000000.0,
+                "turn_id": 8,
+                "intent": "action",
+                "lifecycle": "completed",
+                "summary": "Turn on the porch lights -> tools: smart_home_control",
+                "tool_count": 1,
+                "completion_success": True,
+                "response_success": True,
+            }
+        ],
+        maxlen=200,
+    )
     Jarvis._save_runtime_state(save_target)
 
     payload = json.loads(state_path.read_text(encoding="utf-8"))
@@ -716,6 +766,8 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     assert payload["runtime"]["voice_user_profiles"]["operator"]["verbosity"] == "brief"
     assert payload["awaiting_repair_confirmation"] is True
     assert payload["repair_candidate_text"] == "turn on the porch lights"
+    assert payload["episodic_timeline_seq"] == 4
+    assert payload["episodic_timeline"][0]["summary"].startswith("Turn on the porch lights")
 
     load_target = Jarvis.__new__(Jarvis)
     load_target._runtime_state_path = state_path
@@ -736,6 +788,8 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     load_target._awaiting_repair_confirmation = False
     load_target._repair_candidate_text = None
     load_target._voice_user_profiles = {}
+    load_target._episode_seq = 0
+    load_target._episodic_timeline = deque(maxlen=200)
     with patch("jarvis.__main__.service_tools.set_safe_mode") as set_safe_mode:
         Jarvis._load_runtime_state(load_target)
     set_safe_mode.assert_called_once_with(True)
@@ -755,6 +809,9 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     assert load_target._awaiting_repair_confirmation is True
     assert load_target._repair_candidate_text == "turn on the porch lights"
     assert load_target._voice_user_profiles["operator"]["verbosity"] == "brief"
+    assert load_target._episode_seq == 4
+    assert len(load_target._episodic_timeline) == 1
+    assert load_target._episodic_timeline[0]["summary"].startswith("Turn on the porch lights")
     load_target.presence.set_backchannel_style.assert_called_with("expressive")
 
 

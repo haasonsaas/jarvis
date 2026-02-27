@@ -92,6 +92,7 @@ TELEMETRY_STORAGE_ERROR_DETAILS = TOOL_STORAGE_ERROR_DETAILS
 TELEMETRY_SERVICE_ERROR_DETAILS = TOOL_SERVICE_ERROR_CODES - TELEMETRY_STORAGE_ERROR_DETAILS
 WATCHDOG_POLL_SEC = 0.05
 CONVERSATION_TRACE_MAXLEN = 200
+EPISODIC_TIMELINE_MAXLEN = 200
 VALID_PERSONA_STYLES = {"terse", "composed", "friendly"}
 VALID_BACKCHANNEL_STYLES = {"quiet", "balanced", "expressive"}
 VALID_VOICE_PROFILE_VERBOSITY = {"brief", "normal", "detailed"}
@@ -386,6 +387,8 @@ class Jarvis:
         self._telemetry_error_counts: dict[str, float] = {}
         self._conversation_traces: deque[dict[str, Any]] = deque(maxlen=CONVERSATION_TRACE_MAXLEN)
         self._turn_trace_seq = 0
+        self._episodic_timeline: deque[dict[str, Any]] = deque(maxlen=EPISODIC_TIMELINE_MAXLEN)
+        self._episode_seq = 0
         self._voice_user_profiles: dict[str, dict[str, str]] = {}
         self._personality_preview_snapshot: dict[str, str] | None = None
         self._stt_diagnostics: dict[str, Any] = self._default_stt_diagnostics()
@@ -790,6 +793,49 @@ class Jarvis:
             self._repair_candidate_text = None
         elif not self._repair_candidate_text:
             self._awaiting_repair_confirmation = False
+        raw_timeline = payload.get("episodic_timeline")
+        parsed_timeline: list[dict[str, Any]] = []
+
+        def safe_int(value: Any, default: int = 0) -> int:
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                return default
+            return number
+
+        def safe_float(value: Any, default: float = 0.0) -> float:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return default
+            if not math.isfinite(number):
+                return default
+            return number
+
+        if isinstance(raw_timeline, list):
+            for item in raw_timeline[:EPISODIC_TIMELINE_MAXLEN]:
+                if not isinstance(item, dict):
+                    continue
+                snapshot = {
+                    "episode_id": safe_int(item.get("episode_id", 0), 0),
+                    "timestamp": safe_float(item.get("timestamp", 0.0), 0.0),
+                    "turn_id": safe_int(item.get("turn_id", 0), 0),
+                    "intent": str(item.get("intent", "unknown")),
+                    "lifecycle": str(item.get("lifecycle", "unknown")),
+                    "summary": str(item.get("summary", "")).strip()[:240],
+                    "tool_count": max(0, safe_int(item.get("tool_count", 0), 0)),
+                    "completion_success": item.get("completion_success"),
+                    "response_success": item.get("response_success"),
+                }
+                if snapshot["episode_id"] <= 0 or snapshot["timestamp"] <= 0.0 or not snapshot["summary"]:
+                    continue
+                parsed_timeline.append(snapshot)
+        self._episodic_timeline = deque(parsed_timeline, maxlen=EPISODIC_TIMELINE_MAXLEN)
+        try:
+            loaded_episode_seq = int(payload.get("episodic_timeline_seq", 0) or 0)
+        except (TypeError, ValueError):
+            loaded_episode_seq = 0
+        self._episode_seq = max(loaded_episode_seq, len(parsed_timeline))
 
     def _save_runtime_state(self) -> None:
         path = getattr(self, "_runtime_state_path", None)
@@ -831,6 +877,8 @@ class Jarvis:
             "pending_text": getattr(self, "_pending_text", None),
             "awaiting_repair_confirmation": bool(getattr(self, "_awaiting_repair_confirmation", False)),
             "repair_candidate_text": getattr(self, "_repair_candidate_text", None),
+            "episodic_timeline_seq": int(getattr(self, "_episode_seq", 0)),
+            "episodic_timeline": list(getattr(self, "_episodic_timeline", []))[:EPISODIC_TIMELINE_MAXLEN],
         }
         with suppress(OSError):
             path.write_text(json.dumps(payload, indent=2))
@@ -1235,6 +1283,13 @@ class Jarvis:
             "recent_count": len(self._conversation_traces),
             "latest_turn_id": latest_turn_id,
         }
+        episodes = self._operator_episodic_timeline_provider(limit=20)
+        latest_episode_id = int(episodes[0].get("episode_id", 0)) if episodes and isinstance(episodes[0], dict) else 0
+        status["episodic_timeline"] = {
+            "recent_count": len(getattr(self, "_episodic_timeline", [])),
+            "latest_episode_id": latest_episode_id,
+            "recent": episodes,
+        }
         preview = getattr(self, "_personality_preview_snapshot", None)
         status["personality_preview"] = {
             "active": isinstance(preview, dict),
@@ -1584,6 +1639,7 @@ class Jarvis:
             "turn_choreography": self._turn_choreography_snapshot(),
         }
         self._conversation_traces.appendleft(trace_item)
+        self._record_episodic_snapshot(trace_item)
         observability = getattr(self, "_observability", None)
         if observability is not None:
             with suppress(Exception):
@@ -1597,6 +1653,68 @@ class Jarvis:
                         "policy_decision_count": len(policy_decisions),
                     },
                 )
+
+    def _record_episodic_snapshot(self, trace_item: dict[str, Any]) -> None:
+        if not isinstance(trace_item, dict):
+            return
+        transcript = str(trace_item.get("transcript", "")).strip()
+        if not transcript:
+            return
+        intent = str(trace_item.get("intent", "unknown")).strip().lower()
+        lifecycle = str(trace_item.get("lifecycle", "unknown")).strip().lower()
+        tool_calls = trace_item.get("tool_calls")
+        tool_count = len(tool_calls) if isinstance(tool_calls, list) else 0
+        policy_decisions = trace_item.get("policy_decisions")
+        policy_count = len(policy_decisions) if isinstance(policy_decisions, list) else 0
+        completion_success = trace_item.get("completion_success")
+        response_success = trace_item.get("response_success")
+
+        important_lifecycle = {
+            "memory_correction",
+            "confirmation_requested",
+            "repair_requested",
+        }
+        if intent not in {"action", "hybrid"} and tool_count == 0 and policy_count == 0 and lifecycle not in important_lifecycle:
+            return
+        if lifecycle == "completed" and intent == "answer" and tool_count == 0 and response_success is True:
+            return
+
+        tool_names: list[str] = []
+        if isinstance(tool_calls, list):
+            for call in tool_calls:
+                if not isinstance(call, dict):
+                    continue
+                name = str(call.get("name", "")).strip()
+                if name:
+                    tool_names.append(name)
+        summary = transcript[:180]
+        if tool_names:
+            summary = f"{summary} -> tools: {', '.join(tool_names[:3])}"
+
+        self._episode_seq = int(getattr(self, "_episode_seq", 0)) + 1
+        snapshot = {
+            "episode_id": int(self._episode_seq),
+            "timestamp": float(trace_item.get("timestamp", time.time()) or time.time()),
+            "turn_id": int(trace_item.get("turn_id", 0) or 0),
+            "intent": intent,
+            "lifecycle": lifecycle,
+            "summary": summary,
+            "tool_count": int(tool_count),
+            "completion_success": completion_success,
+            "response_success": response_success,
+        }
+        timeline = getattr(self, "_episodic_timeline", None)
+        if not isinstance(timeline, deque):
+            timeline = deque(maxlen=EPISODIC_TIMELINE_MAXLEN)
+            self._episodic_timeline = timeline
+        timeline.appendleft(snapshot)
+
+    def _operator_episodic_timeline_provider(self, limit: int = 20) -> list[dict[str, Any]]:
+        size = max(1, min(200, int(limit)))
+        timeline = getattr(self, "_episodic_timeline", None)
+        if not isinstance(timeline, deque):
+            return []
+        return list(timeline)[:size]
 
     def _operator_conversation_trace_provider(self, limit: int = 20) -> list[dict[str, Any]]:
         size = max(1, min(200, int(limit)))
