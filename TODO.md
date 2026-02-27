@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 10 (Governance + Runtime Decomposition)
+# Jarvis TODO — Wave 11 (Services Decomposition Continuation)
 
 Last updated: 2026-02-27
 
@@ -8,32 +8,28 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 9
-- Completed: 9
-- Remaining: 0
+- Total items: 6
+- Completed: 1
+- Remaining: 5
 
 ---
 
 ## A) Service decomposition
 
-- [x] `W10-S01` Extract `skills_list`, `skills_enable`, `skills_disable`, and `skills_version` from `services.py` into `services_domains/governance.py`.
-- [x] `W10-S02` Extract `system_status`, `system_status_contract`, and `jarvis_scorecard` from `services.py` into `services_domains/governance.py`.
-- [x] `W10-S03` Rewire `services.py` imports and remove legacy implementations for extracted governance handlers.
-- [x] `W10-S04` Extract timer runtime handlers (`timer_create`, `timer_list`, `timer_cancel`) into `services_domains/planner.py`.
-- [x] `W10-S05` Extract reminder runtime handlers (`reminder_create`, `reminder_list`, `reminder_complete`, `reminder_notify_due`) into `services_domains/planner.py`.
-- [x] `W10-S06` Extract task-plan runtime handlers (`task_plan_create`, `task_plan_list`, `task_plan_update`, `task_plan_summary`, `task_plan_next`) into `services_domains/planner.py`.
-- [x] `W10-S07` Extract Home Assistant state/capabilities handlers (`smart_home_state`, `home_assistant_capabilities`) into `services_domains/home.py`.
+- [x] `W11-S01` Extract memory runtime handlers (`memory_add`, `memory_update`, `memory_forget`, `memory_search`, `memory_status`, `memory_recent`, `memory_summary_add`, `memory_summary_list`) into `services_domains/trust.py`.
+- [ ] `W11-S02` Extract inbound webhook inbox handlers (`webhook_inbound_list`, `webhook_inbound_clear`) into `services_domains/integrations.py`.
+- [ ] `W11-S03` Extract dead-letter queue handlers (`dead_letter_list`, `dead_letter_replay`) into `services_domains/integrations.py`.
+- [ ] `W11-S04` Extract tool summary handlers (`tool_summary`, `tool_summary_text`) into `services_domains/governance.py`.
+- [ ] `W11-S05` Break out service schema/permission constant blocks from `services.py` into dedicated modules to reduce top-level load.
 
 ## B) Quality and verification
 
-- [x] `W10-Q01` Re-run `make check`, `make security-gate`, readiness full suite, and strict eval dataset after governance extraction.
-- [x] `W10-Q02` Re-run full quality gates after completing remaining Wave 10 extraction items.
+- [ ] `W11-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after Wave 11 extraction items complete.
 
 ---
 
 ## Outcome snapshot (current)
 
-- `services.py` is now `5,974` lines (down from `6,708` at Wave 10 start and `8,890` before Waves 9/10).
-- `services_domains/planner.py` now owns timer/reminder/task-plan runtime handlers in addition to planner engine actions.
-- `services_domains/home.py` now owns Home Assistant state/capabilities handlers alongside smart-home runtime operations.
-- Full tests pass (`555 passed`), security gate passes, readiness full suite passes, and strict eval contract remains green (`91/91`).
+- `services.py` is now `5,636` lines (down from `5,974` before Wave 11).
+- `services_domains/trust.py` now owns proactive + identity + memory-governance + memory runtime handlers.
+- Full test suite remains green (`555 passed`), security gate passes, and readiness full suite remains green (`91/91` strict eval).
