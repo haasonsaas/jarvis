@@ -252,6 +252,7 @@ class Config:
     identity_trusted_users: list[str] = field(default_factory=lambda: _env_list("IDENTITY_TRUSTED_USERS"))
     identity_require_approval: bool = field(default_factory=lambda: _env_bool("IDENTITY_REQUIRE_APPROVAL") is not False)
     identity_approval_code: str = field(default_factory=lambda: os.environ.get("IDENTITY_APPROVAL_CODE", ""))
+    plan_preview_require_ack: bool = field(default_factory=lambda: _env_bool("PLAN_PREVIEW_REQUIRE_ACK") or False)
     memory_retention_days: float = field(default_factory=lambda: _env_nonnegative_float("MEMORY_RETENTION_DAYS", 0.0))
     audit_retention_days: float = field(default_factory=lambda: _env_nonnegative_float("AUDIT_RETENTION_DAYS", 0.0))
 
@@ -626,6 +627,10 @@ class Config:
             warnings.append(
                 "IDENTITY_REQUIRE_APPROVAL is enabled without IDENTITY_APPROVAL_CODE or IDENTITY_TRUSTED_USERS."
             )
+        if self.plan_preview_require_ack and not self.identity_enforcement_enabled:
+            warnings.append(
+                "PLAN_PREVIEW_REQUIRE_ACK enabled while IDENTITY_ENFORCEMENT_ENABLED=false; preview gate works but trust controls are relaxed."
+            )
         if self.skills_require_signature and not self.skills_signature_key.strip():
             warnings.append("SKILLS_REQUIRE_SIGNATURE enabled without SKILLS_SIGNATURE_KEY; non-signed skills will remain blocked.")
         if (self.memory_encryption_enabled or self.audit_encryption_enabled) and not self.data_encryption_key.strip():
@@ -709,6 +714,7 @@ class Config:
             "HOME_CONVERSATION_ENABLED",
             "IDENTITY_ENFORCEMENT_ENABLED",
             "IDENTITY_REQUIRE_APPROVAL",
+            "PLAN_PREVIEW_REQUIRE_ACK",
         ]
         for name in bool_checks:
             raw = os.environ.get(name)

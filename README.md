@@ -94,6 +94,7 @@ cp .env.example .env
 # Optional: IDENTITY_ENFORCEMENT_ENABLED / IDENTITY_DEFAULT_USER / IDENTITY_DEFAULT_PROFILE
 # Optional: IDENTITY_USER_PROFILES / IDENTITY_TRUSTED_USERS
 # Optional: IDENTITY_REQUIRE_APPROVAL / IDENTITY_APPROVAL_CODE
+# Optional: PLAN_PREVIEW_REQUIRE_ACK=true (require preview_token before risky execute tools)
 # Optional: MEMORY_RETENTION_DAYS / AUDIT_RETENTION_DAYS (0 disables pruning)
 # Optional: MEMORY_PII_GUARDRAILS_ENABLED=true|false
 # Optional: MEMORY_ENCRYPTION_ENABLED / AUDIT_ENCRYPTION_ENABLED / JARVIS_DATA_KEY
@@ -110,6 +111,9 @@ Smart home safety defaults:
 - Sensitive domains (`lock`, `alarm_control_panel`, `cover`, `climate`) require `confirm=true` when `dry_run=false`.
 - `HOME_PERMISSION_PROFILE=readonly` disables mutating `smart_home` actions but keeps `smart_home_state`.
 - `HOME_REQUIRE_CONFIRM_EXECUTE=true` enforces `confirm=true` for all non-dry-run `smart_home` actions.
+- `PLAN_PREVIEW_REQUIRE_ACK=true` enforces a two-step preview+ack flow (`preview_token`) before mutating medium/high-risk actions.
+  - First call can pass `preview_only=true` to get a plan preview token.
+  - Execute call must include matching `preview_token=<token>` before token expiry.
 - Operational runbook: [`docs/operations/home-control-policy.md`](docs/operations/home-control-policy.md).
 - Integration runbook: [`docs/operations/integration-policy.md`](docs/operations/integration-policy.md).
 - Trust/identity runbook: [`docs/operations/trust-policy.md`](docs/operations/trust-policy.md).

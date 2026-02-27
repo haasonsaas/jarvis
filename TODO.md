@@ -97,8 +97,8 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [ ] `AX01` Add explicit planner/executor split with retry policy and rollback hints. `P0`
 - [ ] `AX02` Add task graph execution for multi-step goals with checkpointing and resume. `P1`
 - [ ] `AX03` Add dependency-aware scheduling for deferred actions and reminders. `P1`
-- [ ] `AX04` Add ambiguity detector to request clarifications before risky plan execution. `P0`
-- [ ] `AX05` Add human-readable plan preview before execution for medium/high-risk actions. `P0`
+- [x] `AX04` Add ambiguity detector to request clarifications before risky plan execution. `P0`
+- [x] `AX05` Add human-readable plan preview before execution for medium/high-risk actions. `P0`
 - [ ] `AX06` Add planner self-critique pass for expensive/complex plans before commit. `P2`
 
 ## 10) Reliability and Runtime Safety (6 items)
@@ -151,8 +151,8 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 ## Immediate Execution Queue (First 20)
 
 - [x] `Q01` Implement `JX01` interaction contract + prompt enforcement.
-- [ ] `Q02` Implement `AX04` ambiguity detector for risky actions.
-- [ ] `Q03` Implement `AX05` plan preview before medium/high-risk execution.
+- [x] `Q02` Implement `AX04` ambiguity detector for risky actions.
+- [x] `Q03` Implement `AX05` plan preview before medium/high-risk execution.
 - [ ] `Q04` Implement `RX04` turn-phase timeout budgets and status exposure.
 - [ ] `Q05` Implement `PX03` nudge/interrupt policy + quiet windows.
 - [ ] `Q06` Implement `MX03` memory correction voice commands.

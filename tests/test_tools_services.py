@@ -569,6 +569,88 @@ class TestServicesTools:
         assert details["reason"] == "sensitive_confirm_required"
 
     @pytest.mark.asyncio
+    async def test_smart_home_sensitive_execute_rejects_ambiguous_entity_target(self):
+        from jarvis.tools import services
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await services.smart_home(
+                {
+                    "domain": "lock",
+                    "action": "unlock",
+                    "entity_id": "lock.all",
+                    "dry_run": False,
+                    "confirm": True,
+                }
+            )
+
+        assert "ambiguous high-risk target" in result["content"][0]["text"].lower()
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_preview_only_returns_plan_preview(self):
+        from jarvis.tools import services
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await services.smart_home(
+                {
+                    "domain": "light",
+                    "action": "turn_on",
+                    "entity_id": "light.preview_only",
+                    "dry_run": False,
+                    "preview_only": True,
+                }
+            )
+
+        text = result["content"][0]["text"]
+        assert "plan preview" in text.lower()
+        assert "preview_token=" in text
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_smart_home_strict_preview_ack_requires_token_then_executes(self, tmp_path, aiohttp_response, aiohttp_session_mock):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.plan_preview_require_ack = True
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            gated = await services.smart_home(
+                {
+                    "domain": "light",
+                    "action": "turn_on",
+                    "entity_id": "light.preview_ack",
+                    "dry_run": False,
+                }
+            )
+        gated_text = gated["content"][0]["text"]
+        assert "plan preview" in gated_text.lower()
+        assert "preview_token=" in gated_text
+        mock_session_cls.assert_not_called()
+
+        preview_token = gated_text.split("preview_token=", 1)[1].split(" ", 1)[0].strip()
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            state_resp = aiohttp_response(status=200, json_data={"state": "off", "attributes": {}})
+            post_resp = aiohttp_response(status=200)
+            mock_session = aiohttp_session_mock(get=state_resp, post=post_resp)
+            mock_session_cls.return_value = mock_session
+
+            executed = await services.smart_home(
+                {
+                    "domain": "light",
+                    "action": "turn_on",
+                    "entity_id": "light.preview_ack",
+                    "dry_run": False,
+                    "preview_token": preview_token,
+                }
+            )
+
+        assert "done:" in executed["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_smart_home_climate_execute_requires_confirm(self):
         from jarvis.tools.services import smart_home
 
@@ -1027,6 +1109,24 @@ class TestServicesTools:
             "text": "turn on kitchen lights",
         })
         assert "confirm=true" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_conversation_rejects_ambiguous_high_risk_text(self):
+        from jarvis.tools import services
+
+        cfg = services._config
+        assert cfg is not None
+        cfg.home_conversation_enabled = True
+        cfg.home_conversation_permission_profile = "control"
+        services.bind(cfg)
+
+        result = await services.home_assistant_conversation(
+            {
+                "text": "unlock it now",
+                "confirm": True,
+            }
+        )
+        assert "ambiguous" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_home_assistant_conversation_denies_readonly_profile(self):
@@ -2841,6 +2941,7 @@ class TestServicesTools:
         assert isinstance(payload["tool_policy"]["identity_enforcement_enabled"], bool)
         assert payload["tool_policy"]["identity_default_profile"] in {"deny", "readonly", "control", "trusted"}
         assert isinstance(payload["tool_policy"]["identity_require_approval"], bool)
+        assert isinstance(payload["tool_policy"]["plan_preview_require_ack"], bool)
         assert "memory" in payload
         assert "audit" in payload
         assert payload["audit"]["redaction_enabled"] is True
@@ -2864,6 +2965,10 @@ class TestServicesTools:
         assert isinstance(payload["identity"]["enabled"], bool)
         assert isinstance(payload["identity"]["trusted_user_count"], int)
         assert isinstance(payload["identity"]["user_profiles"], dict)
+        assert "plan_preview" in payload
+        assert isinstance(payload["plan_preview"]["pending_count"], int)
+        assert payload["plan_preview"]["ttl_sec"] > 0
+        assert isinstance(payload["plan_preview"]["strict_mode"], bool)
         assert "skills" in payload
         assert "observability" in payload
         assert "retention_policy" in payload
@@ -2883,6 +2988,7 @@ class TestServicesTools:
         assert "voice_attention" in payload["top_level_required"]
         assert "skills" in payload["top_level_required"]
         assert "observability" in payload["top_level_required"]
+        assert "plan_preview" in payload["top_level_required"]
         assert "tool_policy_required" in payload
         assert "home_conversation_permission_profile" in payload["tool_policy_required"]
         assert "email_permission_profile" in payload["tool_policy_required"]
@@ -2890,6 +2996,7 @@ class TestServicesTools:
         assert "identity_enforcement_enabled" in payload["tool_policy_required"]
         assert "identity_default_profile" in payload["tool_policy_required"]
         assert "identity_require_approval" in payload["tool_policy_required"]
+        assert "plan_preview_require_ack" in payload["tool_policy_required"]
         assert "timers_required" in payload
         assert "reminders_required" in payload
         assert "voice_attention_required" in payload
@@ -2901,6 +3008,8 @@ class TestServicesTools:
         assert "user_profiles" in payload["identity_required"]
         assert "skills_required" in payload
         assert "observability_required" in payload
+        assert "plan_preview_required" in payload
+        assert "strict_mode" in payload["plan_preview_required"]
         assert "retention_policy_required" in payload
 
     @pytest.mark.asyncio

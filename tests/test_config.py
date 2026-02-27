@@ -161,6 +161,7 @@ class TestConfig:
         monkeypatch.setenv("HOME_ENABLED", "maybe")
         monkeypatch.setenv("HOME_REQUIRE_CONFIRM_EXECUTE", "sometimes")
         monkeypatch.setenv("HOME_CONVERSATION_ENABLED", "perhaps")
+        monkeypatch.setenv("PLAN_PREVIEW_REQUIRE_ACK", "later")
         monkeypatch.setenv("MEMORY_PII_GUARDRAILS_ENABLED", "unknown")
         monkeypatch.setenv("HOME_PERMISSION_PROFILE", "execute-all")
         monkeypatch.setenv("HOME_CONVERSATION_PERMISSION_PROFILE", "execute-all")
@@ -185,6 +186,7 @@ class TestConfig:
         assert "HOME_ENABLED invalid boolean" in text
         assert "HOME_REQUIRE_CONFIRM_EXECUTE invalid boolean" in text
         assert "HOME_CONVERSATION_ENABLED invalid boolean" in text
+        assert "PLAN_PREVIEW_REQUIRE_ACK invalid boolean" in text
         assert "MEMORY_PII_GUARDRAILS_ENABLED invalid boolean" in text
         assert "HOME_PERMISSION_PROFILE invalid" in text
         assert "HOME_CONVERSATION_PERMISSION_PROFILE invalid" in text
@@ -224,6 +226,14 @@ class TestConfig:
 
         c = Config()
         assert c.home_conversation_enabled is True
+
+    def test_plan_preview_require_ack_env_true(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("PLAN_PREVIEW_REQUIRE_ACK", "true")
+        from jarvis.config import Config
+
+        c = Config()
+        assert c.plan_preview_require_ack is True
 
     def test_non_finite_float_env_values_fall_back_to_defaults(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
@@ -412,6 +422,16 @@ class TestConfig:
         c = Config()
         text = "\n".join(c.startup_warnings)
         assert "IDENTITY_REQUIRE_APPROVAL is enabled without IDENTITY_APPROVAL_CODE or IDENTITY_TRUSTED_USERS." in text
+
+    def test_plan_preview_warning_when_identity_enforcement_disabled(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("PLAN_PREVIEW_REQUIRE_ACK", "true")
+        monkeypatch.setenv("IDENTITY_ENFORCEMENT_ENABLED", "false")
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "PLAN_PREVIEW_REQUIRE_ACK enabled while IDENTITY_ENFORCEMENT_ENABLED=false" in text
 
     def test_model_secondary_mode_normalizes(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

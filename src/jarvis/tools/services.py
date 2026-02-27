@@ -15,6 +15,7 @@ import logging
 import math
 import random
 import re
+import secrets
 import smtplib
 import time
 from contextlib import suppress
@@ -80,6 +81,8 @@ TIMER_MAX_ACTIVE = 200
 REMINDER_MAX_ACTIVE = 500
 CALENDAR_DEFAULT_WINDOW_HOURS = 24.0
 CALENDAR_MAX_WINDOW_HOURS = 24.0 * 31.0
+PLAN_PREVIEW_TTL_SEC = 300.0
+PLAN_PREVIEW_MAX_PENDING = 1000
 _DURATION_SEGMENT_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)",
     re.IGNORECASE,
@@ -129,6 +132,7 @@ _identity_user_profiles: dict[str, str] = {}
 _identity_trusted_users: set[str] = set()
 _identity_require_approval: bool = True
 _identity_approval_code: str = ""
+_plan_preview_require_ack: bool = False
 _memory_retention_days: float = 0.0
 _audit_retention_days: float = 0.0
 _memory_pii_guardrails_enabled: bool = True
@@ -147,6 +151,7 @@ _runtime_skills_state: dict[str, Any] = {}
 _skill_registry: SkillRegistry | None = None
 _inbound_webhook_events: list[dict[str, Any]] = []
 _inbound_webhook_seq: int = 1
+_pending_plan_previews: dict[str, dict[str, Any]] = {}
 SENSITIVE_AUDIT_KEY_TOKENS = {
     "code",
     "pin",
@@ -173,6 +178,45 @@ INBOUND_REDACT_HEADER_TOKENS = {
 INBOUND_MAX_STRING_CHARS = 4000
 INBOUND_MAX_COLLECTION_ITEMS = 120
 AUDIT_REDACTED = "***REDACTED***"
+AMBIGUOUS_REFERENCE_TERMS = {
+    "it",
+    "that",
+    "this",
+    "them",
+    "one",
+    "something",
+    "thing",
+    "there",
+}
+HIGH_RISK_INTENT_TERMS = {
+    "unlock",
+    "lock",
+    "disarm",
+    "arm",
+    "open",
+    "close",
+    "disable",
+    "enable",
+    "delete",
+    "send",
+    "trigger",
+}
+EXPLICIT_TARGET_TERMS = {
+    "door",
+    "garage",
+    "gate",
+    "alarm",
+    "lock",
+    "panel",
+    "email",
+    "message",
+    "webhook",
+    "light",
+    "switch",
+    "cover",
+    "climate",
+    "thermostat",
+}
 AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
     "todoist_add_task": {"content", "description", "due_string", "message", "title"},
     "todoist_list_tasks": {"content", "description", "due_string", "message", "title"},
@@ -217,6 +261,9 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "speaker_verified": {"type": "boolean", "description": "Trusted-speaker hook for voice identity pipelines."},
             "approved": {"type": "boolean", "description": "Trusted approval handshake flag for high-risk actions."},
             "approval_code": {"type": "string", "description": "Approval code for high-risk actions when required."},
+            "preview_only": {"type": "boolean", "description": "Return plan preview without executing."},
+            "preview_token": {"type": "string", "description": "Plan preview token required when preview acknowledgment is enforced."},
+            "require_preview_ack": {"type": "boolean", "description": "If true, require preview_token before execution."},
         },
         "required": ["domain", "action", "entity_id"],
     },
@@ -250,6 +297,9 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "speaker_verified": {"type": "boolean", "description": "Trusted-speaker hook for voice identity pipelines."},
             "approved": {"type": "boolean", "description": "Trusted approval handshake flag for high-risk actions."},
             "approval_code": {"type": "string", "description": "Approval code for high-risk actions when required."},
+            "preview_only": {"type": "boolean", "description": "Return plan preview without executing."},
+            "preview_token": {"type": "string", "description": "Plan preview token required when preview acknowledgment is enforced."},
+            "require_preview_ack": {"type": "boolean", "description": "If true, require preview_token before execution."},
         },
         "required": ["text"],
     },
@@ -304,6 +354,9 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "speaker_verified": {"type": "boolean"},
             "approved": {"type": "boolean"},
             "approval_code": {"type": "string"},
+            "preview_only": {"type": "boolean"},
+            "preview_token": {"type": "string"},
+            "require_preview_ack": {"type": "boolean"},
         },
         "required": ["entity_id", "action"],
     },
@@ -328,6 +381,9 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "speaker_verified": {"type": "boolean"},
             "approved": {"type": "boolean"},
             "approval_code": {"type": "string"},
+            "preview_only": {"type": "boolean"},
+            "preview_token": {"type": "string"},
+            "require_preview_ack": {"type": "boolean"},
         },
         "required": ["url"],
     },
@@ -377,6 +433,9 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "speaker_verified": {"type": "boolean"},
             "approved": {"type": "boolean"},
             "approval_code": {"type": "string"},
+            "preview_only": {"type": "boolean"},
+            "preview_token": {"type": "string"},
+            "require_preview_ack": {"type": "boolean"},
         },
         "required": ["subject", "body"],
     },
@@ -720,6 +779,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _slack_webhook_url, _discord_webhook_url
     global _identity_enforcement_enabled, _identity_default_user, _identity_default_profile
     global _identity_user_profiles, _identity_trusted_users, _identity_require_approval, _identity_approval_code
+    global _plan_preview_require_ack
     global _memory_retention_days, _audit_retention_days
     global _memory_pii_guardrails_enabled, _audit_encryption_enabled, _data_encryption_key
     global _timer_id_seq, _reminder_id_seq
@@ -788,6 +848,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     }
     _identity_require_approval = bool(getattr(config, "identity_require_approval", True))
     _identity_approval_code = str(getattr(config, "identity_approval_code", "")).strip()
+    _plan_preview_require_ack = bool(getattr(config, "plan_preview_require_ack", False))
     _memory_retention_days = max(0.0, float(getattr(config, "memory_retention_days", 0.0)))
     _audit_retention_days = max(0.0, float(getattr(config, "audit_retention_days", 0.0)))
     _memory_pii_guardrails_enabled = bool(getattr(config, "memory_pii_guardrails_enabled", True))
@@ -801,6 +862,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _reminders.clear()
     _reminder_id_seq = 1
     _email_history.clear()
+    _pending_plan_previews.clear()
     _runtime_voice_state.clear()
     _runtime_observability_state.clear()
     _runtime_skills_state.clear()
@@ -1161,6 +1223,125 @@ def _identity_authorize(
 
 def _identity_enriched_audit(details: dict[str, Any], identity: dict[str, Any], decision_chain: list[str]) -> dict[str, Any]:
     return {**details, **_identity_audit_fields(identity, decision_chain)}
+
+
+def _tokenized_words(text: str) -> list[str]:
+    return [token for token in re.findall(r"[a-z0-9_']+", text.lower()) if token]
+
+
+def _is_ambiguous_high_risk_text(text: str) -> bool:
+    sample = str(text).strip().lower()
+    if not sample:
+        return False
+    words = _tokenized_words(sample)
+    if not words:
+        return False
+    has_risk_term = any(term in sample for term in HIGH_RISK_INTENT_TERMS)
+    if not has_risk_term:
+        return False
+    has_ambiguous_reference = any(token in AMBIGUOUS_REFERENCE_TERMS for token in words)
+    has_explicit_target = any(token in EXPLICIT_TARGET_TERMS for token in words)
+    return has_ambiguous_reference and not has_explicit_target
+
+
+def _is_ambiguous_entity_target(entity_id: str) -> bool:
+    clean = str(entity_id or "").strip().lower()
+    if "." not in clean:
+        return False
+    name = clean.split(".", 1)[1]
+    words = _tokenized_words(name.replace("-", "_"))
+    if not words:
+        return False
+    return any(token in {"all", "group", "everything", "everyone"} for token in words)
+
+
+def _plan_preview_signature(tool_name: str, payload: dict[str, Any]) -> str:
+    normalized = {"tool": tool_name, "payload": payload}
+    encoded = json.dumps(normalized, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _prune_plan_previews(now_ts: float | None = None) -> None:
+    if not _pending_plan_previews:
+        return
+    current = time.time() if now_ts is None else float(now_ts)
+    stale = [token for token, item in _pending_plan_previews.items() if float(item.get("expires_at", 0.0)) <= current]
+    for token in stale:
+        _pending_plan_previews.pop(token, None)
+    if len(_pending_plan_previews) <= PLAN_PREVIEW_MAX_PENDING:
+        return
+    overflow = len(_pending_plan_previews) - PLAN_PREVIEW_MAX_PENDING
+    oldest = sorted(
+        _pending_plan_previews.items(),
+        key=lambda pair: float(pair[1].get("issued_at", 0.0)),
+    )[:overflow]
+    for token, _ in oldest:
+        _pending_plan_previews.pop(token, None)
+
+
+def _issue_plan_preview_token(tool_name: str, signature: str, risk: str, summary: str) -> str:
+    now = time.time()
+    token = secrets.token_urlsafe(12)
+    _pending_plan_previews[token] = {
+        "tool": tool_name,
+        "signature": signature,
+        "risk": risk,
+        "summary": summary,
+        "issued_at": now,
+        "expires_at": now + PLAN_PREVIEW_TTL_SEC,
+    }
+    _prune_plan_previews(now)
+    return token
+
+
+def _consume_plan_preview_token(token: str, *, tool_name: str, signature: str) -> bool:
+    if not token:
+        return False
+    _prune_plan_previews()
+    row = _pending_plan_previews.get(token)
+    if not isinstance(row, dict):
+        return False
+    if str(row.get("tool", "")) != tool_name:
+        return False
+    if str(row.get("signature", "")) != signature:
+        return False
+    _pending_plan_previews.pop(token, None)
+    return True
+
+
+def _plan_preview_message(*, summary: str, risk: str, token: str, ttl_sec: float = PLAN_PREVIEW_TTL_SEC) -> str:
+    ttl = max(1, int(round(ttl_sec)))
+    return (
+        f"PLAN PREVIEW ({risk} risk): {summary}. "
+        f"To execute, resend with preview_token={token} within {ttl}s."
+    )
+
+
+def _preview_gate(
+    *,
+    tool_name: str,
+    args: dict[str, Any],
+    risk: str,
+    summary: str,
+    signature_payload: dict[str, Any],
+    enforce_default: bool,
+) -> str | None:
+    enforce = _as_bool(args.get("require_preview_ack"), default=enforce_default)
+    preview_only = _as_bool(args.get("preview_only"), default=False) or _as_bool(args.get("preview"), default=False)
+    preview_token = str(args.get("preview_token", "")).strip()
+    signature = _plan_preview_signature(tool_name, signature_payload)
+
+    if preview_only:
+        issued = _issue_plan_preview_token(tool_name, signature, risk, summary)
+        return _plan_preview_message(summary=summary, risk=risk, token=issued)
+    if not enforce:
+        return None
+    if not preview_token:
+        issued = _issue_plan_preview_token(tool_name, signature, risk, summary)
+        return _plan_preview_message(summary=summary, risk=risk, token=issued)
+    if not _consume_plan_preview_token(preview_token, tool_name=tool_name, signature=signature):
+        return "Invalid or expired preview_token. Request a new plan preview with preview_only=true."
+    return None
 
 
 def _format_tool_summaries(items: list[dict[str, object]]) -> str:
@@ -2209,6 +2390,61 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         return {"content": [{"type": "text", "text": "Sensitive action requires confirm=true when dry_run=false."}]}
+    if domain in SENSITIVE_DOMAINS and not dry_run and _is_ambiguous_entity_target(entity_id):
+        _record_service_error("smart_home", start_time, "policy")
+        _audit(
+            "smart_home",
+            _identity_enriched_audit(
+                {
+                    "domain": domain,
+                    "action": action,
+                    "entity_id": entity_id,
+                    "policy_decision": "denied",
+                    "reason": "ambiguous_target",
+                },
+                identity_context,
+                [*identity_chain, "deny:ambiguous_target"],
+            ),
+        )
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Ambiguous high-risk target. Specify one explicit entity instead of a broad/group target.",
+                }
+            ]
+        }
+    if not dry_run:
+        preview_risk = "high" if domain in SENSITIVE_DOMAINS else "medium"
+        preview = _preview_gate(
+            tool_name="smart_home",
+            args=args,
+            risk=preview_risk,
+            summary=f"{domain}.{action} on {entity_id}",
+            signature_payload={
+                "domain": domain,
+                "action": action,
+                "entity_id": entity_id,
+                "data": _redact_sensitive_for_audit(data),
+            },
+            enforce_default=_plan_preview_require_ack,
+        )
+        if preview:
+            record_summary("smart_home", "dry_run", start_time, effect="plan_preview", risk=preview_risk)
+            _audit(
+                "smart_home",
+                _identity_enriched_audit(
+                    {
+                        "domain": domain,
+                        "action": action,
+                        "entity_id": entity_id,
+                        "policy_decision": "preview_required",
+                    },
+                    identity_context,
+                    [*identity_chain, "decision:preview_required"],
+                ),
+            )
+            return {"content": [{"type": "text", "text": preview}]}
 
     current_state = "unknown"
     if not dry_run:
@@ -2535,6 +2771,17 @@ async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
                 }
             ]
         }
+    if _is_ambiguous_high_risk_text(text):
+        _record_service_error("home_assistant_conversation", start_time, "policy")
+        _audit("home_assistant_conversation", {"result": "denied", "reason": "ambiguous_high_risk_text"})
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "That risky command is ambiguous. Name the exact target entity/device before execution.",
+                }
+            ]
+        }
     confirm = _as_bool(args.get("confirm"), default=False)
     if not confirm:
         _record_service_error("home_assistant_conversation", start_time, "policy")
@@ -2557,6 +2804,29 @@ async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
+    preview = _preview_gate(
+        tool_name="home_assistant_conversation",
+        args=args,
+        risk="high",
+        summary=f"conversation command: {text[:120]}",
+        signature_payload={
+            "text": text,
+            "language": str(args.get("language", "")).strip(),
+            "agent_id": str(args.get("agent_id", "")).strip(),
+        },
+        enforce_default=_plan_preview_require_ack,
+    )
+    if preview:
+        record_summary("home_assistant_conversation", "dry_run", start_time, effect="plan_preview", risk="high")
+        _audit(
+            "home_assistant_conversation",
+            _identity_enriched_audit(
+                {"result": "preview_required", "text_length": len(text)},
+                identity_context,
+                [*identity_chain, "decision:preview_required"],
+            ),
+        )
+        return {"content": [{"type": "text", "text": preview}]}
 
     payload: dict[str, Any] = {"text": text}
     language = str(args.get("language", "")).strip()
@@ -3079,6 +3349,26 @@ async def media_control(args: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
+    if not dry_run:
+        preview = _preview_gate(
+            tool_name="media_control",
+            args=args,
+            risk="medium",
+            summary=f"media_control {action} on {entity_id}",
+            signature_payload={"entity_id": entity_id, "action": action, "payload_data": payload_data},
+            enforce_default=_plan_preview_require_ack,
+        )
+        if preview:
+            record_summary("media_control", "dry_run", start_time, effect="plan_preview", risk="medium")
+            _audit(
+                "media_control",
+                _identity_enriched_audit(
+                    {"result": "preview_required", "entity_id": entity_id, "action": action},
+                    identity_context,
+                    [*identity_chain, "decision:preview_required"],
+                ),
+            )
+            return {"content": [{"type": "text", "text": preview}]}
     if dry_run:
         record_summary("media_control", "dry_run", start_time)
         _audit(
@@ -3310,6 +3600,25 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
+    preview = _preview_gate(
+        tool_name="webhook_trigger",
+        args=args,
+        risk="high",
+        summary=f"{method} {url}",
+        signature_payload={"method": method, "url": url, "payload": payload or {}, "headers": headers},
+        enforce_default=_plan_preview_require_ack,
+    )
+    if preview:
+        record_summary("webhook_trigger", "dry_run", start_time, effect="plan_preview", risk="high")
+        _audit(
+            "webhook_trigger",
+            _identity_enriched_audit(
+                {"result": "preview_required", "method": method, "host": parsed.hostname or ""},
+                identity_context,
+                [*identity_chain, "decision:preview_required"],
+            ),
+        )
+        return {"content": [{"type": "text", "text": preview}]}
     if _webhook_auth_token and not any(key.lower() == "authorization" for key in headers):
         headers["Authorization"] = f"Bearer {_webhook_auth_token}"
     timeout_sec = _as_float(
@@ -3630,6 +3939,30 @@ async def email_send(args: dict[str, Any]) -> dict[str, Any]:
         )
         return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     recipient = str(args.get("to", "")).strip() or _email_default_to
+    preview = _preview_gate(
+        tool_name="email_send",
+        args=args,
+        risk="high",
+        summary=f"email_send to {recipient} subject='{subject[:80]}'",
+        signature_payload={
+            "to": recipient,
+            "subject": subject,
+            "body_length": len(body),
+            "body_digest": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+        },
+        enforce_default=_plan_preview_require_ack,
+    )
+    if preview:
+        record_summary("email_send", "dry_run", start_time, effect="plan_preview", risk="high")
+        _audit(
+            "email_send",
+            _identity_enriched_audit(
+                {"result": "preview_required", "to": recipient, "subject_length": len(subject)},
+                identity_context,
+                [*identity_chain, "decision:preview_required"],
+            ),
+        )
+        return {"content": [{"type": "text", "text": preview}]}
     try:
         await asyncio.to_thread(_send_email_sync, recipient=recipient, subject=subject, body=body)
     except smtplib.SMTPAuthenticationError:
@@ -4649,6 +4982,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "identity_enforcement_enabled": _identity_enforcement_enabled,
             "identity_default_profile": _identity_default_profile,
             "identity_require_approval": _identity_require_approval,
+            "plan_preview_require_ack": _plan_preview_require_ack,
         },
         "timers": _timer_status(),
         "reminders": _reminder_status(),
@@ -4657,6 +4991,11 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         "identity": identity_status,
         "skills": _skills_status_snapshot(),
         "observability": _observability_snapshot(),
+        "plan_preview": {
+            "pending_count": len(_pending_plan_previews),
+            "ttl_sec": PLAN_PREVIEW_TTL_SEC,
+            "strict_mode": bool(_plan_preview_require_ack),
+        },
         "retention_policy": {
             "memory_retention_days": _memory_retention_days,
             "audit_retention_days": _audit_retention_days,
@@ -4697,6 +5036,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "identity",
             "skills",
             "observability",
+            "plan_preview",
             "retention_policy",
             "memory",
             "audit",
@@ -4717,6 +5057,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "identity_enforcement_enabled",
             "identity_default_profile",
             "identity_require_approval",
+            "plan_preview_require_ack",
         ],
         "timers_required": [
             "active_count",
@@ -4765,6 +5106,11 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "uptime_sec",
             "restart_count",
             "alerts",
+        ],
+        "plan_preview_required": [
+            "pending_count",
+            "ttl_sec",
+            "strict_mode",
         ],
         "retention_policy_required": [
             "memory_retention_days",
