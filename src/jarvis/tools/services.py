@@ -34,6 +34,25 @@ from jarvis.tool_policy import is_tool_allowed
 from jarvis.tool_summary import record_summary, list_summaries  # noqa: F401  # accessed via services module alias
 from jarvis.memory import MemoryEntry, MemoryStore
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, normalize_service_error_code
+from jarvis.tools.service_policy import (
+    SENSITIVE_DOMAINS,  # noqa: F401  # compatibility export for domain modules
+    HA_MUTATING_ALLOWED_ACTIONS,
+    INTEGRATION_TOOL_MAP,
+    SAFE_MODE_BLOCKED_TOOLS,
+    SENSITIVE_AUDIT_KEY_TOKENS,
+    INBOUND_REDACT_HEADER_TOKENS,
+    INBOUND_MAX_STRING_CHARS,
+    INBOUND_MAX_COLLECTION_ITEMS,
+    AUDIT_REDACTED,
+    AMBIGUOUS_REFERENCE_TERMS,
+    HIGH_RISK_INTENT_TERMS,
+    EXPLICIT_TARGET_TERMS,
+    AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS,
+    MEMORY_SCOPE_TAG_PREFIX,
+    MEMORY_SCOPES,
+    MEMORY_QUERY_SCOPE_HINTS,
+    AUDIT_REASON_MESSAGES,
+)
 from jarvis.tools.service_schemas import (
     SERVICE_RUNTIME_REQUIRED_FIELDS,  # noqa: F401  # compatibility export for tests/importers
     SERVICE_TOOL_SCHEMAS,
@@ -127,30 +146,10 @@ DEFAULT_DEAD_LETTER_QUEUE = Path.home() / ".jarvis" / "dead-letter-queue.jsonl"
 DEFAULT_EXPANSION_STATE = Path.home() / ".jarvis" / "expansion-state.json"
 DEFAULT_RELEASE_CHANNEL_CONFIG = Path("config/release-channels.json")
 
-# Domains that always default to dry_run
-SENSITIVE_DOMAINS = {"lock", "alarm_control_panel", "cover", "climate"}
 ACTION_COOLDOWN_SEC = 2.0
 ACTION_HISTORY_RETENTION_SEC = 3600.0
 ACTION_HISTORY_MAX_ENTRIES = 2000
 HA_STATE_CACHE_TTL_SEC = 2.0
-HA_MUTATING_ALLOWED_ACTIONS: dict[str, set[str]] = {
-    "light": {"turn_on", "turn_off", "toggle"},
-    "switch": {"turn_on", "turn_off", "toggle"},
-    "lock": {"lock", "unlock"},
-    "cover": {"open_cover", "close_cover", "stop_cover"},
-    "climate": {"set_temperature", "set_hvac_mode", "set_fan_mode"},
-    "media_player": {
-        "turn_on",
-        "turn_off",
-        "toggle",
-        "volume_set",
-        "volume_mute",
-        "media_play",
-        "media_pause",
-        "play_media",
-    },
-    "alarm_control_panel": {"arm_home", "arm_away", "disarm"},
-}
 TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
@@ -207,40 +206,6 @@ CIRCUIT_BREAKER_ERROR_CODES = {
     "api_error",
     "auth",
     "unexpected",
-}
-INTEGRATION_TOOL_MAP = {
-    "smart_home": "home_assistant",
-    "smart_home_state": "home_assistant",
-    "home_assistant_capabilities": "home_assistant",
-    "home_assistant_conversation": "home_assistant",
-    "home_assistant_todo": "home_assistant",
-    "home_assistant_timer": "home_assistant",
-    "home_assistant_area_entities": "home_assistant",
-    "media_control": "home_assistant",
-    "calendar_events": "home_assistant",
-    "calendar_next_event": "home_assistant",
-    "todoist_add_task": "todoist",
-    "todoist_list_tasks": "todoist",
-    "pushover_notify": "pushover",
-    "reminder_notify_due": "pushover",
-    "weather_lookup": "weather",
-    "webhook_trigger": "webhook",
-    "slack_notify": "channels",
-    "discord_notify": "channels",
-    "email_send": "email",
-}
-SAFE_MODE_BLOCKED_TOOLS = {
-    "memory_add",
-    "memory_update",
-    "memory_forget",
-    "memory_summary_add",
-    "task_plan_create",
-    "task_plan_update",
-    "timer_create",
-    "timer_cancel",
-    "reminder_create",
-    "reminder_complete",
-    "reminder_notify_due",
 }
 _DURATION_SEGMENT_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)",
@@ -376,119 +341,6 @@ _release_channel_state: dict[str, Any] = {
     "last_check_passed": False,
     "migration_checks": [],
 }
-SENSITIVE_AUDIT_KEY_TOKENS = {
-    "code",
-    "pin",
-    "password",
-    "token",
-    "secret",
-    "alarm_code",
-    "passcode",
-    "webhook_id",
-    "oauth_token",
-    "api_key",
-    "access_token",
-    "authorization",
-}
-INBOUND_REDACT_HEADER_TOKENS = {
-    "authorization",
-    "token",
-    "cookie",
-    "api-key",
-    "x-api-key",
-    "x-webhook-token",
-    "set-cookie",
-}
-INBOUND_MAX_STRING_CHARS = 4000
-INBOUND_MAX_COLLECTION_ITEMS = 120
-AUDIT_REDACTED = "***REDACTED***"
-AMBIGUOUS_REFERENCE_TERMS = {
-    "it",
-    "that",
-    "this",
-    "them",
-    "one",
-    "something",
-    "thing",
-    "there",
-}
-HIGH_RISK_INTENT_TERMS = {
-    "unlock",
-    "lock",
-    "disarm",
-    "arm",
-    "open",
-    "close",
-    "disable",
-    "enable",
-    "delete",
-    "send",
-    "trigger",
-}
-EXPLICIT_TARGET_TERMS = {
-    "door",
-    "garage",
-    "gate",
-    "alarm",
-    "lock",
-    "panel",
-    "email",
-    "message",
-    "webhook",
-    "light",
-    "switch",
-    "cover",
-    "climate",
-    "thermostat",
-}
-AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
-    "todoist_add_task": {"content", "description", "due_string", "message", "title"},
-    "todoist_list_tasks": {"content", "description", "due_string", "message", "title"},
-    "pushover_notify": {"message", "title", "content", "description", "body"},
-    "slack_notify": {"message", "title", "content", "description", "body"},
-    "discord_notify": {"message", "title", "content", "description", "body"},
-    "email_send": {"subject", "body", "content", "description", "message"},
-    "home_assistant_conversation": {"text"},
-    "reminder_create": {"text"},
-    "reminder_list": {"text"},
-    "reminder_notify_due": {"text", "message", "title"},
-}
-MEMORY_SCOPE_TAG_PREFIX = "scope:"
-MEMORY_SCOPES = {"preferences", "people", "projects", "household_rules"}
-MEMORY_QUERY_SCOPE_HINTS: dict[str, set[str]] = {
-    "people": {"who", "person", "people", "contact", "name", "family"},
-    "projects": {"project", "projects", "task", "deadline", "repo", "sprint", "milestone"},
-    "household_rules": {"home", "house", "rule", "rules", "quiet", "bedtime", "routine", "thermostat"},
-}
-AUDIT_REASON_MESSAGES: dict[str, str] = {
-    "policy": "blocked by global tool policy configuration",
-    "identity_policy": "blocked by identity and trust policy",
-    "strict_confirm_required": "blocked because strict confirmation is required before execution",
-    "sensitive_confirm_required": "blocked because sensitive actions require explicit confirm=true",
-    "confirm_required": "blocked because explicit confirmation is required",
-    "ambiguous_target": "blocked because the target is ambiguous for a high-risk action",
-    "ambiguous_high_risk_text": "blocked because the request text is ambiguous for a high-risk action",
-    "area_policy": "blocked by area-level policy constraints",
-    "conversation_disabled": "blocked because Home Assistant conversation mode is disabled",
-    "conversation_readonly_profile": "blocked because conversation integration is configured as read-only",
-    "readonly_profile": "blocked because requester profile is read-only for mutating actions",
-    "https_required": "blocked because webhook targets must use HTTPS",
-    "allowlist": "blocked because webhook host is outside WEBHOOK_ALLOWLIST",
-    "pushover_policy": "blocked because notification policy disables Pushover delivery",
-    "safe_mode": "blocked because safe mode disables mutating actions",
-    "network_client_error": "failed due to network connectivity error",
-    "timeout": "failed because the upstream integration timed out",
-    "cancelled": "failed because the request was cancelled before completion",
-    "http_error": "failed because the upstream returned an HTTP error",
-    "api_error": "failed because the upstream returned an API-level error",
-    "auth": "failed because upstream authentication was rejected",
-    "unexpected": "failed because an unexpected runtime error occurred",
-    "missing_config": "failed because required integration configuration is missing",
-    "missing_fields": "failed because required request fields are missing",
-    "invalid_data": "failed because provided request data is invalid",
-    "invalid_json": "failed because upstream returned invalid JSON",
-}
-
 # Backward compatibility for existing imports/tests.
 SERVICE_ERROR_CODES = TOOL_SERVICE_ERROR_CODES
 
