@@ -44,6 +44,107 @@ def looks_like_user_correction(text: str) -> bool:
     return bool(re.search(r"\b(?:no|nope|nah)\b.+\b(?:meant|wanted|said)\b", phrase))
 
 
+def attention_confidence(
+    *,
+    signals: Any,
+    now: float,
+    recency_sec: float,
+) -> float:
+    if signals is None:
+        return 0.0
+    face_last_seen = getattr(signals, "face_last_seen", None)
+    hand_last_seen = getattr(signals, "hand_last_seen", None)
+    doa_last_seen = getattr(signals, "doa_last_seen", None)
+    if face_last_seen and (now - face_last_seen) <= recency_sec:
+        return 1.0
+    if hand_last_seen and (now - hand_last_seen) <= recency_sec:
+        return 0.8
+    if doa_last_seen and (now - doa_last_seen) <= recency_sec:
+        return 0.5
+    return 0.0
+
+
+def compute_turn_taking(
+    conf: float,
+    doa_speech: bool | None,
+    assistant_busy: bool,
+    *,
+    attention: float,
+    turn_taking_threshold: float,
+    barge_in_threshold: float,
+) -> bool:
+    doa_score = 1.0 if doa_speech else 0.0
+    score = (0.55 * conf) + (0.3 * doa_score) + (0.15 * attention)
+    threshold = barge_in_threshold if assistant_busy else turn_taking_threshold
+
+    if assistant_busy:
+        if doa_speech is True:
+            return score >= (threshold - 0.05)
+        if conf >= 0.8 and attention >= 0.8:
+            return True
+        if conf < 0.35 and attention < 0.6 and doa_speech is False:
+            return False
+
+    if conf >= 0.9 and attention >= 0.8:
+        return True
+    if conf < 0.25 and attention < 0.5 and doa_speech is False:
+        return False
+    return score >= threshold
+
+
+def requires_stt_repair(
+    text: str,
+    intent_class: str,
+    *,
+    looks_like_user_correction_fn: Callable[[str], bool],
+    diagnostics: Mapping[str, Any] | None,
+    repair_min_words: int,
+    repair_confidence_threshold: float,
+) -> bool:
+    if intent_class not in {"action", "hybrid"}:
+        return False
+    phrase = str(text or "").strip()
+    if not phrase:
+        return False
+    if looks_like_user_correction_fn(phrase):
+        return False
+    words = re.findall(r"[a-z0-9']+", phrase.lower())
+    if len(words) < repair_min_words:
+        return False
+    stt_diagnostics = diagnostics if isinstance(diagnostics, Mapping) else {}
+    confidence_band = str(stt_diagnostics.get("confidence_band", "unknown")).strip().lower()
+    try:
+        confidence_score = float(stt_diagnostics.get("confidence_score", 0.0))
+    except (TypeError, ValueError):
+        confidence_score = 0.0
+    if not math.isfinite(confidence_score):
+        confidence_score = 0.0
+    if confidence_band == "low":
+        return True
+    if confidence_band == "unknown" and confidence_score <= 0.0:
+        return bool(stt_diagnostics.get("fallback_used", False))
+    return confidence_score < repair_confidence_threshold
+
+
+def requires_confirmation(
+    *,
+    attention: float,
+    confirmations: str,
+    last_doa_speech: bool | None,
+    intended_query_min_attention: float,
+) -> bool:
+    attention_threshold = intended_query_min_attention
+    if confirmations == "minimal":
+        attention_threshold = 0.15
+    elif confirmations == "strict":
+        attention_threshold = 0.55
+    if attention >= attention_threshold:
+        return False
+    if confirmations != "strict" and last_doa_speech is True:
+        return False
+    return True
+
+
 def is_followup_carryover_candidate(
     text: str,
     *,

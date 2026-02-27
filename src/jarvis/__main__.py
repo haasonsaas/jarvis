@@ -16,9 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import math
 import logging
-import re
 import signal
 import time
 import threading
@@ -80,11 +78,15 @@ from jarvis.runtime_memory_correction import (
     parse_memory_correction_command as _runtime_parse_memory_correction_command,
 )
 from jarvis.runtime_turn import (
+    attention_confidence as _turn_attention_confidence,
     classify_user_intent as _turn_classify_user_intent,
+    compute_turn_taking as _turn_compute_turn_taking,
     completion_success_from_summaries as _turn_completion_success_from_summaries,
     is_followup_carryover_candidate as _turn_is_followup_carryover_candidate,
     looks_like_user_correction as _turn_looks_like_user_correction,
     policy_decisions_from_summaries as _turn_policy_decisions_from_summaries,
+    requires_confirmation as _turn_requires_confirmation,
+    requires_stt_repair as _turn_requires_stt_repair,
     tool_call_trace_items as _turn_tool_call_trace_items,
     turn_tool_summaries_since as _turn_tool_summaries_since,
     update_followup_carryover as _turn_update_followup_carryover,
@@ -1112,49 +1114,22 @@ class Jarvis:
         assistant_busy: bool,
         now: float,
     ) -> bool:
-        attention = 0.0
-        if self.presence.signals.face_last_seen and (now - self.presence.signals.face_last_seen) <= ATTENTION_RECENCY_SEC:
-            attention = 1.0
-        elif self.presence.signals.hand_last_seen and (now - self.presence.signals.hand_last_seen) <= ATTENTION_RECENCY_SEC:
-            attention = 0.8
-        elif self.presence.signals.doa_last_seen and (now - self.presence.signals.doa_last_seen) <= ATTENTION_RECENCY_SEC:
-            attention = 0.5
-
-        doa_score = 1.0 if doa_speech else 0.0
-        score = (0.55 * conf) + (0.3 * doa_score) + (0.15 * attention)
-        if assistant_busy:
-            threshold = self._voice_controller().barge_in_threshold()
-        else:
-            threshold = TURN_TAKING_THRESHOLD
-
-        if assistant_busy:
-            if doa_speech is True:
-                return score >= (threshold - 0.05)
-            if conf >= 0.8 and attention >= 0.8:
-                return True
-            if conf < 0.35 and attention < 0.6 and doa_speech is False:
-                return False
-
-        if conf >= 0.9 and attention >= 0.8:
-            return True
-        if conf < 0.25 and attention < 0.5 and doa_speech is False:
-            return False
-        return score >= threshold
+        attention = self._attention_confidence(now)
+        return _turn_compute_turn_taking(
+            conf,
+            doa_speech,
+            assistant_busy,
+            attention=attention,
+            turn_taking_threshold=TURN_TAKING_THRESHOLD,
+            barge_in_threshold=self._voice_controller().barge_in_threshold(),
+        )
 
     def _attention_confidence(self, now: float) -> float:
-        signals = getattr(self.presence, "signals", None)
-        if signals is None:
-            return 0.0
-        face_last_seen = getattr(signals, "face_last_seen", None)
-        hand_last_seen = getattr(signals, "hand_last_seen", None)
-        doa_last_seen = getattr(signals, "doa_last_seen", None)
-        if face_last_seen and (now - face_last_seen) <= ATTENTION_RECENCY_SEC:
-            return 1.0
-        if hand_last_seen and (now - hand_last_seen) <= ATTENTION_RECENCY_SEC:
-            return 0.8
-        if doa_last_seen and (now - doa_last_seen) <= ATTENTION_RECENCY_SEC:
-            return 0.5
-        return 0.0
+        return _turn_attention_confidence(
+            signals=getattr(self.presence, "signals", None),
+            now=now,
+            recency_sec=ATTENTION_RECENCY_SEC,
+        )
 
     def _multimodal_grounding_snapshot(self) -> dict[str, Any]:
         signals = getattr(self.presence, "signals", None)
@@ -1195,44 +1170,23 @@ class Jarvis:
         return REPAIR_CONFIRMATION_TEMPLATE.format(text=excerpt)
 
     def _requires_stt_repair(self, text: str, intent_class: str) -> bool:
-        if intent_class not in {"action", "hybrid"}:
-            return False
-        phrase = str(text or "").strip()
-        if not phrase:
-            return False
-        if self._looks_like_user_correction(phrase):
-            return False
-        words = re.findall(r"[a-z0-9']+", phrase.lower())
-        if len(words) < REPAIR_MIN_WORDS:
-            return False
-        diagnostics = self._stt_diagnostics_snapshot()
-        confidence_band = str(diagnostics.get("confidence_band", "unknown")).strip().lower()
-        try:
-            confidence_score = float(diagnostics.get("confidence_score", 0.0))
-        except (TypeError, ValueError):
-            confidence_score = 0.0
-        if not math.isfinite(confidence_score):
-            confidence_score = 0.0
-        if confidence_band == "low":
-            return True
-        if confidence_band == "unknown" and confidence_score <= 0.0:
-            return bool(diagnostics.get("fallback_used", False))
-        return confidence_score < REPAIR_CONFIDENCE_THRESHOLD
+        return _turn_requires_stt_repair(
+            text,
+            intent_class,
+            looks_like_user_correction_fn=self._looks_like_user_correction,
+            diagnostics=self._stt_diagnostics_snapshot(),
+            repair_min_words=REPAIR_MIN_WORDS,
+            repair_confidence_threshold=REPAIR_CONFIDENCE_THRESHOLD,
+        )
 
     def _requires_confirmation(self, now: float) -> bool:
-        attention = self._attention_confidence(now)
         profile = self._active_voice_profile()
-        confirmations = profile.get("confirmations", "standard")
-        attention_threshold = INTENDED_QUERY_MIN_ATTENTION
-        if confirmations == "minimal":
-            attention_threshold = 0.15
-        elif confirmations == "strict":
-            attention_threshold = 0.55
-        if attention >= attention_threshold:
-            return False
-        if confirmations != "strict" and self._last_doa_speech is True:
-            return False
-        return True
+        return _turn_requires_confirmation(
+            attention=self._attention_confidence(now),
+            confirmations=str(profile.get("confirmations", "standard")),
+            last_doa_speech=self._last_doa_speech,
+            intended_query_min_attention=INTENDED_QUERY_MIN_ATTENTION,
+        )
 
     async def _thinking_filler(self) -> None:
         await asyncio.sleep(THINKING_FILLER_DELAY)
