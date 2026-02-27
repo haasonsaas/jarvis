@@ -3331,3 +3331,31 @@ class TestServicesTools:
         removed = services._prune_audit_file(path, cutoff_ts=time.time() + 3600.0)
         assert removed == 0
         assert path.read_text().strip() == line
+
+    @pytest.mark.asyncio
+    async def test_inbound_webhook_event_redacts_sensitive_headers(self):
+        from jarvis.tools import services
+
+        services._inbound_webhook_events.clear()
+        services._inbound_webhook_seq = 1
+        event_id = services.record_inbound_webhook_event(
+            payload={"ok": True},
+            headers={
+                "Authorization": "Bearer super-secret",
+                "X-Webhook-Token": "token-123",
+                "Cookie": "session=abc",
+                "X-Custom": "safe",
+            },
+            source="test",
+            path="/hook",
+        )
+        assert event_id == 1
+
+        listed = await services.webhook_inbound_list({"limit": 1})
+        rows = json.loads(listed["content"][0]["text"])
+        assert len(rows) == 1
+        headers = rows[0]["headers"]
+        assert headers["Authorization"] == "***REDACTED***"
+        assert headers["X-Webhook-Token"] == "***REDACTED***"
+        assert headers["Cookie"] == "***REDACTED***"
+        assert headers["X-Custom"] == "safe"

@@ -327,12 +327,21 @@ class OperatorServer:
             if sent < len(events):
                 for item in events[sent:]:
                     payload = json.dumps(item, default=str)
-                    await response.write(f"event: runtime\ndata: {payload}\n\n".encode("utf-8"))
+                    try:
+                        await response.write(f"event: runtime\ndata: {payload}\n\n".encode("utf-8"))
+                    except (ConnectionResetError, RuntimeError):
+                        return response
                 sent = len(events)
             else:
-                await response.write(b": keepalive\n\n")
+                try:
+                    await response.write(b": keepalive\n\n")
+                except (ConnectionResetError, RuntimeError):
+                    return response
             await asyncio.sleep(0.5)
-        await response.write_eof()
+        try:
+            await response.write_eof()
+        except (ConnectionResetError, RuntimeError):
+            return response
         return response
 
     async def _handle_inbound_webhook(self, request: web.Request) -> web.Response:

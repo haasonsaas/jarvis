@@ -161,6 +161,15 @@ SENSITIVE_AUDIT_KEY_TOKENS = {
     "access_token",
     "authorization",
 }
+INBOUND_REDACT_HEADER_TOKENS = {
+    "authorization",
+    "token",
+    "cookie",
+    "api-key",
+    "x-api-key",
+    "x-webhook-token",
+    "set-cookie",
+}
 AUDIT_REDACTED = "***REDACTED***"
 AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
     "todoist_add_task": {"content", "description", "due_string", "message", "title"},
@@ -977,6 +986,19 @@ def _metadata_only_audit_details(action: str, details: dict[str, Any]) -> dict[s
         if key_text.strip().lower() in forbidden:
             continue
         sanitized[key_text] = value
+    return sanitized
+
+
+def _sanitize_inbound_headers(headers: dict[str, Any] | None) -> dict[str, str]:
+    sanitized: dict[str, str] = {}
+    for key, value in (headers or {}).items():
+        key_text = str(key)
+        lowered = key_text.strip().lower()
+        value_text = str(value)
+        if any(token in lowered for token in INBOUND_REDACT_HEADER_TOKENS):
+            sanitized[key_text] = AUDIT_REDACTED
+            continue
+        sanitized[key_text] = value_text
     return sanitized
 
 
@@ -1905,7 +1927,7 @@ def record_inbound_webhook_event(
         "timestamp": time.time(),
         "source": str(source),
         "path": str(path),
-        "headers": {str(key): str(value) for key, value in (headers or {}).items()},
+        "headers": _sanitize_inbound_headers(headers),
         "payload": payload if isinstance(payload, (dict, list, str, int, float, bool, type(None))) else str(payload),
     }
     _inbound_webhook_events.append(entry)
