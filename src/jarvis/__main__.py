@@ -90,6 +90,10 @@ from jarvis.runtime_state import (
     runtime_profile_snapshot as _runtime_runtime_profile_snapshot,
     save_runtime_state as _runtime_save_runtime_state,
 )
+from jarvis.runtime_startup import (
+    operator_control_schema as _runtime_operator_control_schema,
+    startup_blockers as _runtime_startup_blockers,
+)
 from jarvis.runtime_voice_profile import (
     active_voice_profile as _runtime_active_voice_profile,
     active_voice_user as _runtime_active_voice_user,
@@ -644,55 +648,17 @@ class Jarvis:
         set_runtime_observability_state(snapshot)
 
     def _operator_control_schema(self) -> dict[str, Any]:
-        return {
-            "version": "1.0",
-            "actions": {
-                "set_wake_mode": {"required": ["mode"], "enum": {"mode": sorted(VALID_WAKE_MODES)}},
-                "set_sleeping": {"required": ["sleeping"], "types": {"sleeping": "boolean"}},
-                "set_timeout_profile": {
-                    "required": ["profile"],
-                    "enum": {"profile": sorted(VALID_TIMEOUT_PROFILES)},
-                },
-                "set_push_to_talk": {"required": ["active"], "types": {"active": "boolean"}},
-                "set_motion_enabled": {"required": ["enabled"], "types": {"enabled": "boolean"}},
-                "set_home_enabled": {"required": ["enabled"], "types": {"enabled": "boolean"}},
-                "set_safe_mode": {"required": ["enabled"], "types": {"enabled": "boolean"}},
-                "set_tts_enabled": {"required": ["enabled"], "types": {"enabled": "boolean"}},
-                "set_persona_style": {"required": ["style"], "enum": {"style": sorted(VALID_PERSONA_STYLES)}},
-                "set_backchannel_style": {
-                    "required": ["style"],
-                    "enum": {"style": sorted(VALID_BACKCHANNEL_STYLES)},
-                },
-                "preview_personality": {
-                    "required": [],
-                    "enum": {
-                        "persona_style": sorted(VALID_PERSONA_STYLES),
-                        "backchannel_style": sorted(VALID_BACKCHANNEL_STYLES),
-                    },
-                },
-                "commit_personality_preview": {"required": []},
-                "rollback_personality_preview": {"required": []},
-                "set_voice_profile": {
-                    "required": ["user"],
-                    "types": {"user": "string"},
-                    "enum": {
-                        "verbosity": sorted(VALID_VOICE_PROFILE_VERBOSITY),
-                        "confirmations": sorted(VALID_VOICE_PROFILE_CONFIRMATIONS),
-                        "pace": sorted(VALID_VOICE_PROFILE_PACE),
-                        "tone": sorted(VALID_VOICE_PROFILE_TONE),
-                    },
-                },
-                "clear_voice_profile": {"required": ["user"], "types": {"user": "string"}},
-                "list_voice_profiles": {"required": []},
-                "apply_control_preset": {"required": ["preset"], "enum": {"preset": sorted(VALID_CONTROL_PRESETS)}},
-                "export_runtime_profile": {"required": []},
-                "import_runtime_profile": {"required": ["profile"], "types": {"profile": "object"}},
-                "skills_reload": {"required": []},
-                "skills_enable": {"required": ["name"], "types": {"name": "string"}},
-                "skills_disable": {"required": ["name"], "types": {"name": "string"}},
-                "clear_inbound_webhooks": {"required": []},
-            },
-        }
+        return _runtime_operator_control_schema(
+            valid_wake_modes=VALID_WAKE_MODES,
+            valid_timeout_profiles=VALID_TIMEOUT_PROFILES,
+            valid_persona_styles=VALID_PERSONA_STYLES,
+            valid_backchannel_styles=VALID_BACKCHANNEL_STYLES,
+            valid_voice_profile_verbosity=VALID_VOICE_PROFILE_VERBOSITY,
+            valid_voice_profile_confirmations=VALID_VOICE_PROFILE_CONFIRMATIONS,
+            valid_voice_profile_pace=VALID_VOICE_PROFILE_PACE,
+            valid_voice_profile_tone=VALID_VOICE_PROFILE_TONE,
+            valid_control_presets=VALID_CONTROL_PRESETS,
+        )
 
     def _operator_available_actions(self) -> list[str]:
         schema = self._operator_control_schema()
@@ -702,48 +668,11 @@ class Jarvis:
         return sorted(str(name) for name in actions)
 
     def _startup_blockers(self) -> list[str]:
-        blockers: list[str] = []
-        if not bool(getattr(self.config, "startup_strict", False)):
-            return blockers
-        if not bool(getattr(self.args, "no_tts", False)) and not str(getattr(self.config, "elevenlabs_api_key", "")):
-            blockers.append("STARTUP_STRICT: ELEVENLABS_API_KEY is required when TTS is enabled.")
-        if bool(getattr(self.config, "operator_server_enabled", False)) and not str(
-            getattr(self.config, "operator_server_host", "")
-        ).strip():
-            blockers.append("STARTUP_STRICT: OPERATOR_SERVER_HOST cannot be empty.")
-        operator_host = str(getattr(self.config, "operator_server_host", "")).strip().lower()
-        operator_auth_mode = str(getattr(self.config, "operator_auth_mode", "token")).strip().lower()
-        if operator_auth_mode not in VALID_OPERATOR_AUTH_MODES:
-            operator_auth_mode = "token"
-        operator_token = str(getattr(self.config, "operator_auth_token", "")).strip()
-        if (
-            bool(getattr(self.config, "operator_server_enabled", False))
-            and operator_auth_mode in {"token", "session"}
-            and not operator_token
-        ):
-            blockers.append(
-                f"STARTUP_STRICT: OPERATOR_AUTH_MODE={operator_auth_mode} requires OPERATOR_AUTH_TOKEN."
-            )
-        if (
-            bool(getattr(self.config, "operator_server_enabled", False))
-            and operator_auth_mode == "off"
-            and operator_host not in {"127.0.0.1", "localhost", "::1"}
-        ):
-            blockers.append("STARTUP_STRICT: OPERATOR_AUTH_MODE=off is not allowed on non-loopback OPERATOR_SERVER_HOST.")
-        if bool(getattr(self.config, "skills_require_signature", False)) and not str(
-            getattr(self.config, "skills_signature_key", "")
-        ).strip():
-            blockers.append("STARTUP_STRICT: SKILLS_SIGNATURE_KEY required when SKILLS_REQUIRE_SIGNATURE=true.")
-        if (
-            bool(getattr(self.config, "memory_encryption_enabled", False))
-            or bool(getattr(self.config, "audit_encryption_enabled", False))
-        ) and not str(getattr(self.config, "data_encryption_key", "")).strip():
-            blockers.append("STARTUP_STRICT: JARVIS_DATA_KEY required when encryption is enabled.")
-        if bool(getattr(self.config, "webhook_inbound_enabled", False)) and not str(
-            getattr(self.config, "webhook_inbound_token", "") or getattr(self.config, "webhook_auth_token", "")
-        ).strip():
-            blockers.append("STARTUP_STRICT: WEBHOOK_INBOUND_ENABLED requires WEBHOOK_INBOUND_TOKEN or WEBHOOK_AUTH_TOKEN.")
-        return blockers
+        return _runtime_startup_blockers(
+            config=self.config,
+            args=self.args,
+            valid_operator_auth_modes=VALID_OPERATOR_AUTH_MODES,
+        )
 
     def _load_runtime_state(self) -> None:
         _runtime_load_runtime_state(

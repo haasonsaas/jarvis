@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 33 (Voice Profile Runtime Extraction)
+# Jarvis TODO — Wave 34 (Startup + Operator Schema Extraction)
 
 Last updated: 2026-02-27
 
@@ -8,58 +8,55 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 22
-- Completed: 20
+- Total items: 18
+- Completed: 16
 - Remaining: 2
 
 ---
 
-## A) Runtime decomposition (continued)
+## A) Runtime decomposition (startup path)
 
-- [x] `W33-A01` Add `src/jarvis/runtime_voice_profile.py` for control parsing + voice profile helpers.
-- [x] `W33-A02` Extract `parse_control_bool` helper from `Jarvis` runtime class.
-- [x] `W33-A03` Extract `parse_control_choice` helper from `Jarvis` runtime class.
-- [x] `W33-A04` Extract active voice user selection helper.
-- [x] `W33-A05` Extract active voice profile resolution helper.
-- [x] `W33-A06` Extract voice-profile guidance text helper.
-- [x] `W33-A07` Keep `Jarvis` wrappers for compatibility with existing tests/importers.
-- [x] `W33-A08` Reduce `src/jarvis/__main__.py` further while preserving behavior.
+- [x] `W34-A01` Add `src/jarvis/runtime_startup.py` for startup/runtime schema helpers.
+- [x] `W34-A02` Extract operator control schema builder from `Jarvis._operator_control_schema`.
+- [x] `W34-A03` Extract startup strict blocker validation from `Jarvis._startup_blockers`.
+- [x] `W34-A04` Keep `Jarvis` wrappers to preserve compatibility for existing callers/tests.
+- [x] `W34-A05` Reduce `src/jarvis/__main__.py` below 2,200 LOC.
 
-## B) Boundary and regression tests
+## B) Test and boundary coverage
 
-- [x] `W33-B01` Add `tests/test_runtime_voice_profile.py`.
-- [x] `W33-B02` Add parse bool/choice behavior tests.
-- [x] `W33-B03` Add active voice user/profile selection tests.
-- [x] `W33-B04` Add voice profile guidance append/no-op tests.
-- [x] `W33-B05` Extend import-boundary tests with `jarvis.runtime_voice_profile`.
-- [x] `W33-B06` Re-run targeted lifecycle tests covering profile + telemetry + runtime-state flows.
+- [x] `W34-B01` Add `tests/test_runtime_startup.py` for extracted startup/schema helpers.
+- [x] `W34-B02` Validate schema action + enum coverage in unit tests.
+- [x] `W34-B03` Validate startup strict blocker enforcement in unit tests.
+- [x] `W34-B04` Extend `tests/test_import_boundaries.py` with `jarvis.runtime_startup`.
+- [x] `W34-B05` Re-run targeted lifecycle tests for runtime-state, telemetry, and voice-profile paths.
 
 ## C) Validation gates
 
-- [x] `W33-C01` Run `make check` after extraction changes.
-- [x] `W33-C02` Run `make security-gate` after extraction changes.
-- [x] `W33-C03` Run `./scripts/jarvis_readiness.sh fast` after extraction changes.
-- [x] `W33-C04` Verify strict eval contract remains `151/151` pass.
+- [x] `W34-C01` Run `make check` after startup extraction.
+- [x] `W34-C02` Run `make security-gate` after startup extraction.
+- [x] `W34-C03` Run `./scripts/jarvis_readiness.sh fast` after startup extraction.
+- [x] `W34-C04` Confirm strict eval contract still passes (`151/151`).
 
-## D) Hygiene and reporting
+## D) Hygiene and release loop
 
-- [x] `W33-D01` Update TODO metrics and outcome snapshot with current line counts and gate outputs.
-- [ ] `W33-D02` Commit Wave 33 checkpoint.
-- [ ] `W33-D03` Push Wave 33 checkpoint to `origin/main`.
+- [x] `W34-D01` Refresh TODO metrics/outcome snapshot with current counts and gate outputs.
+- [ ] `W34-D02` Commit Wave 34 checkpoint.
+- [ ] `W34-D03` Push Wave 34 checkpoint to `origin/main`.
 
 ---
 
 ## Outcome snapshot (in progress)
 
-- `src/jarvis/__main__.py`: `2,278` -> `2,241` lines this wave (`2,677` -> `2,241` across Waves 32-33).
-- Added new runtime modules this cycle:
+- `src/jarvis/__main__.py`: `2,241` -> `2,170` lines this wave (`2,677` -> `2,170` across Waves 32-34).
+- New runtime helper modules added across recent waves:
   - `src/jarvis/runtime_state.py`
   - `src/jarvis/runtime_voice_profile.py`
-- Expanded telemetry/runtime helper decomposition in `src/jarvis/runtime_telemetry.py`.
-- New test coverage modules:
-  - `tests/test_runtime_state.py` (`8` tests)
-  - `tests/test_runtime_voice_profile.py` (`5` tests)
-- Gate status:
-  - `make check`: `569 passed`
-  - `make security-gate`: `569 passed`; fault subset `3 passed`
+  - `src/jarvis/runtime_startup.py`
+- New unit coverage modules added across recent waves:
+  - `tests/test_runtime_state.py`
+  - `tests/test_runtime_voice_profile.py`
+  - `tests/test_runtime_startup.py`
+- Current gate status:
+  - `make check`: `573 passed`
+  - `make security-gate`: `573 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass, strict eval `151/151`

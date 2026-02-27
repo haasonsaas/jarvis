@@ -13,6 +13,7 @@ import pytest
         ("jarvis.tools.services_domains.integrations_runtime", "jarvis.tools.services"),
         ("jarvis.runtime_telemetry", "jarvis.__main__"),
         ("jarvis.runtime_state", "jarvis.__main__"),
+        ("jarvis.runtime_startup", "jarvis.__main__"),
         ("jarvis.runtime_voice_profile", "jarvis.__main__"),
     ],
 )
