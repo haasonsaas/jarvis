@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 44 (Home HA Tools Decomposition)
+# Jarvis TODO — Wave 45 (Governance Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,73 +8,74 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 29
-- Completed: 29
+- Total items: 31
+- Completed: 31
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W44-A01` Confirm Wave 43 merged and working tree baseline.
-- [x] `W44-A02` Re-profile domain module sizes after comms decomposition.
-- [x] `W44-A03` Select `services_domains/home_ha_tools.py` as next hotspot.
-- [x] `W44-A04` Preserve existing import/registration API via compatibility module.
+- [x] `W45-A01` Confirm Wave 44 merged and tree clean before new edits.
+- [x] `W45-A02` Re-profile largest remaining service-domain modules.
+- [x] `W45-A03` Select `services_domains/governance.py` for decomposition.
+- [x] `W45-A04` Preserve external API via compatibility exports.
 
 ## B) Decomposition design
 
-- [x] `W44-B01` Define conversation-only module boundary.
-- [x] `W44-B02` Define to-do-only module boundary.
-- [x] `W44-B03` Define timer-only module boundary.
-- [x] `W44-B04` Define area/media module boundary.
-- [x] `W44-B05` Retain lazy `services` binding pattern inside each module.
+- [x] `W45-B01` Define `governance_tool_summary.py` for summary endpoints.
+- [x] `W45-B02` Define `governance_skills.py` for skills governance and lifecycle ops.
+- [x] `W45-B03` Define `governance_quality.py` for quality and embodiment handlers.
+- [x] `W45-B04` Define `governance_status.py` for system status contract/scorecard.
+- [x] `W45-B05` Keep lazy `services` lookup pattern unchanged in all new modules.
 
-## C) Module extraction
+## C) Extraction implementation
 
-- [x] `W44-C01` Create `services_domains/home_ha_conversation.py`.
-- [x] `W44-C02` Move `home_assistant_conversation` without behavior changes.
-- [x] `W44-C03` Create `services_domains/home_ha_todo.py`.
-- [x] `W44-C04` Move `home_assistant_todo` without behavior changes.
-- [x] `W44-C05` Create `services_domains/home_ha_timer.py`.
-- [x] `W44-C06` Move `home_assistant_timer` without behavior changes.
-- [x] `W44-C07` Create `services_domains/home_ha_area_media.py`.
-- [x] `W44-C08` Move `home_assistant_area_entities` and `media_control` without behavior changes.
+- [x] `W45-C01` Create `services_domains/governance_tool_summary.py`.
+- [x] `W45-C02` Move `tool_summary` and `tool_summary_text`.
+- [x] `W45-C03` Create `services_domains/governance_skills.py`.
+- [x] `W45-C04` Move `_skills_snapshot_rows` and `skills_governance`.
+- [x] `W45-C05` Move `skills_list`, `skills_enable`, `skills_disable`, `skills_version`.
+- [x] `W45-C06` Create `services_domains/governance_quality.py`.
+- [x] `W45-C07` Move `quality_evaluator` and `embodiment_presence`.
+- [x] `W45-C08` Create `services_domains/governance_status.py`.
+- [x] `W45-C09` Move `system_status`, `system_status_contract`, and `jarvis_scorecard`.
 
 ## D) Compatibility and boundaries
 
-- [x] `W44-D01` Replace `services_domains/home_ha_tools.py` with compatibility exports.
-- [x] `W44-D02` Keep `home_control.py` and `home.py` import behavior unchanged.
-- [x] `W44-D03` Add import-boundary check for `home_ha_conversation`.
-- [x] `W44-D04` Add import-boundary check for `home_ha_todo`.
-- [x] `W44-D05` Add import-boundary check for `home_ha_timer`.
-- [x] `W44-D06` Add import-boundary check for `home_ha_area_media`.
+- [x] `W45-D01` Replace `services_domains/governance.py` with compatibility exports.
+- [x] `W45-D02` Preserve imports expected by `services.py` and `services_server.py`.
+- [x] `W45-D03` Add import-boundary check for `governance_tool_summary`.
+- [x] `W45-D04` Add import-boundary check for `governance_skills`.
+- [x] `W45-D05` Add import-boundary check for `governance_quality`.
+- [x] `W45-D06` Add import-boundary check for `governance_status`.
 
 ## E) Validation
 
-- [x] `W44-E01` Run focused lint on new Home HA modules + boundary test file.
-- [x] `W44-E02` Run targeted pytest selection for Home HA handlers + boundaries.
-- [x] `W44-E03` Run full `make check`.
-- [x] `W44-E04` Run full `make security-gate`.
-- [x] `W44-E05` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W45-E01` Run focused lint on changed governance modules + boundary tests.
+- [x] `W45-E02` Run targeted pytest for governance handlers + import boundaries.
+- [x] `W45-E03` Run full `make check`.
+- [x] `W45-E04` Run full `make security-gate`.
+- [x] `W45-E05` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W44-F01` Capture post-split line-count outcomes.
-- [x] `W44-F02` Commit and push Wave 44.
+- [x] `W45-F01` Capture post-split governance line-count results.
+- [x] `W45-F02` Commit and push Wave 45.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Home HA decomposition:
-  - `services_domains/home_ha_tools.py`: `882 -> 19` lines (compatibility exports)
-  - New `services_domains/home_ha_conversation.py`: `268` lines
-  - New `services_domains/home_ha_todo.py`: `189` lines
-  - New `services_domains/home_ha_timer.py`: `171` lines
-  - New `services_domains/home_ha_area_media.py`: `290` lines
+- Governance decomposition:
+  - `services_domains/governance.py`: `649 -> 39` lines (compatibility exports)
+  - New `services_domains/governance_tool_summary.py`: `59` lines
+  - New `services_domains/governance_skills.py`: `314` lines
+  - New `services_domains/governance_quality.py`: `201` lines
+  - New `services_domains/governance_status.py`: `105` lines
 - Boundary enforcement:
-  - Added import-boundary coverage for all new Home HA modules.
+  - Added import-boundary coverage for all new governance modules.
 - Validation status:
-  - `make check`: `620 passed`
-  - `make security-gate`: `620 passed`; fault subset `3 passed`
+  - `make check`: `624 passed`
+  - `make security-gate`: `624 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
