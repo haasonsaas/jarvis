@@ -32,7 +32,7 @@ from jarvis.config import Config
 from jarvis.skills import SkillRegistry
 from jarvis.tool_policy import is_tool_allowed
 from jarvis.tool_summary import record_summary, list_summaries
-from jarvis.memory import MemoryStore
+from jarvis.memory import MemoryEntry, MemoryStore
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, normalize_service_error_code
 
 try:
@@ -5966,6 +5966,40 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
 
 # ── Memory + planning ───────────────────────────────────────
 
+def _memory_confidence_score(entry: MemoryEntry, *, now_ts: float | None = None) -> float:
+    now = time.time() if now_ts is None else float(now_ts)
+    age_days = max(0.0, (now - float(entry.created_at)) / 86_400.0)
+    recency = math.exp(-(age_days / 30.0))
+    source_text = str(getattr(entry, "source", "")).strip().lower()
+    if source_text.startswith("integration.") or source_text in {"user", "profile", "operator", "system"}:
+        source_confidence = 0.9
+    elif source_text:
+        source_confidence = 0.7
+    else:
+        source_confidence = 0.5
+    retrieval_score = float(getattr(entry, "score", 0.0) or 0.0)
+    if not math.isfinite(retrieval_score) or retrieval_score <= 0.0:
+        retrieval_score = float(getattr(entry, "importance", 0.5) or 0.5)
+    sensitivity = _as_float(getattr(entry, "sensitivity", 0.0), 0.0, minimum=0.0, maximum=1.0)
+    confidence = (0.55 * retrieval_score) + (0.30 * recency) + (0.15 * source_confidence)
+    confidence *= max(0.4, 1.0 - (0.35 * sensitivity))
+    return _as_float(confidence, 0.0, minimum=0.0, maximum=1.0)
+
+
+def _memory_confidence_label(score: float) -> str:
+    if score >= 0.8:
+        return "high"
+    if score >= 0.6:
+        return "medium"
+    return "low"
+
+
+def _memory_source_trail(entry: MemoryEntry) -> str:
+    source = str(getattr(entry, "source", "")).strip() or "unknown"
+    created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(entry.created_at)))
+    return f"id={entry.id};source={source};created_at={created}"
+
+
 async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("memory_add"):
@@ -6153,10 +6187,18 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("memory_search", "empty", start_time)
         return {"content": [{"type": "text", "text": "No relevant memories found."}]}
     lines = []
+    now_ts = time.time()
     for entry in results:
         tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
         snippet = entry.text[:200]
-        lines.append(f"[{entry.id}] ({entry.kind}) {snippet}{tags}")
+        confidence_score = _memory_confidence_score(entry, now_ts=now_ts)
+        confidence_label = _memory_confidence_label(confidence_score)
+        source = str(entry.source).strip() or "unknown"
+        trail = _memory_source_trail(entry)
+        lines.append(
+            f"[{entry.id}] ({entry.kind}) confidence={confidence_label}({confidence_score:.2f}) "
+            f"source={source} score={entry.score:.2f} trail={trail} {snippet}{tags}"
+        )
     record_summary("memory_search", "ok", start_time)
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
@@ -6179,6 +6221,11 @@ async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
         if _as_bool(args.get("vacuum"), default=False):
             _memory.vacuum()
         status = _memory.memory_status()
+        if isinstance(status, dict):
+            status["confidence_model"] = {
+                "version": "v1",
+                "inputs": ["retrieval_score", "recency", "source", "sensitivity"],
+            }
     except Exception as e:
         _record_service_error("memory_status", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory status failed: {e}"}]}
@@ -6206,10 +6253,18 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("memory_recent", "empty", start_time)
         return {"content": [{"type": "text", "text": "No recent memories found."}]}
     lines = []
+    now_ts = time.time()
     for entry in results:
         tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
         snippet = entry.text[:200]
-        lines.append(f"[{entry.id}] ({entry.kind}) {snippet}{tags}")
+        confidence_score = _memory_confidence_score(entry, now_ts=now_ts)
+        confidence_label = _memory_confidence_label(confidence_score)
+        source = str(entry.source).strip() or "unknown"
+        trail = _memory_source_trail(entry)
+        lines.append(
+            f"[{entry.id}] ({entry.kind}) confidence={confidence_label}({confidence_score:.2f}) "
+            f"source={source} trail={trail} {snippet}{tags}"
+        )
     record_summary("memory_recent", "ok", start_time)
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 

@@ -50,7 +50,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 ## 4) Memory and Personalization (6 items)
 
 - [ ] `MX01` Add scoped long-term memory classes (`preferences`, `people`, `projects`, `household_rules`) with explicit retrieval policy. `P0`
-- [ ] `MX02` Add "memory confidence" and "source trail" to prevent stale or hallucinated recall. `P0`
+- [x] `MX02` Add "memory confidence" and "source trail" to prevent stale or hallucinated recall. `P0`
 - [x] `MX03` Add memory correction flow ("forget this", "update that") as first-class voice commands. `P0`
 - [ ] `MX04` Add episodic timeline snapshots for recent important conversations/actions. `P1`
 - [ ] `MX05` Add per-user memory partitions with shared/common memory overlays. `P1`
@@ -166,7 +166,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q14` Implement `RX01` integration circuit breakers.
 - [x] `Q15` Implement `RX02` recovery journal and resume.
 - [x] `Q16` Implement `OX03` conversation trace panel.
-- [ ] `Q17` Implement `MX02` memory confidence/source trail.
+- [x] `Q17` Implement `MX02` memory confidence/source trail.
 - [ ] `Q18` Implement `IX06` readable audit explainability.
 - [ ] `Q19` Implement `DX03` backup/restore CLI.
 - [ ] `Q20` Implement `EX06` unified Jarvis scorecard.

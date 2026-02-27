@@ -137,6 +137,9 @@ Smart home safety defaults:
   - `system_status.integrations.*.circuit_breaker` (open/remaining/failure state per integration)
   - `system_status.recovery_journal` (interrupted-action reconciliation summary)
   - `system_status_contract` (stable required-field contract)
+- Memory retrieval now includes confidence/provenance details:
+  - `memory_search` and `memory_recent` lines expose `confidence=...`, `source=...`, and `trail=id/source/created_at`.
+  - `memory_status` includes `confidence_model` metadata for scoring transparency.
 - Operator console/API security:
   - Set `OPERATOR_AUTH_TOKEN` when binding `OPERATOR_SERVER_HOST` to a non-loopback interface.
   - When token is set, `/api/*`, `/metrics`, and `/events` require `X-Operator-Token` or `Authorization: Bearer <token>`.

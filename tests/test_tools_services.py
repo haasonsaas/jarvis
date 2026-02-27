@@ -238,6 +238,9 @@ class TestServicesTools:
         found = await services.memory_search({"query": "call me", "limit": 5, "sources": ["profile"]})
         assert "call me" in found["content"][0]["text"].lower()
         assert "commander" in found["content"][0]["text"].lower()
+        assert "confidence=" in found["content"][0]["text"].lower()
+        assert "source=profile" in found["content"][0]["text"].lower()
+        assert "trail=" in found["content"][0]["text"].lower()
 
         filtered = await services.memory_search({"query": "bank", "limit": 5, "max_sensitivity": 0.4})
         assert "no relevant" in filtered["content"][0]["text"].lower()
@@ -247,9 +250,14 @@ class TestServicesTools:
 
         status = await services.memory_status({"warm": True, "sync": True, "optimize": True, "vacuum": True})
         assert "entries" in status["content"][0]["text"].lower()
+        status_payload = json.loads(status["content"][0]["text"])
+        assert "confidence_model" in status_payload
+        assert status_payload["confidence_model"]["version"] == "v1"
 
         recent = await services.memory_recent({"limit": 1, "sources": ["secrets"]})
         assert "note" in recent["content"][0]["text"].lower()
+        assert "source=secrets" in recent["content"][0]["text"].lower()
+        assert "trail=" in recent["content"][0]["text"].lower()
 
         summary = await services.tool_summary({"limit": 10})
         assert "memory_add" in summary["content"][0]["text"].lower()
