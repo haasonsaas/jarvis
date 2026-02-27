@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/84 Runtime Decomposition
+# Jarvis TODO — Wave 74/85 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,9 +8,9 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 103
-- Completed: 95
-- Remaining: 8
+- Total items: 111
+- Completed: 111
+- Remaining: 0
 
 ---
 
@@ -149,16 +149,27 @@ Last updated: 2026-02-27
 - [x] `W83-M07` Run `make security-gate`.
 - [x] `W83-M08` Run `./scripts/jarvis_readiness.sh fast`.
 
-## N) Wave 84 (next): schedule/runtime wrapper extraction
+## N) Wave 84 (completed): schedule/runtime wrapper extraction
 
-- [ ] `W84-N01` Profile schedule/runtime wrapper block in `services.py`.
-- [ ] `W84-N02` Create `services_schedule_facade_runtime.py` for schedule/time wrappers.
-- [ ] `W84-N03` Preserve `services.py` compatibility names used by runtime/domain modules.
-- [ ] `W84-N04` Extend import-boundary coverage for schedule facade module.
-- [ ] `W84-N05` Run focused timer/reminder regression tests.
-- [ ] `W84-N06` Run `make check`.
-- [ ] `W84-N07` Run `make security-gate`.
-- [ ] `W84-N08` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W84-N01` Profile schedule/runtime wrapper block in `services.py`.
+- [x] `W84-N02` Create `services_schedule_facade_runtime.py` for schedule/time wrappers.
+- [x] `W84-N03` Preserve `services.py` compatibility names used by runtime/domain modules.
+- [x] `W84-N04` Extend import-boundary coverage for schedule facade module.
+- [x] `W84-N05` Run focused timer/reminder regression tests.
+- [x] `W84-N06` Run `make check`.
+- [x] `W84-N07` Run `make security-gate`.
+- [x] `W84-N08` Run `./scripts/jarvis_readiness.sh fast`.
+
+## O) Wave 85 (completed): memory wrapper extraction
+
+- [x] `W85-O01` Profile memory/planning wrapper block in `services.py`.
+- [x] `W85-O02` Create `services_memory_facade_runtime.py` for memory helper wrappers.
+- [x] `W85-O03` Preserve `services.py` compatibility names used by runtime/domain modules.
+- [x] `W85-O04` Extend import-boundary coverage for memory facade module.
+- [x] `W85-O05` Run focused memory regression tests.
+- [x] `W85-O06` Run `make check`.
+- [x] `W85-O07` Run `make security-gate`.
+- [x] `W85-O08` Run `./scripts/jarvis_readiness.sh fast`.
 
 ---
 
@@ -174,6 +185,8 @@ Last updated: 2026-02-27
   - `services_policy_facade_runtime.py`
   - `services_recovery_facade_runtime.py`
   - `services_action_facade_runtime.py`
+  - `services_schedule_facade_runtime.py`
+  - `services_memory_facade_runtime.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -187,6 +200,8 @@ Last updated: 2026-02-27
   - Policy + guest-session wrapper family moved behind `services_policy_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Recovery + dead-letter wrapper family moved behind `services_recovery_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Action-history wrapper family moved behind `services_action_facade_runtime.py` with `services.py` compatibility aliases maintained.
+  - Schedule/timer/reminder wrapper family moved behind `services_schedule_facade_runtime.py` with `services.py` compatibility aliases maintained.
+  - Memory/planning wrapper family moved behind `services_memory_facade_runtime.py` with `services.py` compatibility aliases maintained.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -199,6 +214,8 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_tools_services.py -k "dead_letter_queue_captures_webhook_failure_and_replays or recovery_journal_begin_finish_status or bind_reconciles_interrupted_recovery_entries"`: `3 passed`.
   - `uv run pytest -q tests/test_tools_services.py -k "retry_backoff_delay_bounds_and_jitter or smart_home_idempotent_turn_on_short_circuits"`: `2 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_main_audio.py tests/test_runtime_state.py`: `54 passed`.
-  - `make check`: `775 passed`.
-  - `make security-gate`: `775 passed`; fault subset `3 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "timer or reminder"`: `13 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py tests/test_memory.py tests/test_tools_services.py -k "memory_"`: `34 passed`.
+  - `make check`: `777 passed`.
+  - `make security-gate`: `777 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

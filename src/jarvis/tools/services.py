@@ -27,7 +27,7 @@ from jarvis.config import Config
 from jarvis.skills import SkillRegistry
 from jarvis.tool_policy import is_tool_allowed
 from jarvis.tool_summary import record_summary, list_summaries  # noqa: F401  # accessed via services module alias
-from jarvis.memory import MemoryEntry, MemoryStore
+from jarvis.memory import MemoryStore
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, normalize_service_error_code
 from jarvis.tools.service_policy import (
     SENSITIVE_DOMAINS,  # noqa: F401  # compatibility export for domain modules
@@ -159,22 +159,22 @@ from jarvis.tools.services_schedule_facade_runtime import (
     timer_status as _facade_timer_status,
     timestamp_to_iso_utc as _facade_timestamp_to_iso_utc,
 )
-from jarvis.tools.services_memory_runtime import (
-    expansion_payload_response as _runtime_expansion_payload_response,
-    infer_memory_scope as _runtime_infer_memory_scope,
-    json_payload_response as _runtime_json_payload_response,
-    memory_confidence_label as _runtime_memory_confidence_label,
-    memory_confidence_score as _runtime_memory_confidence_score,
-    memory_entry_scope as _runtime_memory_entry_scope,
-    memory_policy_scopes_for_query as _runtime_memory_policy_scopes_for_query,
-    memory_requested_scopes as _runtime_memory_requested_scopes,
-    memory_scope_for_add as _runtime_memory_scope_for_add,
-    memory_scope_from_tags as _runtime_memory_scope_from_tags,
-    memory_scope_tag as _runtime_memory_scope_tag,
-    memory_scope_tags as _runtime_memory_scope_tags,
-    memory_source_trail as _runtime_memory_source_trail,
-    memory_visible_tags as _runtime_memory_visible_tags,
-    normalize_memory_scope as _runtime_normalize_memory_scope,
+from jarvis.tools.services_memory_facade_runtime import (
+    expansion_payload_response as _facade_expansion_payload_response,
+    infer_memory_scope as _facade_infer_memory_scope,
+    json_payload_response as _facade_json_payload_response,
+    memory_confidence_label as _facade_memory_confidence_label,
+    memory_confidence_score as _facade_memory_confidence_score,
+    memory_entry_scope as _facade_memory_entry_scope,
+    memory_policy_scopes_for_query as _facade_memory_policy_scopes_for_query,
+    memory_requested_scopes as _facade_memory_requested_scopes,
+    memory_scope_for_add as _facade_memory_scope_for_add,
+    memory_scope_from_tags as _facade_memory_scope_from_tags,
+    memory_scope_tag as _facade_memory_scope_tag,
+    memory_scope_tags as _facade_memory_scope_tags,
+    memory_source_trail as _facade_memory_source_trail,
+    memory_visible_tags as _facade_memory_visible_tags,
+    normalize_memory_scope as _facade_normalize_memory_scope,
 )
 from jarvis.tools.services_preview_facade_runtime import (
     consume_plan_preview_token as _facade_consume_plan_preview_token,
@@ -1114,70 +1114,21 @@ async def get_time(args: dict[str, Any]) -> dict[str, Any]:
 
 # ── Memory + planning ───────────────────────────────────────
 
-def _normalize_memory_scope(value: Any) -> str | None:
-    return _runtime_normalize_memory_scope(_services_module(), value)
-
-
-def _memory_scope_tag(scope: str) -> str:
-    return _runtime_memory_scope_tag(_services_module(), scope)
-
-
-def _memory_scope_from_tags(tags: list[str] | None) -> str | None:
-    return _runtime_memory_scope_from_tags(_services_module(), tags)
-
-
-def _infer_memory_scope(*, kind: str, source: str) -> str:
-    return _runtime_infer_memory_scope(kind=kind, source=source)
-
-
-def _memory_scope_for_add(*, kind: str, source: str, tags: list[str], requested_scope: Any) -> str:
-    return _runtime_memory_scope_for_add(
-        _services_module(),
-        kind=kind,
-        source=source,
-        tags=tags,
-        requested_scope=requested_scope,
-    )
-
-
-def _memory_scope_tags(tags: list[str], scope: str) -> list[str]:
-    return _runtime_memory_scope_tags(_services_module(), tags, scope)
-
-
-def _memory_visible_tags(tags: list[str]) -> list[str]:
-    return _runtime_memory_visible_tags(_services_module(), tags)
-
-
-def _memory_entry_scope(entry: MemoryEntry) -> str:
-    return _runtime_memory_entry_scope(_services_module(), entry)
-
-
-def _memory_policy_scopes_for_query(query: str) -> list[str]:
-    return _runtime_memory_policy_scopes_for_query(_services_module(), query)
-
-
-def _memory_requested_scopes(scopes_value: Any, *, query: str = "") -> list[str]:
-    return _runtime_memory_requested_scopes(_services_module(), scopes_value, query=query)
-
-
-def _memory_confidence_score(entry: MemoryEntry, *, now_ts: float | None = None) -> float:
-    return _runtime_memory_confidence_score(_services_module(), entry, now_ts=now_ts)
-
-
-def _memory_confidence_label(score: float) -> str:
-    return _runtime_memory_confidence_label(score)
-
-
-def _memory_source_trail(entry: MemoryEntry) -> str:
-    return _runtime_memory_source_trail(entry)
-
-
-def _json_payload_response(payload: dict[str, Any]) -> dict[str, Any]:
-    return _runtime_json_payload_response(payload)
-
-
-def _expansion_payload_response(payload: dict[str, Any]) -> dict[str, Any]:
-    return _runtime_expansion_payload_response(_services_module(), payload)
+_normalize_memory_scope = _facade_normalize_memory_scope
+_memory_scope_tag = _facade_memory_scope_tag
+_memory_scope_from_tags = _facade_memory_scope_from_tags
+_infer_memory_scope = _facade_infer_memory_scope
+_memory_scope_for_add = _facade_memory_scope_for_add
+_memory_scope_tags = _facade_memory_scope_tags
+_memory_visible_tags = _facade_memory_visible_tags
+_memory_entry_scope = _facade_memory_entry_scope
+_memory_policy_scopes_for_query = _facade_memory_policy_scopes_for_query
+_memory_requested_scopes = _facade_memory_requested_scopes
+_memory_confidence_score = _facade_memory_confidence_score
+_memory_confidence_label = _facade_memory_confidence_label
+_memory_source_trail = _facade_memory_source_trail
+_json_payload_response = _facade_json_payload_response
+_expansion_payload_response = _facade_expansion_payload_response
 
 
 
