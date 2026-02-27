@@ -150,8 +150,7 @@ from jarvis.runtime_voice_profile import (
     with_voice_profile_guidance as _runtime_with_voice_profile_guidance,
 )
 from jarvis.runtime_preferences import (
-    detect_voice_profile_updates as _runtime_detect_voice_profile_updates,
-    voice_profile_summary as _runtime_voice_profile_summary,
+    learn_voice_preferences as _runtime_learn_voice_preferences,
 )
 from jarvis.runtime_multimodal import (
     multimodal_grounding_snapshot as _runtime_multimodal_grounding_snapshot,
@@ -593,69 +592,15 @@ class Jarvis:
         *,
         now_ts: float | None = None,
     ) -> dict[str, str]:
-        updates = _runtime_detect_voice_profile_updates(text)
-        if not updates:
-            return {}
-
-        normalized: dict[str, str] = {}
-        verbosity = self._parse_control_choice(
-            updates.get("verbosity"),
-            VALID_VOICE_PROFILE_VERBOSITY,
+        return _runtime_learn_voice_preferences(
+            self,
+            text,
+            now_ts=now_ts,
+            valid_voice_profile_verbosity=VALID_VOICE_PROFILE_VERBOSITY,
+            valid_voice_profile_confirmations=VALID_VOICE_PROFILE_CONFIRMATIONS,
+            valid_voice_profile_pace=VALID_VOICE_PROFILE_PACE,
+            valid_voice_profile_tone=VALID_VOICE_PROFILE_TONE,
         )
-        if verbosity is not None:
-            normalized["verbosity"] = verbosity
-        confirmations = self._parse_control_choice(
-            updates.get("confirmations"),
-            VALID_VOICE_PROFILE_CONFIRMATIONS,
-        )
-        if confirmations is not None:
-            normalized["confirmations"] = confirmations
-        pace = self._parse_control_choice(
-            updates.get("pace"),
-            VALID_VOICE_PROFILE_PACE,
-        )
-        if pace is not None:
-            normalized["pace"] = pace
-        tone = self._parse_control_choice(
-            updates.get("tone"),
-            VALID_VOICE_PROFILE_TONE,
-        )
-        if tone is not None:
-            normalized["tone"] = tone
-        if not normalized:
-            return {}
-
-        user = self._active_voice_user()
-        profile = self._active_voice_profile(user=user)
-        profile.update(normalized)
-        self._voice_user_profiles[user] = profile
-
-        applied_at = time.time() if now_ts is None else float(now_ts)
-        self._telemetry["preference_update_turns"] = (
-            float(self._telemetry.get("preference_update_turns", 0.0) or 0.0) + 1.0
-        )
-        self._telemetry["preference_update_fields"] = (
-            float(self._telemetry.get("preference_update_fields", 0.0) or 0.0)
-            + float(len(normalized))
-        )
-        self._last_learned_preferences = {
-            "user": user,
-            "updates": dict(normalized),
-            "applied_at": applied_at,
-            "source_text": str(text).strip()[:160],
-        }
-
-        memory = getattr(self.brain, "_memory", None)
-        if memory is not None:
-            with suppress(Exception):
-                memory.upsert_summary(
-                    f"voice_profile:{user}",
-                    _runtime_voice_profile_summary(profile),
-                )
-
-        self._persist_runtime_state_safe()
-        self._publish_voice_status()
-        return normalized
 
     def _runtime_invariant_snapshot(self) -> dict[str, Any]:
         return _runtime_runtime_invariant_snapshot(self)

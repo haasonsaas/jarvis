@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import time
+from contextlib import suppress
 
 from typing import Any
 
@@ -191,3 +193,78 @@ def voice_profile_summary(profile: dict[str, Any]) -> str:
         f"Voice profile preference: verbosity={verbosity}; "
         f"confirmations={confirmations}; pace={pace}; tone={tone}."
     )
+
+
+def learn_voice_preferences(
+    runtime: Any,
+    text: str,
+    *,
+    now_ts: float | None = None,
+    valid_voice_profile_verbosity: set[str],
+    valid_voice_profile_confirmations: set[str],
+    valid_voice_profile_pace: set[str],
+    valid_voice_profile_tone: set[str],
+) -> dict[str, str]:
+    updates = detect_voice_profile_updates(text)
+    if not updates:
+        return {}
+
+    normalized: dict[str, str] = {}
+    verbosity = runtime._parse_control_choice(
+        updates.get("verbosity"),
+        valid_voice_profile_verbosity,
+    )
+    if verbosity is not None:
+        normalized["verbosity"] = verbosity
+    confirmations = runtime._parse_control_choice(
+        updates.get("confirmations"),
+        valid_voice_profile_confirmations,
+    )
+    if confirmations is not None:
+        normalized["confirmations"] = confirmations
+    pace = runtime._parse_control_choice(
+        updates.get("pace"),
+        valid_voice_profile_pace,
+    )
+    if pace is not None:
+        normalized["pace"] = pace
+    tone = runtime._parse_control_choice(
+        updates.get("tone"),
+        valid_voice_profile_tone,
+    )
+    if tone is not None:
+        normalized["tone"] = tone
+    if not normalized:
+        return {}
+
+    user = runtime._active_voice_user()
+    profile = runtime._active_voice_profile(user=user)
+    profile.update(normalized)
+    runtime._voice_user_profiles[user] = profile
+
+    applied_at = time.time() if now_ts is None else float(now_ts)
+    runtime._telemetry["preference_update_turns"] = (
+        float(runtime._telemetry.get("preference_update_turns", 0.0) or 0.0) + 1.0
+    )
+    runtime._telemetry["preference_update_fields"] = (
+        float(runtime._telemetry.get("preference_update_fields", 0.0) or 0.0)
+        + float(len(normalized))
+    )
+    runtime._last_learned_preferences = {
+        "user": user,
+        "updates": dict(normalized),
+        "applied_at": applied_at,
+        "source_text": str(text).strip()[:160],
+    }
+
+    memory = getattr(runtime.brain, "_memory", None)
+    if memory is not None:
+        with suppress(Exception):
+            memory.upsert_summary(
+                f"voice_profile:{user}",
+                voice_profile_summary(profile),
+            )
+
+    runtime._persist_runtime_state_safe()
+    runtime._publish_voice_status()
+    return normalized
