@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 18 (Status Runtime Decomposition)
+# Jarvis TODO — Wave 19 (Home Assistant Runtime Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,28 +8,32 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 4
-- Completed: 4
+- Total items: 5
+- Completed: 5
 - Remaining: 0
 
 ---
 
 ## A) Decomposition
 
-- [x] `W18-S01` Extract status/snapshot helpers from `services.py` into `src/jarvis/tools/services_status_runtime.py` (`integration`, `identity`, `voice`, `observability`, and expansion snapshots).
-- [x] `W18-S02` Extract scorecard utility chain (`_health_rollup`, `_score_label`, `_recent_tool_rows`, `_duration_p95_ms`, `_jarvis_scorecard_snapshot`) into `services_status_runtime.py`.
-- [x] `W18-S03` Keep compatibility wrappers in `services.py` for all moved status/scorecard helper function names.
+- [x] `W19-S01` Extract Home Assistant HTTP helper implementations from `services.py` into `src/jarvis/tools/services_ha_runtime.py`.
+- [x] `W19-S02` Replace `_ha_get_state`, `_ha_get_domain_services`, `_ha_call_service`, `_ha_get_json`, `_ha_request_json`, and `_ha_render_template` in `services.py` with compatibility wrappers that delegate to runtime helpers.
+- [x] `W19-S03` Preserve compatibility dependency surfaces expected by domain modules (`services.aiohttp`) after extraction.
 
-## B) Quality and verification
+## B) Behavioral parity
 
-- [x] `W18-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after extraction.
+- [x] `W19-B01` Keep extracted helper semantics consistent with prior behavior (error codes, status mappings, payload handling), including `_ha_render_template` (`invalid_json`, `not_found`, raw text passthrough).
+
+## C) Quality and verification
+
+- [x] `W19-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after extraction.
 
 ---
 
 ## Outcome snapshot (current)
 
-- New status runtime helper module: `src/jarvis/tools/services_status_runtime.py`.
-- `src/jarvis/tools/services.py` reduced to `2,997` lines (from `3,401` before this wave).
+- New HA runtime helper module: `src/jarvis/tools/services_ha_runtime.py`.
+- `src/jarvis/tools/services.py` reduced to `2,817` lines (from `2,997` before this wave).
 - Full gates are green:
   - `make check` (`555 passed`)
   - `make security-gate` (`555 passed`; fault-injection subset `3 passed`)

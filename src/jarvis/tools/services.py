@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import aiohttp
+import aiohttp  # noqa: F401
 
 from jarvis.config import Config
 from jarvis.skills import SkillRegistry
@@ -92,6 +92,14 @@ from jarvis.tools.services_status_runtime import (
     recent_tool_rows as _runtime_recent_tool_rows,
     score_label as _runtime_score_label,
     voice_attention_snapshot as _runtime_voice_attention_snapshot,
+)
+from jarvis.tools.services_ha_runtime import (
+    ha_call_service as _runtime_ha_call_service,
+    ha_get_domain_services as _runtime_ha_get_domain_services,
+    ha_get_json as _runtime_ha_get_json,
+    ha_get_state as _runtime_ha_get_state,
+    ha_render_template as _runtime_ha_render_template,
+    ha_request_json as _runtime_ha_request_json,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -2206,88 +2214,11 @@ def _ha_action_allowed(domain: str, action: str) -> bool:
 
 
 async def _ha_get_state(entity_id: str) -> tuple[dict[str, Any] | None, str | None]:
-    if _integration_circuit_open("home_assistant")[0]:
-        return None, "circuit_open"
-    cached = _ha_cached_state(entity_id)
-    if cached is not None:
-        return cached, None
-    assert _config is not None
-    url = f"{_config.hass_url}/api/states/{entity_id}"
-    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(5.0))
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=_ha_headers()) as resp:
-                if resp.status == 200:
-                    try:
-                        data = await resp.json()
-                    except Exception:
-                        return None, "invalid_json"
-                    if not isinstance(data, dict):
-                        return None, "invalid_json"
-                    _ha_state_cache[entity_id] = (time.monotonic() + HA_STATE_CACHE_TTL_SEC, data)
-                    _integration_record_success("home_assistant")
-                    return data, None
-                if resp.status == 401:
-                    return None, "auth"
-                if resp.status == 404:
-                    return None, "not_found"
-                return None, "http_error"
-    except asyncio.TimeoutError:
-        return None, "timeout"
-    except asyncio.CancelledError:
-        return None, "cancelled"
-    except aiohttp.ClientError:
-        return None, "network_client_error"
-    except Exception:
-        return None, "unexpected"
+    return await _runtime_ha_get_state(_services_module(), entity_id)
 
 
 async def _ha_get_domain_services(domain: str) -> tuple[list[str] | None, str | None]:
-    if _integration_circuit_open("home_assistant")[0]:
-        return None, "circuit_open"
-    assert _config is not None
-    url = f"{_config.hass_url}/api/services"
-    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(5.0))
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=_ha_headers()) as resp:
-                if resp.status == 200:
-                    try:
-                        data = await resp.json()
-                    except Exception:
-                        return None, "invalid_json"
-                    if not isinstance(data, list):
-                        return None, "invalid_json"
-                    for item in data:
-                        if not isinstance(item, dict):
-                            continue
-                        if str(item.get("domain", "")).strip().lower() != domain:
-                            continue
-                        raw_services = item.get("services")
-                        if not isinstance(raw_services, dict):
-                            return [], None
-                        names = sorted(
-                            {
-                                str(name).strip()
-                                for name in raw_services.keys()
-                                if str(name).strip()
-                            }
-                        )
-                        _integration_record_success("home_assistant")
-                        return names, None
-                    _integration_record_success("home_assistant")
-                    return [], None
-                if resp.status == 401:
-                    return None, "auth"
-                return None, "http_error"
-    except asyncio.TimeoutError:
-        return None, "timeout"
-    except asyncio.CancelledError:
-        return None, "cancelled"
-    except aiohttp.ClientError:
-        return None, "network_client_error"
-    except Exception:
-        return None, "unexpected"
+    return await _runtime_ha_get_domain_services(_services_module(), domain)
 
 
 async def _ha_call_service(
@@ -2298,38 +2229,14 @@ async def _ha_call_service(
     return_response: bool = False,
     timeout_sec: float = 10.0,
 ) -> tuple[list[Any] | None, str | None]:
-    if _integration_circuit_open("home_assistant")[0]:
-        return None, "circuit_open"
-    assert _config is not None
-    suffix = "?return_response" if return_response else ""
-    url = f"{_config.hass_url}/api/services/{domain}/{service}{suffix}"
-    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec))
-    headers = {**_ha_headers(), "Content-Type": "application/json"}
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=service_data) as resp:
-                if resp.status in {200, 201}:
-                    try:
-                        data = await resp.json()
-                    except Exception:
-                        return None, "invalid_json"
-                    if not isinstance(data, list):
-                        return None, "invalid_json"
-                    _integration_record_success("home_assistant")
-                    return data, None
-                if resp.status == 401:
-                    return None, "auth"
-                if resp.status == 404:
-                    return None, "not_found"
-                return None, "http_error"
-    except asyncio.TimeoutError:
-        return None, "timeout"
-    except asyncio.CancelledError:
-        return None, "cancelled"
-    except aiohttp.ClientError:
-        return None, "network_client_error"
-    except Exception:
-        return None, "unexpected"
+    return await _runtime_ha_call_service(
+        _services_module(),
+        domain,
+        service,
+        service_data,
+        return_response=return_response,
+        timeout_sec=timeout_sec,
+    )
 
 
 async def _ha_get_json(
@@ -2338,34 +2245,12 @@ async def _ha_get_json(
     params: dict[str, str] | None = None,
     timeout_sec: float = 10.0,
 ) -> tuple[Any | None, str | None]:
-    if _integration_circuit_open("home_assistant")[0]:
-        return None, "circuit_open"
-    assert _config is not None
-    url = f"{_config.hass_url}{path}"
-    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec))
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=_ha_headers(), params=params or None) as resp:
-                if resp.status == 200:
-                    try:
-                        payload = await resp.json()
-                    except Exception:
-                        return None, "invalid_json"
-                    _integration_record_success("home_assistant")
-                    return payload, None
-                if resp.status == 401:
-                    return None, "auth"
-                if resp.status == 404:
-                    return None, "not_found"
-                return None, "http_error"
-    except asyncio.TimeoutError:
-        return None, "timeout"
-    except asyncio.CancelledError:
-        return None, "cancelled"
-    except aiohttp.ClientError:
-        return None, "network_client_error"
-    except Exception:
-        return None, "unexpected"
+    return await _runtime_ha_get_json(
+        _services_module(),
+        path,
+        params=params,
+        timeout_sec=timeout_sec,
+    )
 
 
 async def _ha_request_json(
@@ -2375,82 +2260,17 @@ async def _ha_request_json(
     payload: dict[str, Any] | None = None,
     timeout_sec: float = 10.0,
 ) -> tuple[Any | None, str | None]:
-    if _integration_circuit_open("home_assistant")[0]:
-        return None, "circuit_open"
-    assert _config is not None
-    normalized_method = str(method).strip().upper() or "GET"
-    url = f"{_config.hass_url}{path}"
-    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec))
-    headers = _ha_headers()
-    if payload is not None:
-        headers = {**headers, "Content-Type": "application/json"}
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.request(
-                normalized_method,
-                url,
-                headers=headers,
-                json=payload if payload is not None else None,
-            ) as resp:
-                if resp.status in {200, 201, 202, 204}:
-                    if resp.status == 204:
-                        _integration_record_success("home_assistant")
-                        return {}, None
-                    text = await resp.text()
-                    if not text.strip():
-                        _integration_record_success("home_assistant")
-                        return {}, None
-                    try:
-                        body = json.loads(text)
-                    except Exception:
-                        return None, "invalid_json"
-                    _integration_record_success("home_assistant")
-                    return body, None
-                if resp.status == 401:
-                    return None, "auth"
-                if resp.status == 404:
-                    return None, "not_found"
-                return None, "http_error"
-    except asyncio.TimeoutError:
-        return None, "timeout"
-    except asyncio.CancelledError:
-        return None, "cancelled"
-    except aiohttp.ClientError:
-        return None, "network_client_error"
-    except Exception:
-        return None, "unexpected"
+    return await _runtime_ha_request_json(
+        _services_module(),
+        method,
+        path,
+        payload=payload,
+        timeout_sec=timeout_sec,
+    )
 
 
 async def _ha_render_template(template_text: str, *, timeout_sec: float = 10.0) -> tuple[str | None, str | None]:
-    if _integration_circuit_open("home_assistant")[0]:
-        return None, "circuit_open"
-    assert _config is not None
-    url = f"{_config.hass_url}/api/template"
-    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec))
-    headers = {**_ha_headers(), "Content-Type": "text/plain"}
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, data=template_text) as resp:
-                if resp.status == 200:
-                    try:
-                        payload = await resp.text()
-                    except Exception:
-                        return None, "invalid_json"
-                    _integration_record_success("home_assistant")
-                    return payload, None
-                if resp.status == 401:
-                    return None, "auth"
-                if resp.status == 404:
-                    return None, "not_found"
-                return None, "http_error"
-    except asyncio.TimeoutError:
-        return None, "timeout"
-    except asyncio.CancelledError:
-        return None, "cancelled"
-    except aiohttp.ClientError:
-        return None, "network_client_error"
-    except Exception:
-        return None, "unexpected"
+    return await _runtime_ha_render_template(_services_module(), template_text, timeout_sec=timeout_sec)
 
 
 def _collect_json_lists_by_key(value: Any, key: str) -> list[Any]:
