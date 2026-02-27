@@ -31,7 +31,7 @@ from claude_agent_sdk import tool, create_sdk_mcp_server
 from jarvis.config import Config
 from jarvis.skills import SkillRegistry
 from jarvis.tool_policy import is_tool_allowed
-from jarvis.tool_summary import record_summary, list_summaries
+from jarvis.tool_summary import record_summary, list_summaries  # noqa: F401  # accessed via services module alias
 from jarvis.memory import MemoryEntry, MemoryStore
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, normalize_service_error_code
 from jarvis.tools.services_domains.home import (
@@ -81,6 +81,8 @@ from jarvis.tools.services_domains.comms import (
     pushover_notify,
 )
 from jarvis.tools.services_domains.governance import (
+    tool_summary,
+    tool_summary_text,
     skills_list,
     skills_enable,
     skills_disable,
@@ -4828,37 +4830,6 @@ def _memory_source_trail(entry: MemoryEntry) -> str:
     source = str(getattr(entry, "source", "")).strip() or "unknown"
     created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(entry.created_at)))
     return f"id={entry.id};source={source};created_at={created}"
-
-
-async def tool_summary(args: dict[str, Any]) -> dict[str, Any]:
-    start_time = time.monotonic()
-    if not _tool_permitted("tool_summary"):
-        record_summary("tool_summary", "denied", start_time, "policy")
-        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
-    limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=100)
-    try:
-        summaries = list_summaries(limit)
-    except Exception as e:
-        _record_service_error("tool_summary", start_time, "summary_unavailable")
-        return {"content": [{"type": "text", "text": f"Tool summaries unavailable: {e}"}]}
-    record_summary("tool_summary", "ok", start_time)
-    return {"content": [{"type": "text", "text": json.dumps(summaries, default=str)}]}
-
-
-async def tool_summary_text(args: dict[str, Any]) -> dict[str, Any]:
-    start_time = time.monotonic()
-    if not _tool_permitted("tool_summary_text"):
-        record_summary("tool_summary_text", "denied", start_time, "policy")
-        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
-    limit = _as_int(args.get("limit", 6), 6, minimum=1, maximum=100)
-    try:
-        summaries = list_summaries(limit)
-        text = _format_tool_summaries(summaries)
-    except Exception as e:
-        _record_service_error("tool_summary_text", start_time, "summary_unavailable")
-        return {"content": [{"type": "text", "text": f"Tool summaries unavailable: {e}"}]}
-    record_summary("tool_summary_text", "ok", start_time)
-    return {"content": [{"type": "text", "text": text}]}
 
 
 def _json_payload_response(payload: dict[str, Any]) -> dict[str, Any]:
