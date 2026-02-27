@@ -156,6 +156,7 @@ class TestConfig:
         monkeypatch.setenv("PUSHOVER_TIMEOUT_SEC", "-5")
         monkeypatch.setenv("WEATHER_TIMEOUT_SEC", "0")
         monkeypatch.setenv("WEBHOOK_TIMEOUT_SEC", "-3")
+        monkeypatch.setenv("TURN_TIMEOUT_ACT_SEC", "0")
         monkeypatch.setenv("BACKCHANNEL_STYLE", "LOUD")
         monkeypatch.setenv("PERSONA_STYLE", "chatty")
         monkeypatch.setenv("HOME_ENABLED", "maybe")
@@ -181,6 +182,7 @@ class TestConfig:
         assert "PUSHOVER_TIMEOUT_SEC invalid" in text
         assert "WEATHER_TIMEOUT_SEC invalid" in text
         assert "WEBHOOK_TIMEOUT_SEC invalid" in text
+        assert "TURN_TIMEOUT_ACT_SEC invalid" in text
         assert "BACKCHANNEL_STYLE invalid" in text
         assert "PERSONA_STYLE invalid" in text
         assert "HOME_ENABLED invalid boolean" in text
@@ -252,6 +254,7 @@ class TestConfig:
         monkeypatch.setenv("EMAIL_TIMEOUT_SEC", "0")
         monkeypatch.setenv("WEATHER_TIMEOUT_SEC", "0")
         monkeypatch.setenv("WEBHOOK_TIMEOUT_SEC", "-1")
+        monkeypatch.setenv("TURN_TIMEOUT_ACT_SEC", "0")
         from jarvis.config import Config
 
         c = Config()
@@ -260,6 +263,7 @@ class TestConfig:
         assert c.email_timeout_sec == 10.0
         assert c.weather_timeout_sec == 8.0
         assert c.webhook_timeout_sec == 8.0
+        assert c.turn_timeout_act_sec == 30.0
 
     def test_timeout_env_values_can_be_set(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
@@ -268,6 +272,7 @@ class TestConfig:
         monkeypatch.setenv("EMAIL_TIMEOUT_SEC", "11")
         monkeypatch.setenv("WEATHER_TIMEOUT_SEC", "4.5")
         monkeypatch.setenv("WEBHOOK_TIMEOUT_SEC", "9")
+        monkeypatch.setenv("TURN_TIMEOUT_ACT_SEC", "6.5")
         from jarvis.config import Config
 
         c = Config()
@@ -276,6 +281,7 @@ class TestConfig:
         assert c.email_timeout_sec == 11.0
         assert c.weather_timeout_sec == 4.5
         assert c.webhook_timeout_sec == 9.0
+        assert c.turn_timeout_act_sec == 6.5
 
     def test_retention_env_values_fall_back_to_defaults_when_invalid(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

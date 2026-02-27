@@ -106,7 +106,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [ ] `RX01` Add per-integration circuit breakers with cooldown/backoff state in status. `P0`
 - [ ] `RX02` Add persistent recovery journal for interrupted actions and post-restart reconciliation. `P0`
 - [ ] `RX03` Add dead-letter queue for failed outbound notifications/webhooks with replay controls. `P1`
-- [ ] `RX04` Add stricter timeout budgets per turn phase (listen/think/speak/act). `P0`
+- [x] `RX04` Add stricter timeout budgets per turn phase (listen/think/speak/act). `P0`
 - [ ] `RX05` Add chaos/fault profile runner in CI for scheduled resilience regression tests. `P1`
 - [ ] `RX06` Add runtime invariant checks to detect impossible state combinations and auto-heal. `P1`
 
@@ -153,7 +153,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q01` Implement `JX01` interaction contract + prompt enforcement.
 - [x] `Q02` Implement `AX04` ambiguity detector for risky actions.
 - [x] `Q03` Implement `AX05` plan preview before medium/high-risk execution.
-- [ ] `Q04` Implement `RX04` turn-phase timeout budgets and status exposure.
+- [x] `Q04` Implement `RX04` turn-phase timeout budgets and status exposure.
 - [ ] `Q05` Implement `PX03` nudge/interrupt policy + quiet windows.
 - [ ] `Q06` Implement `MX03` memory correction voice commands.
 - [ ] `Q07` Implement `IX03` step-up verification flow.

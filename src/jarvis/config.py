@@ -154,6 +154,7 @@ class Config:
     watchdog_speaking_timeout_sec: float = field(
         default_factory=lambda: _env_positive_float("WATCHDOG_SPEAKING_TIMEOUT_SEC", 45.0)
     )
+    turn_timeout_act_sec: float = field(default_factory=lambda: _env_positive_float("TURN_TIMEOUT_ACT_SEC", 30.0))
     operator_server_enabled: bool = field(default_factory=lambda: _env_bool("OPERATOR_SERVER_ENABLED") is not False)
     operator_server_host: str = field(default_factory=lambda: os.environ.get("OPERATOR_SERVER_HOST", "127.0.0.1"))
     operator_server_port: int = field(default_factory=lambda: _env_int("OPERATOR_SERVER_PORT", 8765))
@@ -306,6 +307,8 @@ class Config:
             raise ValueError("watchdog_thinking_timeout_sec must be > 0")
         if self.watchdog_speaking_timeout_sec <= 0.0:
             raise ValueError("watchdog_speaking_timeout_sec must be > 0")
+        if self.turn_timeout_act_sec <= 0.0:
+            raise ValueError("turn_timeout_act_sec must be > 0")
         if self.face_track_fps <= 0:
             raise ValueError("face_track_fps must be > 0")
         if self.memory_search_limit < 1:
@@ -650,6 +653,7 @@ class Config:
             ("WATCHDOG_LISTENING_TIMEOUT_SEC", "positive_float", str(self.watchdog_listening_timeout_sec)),
             ("WATCHDOG_THINKING_TIMEOUT_SEC", "positive_float", str(self.watchdog_thinking_timeout_sec)),
             ("WATCHDOG_SPEAKING_TIMEOUT_SEC", "positive_float", str(self.watchdog_speaking_timeout_sec)),
+            ("TURN_TIMEOUT_ACT_SEC", "positive_float", str(self.turn_timeout_act_sec)),
             ("OPERATOR_SERVER_PORT", "int", str(self.operator_server_port)),
             (
                 "OBSERVABILITY_FAILURE_BURST_THRESHOLD",

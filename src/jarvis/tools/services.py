@@ -123,6 +123,10 @@ _weather_timeout_sec: float = 8.0
 _webhook_allowlist: list[str] = []
 _webhook_auth_token: str = ""
 _webhook_timeout_sec: float = 8.0
+_turn_timeout_listen_sec: float = 30.0
+_turn_timeout_think_sec: float = 60.0
+_turn_timeout_speak_sec: float = 45.0
+_turn_timeout_act_sec: float = 30.0
 _slack_webhook_url: str = ""
 _discord_webhook_url: str = ""
 _identity_enforcement_enabled: bool = False
@@ -776,6 +780,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _email_from, _email_default_to, _email_use_tls, _email_timeout_sec
     global _weather_units, _weather_timeout_sec
     global _webhook_allowlist, _webhook_auth_token, _webhook_timeout_sec
+    global _turn_timeout_listen_sec, _turn_timeout_think_sec, _turn_timeout_speak_sec, _turn_timeout_act_sec
     global _slack_webhook_url, _discord_webhook_url
     global _identity_enforcement_enabled, _identity_default_user, _identity_default_profile
     global _identity_user_profiles, _identity_trusted_users, _identity_require_approval, _identity_approval_code
@@ -825,6 +830,10 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _webhook_allowlist = [str(host).strip().lower() for host in getattr(config, "webhook_allowlist", []) if str(host).strip()]
     _webhook_auth_token = str(getattr(config, "webhook_auth_token", "")).strip()
     _webhook_timeout_sec = float(getattr(config, "webhook_timeout_sec", 8.0))
+    _turn_timeout_listen_sec = float(getattr(config, "watchdog_listening_timeout_sec", 30.0))
+    _turn_timeout_think_sec = float(getattr(config, "watchdog_thinking_timeout_sec", 60.0))
+    _turn_timeout_speak_sec = float(getattr(config, "watchdog_speaking_timeout_sec", 45.0))
+    _turn_timeout_act_sec = float(getattr(config, "turn_timeout_act_sec", 30.0))
     _slack_webhook_url = str(getattr(config, "slack_webhook_url", "")).strip()
     _discord_webhook_url = str(getattr(config, "discord_webhook_url", "")).strip()
     _identity_enforcement_enabled = bool(getattr(config, "identity_enforcement_enabled", False))
@@ -1470,6 +1479,12 @@ def _as_float(
     return parsed
 
 
+def _effective_act_timeout(total_sec: Any, *, minimum: float = 0.1, maximum: float = 120.0) -> float:
+    requested = _as_float(total_sec, _turn_timeout_act_sec, minimum=minimum, maximum=maximum)
+    budget = _as_float(_turn_timeout_act_sec, requested, minimum=minimum, maximum=maximum)
+    return min(requested, budget)
+
+
 def _duration_seconds(value: Any) -> float | None:
     if isinstance(value, bool) or value is None:
         return None
@@ -1920,7 +1935,7 @@ async def _ha_get_state(entity_id: str) -> tuple[dict[str, Any] | None, str | No
         return cached, None
     assert _config is not None
     url = f"{_config.hass_url}/api/states/{entity_id}"
-    timeout = aiohttp.ClientTimeout(total=5)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(5.0))
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, headers=_ha_headers()) as resp:
@@ -1951,7 +1966,7 @@ async def _ha_get_state(entity_id: str) -> tuple[dict[str, Any] | None, str | No
 async def _ha_get_domain_services(domain: str) -> tuple[list[str] | None, str | None]:
     assert _config is not None
     url = f"{_config.hass_url}/api/services"
-    timeout = aiohttp.ClientTimeout(total=5)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(5.0))
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, headers=_ha_headers()) as resp:
@@ -2003,7 +2018,7 @@ async def _ha_call_service(
     assert _config is not None
     suffix = "?return_response" if return_response else ""
     url = f"{_config.hass_url}/api/services/{domain}/{service}{suffix}"
-    timeout = aiohttp.ClientTimeout(total=timeout_sec)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec))
     headers = {**_ha_headers(), "Content-Type": "application/json"}
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -2039,7 +2054,7 @@ async def _ha_get_json(
 ) -> tuple[Any | None, str | None]:
     assert _config is not None
     url = f"{_config.hass_url}{path}"
-    timeout = aiohttp.ClientTimeout(total=timeout_sec)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec))
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, headers=_ha_headers(), params=params or None) as resp:
@@ -2066,7 +2081,7 @@ async def _ha_get_json(
 async def _ha_render_template(template_text: str, *, timeout_sec: float = 10.0) -> tuple[str | None, str | None]:
     assert _config is not None
     url = f"{_config.hass_url}/api/template"
-    timeout = aiohttp.ClientTimeout(total=timeout_sec)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec))
     headers = {**_ha_headers(), "Content-Type": "text/plain"}
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -2513,7 +2528,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     url = f"{_config.hass_url}/api/services/{domain}/{action}"
     headers = {**_ha_headers(), "Content-Type": "application/json"}
     payload = {"entity_id": entity_id, **data}
-    timeout = aiohttp.ClientTimeout(total=10)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(10.0))
 
     try:
         tool_feedback("start")
@@ -2836,7 +2851,7 @@ async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
     if agent_id:
         payload["agent_id"] = agent_id
     url = f"{_config.hass_url}/api/conversation/process"
-    timeout = aiohttp.ClientTimeout(total=10)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(10.0))
     headers = {**_ha_headers(), "Content-Type": "application/json"}
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -3427,7 +3442,7 @@ async def weather_lookup(args: dict[str, Any]) -> dict[str, Any]:
         "language": "en",
         "format": "json",
     }
-    timeout = aiohttp.ClientTimeout(total=_weather_timeout_sec)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_weather_timeout_sec))
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get("https://geocoding-api.open-meteo.com/v1/search", params=geocode_params) as resp:
@@ -3627,7 +3642,7 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
         minimum=0.1,
         maximum=30.0,
     )
-    timeout = aiohttp.ClientTimeout(total=timeout_sec)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec, minimum=0.1, maximum=30.0))
     request_kwargs: dict[str, Any] = {"headers": headers or None}
     if method in {"POST", "PUT", "PATCH"}:
         request_kwargs["json"] = payload or {}
@@ -3741,7 +3756,7 @@ async def slack_notify(args: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
-    timeout = aiohttp.ClientTimeout(total=_webhook_timeout_sec)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_webhook_timeout_sec, minimum=0.1, maximum=30.0))
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(_slack_webhook_url, json={"text": message}) as resp:
@@ -3814,7 +3829,7 @@ async def discord_notify(args: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
-    timeout = aiohttp.ClientTimeout(total=_webhook_timeout_sec)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_webhook_timeout_sec, minimum=0.1, maximum=30.0))
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(_discord_webhook_url, json={"content": message}) as resp:
@@ -3883,7 +3898,11 @@ def _send_email_sync(*, recipient: str, subject: str, body: str) -> None:
     msg["To"] = recipient
     msg["Subject"] = subject
     msg.set_content(body)
-    with smtplib.SMTP(_email_smtp_host, _email_smtp_port, timeout=_email_timeout_sec) as smtp:
+    with smtplib.SMTP(
+        _email_smtp_host,
+        _email_smtp_port,
+        timeout=_effective_act_timeout(_email_timeout_sec),
+    ) as smtp:
         smtp.ehlo()
         if _email_use_tls:
             smtp.starttls()
@@ -4551,7 +4570,7 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
         "Authorization": f"Bearer {str(_config.todoist_api_token).strip()}",
         "Content-Type": "application/json",
     }
-    timeout = aiohttp.ClientTimeout(total=_todoist_timeout_sec)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_todoist_timeout_sec))
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post("https://api.todoist.com/rest/v2/tasks", headers=headers, json=payload) as resp:
@@ -4628,7 +4647,7 @@ async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
     params: dict[str, str] = {}
     if str(getattr(_config, "todoist_project_id", "")).strip():
         params["project_id"] = str(_config.todoist_project_id).strip()
-    timeout = aiohttp.ClientTimeout(total=_todoist_timeout_sec)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_todoist_timeout_sec))
     attempt = 0
     while True:
         try:
@@ -4770,7 +4789,7 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
         "title": title,
         "priority": priority,
     }
-    timeout = aiohttp.ClientTimeout(total=_pushover_timeout_sec)
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_pushover_timeout_sec))
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post("https://api.pushover.net/1/messages.json", data=payload) as resp:
@@ -4987,6 +5006,13 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         "timers": _timer_status(),
         "reminders": _reminder_status(),
         "voice_attention": _voice_attention_snapshot(),
+        "turn_timeouts": {
+            "watchdog_enabled": bool(_config and getattr(_config, "watchdog_enabled", False)),
+            "listen_sec": _turn_timeout_listen_sec,
+            "think_sec": _turn_timeout_think_sec,
+            "speak_sec": _turn_timeout_speak_sec,
+            "act_sec": _turn_timeout_act_sec,
+        },
         "integrations": _integration_health_snapshot(),
         "identity": identity_status,
         "skills": _skills_status_snapshot(),
@@ -5032,6 +5058,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "timers",
             "reminders",
             "voice_attention",
+            "turn_timeouts",
             "integrations",
             "identity",
             "skills",
@@ -5074,6 +5101,13 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "followup_active",
             "sleeping",
             "active_room",
+        ],
+        "turn_timeouts_required": [
+            "watchdog_enabled",
+            "listen_sec",
+            "think_sec",
+            "speak_sec",
+            "act_sec",
         ],
         "integrations_required": [
             "home_assistant",

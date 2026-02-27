@@ -100,7 +100,7 @@ cp .env.example .env
 # Optional: MEMORY_ENCRYPTION_ENABLED / AUDIT_ENCRYPTION_ENABLED / JARVIS_DATA_KEY
 # Optional: WAKE_MODE / WAKE_WORDS / WAKE_WORD_SENSITIVITY / VOICE_TIMEOUT_PROFILE
 # Optional: STT_FALLBACK_ENABLED / WHISPER_MODEL_FALLBACK / TTS_FALLBACK_TEXT_ONLY
-# Optional: MODEL_FAILOVER_ENABLED / MODEL_SECONDARY_MODE / WATCHDOG_* / STARTUP_STRICT
+# Optional: MODEL_FAILOVER_ENABLED / MODEL_SECONDARY_MODE / WATCHDOG_* / TURN_TIMEOUT_ACT_SEC / STARTUP_STRICT
 # Optional: OPERATOR_SERVER_ENABLED / OPERATOR_SERVER_HOST / OPERATOR_SERVER_PORT / OPERATOR_AUTH_TOKEN
 # Optional: WEBHOOK_INBOUND_ENABLED / WEBHOOK_INBOUND_TOKEN
 # Optional: OBSERVABILITY_* (DB/state/event paths, burst threshold, snapshot interval)
@@ -128,6 +128,7 @@ Smart home safety defaults:
   - `media_control` for simplified `media_player` actions (`play`, `pause`, `volume_set`, etc.)
 - Automation consumers can use:
   - `system_status` (includes `schema_version`)
+  - `system_status.turn_timeouts` (listen/think/speak/act timeout budgets)
   - `system_status_contract` (stable required-field contract)
 - Operator console/API security:
   - Set `OPERATOR_AUTH_TOKEN` when binding `OPERATOR_SERVER_HOST` to a non-loopback interface.

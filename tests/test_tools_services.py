@@ -2078,6 +2078,30 @@ class TestServicesTools:
         assert timeout_arg.total == 3.5
 
     @pytest.mark.asyncio
+    async def test_todoist_timeout_is_capped_by_turn_act_budget(self, tmp_path, aiohttp_response, aiohttp_session_mock):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.todoist_api_token = "todo-token"
+        cfg.todoist_timeout_sec = 9.0
+        cfg.turn_timeout_act_sec = 2.0
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            mock_resp = aiohttp_response(status=200, json_data=[{"content": "Buy coffee"}])
+            mock_session = aiohttp_session_mock(get=mock_resp)
+            mock_session_cls.return_value = mock_session
+
+            await services.todoist_list_tasks({"limit": 1})
+
+        timeout_arg = mock_session_cls.call_args.kwargs["timeout"]
+        assert timeout_arg.total == 2.0
+
+    @pytest.mark.asyncio
     async def test_todoist_list_tasks_rejects_non_object_entries(self, tmp_path, aiohttp_response, aiohttp_session_mock):
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
@@ -2956,6 +2980,12 @@ class TestServicesTools:
         assert "voice_attention" in payload
         assert "mode" in payload["voice_attention"]
         assert "active_room" in payload["voice_attention"]
+        assert "turn_timeouts" in payload
+        assert isinstance(payload["turn_timeouts"]["watchdog_enabled"], bool)
+        assert payload["turn_timeouts"]["listen_sec"] > 0
+        assert payload["turn_timeouts"]["think_sec"] > 0
+        assert payload["turn_timeouts"]["speak_sec"] > 0
+        assert payload["turn_timeouts"]["act_sec"] > 0
         assert "integrations" in payload
         assert "weather" in payload["integrations"]
         assert "webhook" in payload["integrations"]
@@ -2986,6 +3016,7 @@ class TestServicesTools:
         assert "tool_policy" in payload["top_level_required"]
         assert "identity" in payload["top_level_required"]
         assert "voice_attention" in payload["top_level_required"]
+        assert "turn_timeouts" in payload["top_level_required"]
         assert "skills" in payload["top_level_required"]
         assert "observability" in payload["top_level_required"]
         assert "plan_preview" in payload["top_level_required"]
@@ -3000,6 +3031,8 @@ class TestServicesTools:
         assert "timers_required" in payload
         assert "reminders_required" in payload
         assert "voice_attention_required" in payload
+        assert "turn_timeouts_required" in payload
+        assert "act_sec" in payload["turn_timeouts_required"]
         assert "integrations_required" in payload
         assert "email" in payload["integrations_required"]
         assert "channels" in payload["integrations_required"]
