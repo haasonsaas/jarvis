@@ -2308,6 +2308,36 @@
       "actual_tools": [
         "system_status"
       ]
+    },
+    {
+      "id": "status_voice_multimodal_grounding",
+      "expected_contains": [
+        "multimodal_grounding",
+        "confidence_band",
+        "modality_scores"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "multimodal_grounding confidence_band modality_scores voice status multimodal contract",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "status_observability_multimodal_metrics",
+      "expected_contains": [
+        "multimodal_metrics",
+        "avg_confidence",
+        "low_confidence_rate"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "multimodal_metrics avg_confidence low_confidence_rate observability multimodal telemetry",
+      "actual_tools": [
+        "system_status"
+      ]
     }
   ]
 }

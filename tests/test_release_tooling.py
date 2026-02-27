@@ -90,9 +90,14 @@ def test_run_soak_profile_live_has_extended_phases_and_artifact_checks():
                 "status": "passed",
                 "started_at": 1.0,
                 "finished_at": 2.0,
+                "cycle": 1,
             }
-        ]
+        ],
+        expected_phase_count_per_cycle=2,
+        repeat=3,
     )
     assert checks["all_status_valid"] is True
     assert checks["all_timestamps_present"] is True
     assert checks["phase_names"] == ["sim_baseline"]
+    assert checks["expected_total_phase_count"] == 6
+    assert checks["cycle_phase_counts"] == {"1": 1}

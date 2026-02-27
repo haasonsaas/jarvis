@@ -405,6 +405,9 @@ def test_publish_voice_status_includes_turn_choreography():
     assert "attention_confidence" in payload["acoustic_scene"]
     assert payload["acoustic_scene"]["attention_source"] == "face"
     assert payload["preference_learning"]["user"] == "operator"
+    assert "multimodal_grounding" in payload
+    assert "confidence_band" in payload["multimodal_grounding"]
+    assert "modality_scores" in payload["multimodal_grounding"]
 
 
 def test_runtime_invariant_checker_auto_heals_mode_and_preset_mismatches():
@@ -480,6 +483,9 @@ def test_telemetry_snapshot_averages():
         "service_errors": 3.0,
         "storage_errors": 1.0,
         "fallback_responses": 4.0,
+        "multimodal_turns": 4.0,
+        "multimodal_confidence_total": 2.4,
+        "multimodal_low_confidence_turns": 1.0,
     }
     snapshot = Jarvis._telemetry_snapshot(jarvis)
     assert snapshot["turns"] == 10.0
@@ -495,6 +501,10 @@ def test_telemetry_snapshot_averages():
     assert intent["answer_quality_success_rate"] == 0.0
     assert intent["completion_success_rate"] == 0.0
     assert intent["correction_frequency"] == 0.0
+    multimodal = snapshot["multimodal_metrics"]
+    assert multimodal["turn_count"] == 4.0
+    assert multimodal["avg_confidence"] == 0.6
+    assert multimodal["low_confidence_rate"] == 0.25
 
 
 def test_telemetry_snapshot_intent_metric_rates():
@@ -509,6 +519,9 @@ def test_telemetry_snapshot_intent_metric_rates():
         "intent_completion_total": 5.0,
         "intent_completion_success": 4.0,
         "intent_corrections": 2.0,
+        "multimodal_turns": 2.0,
+        "multimodal_confidence_total": 1.0,
+        "multimodal_low_confidence_turns": 1.0,
     }
     jarvis._telemetry_error_counts = {}
 
@@ -524,6 +537,9 @@ def test_telemetry_snapshot_intent_metric_rates():
     assert intent["completion_success_rate"] == pytest.approx(0.8)
     assert intent["correction_count"] == 2.0
     assert intent["correction_frequency"] == pytest.approx(0.2)
+    multimodal = snapshot["multimodal_metrics"]
+    assert multimodal["avg_confidence"] == pytest.approx(0.5)
+    assert multimodal["low_confidence_rate"] == pytest.approx(0.5)
 
 
 def test_refresh_tool_error_counters():

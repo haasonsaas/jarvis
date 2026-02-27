@@ -13,9 +13,11 @@ Routing is deterministic and depends on:
 - `policy`: `interrupt | defer | adaptive`
 - `quiet_window_active` (explicit arg, otherwise runtime quiet-window policy)
 - candidate urgency inputs (`severity`, `due_at`, `expires_at`, `interrupt_allowed`)
+- optional `context` inputs (`user_busy`, `conversation_active`, `presence_confidence`)
 - `max_dispatch` capacity limit
 
 The response returns per-bucket rows plus summary counts and cumulative proactive counters.
+When context indicates an active/busy interaction or low presence confidence, non-critical interrupts are downgraded to `notify`/`defer`.
 
 ## Preference Learning Loop
 
@@ -33,3 +35,4 @@ When memory is enabled, learned profile state is mirrored to memory summaries (`
 - Preference learning only triggers on explicit style-oriented directives (not on arbitrary requests).
 - High-risk action safeguards remain unchanged (preview/approval gates, policy checks).
 - Quiet-hour and policy controls still govern whether proactive actions interrupt or defer.
+- Multimodal grounding is advisory for operator transparency and recommendation quality; it does not bypass policy gates.

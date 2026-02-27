@@ -125,6 +125,20 @@ def voice_attention_snapshot(services_module: Any) -> dict[str, Any]:
         "applied_at": 0.0,
         "source_text": "",
     }
+    default_multimodal_grounding = {
+        "overall_confidence": 0.0,
+        "confidence_band": "low",
+        "attention_source": "unknown",
+        "modality_scores": {"presence": 0.0, "stt": 0.0, "source": 0.0, "doa": 0.0},
+        "signals": {
+            "face_recent": False,
+            "hand_recent": False,
+            "doa_recent": False,
+            "doa_speech": None,
+            "stt_band": "unknown",
+        },
+        "reasons": ["unknown"],
+    }
     if not s._runtime_voice_state:
         return {
             "mode": "unknown",
@@ -142,6 +156,7 @@ def voice_attention_snapshot(services_module: Any) -> dict[str, Any]:
             "voice_profile_count": 0,
             "acoustic_scene": default_acoustic_scene,
             "preference_learning": default_preference_learning,
+            "multimodal_grounding": default_multimodal_grounding,
         }
     snapshot = {str(key): value for key, value in s._runtime_voice_state.items()}
     snapshot.setdefault("silence_timeout_sec", 0.0)
@@ -194,6 +209,26 @@ def voice_attention_snapshot(services_module: Any) -> dict[str, Any]:
         if not isinstance(preference_learning.get("updates"), dict):
             preference_learning["updates"] = {}
         snapshot["preference_learning"] = preference_learning
+    if not isinstance(snapshot.get("multimodal_grounding"), dict):
+        snapshot["multimodal_grounding"] = default_multimodal_grounding
+    else:
+        multimodal_grounding = {
+            str(key): value for key, value in snapshot["multimodal_grounding"].items()
+        }
+        for key, value in default_multimodal_grounding.items():
+            multimodal_grounding.setdefault(key, value)
+        if not isinstance(multimodal_grounding.get("modality_scores"), dict):
+            multimodal_grounding["modality_scores"] = dict(
+                default_multimodal_grounding["modality_scores"]
+            )
+        if not isinstance(multimodal_grounding.get("signals"), dict):
+            multimodal_grounding["signals"] = dict(
+                default_multimodal_grounding["signals"]
+            )
+        reasons = multimodal_grounding.get("reasons")
+        if not isinstance(reasons, list):
+            multimodal_grounding["reasons"] = ["unknown"]
+        snapshot["multimodal_grounding"] = multimodal_grounding
     return snapshot
 
 
@@ -213,6 +248,12 @@ def observability_snapshot(services_module: Any) -> dict[str, Any]:
         "preference_update_turns": 0.0,
         "preference_update_fields": 0.0,
     }
+    default_multimodal_metrics = {
+        "turn_count": 0.0,
+        "avg_confidence": 0.0,
+        "low_confidence_count": 0.0,
+        "low_confidence_rate": 0.0,
+    }
     if not s._runtime_observability_state:
         return {
             "enabled": False,
@@ -220,6 +261,7 @@ def observability_snapshot(services_module: Any) -> dict[str, Any]:
             "restart_count": 0,
             "alerts": [],
             "intent_metrics": default_intent_metrics,
+            "multimodal_metrics": default_multimodal_metrics,
             "latency_dashboards": {
                 "sample_count": 0,
                 "overall_total_ms": {"p50": 0.0, "p95": 0.0, "p99": 0.0},
@@ -246,6 +288,15 @@ def observability_snapshot(services_module: Any) -> dict[str, Any]:
         for key, value in default_intent_metrics.items():
             intent_metrics.setdefault(key, value)
         snapshot["intent_metrics"] = intent_metrics
+    if not isinstance(snapshot.get("multimodal_metrics"), dict):
+        snapshot["multimodal_metrics"] = default_multimodal_metrics
+    else:
+        multimodal_metrics = {
+            str(key): value for key, value in snapshot["multimodal_metrics"].items()
+        }
+        for key, value in default_multimodal_metrics.items():
+            multimodal_metrics.setdefault(key, value)
+        snapshot["multimodal_metrics"] = multimodal_metrics
     if not isinstance(snapshot.get("latency_dashboards"), dict):
         snapshot["latency_dashboards"] = {
             "sample_count": 0,

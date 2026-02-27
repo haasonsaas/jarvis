@@ -189,6 +189,30 @@ async def run(runtime: Any) -> None:
                     )
                 except Exception:
                     learned_preferences = {}
+            multimodal_grounding: dict[str, Any] = {}
+            if hasattr(runtime, "_multimodal_grounding_snapshot"):
+                try:
+                    multimodal_grounding = runtime._multimodal_grounding_snapshot()
+                except Exception:
+                    multimodal_grounding = {}
+            if isinstance(multimodal_grounding, dict) and multimodal_grounding:
+                runtime._telemetry["multimodal_turns"] += 1.0
+                try:
+                    confidence = float(
+                        multimodal_grounding.get("overall_confidence", 0.0) or 0.0
+                    )
+                except (TypeError, ValueError):
+                    confidence = 0.0
+                if confidence < 0.0:
+                    confidence = 0.0
+                if confidence > 1.0:
+                    confidence = 1.0
+                runtime._telemetry["multimodal_confidence_total"] += confidence
+                if (
+                    str(multimodal_grounding.get("confidence_band", "")).strip().lower()
+                    == "low"
+                ):
+                    runtime._telemetry["multimodal_low_confidence_turns"] += 1.0
             if (
                 not repair_resolved_this_turn
                 and runtime._requires_stt_repair(text, intent_class)
@@ -216,6 +240,7 @@ async def run(runtime: Any) -> None:
                     lifecycle="repair_requested",
                     used_brain_response=False,
                     followup_carryover_applied=False,
+                    multimodal_grounding=multimodal_grounding,
                 )
                 continue
 
@@ -267,6 +292,7 @@ async def run(runtime: Any) -> None:
                     lifecycle="memory_correction",
                     used_brain_response=False,
                     followup_carryover_applied=False,
+                    multimodal_grounding=multimodal_grounding,
                 )
                 continue
 
@@ -305,6 +331,7 @@ async def run(runtime: Any) -> None:
                     lifecycle="confirmation_requested",
                     used_brain_response=False,
                     followup_carryover_applied=False,
+                    multimodal_grounding=multimodal_grounding,
                 )
                 continue
 
@@ -369,6 +396,7 @@ async def run(runtime: Any) -> None:
                     used_brain_response=True,
                     followup_carryover_applied=followup_carryover_applied,
                     preference_updates=learned_preferences,
+                    multimodal_grounding=multimodal_grounding,
                 )
             if int(runtime._telemetry["turns"]) % TELEMETRY_LOG_EVERY_TURNS == 0:
                 runtime._refresh_tool_error_counters()

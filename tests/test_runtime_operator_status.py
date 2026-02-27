@@ -123,6 +123,12 @@ async def test_operator_status_provider_recommends_on_health_and_checkpoint_sign
             "health": {"health_level": "degraded", "reasons": ["memory_error"]},
             "plan_preview": {"pending_count": 2},
             "expansion": {"planner_engine": {"autonomy_waiting_checkpoint_count": 1}},
+            "voice_attention": {
+                "multimodal_grounding": {
+                    "confidence_band": "low",
+                    "overall_confidence": 0.2,
+                }
+            },
         }
         return {"content": [{"text": str(payload).replace("'", '"')}]}
 
@@ -139,3 +145,4 @@ async def test_operator_status_provider_recommends_on_health_and_checkpoint_sign
     assert "runtime_health_degraded" in codes
     assert "pending_previews" in codes
     assert "autonomy_waiting_checkpoint" in codes
+    assert "multimodal_low_confidence" in codes

@@ -416,6 +416,17 @@ def telemetry_snapshot(
     correction_frequency = (
         metric("intent_corrections") / intent_turns if intent_turns > 0.0 else 0.0
     )
+    multimodal_turns = metric("multimodal_turns")
+    multimodal_avg_confidence = (
+        metric("multimodal_confidence_total") / multimodal_turns
+        if multimodal_turns > 0.0
+        else 0.0
+    )
+    multimodal_low_confidence_rate = (
+        metric("multimodal_low_confidence_turns") / multimodal_turns
+        if multimodal_turns > 0.0
+        else 0.0
+    )
     return {
         "turns": metric("turns"),
         "barge_ins": metric("barge_ins"),
@@ -446,5 +457,11 @@ def telemetry_snapshot(
             "correction_frequency": correction_frequency,
             "preference_update_turns": metric("preference_update_turns"),
             "preference_update_fields": metric("preference_update_fields"),
+        },
+        "multimodal_metrics": {
+            "turn_count": multimodal_turns,
+            "avg_confidence": multimodal_avg_confidence,
+            "low_confidence_count": metric("multimodal_low_confidence_turns"),
+            "low_confidence_rate": multimodal_low_confidence_rate,
         },
     }

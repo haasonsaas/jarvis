@@ -817,6 +817,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "voice_profile_count",
             "acoustic_scene",
             "preference_learning",
+            "multimodal_grounding",
         ],
         "voice_attention_acoustic_scene_required": [
             "last_doa_angle",
@@ -830,6 +831,14 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "updates",
             "applied_at",
             "source_text",
+        ],
+        "voice_attention_multimodal_grounding_required": [
+            "overall_confidence",
+            "confidence_band",
+            "attention_source",
+            "modality_scores",
+            "signals",
+            "reasons",
         ],
         "voice_attention_turn_choreography_required": [
             "phase",
@@ -914,9 +923,16 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "uptime_sec",
             "restart_count",
             "intent_metrics",
+            "multimodal_metrics",
             "alerts",
             "latency_dashboards",
             "policy_decision_analytics",
+        ],
+        "observability_multimodal_metrics_required": [
+            "turn_count",
+            "avg_confidence",
+            "low_confidence_count",
+            "low_confidence_rate",
         ],
         "observability_intent_metrics_required": [
             "turn_count",

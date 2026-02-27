@@ -184,6 +184,15 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
         max_dispatch = _as_int(args.get("max_dispatch", 5), 5, minimum=1, maximum=50)
         now = _as_float(args.get("now", time.time()), time.time(), minimum=0.0)
         policy = _normalize_nudge_policy(args.get("policy", _nudge_policy))
+        context = args.get("context") if isinstance(args.get("context"), dict) else {}
+        user_busy = _as_bool(context.get("user_busy"), default=False)
+        conversation_active = _as_bool(context.get("conversation_active"), default=False)
+        presence_confidence = _as_float(
+            context.get("presence_confidence", 1.0),
+            1.0,
+            minimum=0.0,
+            maximum=1.0,
+        )
         quiet_override = args.get("quiet_window_active")
         if isinstance(quiet_override, bool):
             quiet_active = quiet_override
@@ -217,6 +226,16 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
             if bucket == "interrupt" and not _as_bool(row.get("interrupt_allowed"), default=True):
                 bucket = "notify" if not quiet_active else "defer"
                 reason = "interrupt_not_allowed"
+            if bucket == "interrupt":
+                if conversation_active and severity_rank < 4 and overdue_sec < 1800.0:
+                    bucket = "notify" if not quiet_active else "defer"
+                    reason = "context_conversation_active"
+                elif user_busy and severity_rank < 4 and overdue_sec < 1200.0:
+                    bucket = "notify" if not quiet_active else "defer"
+                    reason = "context_user_busy"
+                elif presence_confidence < 0.35 and severity_rank < 4:
+                    bucket = "notify" if not quiet_active else "defer"
+                    reason = "context_low_presence_confidence"
             item = {
                 "id": str(row.get("id", f"nudge-{index}")).strip() or f"nudge-{index}",
                 "title": title,
@@ -229,6 +248,7 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
                     overdue_sec=overdue_sec,
                     due_soon_sec=due_soon_sec,
                 ),
+                "bucket": bucket,
                 "reason": reason,
             }
             if bucket == "interrupt":
@@ -246,11 +266,17 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
         dispatch_rows = dispatch_rows[:max_dispatch]
         if overflow:
             for row in overflow:
+                row["bucket"] = "defer"
                 row["reason"] = "dispatch_capacity"
             defer_rows.extend(overflow)
-        interrupt_ids = {str(row.get("id", "")) for row in dispatch_rows[: len(interrupt_rows)]}
-        interrupt = [row for row in dispatch_rows if str(row.get("id", "")) in interrupt_ids]
-        notify = [row for row in dispatch_rows if str(row.get("id", "")) not in interrupt_ids]
+        interrupt = [row for row in dispatch_rows if str(row.get("bucket", "")) == "interrupt"]
+        notify = [row for row in dispatch_rows if str(row.get("bucket", "")) == "notify"]
+        for row in interrupt:
+            row.pop("bucket", None)
+        for row in notify:
+            row.pop("bucket", None)
+        for row in defer_rows:
+            row.pop("bucket", None)
 
         _proactive_state["nudge_decisions_total"] = int(_proactive_state.get("nudge_decisions_total", 0) or 0) + 1
         _proactive_state["nudge_interrupt_total"] = int(_proactive_state.get("nudge_interrupt_total", 0) or 0) + len(interrupt)
@@ -262,6 +288,11 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
             "action": action,
             "policy": policy,
             "quiet_window_active": quiet_active,
+            "context": {
+                "user_busy": user_busy,
+                "conversation_active": conversation_active,
+                "presence_confidence": presence_confidence,
+            },
             "candidate_count": len(candidates),
             "dispatch_count": len(dispatch_rows),
             "interrupt_count": len(interrupt),

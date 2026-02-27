@@ -3205,6 +3205,9 @@ class TestServicesTools:
         assert "attention_confidence" in payload["voice_attention"]["acoustic_scene"]
         assert "preference_learning" in payload["voice_attention"]
         assert "updates" in payload["voice_attention"]["preference_learning"]
+        assert "multimodal_grounding" in payload["voice_attention"]
+        assert "overall_confidence" in payload["voice_attention"]["multimodal_grounding"]
+        assert "confidence_band" in payload["voice_attention"]["multimodal_grounding"]
         assert "phase" in payload["voice_attention"]["turn_choreography"]
         assert "turn_timeouts" in payload
         assert isinstance(payload["turn_timeouts"]["watchdog_enabled"], bool)
@@ -3236,6 +3239,8 @@ class TestServicesTools:
         assert "correction_frequency" in payload["observability"]["intent_metrics"]
         assert "preference_update_turns" in payload["observability"]["intent_metrics"]
         assert "preference_update_fields" in payload["observability"]["intent_metrics"]
+        assert "multimodal_metrics" in payload["observability"]
+        assert "avg_confidence" in payload["observability"]["multimodal_metrics"]
         assert "latency_dashboards" in payload["observability"]
         assert "overall_total_ms" in payload["observability"]["latency_dashboards"]
         assert "policy_decision_analytics" in payload["observability"]
@@ -3317,6 +3322,9 @@ class TestServicesTools:
         assert "attention_confidence" in payload["voice_attention_acoustic_scene_required"]
         assert "voice_attention_preference_learning_required" in payload
         assert "updates" in payload["voice_attention_preference_learning_required"]
+        assert "multimodal_grounding" in payload["voice_attention_required"]
+        assert "voice_attention_multimodal_grounding_required" in payload
+        assert "overall_confidence" in payload["voice_attention_multimodal_grounding_required"]
         assert "voice_attention_turn_choreography_required" in payload
         assert "turn_glance_yaw" in payload["voice_attention_turn_choreography_required"]
         assert "voice_attention_stt_diagnostics_required" in payload
@@ -3338,6 +3346,7 @@ class TestServicesTools:
         assert "skills_required" in payload
         assert "observability_required" in payload
         assert "intent_metrics" in payload["observability_required"]
+        assert "multimodal_metrics" in payload["observability_required"]
         assert "latency_dashboards" in payload["observability_required"]
         assert "policy_decision_analytics" in payload["observability_required"]
         assert "observability_intent_metrics_required" in payload
@@ -3350,6 +3359,8 @@ class TestServicesTools:
         assert "p95" in payload["observability_latency_bucket_required"]
         assert "observability_policy_decision_analytics_required" in payload
         assert "by_reason" in payload["observability_policy_decision_analytics_required"]
+        assert "observability_multimodal_metrics_required" in payload
+        assert "low_confidence_rate" in payload["observability_multimodal_metrics_required"]
         assert "scorecard_required" in payload
         assert "overall" in payload["scorecard_required"]
         assert "scorecard_dimensions_required" in payload
@@ -4118,6 +4129,33 @@ class TestServicesTools:
         assert payload["dispatch_count"] == 1
         assert payload["defer_count"] >= 1
         assert any(row["reason"] == "dispatch_capacity" for row in payload["defer"])
+
+    @pytest.mark.asyncio
+    async def test_proactive_nudge_decision_context_downgrades_interrupts(self):
+        from jarvis.tools import services
+
+        result = await services.proactive_assistant(
+            {
+                "action": "nudge_decision",
+                "policy": "interrupt",
+                "quiet_window_active": False,
+                "candidates": [
+                    {"id": "medium", "title": "Refill humidifier", "severity": "medium"},
+                    {"id": "critical", "title": "Smoke alarm", "severity": "critical"},
+                ],
+                "context": {
+                    "user_busy": True,
+                    "conversation_active": True,
+                    "presence_confidence": 0.2,
+                },
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        interrupt_ids = {row["id"] for row in payload["interrupt"]}
+        notify_ids = {row["id"] for row in payload["notify"]}
+        assert "critical" in interrupt_ids
+        assert "medium" in notify_ids
+        assert payload["context"]["user_busy"] is True
 
     @pytest.mark.asyncio
     async def test_integration_hub_release_channel_actions(self):

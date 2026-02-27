@@ -81,6 +81,24 @@ def _recommendations(
             f"{waiting_checkpoint_count} autonomy task(s) are waiting for checkpoint approval.",
         )
 
+    voice_attention = (
+        status.get("voice_attention")
+        if isinstance(status.get("voice_attention"), dict)
+        else {}
+    )
+    multimodal = (
+        voice_attention.get("multimodal_grounding")
+        if isinstance(voice_attention.get("multimodal_grounding"), dict)
+        else {}
+    )
+    confidence_band = str(multimodal.get("confidence_band", "")).strip().lower()
+    if confidence_band == "low":
+        add(
+            "medium",
+            "multimodal_low_confidence",
+            "Multimodal grounding is low; use confirmations for high-impact actions.",
+        )
+
     if not rows:
         add("low", "healthy", "No immediate operator action required.")
 

@@ -525,6 +525,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "now": {"type": "number"},
             "max_dispatch": {"type": "integer"},
             "candidates": {"type": "array", "items": {"type": "object"}},
+            "context": {"type": "object"},
         },
         "required": ["action"],
     },

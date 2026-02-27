@@ -111,6 +111,9 @@ from jarvis.runtime_preferences import (
     detect_voice_profile_updates as _runtime_detect_voice_profile_updates,
     voice_profile_summary as _runtime_voice_profile_summary,
 )
+from jarvis.runtime_multimodal import (
+    multimodal_grounding_snapshot as _runtime_multimodal_grounding_snapshot,
+)
 from jarvis.runtime_constants import (
     ATTENTION_RECENCY_SEC,
     CONVERSATION_TRACE_MAXLEN,
@@ -356,6 +359,9 @@ class Jarvis:
             "intent_corrections": 0.0,
             "preference_update_turns": 0.0,
             "preference_update_fields": 0.0,
+            "multimodal_turns": 0.0,
+            "multimodal_confidence_total": 0.0,
+            "multimodal_low_confidence_turns": 0.0,
         }
         self._telemetry_error_counts: dict[str, float] = {}
         self._conversation_traces: deque[dict[str, Any]] = deque(maxlen=CONVERSATION_TRACE_MAXLEN)
@@ -531,6 +537,7 @@ class Jarvis:
             if isinstance(last_learned_preferences, dict)
             else {}
         )
+        status["multimodal_grounding"] = self._multimodal_grounding_snapshot()
         set_runtime_voice_state(status)
         observability = getattr(self, "_observability", None)
         if observability is not None:
@@ -619,6 +626,12 @@ class Jarvis:
                         "correction_count": 0.0,
                         "correction_frequency": 0.0,
                     },
+                    "multimodal_metrics": {
+                        "turn_count": 0.0,
+                        "avg_confidence": 0.0,
+                        "low_confidence_count": 0.0,
+                        "low_confidence_rate": 0.0,
+                    },
                     "latency_dashboards": {
                         "sample_count": 0,
                         "overall_total_ms": {"p50": 0.0, "p95": 0.0, "p99": 0.0},
@@ -656,6 +669,12 @@ class Jarvis:
                     "completion_success_rate": 0.0,
                     "correction_count": 0.0,
                     "correction_frequency": 0.0,
+                },
+                "multimodal_metrics": {
+                    "turn_count": 0.0,
+                    "avg_confidence": 0.0,
+                    "low_confidence_count": 0.0,
+                    "low_confidence_rate": 0.0,
                 },
                 "latency_dashboards": {
                     "sample_count": 0,
@@ -1153,6 +1172,7 @@ class Jarvis:
         used_brain_response: bool,
         followup_carryover_applied: bool = False,
         preference_updates: dict[str, str] | None = None,
+        multimodal_grounding: dict[str, Any] | None = None,
     ) -> None:
         self._turn_trace_seq += 1
         now = time.time()
@@ -1185,6 +1205,11 @@ class Jarvis:
             "preference_updates": (
                 {str(key): str(value) for key, value in preference_updates.items()}
                 if isinstance(preference_updates, dict)
+                else {}
+            ),
+            "multimodal_grounding": (
+                {str(key): value for key, value in multimodal_grounding.items()}
+                if isinstance(multimodal_grounding, dict)
                 else {}
             ),
             "latencies_ms": {
@@ -1588,6 +1613,37 @@ class Jarvis:
         if doa_last_seen and (now - doa_last_seen) <= ATTENTION_RECENCY_SEC:
             return 0.5
         return 0.0
+
+    def _multimodal_grounding_snapshot(self) -> dict[str, Any]:
+        signals = getattr(self.presence, "signals", None)
+        now_mono = time.monotonic()
+        face_age_sec: float | None = None
+        hand_age_sec: float | None = None
+        doa_age_sec: float | None = None
+        if signals is not None:
+            face_last_seen = getattr(signals, "face_last_seen", None)
+            hand_last_seen = getattr(signals, "hand_last_seen", None)
+            doa_last_seen = getattr(signals, "doa_last_seen", None)
+            if face_last_seen:
+                face_age_sec = max(0.0, now_mono - float(face_last_seen))
+            if hand_last_seen:
+                hand_age_sec = max(0.0, now_mono - float(hand_last_seen))
+            if doa_last_seen:
+                doa_age_sec = max(0.0, now_mono - float(doa_last_seen))
+        attention_source = "unknown"
+        with suppress(Exception):
+            attention_source = str(self.presence.attention_source())
+        return _runtime_multimodal_grounding_snapshot(
+            face_age_sec=face_age_sec,
+            hand_age_sec=hand_age_sec,
+            doa_age_sec=doa_age_sec,
+            doa_angle=getattr(self, "_last_doa_angle", None),
+            doa_speech=getattr(self, "_last_doa_speech", None),
+            stt_diagnostics=self._stt_diagnostics_snapshot(),
+            attention_confidence=self._attention_confidence(now_mono),
+            attention_source=attention_source,
+            recency_threshold_sec=ATTENTION_RECENCY_SEC,
+        )
 
     @staticmethod
     def _repair_prompt(text: str) -> str:
