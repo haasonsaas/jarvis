@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 66 (Planner + Automation Action Decomposition)
+# Jarvis TODO — Wave 67 (State + Email + Task-Plan Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,76 +8,86 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 36
-- Completed: 36
+- Total items: 35
+- Completed: 35
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W66-A01` Profile current largest remaining service-domain modules.
-- [x] `W66-A02` Select `home_orch_automation_apply_status.py` for action-level split.
-- [x] `W66-A03` Select `planner_engine_plan_graph.py` for action-level split.
-- [x] `W66-A04` Preserve action contracts and response payload compatibility.
+- [x] `W67-A01` Profile current largest remaining modules.
+- [x] `W67-A02` Select `home_state.py` for action split.
+- [x] `W67-A03` Select `comms_email.py` for action split.
+- [x] `W67-A04` Select `planner_taskplan.py` for action split.
+- [x] `W67-A05` Preserve behavior and message contract compatibility.
 
-## B) Home automation action split
+## B) Home state split
 
-- [x] `W66-B01` Create `home_orch_automation_apply_action.py`.
-- [x] `W66-B02` Move `home_orch_automation_apply` implementation.
-- [x] `W66-B03` Create `home_orch_automation_rollback_action.py`.
-- [x] `W66-B04` Move `home_orch_automation_rollback` implementation.
-- [x] `W66-B05` Create `home_orch_automation_status_action.py`.
-- [x] `W66-B06` Move `home_orch_automation_status` implementation.
-- [x] `W66-B07` Reduce `home_orch_automation_apply_status.py` to export wrapper.
+- [x] `W67-B01` Create `home_state_smart_state.py`.
+- [x] `W67-B02` Move `smart_home_state` implementation.
+- [x] `W67-B03` Create `home_state_capabilities_action.py`.
+- [x] `W67-B04` Move `home_assistant_capabilities` implementation.
+- [x] `W67-B05` Reduce `home_state.py` to export wrapper.
 
-## C) Planner plan/graph split
+## C) Email split
 
-- [x] `W66-C01` Create `planner_engine_plan_action.py`.
-- [x] `W66-C02` Move `planner_plan` implementation.
-- [x] `W66-C03` Create `planner_engine_task_graph_actions.py`.
-- [x] `W66-C04` Move `planner_task_graph_create` implementation.
-- [x] `W66-C05` Move `planner_task_graph_update` implementation.
-- [x] `W66-C06` Move `planner_task_graph_resume` implementation.
-- [x] `W66-C07` Create `planner_engine_self_critique_action.py`.
-- [x] `W66-C08` Move `planner_self_critique` implementation.
-- [x] `W66-C09` Reduce `planner_engine_plan_graph.py` to export wrapper.
+- [x] `W67-C01` Create `comms_email_send_action.py`.
+- [x] `W67-C02` Move `email_send` implementation.
+- [x] `W67-C03` Create `comms_email_summary_action.py`.
+- [x] `W67-C04` Move `email_summary` implementation.
+- [x] `W67-C05` Reduce `comms_email.py` to export wrapper.
 
-## D) Boundaries and validation
+## D) Task-plan split
 
-- [x] `W66-D01` Extend import-boundary coverage for new home automation action modules.
-- [x] `W66-D02` Extend import-boundary coverage for new planner action modules.
-- [x] `W66-D03` Run focused lint on all changed modules.
-- [x] `W66-D04` Run targeted pytest for automation/planner flows.
-- [x] `W66-D05` Run `tests/test_import_boundaries.py`.
-- [x] `W66-D06` Run full `make check`.
-- [x] `W66-D07` Run full `make security-gate`.
-- [x] `W66-D08` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W67-D01` Create `planner_taskplan_create_action.py`.
+- [x] `W67-D02` Move `task_plan_create` implementation.
+- [x] `W67-D03` Create `planner_taskplan_list_update_actions.py`.
+- [x] `W67-D04` Move `task_plan_list` implementation.
+- [x] `W67-D05` Move `task_plan_update` implementation.
+- [x] `W67-D06` Create `planner_taskplan_summary_next_actions.py`.
+- [x] `W67-D07` Move `task_plan_summary` implementation.
+- [x] `W67-D08` Move `task_plan_next` implementation.
+- [x] `W67-D09` Reduce `planner_taskplan.py` to export wrapper.
 
-## E) Release loop
+## E) Boundaries and validation
 
-- [x] `W66-E01` Record line-count outcomes for wrapper reductions.
-- [x] `W66-E02` Commit Wave 66 tranche.
-- [x] `W66-E03` Push Wave 66 to origin/main.
+- [x] `W67-E01` Extend import-boundary coverage for home state split modules.
+- [x] `W67-E02` Extend import-boundary coverage for email split modules.
+- [x] `W67-E03` Extend import-boundary coverage for task-plan split modules.
+- [x] `W67-E04` Run focused lint on changed modules.
+- [x] `W67-E05` Run targeted pytest for smart_home_state/capabilities, email, task-plan flows.
+- [x] `W67-E06` Run `tests/test_import_boundaries.py`.
+- [x] `W67-E07` Run full `make check`.
+- [x] `W67-E08` Run full `make security-gate`.
+- [x] `W67-E09` Run `./scripts/jarvis_readiness.sh fast`.
+
+## F) Release loop
+
+- [x] `W67-F01` Record line-count outcomes for wrapper reductions.
+- [x] `W67-F02` Commit Wave 67 tranche.
+- [x] `W67-F03` Push Wave 67 to origin/main.
 
 ---
 
 ## Outcome snapshot (completed)
 
 - Wrapper concentration reductions:
-  - `home_orch_automation_apply_status.py`: `204 -> 13`
-  - `planner_engine_plan_graph.py`: `195 -> 19`
+  - `home_state.py`: `186 -> 8`
+  - `comms_email.py`: `186 -> 8`
+  - `planner_taskplan.py`: `179 -> 21`
 - New extracted modules:
-  - `home_orch_automation_apply_action.py`
-  - `home_orch_automation_rollback_action.py`
-  - `home_orch_automation_status_action.py`
-  - `planner_engine_plan_action.py`
-  - `planner_engine_task_graph_actions.py`
-  - `planner_engine_self_critique_action.py`
+  - `home_state_smart_state.py`
+  - `home_state_capabilities_action.py`
+  - `comms_email_send_action.py`
+  - `comms_email_summary_action.py`
+  - `planner_taskplan_create_action.py`
+  - `planner_taskplan_list_update_actions.py`
+  - `planner_taskplan_summary_next_actions.py`
 - Validation status:
   - Focused lint: pass.
-  - Targeted pytest: pass.
+  - Targeted pytest: `29 passed`.
   - `tests/test_import_boundaries.py`: pass.
-  - `make check`: `708 passed`.
-  - `make security-gate`: `708 passed`; fault subset `3 passed`.
+  - `make check`: `715 passed`.
+  - `make security-gate`: `715 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
