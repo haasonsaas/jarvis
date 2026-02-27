@@ -79,7 +79,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [ ] `OX01` Add operator auth mode options (`off`, `token`, `session`) with explicit startup warnings by risk level. `P0`
 - [ ] `OX02` Add signed operator action records for tamper-evident operations trail. `P1`
 - [ ] `OX03` Add live "conversation trace" panel (turn flow, tool calls, policy decisions, latencies). `P1`
-- [ ] `OX04` Add operator "safe mode" toggle that forces dry-run behavior globally. `P0`
+- [x] `OX04` Add operator "safe mode" toggle that forces dry-run behavior globally. `P0`
 - [ ] `OX05` Add control presets (`quiet hours`, `demo mode`, `maintenance mode`) with one-click activation. `P1`
 - [ ] `OX06` Add export/import for operator settings and runtime profiles. `P2`
 
@@ -158,7 +158,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q06` Implement `MX03` memory correction voice commands.
 - [x] `Q07` Implement `IX03` step-up verification flow.
 - [x] `Q08` Implement `HX06` idempotent home-action guardrail.
-- [ ] `Q09` Implement `OX04` global safe-mode toggle.
+- [x] `Q09` Implement `OX04` global safe-mode toggle.
 - [ ] `Q10` Implement `EX01` intent-level success metrics.
 - [ ] `Q11` Implement `BX02` turn choreography pass.
 - [ ] `Q12` Implement `VX02` adaptive end-of-turn timing.

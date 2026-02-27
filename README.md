@@ -84,6 +84,7 @@ cp .env.example .env
 # Optional: HOME_REQUIRE_CONFIRM_EXECUTE=true (require confirm=true on all executes)
 # Optional: HOME_CONVERSATION_ENABLED=true (enable HA conversation intent tool)
 # Optional: HOME_CONVERSATION_PERMISSION_PROFILE=readonly|control (default readonly)
+# Optional: SAFE_MODE_ENABLED=true (force mutating actions into restricted/dry-run behavior)
 # Optional: TODOIST_API_TOKEN / TODOIST_PROJECT_ID / TODOIST_PERMISSION_PROFILE
 # Optional: TODOIST_TIMEOUT_SEC=10.0 / PUSHOVER_TIMEOUT_SEC=10.0
 # Optional: PUSHOVER_API_TOKEN / PUSHOVER_USER_KEY / NOTIFICATION_PERMISSION_PROFILE
@@ -112,6 +113,7 @@ Smart home safety defaults:
 - Sensitive domains (`lock`, `alarm_control_panel`, `cover`, `climate`) require `confirm=true` when `dry_run=false`.
 - `HOME_PERMISSION_PROFILE=readonly` disables mutating `smart_home` actions but keeps `smart_home_state`.
 - `HOME_REQUIRE_CONFIRM_EXECUTE=true` enforces `confirm=true` for all non-dry-run `smart_home` actions.
+- `SAFE_MODE_ENABLED=true` keeps mutating actions in restricted mode (dry-run where supported, blocked otherwise).
 - `PLAN_PREVIEW_REQUIRE_ACK=true` enforces a two-step preview+ack flow (`preview_token`) before mutating medium/high-risk actions.
   - First call can pass `preview_only=true` to get a plan preview token.
   - Execute call must include matching `preview_token=<token>` before token expiry.

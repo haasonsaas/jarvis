@@ -265,6 +265,7 @@ class Config:
     motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)
     hand_track_enabled: bool = field(default_factory=lambda: _env_bool("HAND_TRACK_ENABLED") or False)
     home_enabled: bool = field(default_factory=lambda: _env_bool("HOME_ENABLED") is not False)
+    safe_mode_enabled: bool = field(default_factory=lambda: _env_bool("SAFE_MODE_ENABLED") or False)
     startup_warnings: list[str] = field(default_factory=list)
 
     @property
@@ -577,6 +578,8 @@ class Config:
             warnings.append("Quiet-window config incomplete; set both NUDGE_QUIET_HOURS_START and NUDGE_QUIET_HOURS_END.")
         if self.nudge_quiet_hours_start and self.nudge_quiet_hours_end and self.nudge_quiet_hours_start == self.nudge_quiet_hours_end:
             warnings.append("NUDGE_QUIET_HOURS_START equals NUDGE_QUIET_HOURS_END; quiet-window deferral is disabled.")
+        if self.safe_mode_enabled:
+            warnings.append("SAFE_MODE_ENABLED=true; mutating actions run in restricted mode until disabled.")
         has_hass_url = bool((self.hass_url or "").strip())
         has_hass_token = bool((self.hass_token or "").strip())
         if has_hass_url != has_hass_token:
@@ -758,6 +761,7 @@ class Config:
             "MOTION_ENABLED",
             "HAND_TRACK_ENABLED",
             "HOME_ENABLED",
+            "SAFE_MODE_ENABLED",
             "HOME_REQUIRE_CONFIRM_EXECUTE",
             "HOME_CONVERSATION_ENABLED",
             "IDENTITY_ENFORCEMENT_ENABLED",

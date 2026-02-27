@@ -386,6 +386,7 @@ class Jarvis:
             f"Mode: {'simulation' if self.robot.sim else 'hardware'}",
             f"Motion: {'on' if self.config.motion_enabled else 'off'} | Vision: {'on' if not self.args.no_vision and not self.robot.sim else 'off'} | Hands: {'on' if self.config.hand_track_enabled else 'off'}",
             f"Home tools: {'on' if self.config.home_enabled else 'off'}",
+            f"Safe mode: {'on' if bool(getattr(self.config, 'safe_mode_enabled', False)) else 'off'}",
             f"Home conversation: {'on' if self.config.home_conversation_enabled else 'off'}",
             f"Wake mode: {wake_mode} | timeout profile: {timeout_profile}",
             f"TTS: {tts_reason}",
@@ -443,6 +444,7 @@ class Jarvis:
                 "set_push_to_talk": {"required": ["active"], "types": {"active": "boolean"}},
                 "set_motion_enabled": {"required": ["enabled"], "types": {"enabled": "boolean"}},
                 "set_home_enabled": {"required": ["enabled"], "types": {"enabled": "boolean"}},
+                "set_safe_mode": {"required": ["enabled"], "types": {"enabled": "boolean"}},
                 "set_tts_enabled": {"required": ["enabled"], "types": {"enabled": "boolean"}},
                 "set_persona_style": {"required": ["style"], "enum": {"style": sorted(VALID_PERSONA_STYLES)}},
                 "set_backchannel_style": {
@@ -524,6 +526,9 @@ class Jarvis:
             home_enabled = self._parse_control_bool(runtime_state.get("home_enabled"))
             if home_enabled is not None:
                 self.config.home_enabled = home_enabled
+            safe_mode_enabled = self._parse_control_bool(runtime_state.get("safe_mode_enabled"))
+            if safe_mode_enabled is not None:
+                self.config.safe_mode_enabled = safe_mode_enabled
             tts_enabled = self._parse_control_bool(runtime_state.get("tts_enabled"))
             if tts_enabled is not None:
                 self._tts_output_enabled = tts_enabled
@@ -536,6 +541,7 @@ class Jarvis:
             if backchannel_style is not None:
                 self.config.backchannel_style = backchannel_style
                 self.presence.set_backchannel_style(backchannel_style)
+        service_tools.set_safe_mode(bool(getattr(self.config, "safe_mode_enabled", False)))
         self._awaiting_confirmation = bool(payload.get("awaiting_confirmation", False))
         pending = payload.get("pending_text")
         self._pending_text = str(pending) if isinstance(pending, str) else None
@@ -557,6 +563,7 @@ class Jarvis:
             "runtime": {
                 "motion_enabled": bool(self.config.motion_enabled),
                 "home_enabled": bool(self.config.home_enabled),
+                "safe_mode_enabled": bool(getattr(self.config, "safe_mode_enabled", False)),
                 "tts_enabled": bool(getattr(self, "_tts_output_enabled", True)),
                 "persona_style": str(self.config.persona_style),
                 "backchannel_style": str(self.config.backchannel_style),
@@ -877,6 +884,14 @@ class Jarvis:
             self.config.home_enabled = enabled
             self._persist_runtime_state_safe()
             return {"ok": True, "home_enabled": enabled}
+        if command == "set_safe_mode":
+            enabled = self._parse_control_bool(data.get("enabled"))
+            if enabled is None:
+                return {"ok": False, "error": "invalid_payload", "field": "enabled", "expected": "boolean"}
+            self.config.safe_mode_enabled = enabled
+            service_tools.set_safe_mode(enabled)
+            self._persist_runtime_state_safe()
+            return {"ok": True, "safe_mode_enabled": enabled}
         if command == "set_tts_enabled":
             enabled = self._parse_control_bool(data.get("enabled"))
             if enabled is None:

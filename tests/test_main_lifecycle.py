@@ -305,6 +305,7 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     jarvis.config = SimpleNamespace(
         motion_enabled=True,
         home_enabled=True,
+        safe_mode_enabled=False,
         persona_style="composed",
         backchannel_style="balanced",
     )
@@ -345,6 +346,16 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     assert invalid_bool["ok"] is False
     assert invalid_bool["error"] == "invalid_payload"
 
+    with patch("jarvis.__main__.service_tools.set_safe_mode") as set_safe_mode:
+        safe_mode_result = await Jarvis._operator_control_handler(
+            jarvis,
+            "set_safe_mode",
+            {"enabled": True},
+        )
+    assert safe_mode_result == {"ok": True, "safe_mode_enabled": True}
+    assert jarvis.config.safe_mode_enabled is True
+    set_safe_mode.assert_called_once_with(True)
+
     persona_result = await Jarvis._operator_control_handler(
         jarvis,
         "set_persona_style",
@@ -383,6 +394,7 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     assert unknown["error"] == "invalid_action"
     assert "available_actions" in unknown
     assert "set_sleeping" in unknown["available_actions"]
+    assert "set_safe_mode" in unknown["available_actions"]
 
 
 def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
@@ -398,6 +410,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     save_target.config = SimpleNamespace(
         motion_enabled=False,
         home_enabled=False,
+        safe_mode_enabled=True,
         persona_style="friendly",
         backchannel_style="expressive",
     )
@@ -409,6 +422,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     payload = json.loads(state_path.read_text(encoding="utf-8"))
     assert payload["runtime"]["motion_enabled"] is False
     assert payload["runtime"]["home_enabled"] is False
+    assert payload["runtime"]["safe_mode_enabled"] is True
     assert payload["runtime"]["tts_enabled"] is False
     assert payload["runtime"]["persona_style"] == "friendly"
     assert payload["runtime"]["backchannel_style"] == "expressive"
@@ -419,6 +433,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     load_target.config = SimpleNamespace(
         motion_enabled=True,
         home_enabled=True,
+        safe_mode_enabled=False,
         persona_style="composed",
         backchannel_style="balanced",
     )
@@ -427,7 +442,9 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     load_target._tts_output_enabled = True
     load_target._awaiting_confirmation = False
     load_target._pending_text = None
-    Jarvis._load_runtime_state(load_target)
+    with patch("jarvis.__main__.service_tools.set_safe_mode") as set_safe_mode:
+        Jarvis._load_runtime_state(load_target)
+    set_safe_mode.assert_called_once_with(True)
 
     assert load_target._voice_attention.mode == "wake_word"
     assert load_target._voice_attention.timeout_profile == "long"
@@ -435,6 +452,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     assert load_target._voice_attention.sleeping is True
     assert load_target.config.motion_enabled is False
     assert load_target.config.home_enabled is False
+    assert load_target.config.safe_mode_enabled is True
     assert load_target._tts_output_enabled is False
     assert load_target.config.persona_style == "friendly"
     assert load_target.config.backchannel_style == "expressive"

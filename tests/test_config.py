@@ -45,6 +45,7 @@ class TestConfig:
         assert config.yolo_model == "yolov8n-face.pt"
         assert config.motion_enabled is True
         assert config.home_enabled is True
+        assert config.safe_mode_enabled is False
 
     def test_invalid_sample_rate_raises(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
@@ -167,6 +168,7 @@ class TestConfig:
         monkeypatch.setenv("BACKCHANNEL_STYLE", "LOUD")
         monkeypatch.setenv("PERSONA_STYLE", "chatty")
         monkeypatch.setenv("HOME_ENABLED", "maybe")
+        monkeypatch.setenv("SAFE_MODE_ENABLED", "sometimes")
         monkeypatch.setenv("HOME_REQUIRE_CONFIRM_EXECUTE", "sometimes")
         monkeypatch.setenv("HOME_CONVERSATION_ENABLED", "perhaps")
         monkeypatch.setenv("PLAN_PREVIEW_REQUIRE_ACK", "later")
@@ -196,6 +198,7 @@ class TestConfig:
         assert "BACKCHANNEL_STYLE invalid" in text
         assert "PERSONA_STYLE invalid" in text
         assert "HOME_ENABLED invalid boolean" in text
+        assert "SAFE_MODE_ENABLED invalid boolean" in text
         assert "HOME_REQUIRE_CONFIRM_EXECUTE invalid boolean" in text
         assert "HOME_CONVERSATION_ENABLED invalid boolean" in text
         assert "PLAN_PREVIEW_REQUIRE_ACK invalid boolean" in text
@@ -233,6 +236,15 @@ class TestConfig:
 
         c = Config()
         assert c.home_require_confirm_execute is True
+
+    def test_safe_mode_enabled_env_true(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("SAFE_MODE_ENABLED", "true")
+        from jarvis.config import Config
+
+        c = Config()
+        assert c.safe_mode_enabled is True
+        assert any("SAFE_MODE_ENABLED=true" in warning for warning in c.startup_warnings)
 
     def test_home_conversation_enabled_env_true(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

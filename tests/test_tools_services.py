@@ -375,6 +375,51 @@ class TestServicesTools:
         assert "not permitted" in result["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_safe_mode_forces_smart_home_execute_path_to_dry_run(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.safe_mode_enabled = True
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await services.smart_home(
+                {
+                    "domain": "light",
+                    "action": "turn_on",
+                    "entity_id": "light.kitchen",
+                    "dry_run": False,
+                }
+            )
+
+        text = result["content"][0]["text"].lower()
+        assert "dry run" in text
+        assert "safe mode forced dry-run" in text
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_safe_mode_blocks_webhook_trigger_mutation(self):
+        from jarvis.config import Config
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.safe_mode_enabled = True
+        cfg.webhook_allowlist = ["example.com"]
+        services.bind(cfg)
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            result = await services.webhook_trigger(
+                {"url": "https://api.example.com/hook", "method": "POST"}
+            )
+
+        text = result["content"][0]["text"].lower()
+        assert "safe mode is enabled" in text
+        mock_session_cls.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_todoist_permission_profile_readonly_denies_add(self, tmp_path):
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
@@ -3020,6 +3065,7 @@ class TestServicesTools:
         assert payload["tool_policy"]["identity_default_profile"] in {"deny", "readonly", "control", "trusted"}
         assert isinstance(payload["tool_policy"]["identity_require_approval"], bool)
         assert isinstance(payload["tool_policy"]["plan_preview_require_ack"], bool)
+        assert isinstance(payload["tool_policy"]["safe_mode_enabled"], bool)
         assert payload["tool_policy"]["nudge_policy"] in {"interrupt", "defer", "adaptive"}
         assert "nudge_quiet_hours_start" in payload["tool_policy"]
         assert "nudge_quiet_hours_end" in payload["tool_policy"]
@@ -3082,6 +3128,7 @@ class TestServicesTools:
         assert "home_conversation_permission_profile" in payload["tool_policy_required"]
         assert "email_permission_profile" in payload["tool_policy_required"]
         assert "memory_pii_guardrails_enabled" in payload["tool_policy_required"]
+        assert "safe_mode_enabled" in payload["tool_policy_required"]
         assert "identity_enforcement_enabled" in payload["tool_policy_required"]
         assert "identity_default_profile" in payload["tool_policy_required"]
         assert "identity_require_approval" in payload["tool_policy_required"]

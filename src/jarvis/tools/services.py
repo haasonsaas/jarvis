@@ -83,6 +83,19 @@ CALENDAR_DEFAULT_WINDOW_HOURS = 24.0
 CALENDAR_MAX_WINDOW_HOURS = 24.0 * 31.0
 PLAN_PREVIEW_TTL_SEC = 300.0
 PLAN_PREVIEW_MAX_PENDING = 1000
+SAFE_MODE_BLOCKED_TOOLS = {
+    "memory_add",
+    "memory_update",
+    "memory_forget",
+    "memory_summary_add",
+    "task_plan_create",
+    "task_plan_update",
+    "timer_create",
+    "timer_cancel",
+    "reminder_create",
+    "reminder_complete",
+    "reminder_notify_due",
+}
 _DURATION_SEGMENT_RE = re.compile(
     r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)",
     re.IGNORECASE,
@@ -140,6 +153,7 @@ _identity_trusted_users: set[str] = set()
 _identity_require_approval: bool = True
 _identity_approval_code: str = ""
 _plan_preview_require_ack: bool = False
+_safe_mode_enabled: bool = False
 _memory_retention_days: float = 0.0
 _audit_retention_days: float = 0.0
 _memory_pii_guardrails_enabled: bool = True
@@ -788,6 +802,11 @@ def set_runtime_skills_state(state: dict[str, Any]) -> None:
     _runtime_skills_state = {str(key): value for key, value in state.items()} if isinstance(state, dict) else {}
 
 
+def set_safe_mode(enabled: bool) -> None:
+    global _safe_mode_enabled
+    _safe_mode_enabled = bool(enabled)
+
+
 def set_skill_registry(registry: SkillRegistry | None) -> None:
     global _skill_registry
     _skill_registry = registry
@@ -808,7 +827,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _slack_webhook_url, _discord_webhook_url
     global _identity_enforcement_enabled, _identity_default_user, _identity_default_profile
     global _identity_user_profiles, _identity_trusted_users, _identity_require_approval, _identity_approval_code
-    global _plan_preview_require_ack
+    global _plan_preview_require_ack, _safe_mode_enabled
     global _memory_retention_days, _audit_retention_days
     global _memory_pii_guardrails_enabled, _audit_encryption_enabled, _data_encryption_key
     global _timer_id_seq, _reminder_id_seq
@@ -887,6 +906,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _identity_require_approval = bool(getattr(config, "identity_require_approval", True))
     _identity_approval_code = str(getattr(config, "identity_approval_code", "")).strip()
     _plan_preview_require_ack = bool(getattr(config, "plan_preview_require_ack", False))
+    _safe_mode_enabled = bool(getattr(config, "safe_mode_enabled", False))
     _memory_retention_days = max(0.0, float(getattr(config, "memory_retention_days", 0.0)))
     _audit_retention_days = max(0.0, float(getattr(config, "audit_retention_days", 0.0)))
     _memory_pii_guardrails_enabled = bool(getattr(config, "memory_pii_guardrails_enabled", True))
@@ -915,6 +935,8 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
 
 
 def _tool_permitted(name: str) -> bool:
+    if _safe_mode_enabled and name in SAFE_MODE_BLOCKED_TOOLS:
+        return False
     if _home_permission_profile == "readonly" and name in {"smart_home", "media_control"}:
         return False
     if _todoist_permission_profile == "readonly" and name == "todoist_add_task":
@@ -1201,6 +1223,14 @@ def _identity_authorize(
         f"requester={context['requester_id']}",
         f"profile={context['profile']}",
     ]
+    if _safe_mode_enabled and mutating:
+        chain.append("deny:safe_mode")
+        return (
+            False,
+            "Safe mode is enabled. Mutating actions are blocked; disable safe mode or use dry-run where supported.",
+            context,
+            chain,
+        )
     if not _identity_enforcement_enabled:
         chain.append("identity_enforcement_disabled")
         return True, None, context, chain
@@ -2396,6 +2426,9 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     # Force dry_run for sensitive domains unless explicitly set to false
     dry_run = _as_bool(args.get("dry_run"), default=domain in SENSITIVE_DOMAINS)
     confirm = _as_bool(args.get("confirm"), default=False)
+    safe_mode_forced = _safe_mode_enabled and not dry_run
+    if safe_mode_forced:
+        dry_run = True
     identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
         "smart_home",
         args,
@@ -2414,6 +2447,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                     "data": _redact_sensitive_for_audit(data),
                     "dry_run": dry_run,
                     "confirm": confirm,
+                    "safe_mode_forced": safe_mode_forced,
                     "state": "unknown",
                     "policy_decision": "denied",
                     "reason": "identity_policy",
@@ -2435,6 +2469,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                     "data": _redact_sensitive_for_audit(data),
                     "dry_run": dry_run,
                     "confirm": confirm,
+                    "safe_mode_forced": safe_mode_forced,
                     "state": "unknown",
                     "policy_decision": "denied",
                     "reason": "strict_confirm_required",
@@ -2456,6 +2491,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                     "data": _redact_sensitive_for_audit(data),
                     "dry_run": dry_run,
                     "confirm": confirm,
+                    "safe_mode_forced": safe_mode_forced,
                     "state": "unknown",
                     "policy_decision": "denied",
                     "reason": "sensitive_confirm_required",
@@ -2561,6 +2597,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                 "data": _redact_sensitive_for_audit(data),
                 "dry_run": dry_run,
                 "confirm": confirm,
+                "safe_mode_forced": safe_mode_forced,
                 "state": current_state,
                 "policy_decision": "dry_run" if dry_run else "allowed",
             },
@@ -2582,6 +2619,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": (
             f"DRY RUN: Would call {domain}.{action} on {entity_id}"
             f"{' with ' + json.dumps(data, default=str) if data else ''}. "
+            f"{'Safe mode forced dry-run. ' if safe_mode_forced else ''}"
             f"Set dry_run=false to execute."
         )}]}
 
@@ -3407,6 +3445,9 @@ async def media_control(args: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": "volume must be a number between 0.0 and 1.0 for volume_set."}]}
         payload_data["volume_level"] = volume
     dry_run = _as_bool(args.get("dry_run"), default=False)
+    safe_mode_forced = _safe_mode_enabled and not dry_run
+    if safe_mode_forced:
+        dry_run = True
     identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
         "media_control",
         args,
@@ -3449,12 +3490,21 @@ async def media_control(args: dict[str, Any]) -> dict[str, Any]:
         _audit(
             "media_control",
             _identity_enriched_audit(
-                {"result": "dry_run", "entity_id": entity_id, "action": action, "data": payload_data},
+                {
+                    "result": "dry_run",
+                    "entity_id": entity_id,
+                    "action": action,
+                    "data": payload_data,
+                    "safe_mode_forced": safe_mode_forced,
+                },
                 identity_context,
                 [*identity_chain, "decision:dry_run"],
             ),
         )
-        return {"content": [{"type": "text", "text": f"DRY RUN: media_player.{service} on {entity_id} with {payload_data}"}]}
+        text = f"DRY RUN: media_player.{service} on {entity_id} with {payload_data}"
+        if safe_mode_forced:
+            text = f"{text}. Safe mode forced dry-run."
+        return {"content": [{"type": "text", "text": text}]}
     service_data = {"entity_id": entity_id, **payload_data}
     _, error_code = await _ha_call_service("media_player", service, service_data)
     if error_code is not None:
@@ -5104,6 +5154,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "allow_count": len(_tool_allowlist),
             "deny_count": len(_tool_denylist),
             "home_permission_profile": _home_permission_profile,
+            "safe_mode_enabled": _safe_mode_enabled,
             "home_require_confirm_execute": bool(_home_require_confirm_execute),
             "home_conversation_enabled": bool(_home_conversation_enabled),
             "home_conversation_permission_profile": _home_conversation_permission_profile,
@@ -5191,6 +5242,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "allow_count",
             "deny_count",
             "home_permission_profile",
+            "safe_mode_enabled",
             "home_require_confirm_execute",
             "home_conversation_enabled",
             "home_conversation_permission_profile",
