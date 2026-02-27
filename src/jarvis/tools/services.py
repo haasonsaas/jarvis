@@ -186,14 +186,14 @@ from jarvis.tools.services_preview_facade_runtime import (
     prune_plan_previews as _facade_prune_plan_previews,
     tokenized_words as _facade_tokenized_words,
 )
-from jarvis.tools.services_circuit_runtime import (
-    ensure_circuit_breaker_state as _runtime_ensure_circuit_breaker_state,
-    integration_circuit_open as _runtime_integration_circuit_open,
-    integration_circuit_open_message as _runtime_integration_circuit_open_message,
-    integration_circuit_snapshot as _runtime_integration_circuit_snapshot,
-    integration_for_tool as _runtime_integration_for_tool,
-    integration_record_failure as _runtime_integration_record_failure,
-    integration_record_success as _runtime_integration_record_success,
+from jarvis.tools.services_circuit_facade_runtime import (
+    ensure_circuit_breaker_state as _facade_ensure_circuit_breaker_state,
+    integration_circuit_open as _facade_integration_circuit_open,
+    integration_circuit_open_message as _facade_integration_circuit_open_message,
+    integration_circuit_snapshot as _facade_integration_circuit_snapshot,
+    integration_for_tool as _facade_integration_for_tool,
+    integration_record_failure as _facade_integration_record_failure,
+    integration_record_success as _facade_integration_record_success,
 )
 from jarvis.tools.services_policy_runtime import (
     hhmm_to_minutes as _runtime_hhmm_to_minutes,
@@ -731,32 +731,13 @@ def _effective_act_timeout(total_sec: Any, *, minimum: float = 0.1, maximum: flo
     return _runtime_effective_act_timeout(_services_module(), total_sec, minimum=minimum, maximum=maximum)
 
 
-def _integration_for_tool(tool_name: str) -> str | None:
-    return _runtime_integration_for_tool(_services_module(), tool_name)
-
-
-def _ensure_circuit_breaker_state(integration: str) -> dict[str, Any]:
-    return _runtime_ensure_circuit_breaker_state(_services_module(), integration)
-
-
-def _integration_circuit_open(integration: str, *, now_ts: float | None = None) -> tuple[bool, float]:
-    return _runtime_integration_circuit_open(_services_module(), integration, now_ts=now_ts)
-
-
-def _integration_record_failure(integration: str, error_code: str) -> None:
-    _runtime_integration_record_failure(_services_module(), integration, error_code)
-
-
-def _integration_record_success(integration: str) -> None:
-    _runtime_integration_record_success(_services_module(), integration)
-
-
-def _integration_circuit_snapshot(integration: str, *, now_ts: float | None = None) -> dict[str, Any]:
-    return _runtime_integration_circuit_snapshot(_services_module(), integration, now_ts=now_ts)
-
-
-def _integration_circuit_open_message(integration: str, remaining_sec: float) -> str:
-    return _runtime_integration_circuit_open_message(integration, remaining_sec)
+_integration_for_tool = _facade_integration_for_tool
+_ensure_circuit_breaker_state = _facade_ensure_circuit_breaker_state
+_integration_circuit_open = _facade_integration_circuit_open
+_integration_record_failure = _facade_integration_record_failure
+_integration_record_success = _facade_integration_record_success
+_integration_circuit_snapshot = _facade_integration_circuit_snapshot
+_integration_circuit_open_message = _facade_integration_circuit_open_message
 
 
 def _normalize_nudge_policy(value: Any) -> str:

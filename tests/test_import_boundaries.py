@@ -61,6 +61,7 @@ import pytest
         ("jarvis.tools.services_schedule_state_runtime", "jarvis.tools.services"),
         ("jarvis.tools.services_defaults", "jarvis.tools.services"),
         ("jarvis.tools.services_preview_facade_runtime", "jarvis.tools.services"),
+        ("jarvis.tools.services_circuit_facade_runtime", "jarvis.tools.services"),
         ("jarvis.tools.service_schemas", "jarvis.tools.services"),
         ("jarvis.tools.service_schemas_home", "jarvis.tools.services"),
         ("jarvis.tools.service_schemas_comms", "jarvis.tools.services"),

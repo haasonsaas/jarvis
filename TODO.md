@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/76 Runtime Decomposition
+# Jarvis TODO — Wave 74/79 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,9 +8,9 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 47
-- Completed: 47
-- Remaining: 0
+- Total items: 63
+- Completed: 55
+- Remaining: 8
 
 ---
 
@@ -83,6 +83,28 @@ Last updated: 2026-02-27
 - [x] `W77-G07` Run `make security-gate`.
 - [x] `W77-G08` Run `./scripts/jarvis_readiness.sh fast`.
 
+## H) Wave 78 (completed): circuit wrapper concentration reduction
+
+- [x] `W78-H01` Select circuit-breaker wrapper family from `services.py`.
+- [x] `W78-H02` Extract circuit wrappers into `services_circuit_facade_runtime.py`.
+- [x] `W78-H03` Preserve existing `services.py` compatibility aliases for circuit helpers.
+- [x] `W78-H04` Add import-boundary coverage for the new circuit facade module.
+- [x] `W78-H05` Run focused circuit/regression tests.
+- [x] `W78-H06` Run `make check`.
+- [x] `W78-H07` Run `make security-gate`.
+- [x] `W78-H08` Run `./scripts/jarvis_readiness.sh fast`.
+
+## I) Wave 79 (next): audit wrapper family extraction
+
+- [ ] `W79-I01` Profile audit wrapper block in `services.py` and select extract boundary.
+- [ ] `W79-I02` Create `services_audit_facade_runtime.py` for audit wrapper helpers.
+- [ ] `W79-I03` Preserve `services.py` compatibility names used by domain/runtime modules.
+- [ ] `W79-I04` Extend import-boundary coverage for new audit facade module.
+- [ ] `W79-I05` Run focused audit + status contract regression tests.
+- [ ] `W79-I06` Run `make check`.
+- [ ] `W79-I07` Run `make security-gate`.
+- [ ] `W79-I08` Run `./scripts/jarvis_readiness.sh fast`.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -91,6 +113,7 @@ Last updated: 2026-02-27
   - `services_defaults.py`
   - `runtime_observability_status.py`
   - `services_preview_facade_runtime.py`
+  - `services_circuit_facade_runtime.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -98,12 +121,14 @@ Last updated: 2026-02-27
   - `Jarvis._publish_observability_status` now uses a shared default snapshot helper for both disabled-observability and exception fallback paths.
   - Operator auth mode normalization and risk classification are now shared helpers used by both runtime status payloads and startup summary lines.
   - Plan-preview wrapper family moved behind `services_preview_facade_runtime.py` with `services.py` compatibility aliases maintained.
+  - Circuit-breaker wrapper family moved behind `services_circuit_facade_runtime.py` with `services.py` compatibility aliases maintained.
 - Validation (Wave 75D/E):
-  - `uv run pytest -q tests/test_import_boundaries.py`: `171 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py`: `172 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py -k "publish_observability_status"`: `2 passed`.
   - `uv run pytest -q tests/test_tools_services.py -k "preview_only_returns_plan_preview or strict_preview_ack_requires_token_then_executes or plan_preview"`: `2 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "weather_circuit_breaker_blocks_requests_and_surfaces_status or system_status_reports_snapshot or integration_circuit_breaker_required"`: `2 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_main_audio.py tests/test_runtime_state.py`: `54 passed`.
-  - `make check`: `769 passed`.
-  - `make security-gate`: `769 passed`; fault subset `3 passed`.
+  - `make check`: `770 passed`.
+  - `make security-gate`: `770 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
