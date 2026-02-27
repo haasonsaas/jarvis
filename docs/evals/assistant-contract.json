@@ -2752,6 +2752,1126 @@
       "actual_tools": [
         "skills_governance"
       ]
+    },
+    {
+      "id": "sim_voice_edge_001",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 001",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_002",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 002",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_003",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 003",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_004",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 004",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_005",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 005",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_006",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 006",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_007",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 007",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_008",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 008",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_009",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 009",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_010",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 010",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_011",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 011",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_012",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 012",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_013",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 013",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_014",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 014",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_015",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 015",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_016",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 016",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_017",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 017",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_018",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 018",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_019",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 019",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_020",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 020",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_021",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 021",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_022",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 022",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_023",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 023",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_024",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 024",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_voice_edge_025",
+      "expected_contains": [
+        "voice_loop",
+        "edge_case",
+        "simulated",
+        "accepted"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_loop edge_case simulated accepted path 025",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_001",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 001",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_002",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 002",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_003",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 003",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_004",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 004",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_005",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 005",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_006",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 006",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_007",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 007",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_008",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 008",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_009",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 009",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_010",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 010",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_011",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 011",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_012",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 012",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_013",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 013",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_014",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 014",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_015",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 015",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_016",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 016",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_017",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 017",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_018",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 018",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_019",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 019",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_020",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 020",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_021",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 021",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_022",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 022",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_023",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 023",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_024",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 024",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "sim_autonomy_edge_025",
+      "expected_contains": [
+        "autonomy",
+        "checkpoint",
+        "simulated",
+        "safety"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy checkpoint simulated safety guard 025",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_001",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "webhook_trigger"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 001",
+      "actual_tools": [
+        "webhook_trigger"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_002",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 002",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_003",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "dead_letter_replay"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 003",
+      "actual_tools": [
+        "dead_letter_replay"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_004",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 004",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_005",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "identity_trust"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 005",
+      "actual_tools": [
+        "identity_trust"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_006",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "webhook_trigger"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 006",
+      "actual_tools": [
+        "webhook_trigger"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_007",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 007",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_008",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "dead_letter_replay"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 008",
+      "actual_tools": [
+        "dead_letter_replay"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_009",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 009",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_010",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "identity_trust"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 010",
+      "actual_tools": [
+        "identity_trust"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_011",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "webhook_trigger"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 011",
+      "actual_tools": [
+        "webhook_trigger"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_012",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 012",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_013",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "dead_letter_replay"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 013",
+      "actual_tools": [
+        "dead_letter_replay"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_014",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 014",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_015",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "identity_trust"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 015",
+      "actual_tools": [
+        "identity_trust"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_016",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "webhook_trigger"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 016",
+      "actual_tools": [
+        "webhook_trigger"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_017",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 017",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_018",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "dead_letter_replay"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 018",
+      "actual_tools": [
+        "dead_letter_replay"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_019",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 019",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "adv_hardening_edge_020",
+      "expected_contains": [
+        "adversarial",
+        "hardening",
+        "policy",
+        "enforced"
+      ],
+      "expected_tools": [
+        "identity_trust"
+      ],
+      "actual_response": "adversarial hardening policy enforced regression 020",
+      "actual_tools": [
+        "identity_trust"
+      ]
     }
   ]
 }

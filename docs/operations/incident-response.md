@@ -56,3 +56,4 @@
 - `autonomy-checkpoint-runbook.md`
 - `integrations-degradation-runbook.md`
 - `campaign-execution-runbook.md`
+- `hardware-bringup-checklist.md`

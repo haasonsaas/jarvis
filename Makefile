@@ -1,5 +1,5 @@
-.PHONY: check test-fast test-sim test-faults test-fault-profiles test-fault-campaign test-soak test-soak-reliability test-soak-extended test-soak-campaign test-personality security-gate \
-	bootstrap quality-report eval-dataset release-channel-check release-acceptance readiness
+.PHONY: check test-fast test-sim test-sim-acceptance test-faults test-fault-profiles test-fault-campaign test-soak test-soak-reliability test-soak-extended test-soak-campaign test-personality security-gate \
+	bootstrap quality-report eval-dataset quality-trend-gate release-channel-check release-acceptance readiness
 
 check:
 	uv run ruff check src tests
@@ -10,6 +10,9 @@ test-fast:
 
 test-sim:
 	./scripts/test_sim.sh
+
+test-sim-acceptance:
+	./scripts/test_sim_acceptance.sh fast 1
 
 test-faults:
 	./scripts/test_faults.sh
@@ -45,7 +48,10 @@ quality-report:
 	./scripts/generate_quality_report.py --output-dir .artifacts/quality --markdown
 
 eval-dataset:
-	./scripts/run_eval_dataset.py docs/evals/assistant-contract.json --output .artifacts/quality/eval.json --strict
+	./scripts/run_eval_dataset.py docs/evals/assistant-contract.json --output .artifacts/quality/eval.json --strict --min-cases 250 --require-unique-ids --require-expected-tools
+
+quality-trend-gate:
+	./scripts/check_quality_trends.py
 
 release-channel-check:
 	./scripts/check_release_channel.py --channel stable

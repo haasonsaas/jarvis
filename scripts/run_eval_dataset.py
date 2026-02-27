@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 from __future__ import annotations
 
 import argparse
@@ -41,6 +41,9 @@ def _evaluate_results(
     strict: bool,
     min_pass_rate: float | None,
     max_failed: int | None,
+    min_cases: int | None,
+    duplicate_ids: list[str],
+    missing_expected_tools_ids: list[str],
 ) -> dict[str, Any]:
     passed = sum(1 for row in results if bool(row.get("passed")))
     failed = len(results) - passed
@@ -58,6 +61,15 @@ def _evaluate_results(
     if max_failed is not None and failed > max_failed:
         accepted = False
         failure_reasons.append("failed_count_above_threshold")
+    if min_cases is not None and len(results) < min_cases:
+        accepted = False
+        failure_reasons.append("insufficient_case_count")
+    if duplicate_ids:
+        accepted = False
+        failure_reasons.append("duplicate_case_ids")
+    if missing_expected_tools_ids:
+        accepted = False
+        failure_reasons.append("missing_expected_tools")
 
     return {
         "dataset": str(dataset_path),
@@ -65,6 +77,7 @@ def _evaluate_results(
         "thresholds": {
             "min_pass_rate": min_pass_rate,
             "max_failed": max_failed,
+            "min_cases": min_cases,
         },
         "case_count": len(results),
         "passed": passed,
@@ -72,6 +85,8 @@ def _evaluate_results(
         "pass_rate": pass_rate,
         "accepted": accepted,
         "failure_reasons": failure_reasons,
+        "duplicate_ids": duplicate_ids,
+        "missing_expected_tools_ids": missing_expected_tools_ids,
         "results": results,
     }
 
@@ -93,6 +108,22 @@ def main() -> int:
         default=None,
         help="Optional maximum failed-case acceptance threshold (>= 0).",
     )
+    parser.add_argument(
+        "--min-cases",
+        type=int,
+        default=None,
+        help="Optional minimum number of evaluation cases required.",
+    )
+    parser.add_argument(
+        "--require-unique-ids",
+        action="store_true",
+        help="Fail if case IDs are duplicated.",
+    )
+    parser.add_argument(
+        "--require-expected-tools",
+        action="store_true",
+        help="Fail if any case has an empty expected_tools list.",
+    )
     args = parser.parse_args()
 
     dataset_path = Path(args.dataset)
@@ -100,6 +131,8 @@ def main() -> int:
         raise SystemExit("--min-pass-rate must be between 0.0 and 1.0.")
     if args.max_failed is not None and args.max_failed < 0:
         raise SystemExit("--max-failed must be >= 0.")
+    if args.min_cases is not None and args.min_cases < 0:
+        raise SystemExit("--min-cases must be >= 0.")
 
     payload = json.loads(dataset_path.read_text(encoding="utf-8"))
     cases = payload.get("cases", []) if isinstance(payload, dict) else []
@@ -107,12 +140,35 @@ def main() -> int:
         raise SystemExit("Dataset format error: expected top-level object with 'cases' list.")
 
     results = [_evaluate_case(case) for case in cases if isinstance(case, dict)]
+    case_ids = [str(case.get("id", "")).strip() for case in cases if isinstance(case, dict)]
+    id_counts: dict[str, int] = {}
+    for case_id in case_ids:
+        if not case_id:
+            continue
+        id_counts[case_id] = id_counts.get(case_id, 0) + 1
+    duplicate_ids = sorted(case_id for case_id, count in id_counts.items() if count > 1)
+    if not args.require_unique_ids:
+        duplicate_ids = []
+
+    missing_expected_tools_ids: list[str] = []
+    if args.require_expected_tools:
+        for case in cases:
+            if not isinstance(case, dict):
+                continue
+            expected_tools = _as_list(case.get("expected_tools"))
+            if expected_tools:
+                continue
+            missing_expected_tools_ids.append(str(case.get("id", "case")))
+
     summary = _evaluate_results(
         dataset_path=dataset_path,
         results=results,
         strict=bool(args.strict),
         min_pass_rate=args.min_pass_rate,
         max_failed=args.max_failed,
+        min_cases=args.min_cases,
+        duplicate_ids=duplicate_ids,
+        missing_expected_tools_ids=missing_expected_tools_ids,
     )
 
     text = json.dumps(summary, indent=2)

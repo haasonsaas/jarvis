@@ -3926,6 +3926,7 @@ class TestServicesTools:
         autonomy_doc = (project_root / "docs" / "operations" / "autonomy-checkpoint-runbook.md").read_text()
         integrations_doc = (project_root / "docs" / "operations" / "integrations-degradation-runbook.md").read_text()
         campaign_doc = (project_root / "docs" / "operations" / "campaign-execution-runbook.md").read_text()
+        hardware_doc = (project_root / "docs" / "operations" / "hardware-bringup-checklist.md").read_text()
         incident_doc = (project_root / "docs" / "operations" / "incident-response.md").read_text()
         observability_doc = (project_root / "docs" / "operations" / "observability-runbook.md").read_text()
 
@@ -3937,6 +3938,9 @@ class TestServicesTools:
         assert "integration_hub" in integrations_doc
         assert "make test-soak-campaign" in campaign_doc
         assert "make test-fault-campaign" in campaign_doc
+        assert "make test-sim-acceptance" in hardware_doc
+        assert "make quality-trend-gate" in hardware_doc
+        assert "--no-motion" in hardware_doc
         assert "operator-control-runbook.md" in incident_doc
         assert "campaign-execution-runbook.md" in observability_doc
 
@@ -4527,13 +4531,20 @@ class TestServicesTools:
         assert (project_root / "scripts" / "run_fault_campaign.py").exists()
         assert (project_root / "scripts" / "test_fault_campaign.sh").exists()
         assert (project_root / "scripts" / "test_soak_campaign.sh").exists()
+        assert (project_root / "scripts" / "run_sim_acceptance.py").exists()
+        assert (project_root / "scripts" / "test_sim_acceptance.sh").exists()
+        assert (project_root / "scripts" / "check_quality_trends.py").exists()
+        assert (project_root / "config" / "quality-trend-baselines.json").exists()
         assert (project_root / ".github" / "workflows" / "assistant-quality-report.yml").exists()
         assert (project_root / ".github" / "workflows" / "release-acceptance.yml").exists()
         assert (project_root / ".github" / "workflows" / "jarvis-readiness.yml").exists()
+        assert (project_root / ".github" / "workflows" / "nightly-soak.yml").exists()
         makefile_text = (project_root / "Makefile").read_text()
         assert "quality-report" in makefile_text
         assert "eval-dataset" in makefile_text
+        assert "quality-trend-gate" in makefile_text
         assert "release-acceptance" in makefile_text
         assert "readiness" in makefile_text
+        assert "test-sim-acceptance" in makefile_text
         assert "test-fault-campaign" in makefile_text
         assert "test-soak-campaign" in makefile_text

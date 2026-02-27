@@ -35,7 +35,15 @@ jobs:
 
       - name: Run deterministic eval dataset
         run: |
-          ./scripts/run_eval_dataset.py docs/evals/assistant-contract.json --output .artifacts/quality/eval.json --strict || true
+          ./scripts/run_eval_dataset.py docs/evals/assistant-contract.json --output .artifacts/quality/eval.json --strict --min-cases 250 --require-unique-ids --require-expected-tools || true
+
+      - name: Run quality trend gate
+        run: |
+          ./scripts/check_quality_trends.py \
+            --soak-artifact .artifacts/quality/soak-profile-fast.json \
+            --fault-artifact .artifacts/quality/fault-campaign-quick-repeat1.json \
+            --baseline config/quality-trend-baselines.json \
+            --output .artifacts/quality/quality-trend-gate.json || true
 
       - name: Upload quality artifacts
         if: always()

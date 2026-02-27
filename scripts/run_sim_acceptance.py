@@ -10,58 +10,57 @@ from pathlib import Path
 
 def _phase_commands(profile: str) -> list[tuple[str, list[str]]]:
     phases: list[tuple[str, list[str]]] = [
-        ("sim_baseline", ["./scripts/test_sim.sh"]),
-        ("fault_quick", ["./scripts/run_fault_profiles.sh", "quick"]),
-    ]
-    if profile in {"full", "live"}:
-        phases.extend(
+        ("sim_stack_baseline", ["./scripts/test_sim.sh"]),
+        (
+            "voice_loop_edges",
             [
-                ("fault_network", ["./scripts/run_fault_profiles.sh", "network"]),
-                ("fault_storage", ["./scripts/run_fault_profiles.sh", "storage"]),
-                ("fault_contract", ["./scripts/run_fault_profiles.sh", "contract"]),
-            ]
-        )
-    phases.extend(
-        [
-            (
-                "checkpoint_resume",
-                [
-                    "uv",
-                    "run",
-                    "pytest",
-                    "-q",
-                    "tests/test_tools_services.py",
-                    "-k",
-                    "planner_engine_autonomy_cycle_requires_checkpoint_then_executes",
-                ],
-            ),
-            (
-                "retry_and_circuit",
-                [
-                    "uv",
-                    "run",
-                    "pytest",
-                    "-q",
-                    "tests/test_tools_services.py",
-                    "-k",
-                    (
-                        "retry_backoff_delay_bounds_and_jitter or "
-                        "weather_circuit_breaker_blocks_requests_and_surfaces_status or "
-                        "dead_letter_queue_captures_webhook_failure_and_replays"
-                    ),
-                ],
-            ),
-        ]
-    )
-    if profile == "live":
-        phases.extend(
+                "uv",
+                "run",
+                "pytest",
+                "-q",
+                "tests/test_runtime_conversation.py",
+                "tests/test_main_audio.py",
+                "-k",
+                "barge_in or tts_barge_in_soak_harness_stability",
+            ],
+        ),
+        (
+            "voice_repair_confirmation",
             [
+                "uv",
+                "run",
+                "pytest",
+                "-q",
+                "tests/test_main_lifecycle.py",
+                "-k",
                 (
-                    "release_channel_stable",
-                    ["./scripts/check_release_channel.py", "--channel", "stable"],
+                    "requires_stt_repair or "
+                    "requires_confirmation_respects_voice_profile_confirmation_mode or "
+                    "followup_carryover"
                 ),
+            ],
+        ),
+        (
+            "autonomy_checkpoint_edges",
+            [
+                "uv",
+                "run",
+                "pytest",
+                "-q",
+                "tests/test_tools_services.py",
+                "-k",
                 (
-                    "operator_status_contract",
+                    "planner_engine_autonomy_cycle_requires_checkpoint_then_executes or "
+                    "home_orchestrator_automation_pipeline_local_apply_and_rollback"
+                ),
+            ],
+        ),
+    ]
+    if profile == "full":
+        phases.extend(
+            [
+                (
+                    "operator_contract_edges",
                     [
                         "uv",
                         "run",
@@ -69,23 +68,26 @@ def _phase_commands(profile: str) -> list[tuple[str, list[str]]]:
                         "-q",
                         "tests/test_tools_services.py",
                         "-k",
-                        "system_status_contract_reports_expected_fields or test_system_status_reports_snapshot",
+                        (
+                            "system_status_contract_reports_expected_fields or "
+                            "system_status_reports_snapshot or "
+                            "identity_guest_session_capability_enforced"
+                        ),
                     ],
                 ),
                 (
-                    "eval_contract_strict",
+                    "recovery_replay_edges",
                     [
-                        "./scripts/run_eval_dataset.py",
-                        "docs/evals/assistant-contract.json",
-                        "--strict",
-                        "--min-pass-rate",
-                        "1.0",
-                        "--max-failed",
-                        "0",
-                        "--min-cases",
-                        "250",
-                        "--require-unique-ids",
-                        "--require-expected-tools",
+                        "uv",
+                        "run",
+                        "pytest",
+                        "-q",
+                        "tests/test_tools_services.py",
+                        "-k",
+                        (
+                            "dead_letter_queue_captures_webhook_failure_and_replays or "
+                            "bind_reconciles_interrupted_recovery_entries"
+                        ),
                     ],
                 ),
             ]
@@ -98,13 +100,12 @@ def _run_phase(name: str, command: list[str]) -> dict[str, object]:
     started_mono = time.monotonic()
     proc = subprocess.run(command, capture_output=True, text=True)
     finished_at = time.time()
-    duration_sec = time.monotonic() - started_mono
     return {
         "phase": name,
         "command": command,
         "started_at": started_at,
         "finished_at": finished_at,
-        "duration_sec": duration_sec,
+        "duration_sec": time.monotonic() - started_mono,
         "exit_code": proc.returncode,
         "status": "passed" if proc.returncode == 0 else "failed",
         "stdout_tail": proc.stdout[-4000:],
@@ -137,19 +138,17 @@ def _artifact_checks(
         "all_timestamps_present": has_timestamps,
         "expected_phase_count_per_cycle": expected_phase_count_per_cycle,
         "expected_total_phase_count": expected_phase_count_per_cycle * max(1, repeat),
-        "cycle_phase_counts": {
-            str(cycle): count for cycle, count in sorted(cycle_phase_counts.items())
-        },
+        "cycle_phase_counts": {str(cycle): count for cycle, count in sorted(cycle_phase_counts.items())},
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run phased Jarvis soak profile checks.")
-    parser.add_argument("--profile", choices=("fast", "full", "live"), default="fast")
+    parser = argparse.ArgumentParser(description="Run simulation-first acceptance profile checks.")
+    parser.add_argument("--profile", choices=("fast", "full"), default="fast")
     parser.add_argument("--repeat", type=int, default=1, help="Run full phase set this many cycles.")
     parser.add_argument(
         "--output",
-        default=".artifacts/quality/soak-profile.json",
+        default=".artifacts/quality/sim-acceptance-fast-repeat1.json",
         help="JSON artifact path",
     )
     args = parser.parse_args()
@@ -166,7 +165,7 @@ def main() -> int:
             result["cycle_phase_index"] = phase_index
             results.append(result)
             print(
-                f"[soak] cycle {cycle}/{args.repeat} {name}: "
+                f"[sim-acceptance] cycle {cycle}/{args.repeat} {name}: "
                 f"{result['status']} ({result['duration_sec']:.2f}s)"
             )
             if int(result["exit_code"]) != 0:
@@ -189,10 +188,7 @@ def main() -> int:
         if cycle_phase_counts.get(cycle, 0) == phase_count_per_cycle
         and not cycle_failed.get(cycle, False)
     )
-    accepted = (
-        cycles_completed == args.repeat
-        and all(int(row.get("exit_code", 1)) == 0 for row in results)
-    )
+    accepted = cycles_completed == args.repeat and all(int(row.get("exit_code", 1)) == 0 for row in results)
 
     summary = {
         "profile": args.profile,
