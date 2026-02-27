@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/106 Runtime Decomposition
+# Jarvis TODO — Wave 74/107 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 279
-- Completed: 279
+- Total items: 287
+- Completed: 287
 - Remaining: 0
 
 ---
@@ -402,6 +402,17 @@ Last updated: 2026-02-27
 - [x] `W106-AJ07` Run full quality/security/readiness gates.
 - [x] `W106-AJ08` Update TODO + tranche snapshot.
 
+## AK) Wave 107 (completed): main entrypoint orchestration extraction
+
+- [x] `W107-AK01` Profile top-level `main()` orchestration in `src/jarvis/__main__.py`.
+- [x] `W107-AK02` Create `runtime_entrypoint.py` for backup/restore handling and event-loop bootstrap helpers.
+- [x] `W107-AK03` Rewire `main()` to runtime entrypoint helpers while preserving behavior.
+- [x] `W107-AK04` Preserve backup/restore JSON error semantics and signal-driven shutdown behavior.
+- [x] `W107-AK05` Add focused unit coverage in `tests/test_runtime_entrypoint.py`.
+- [x] `W107-AK06` Extend import-boundary coverage for `runtime_entrypoint`.
+- [x] `W107-AK07` Run full quality/security/readiness gates.
+- [x] `W107-AK08` Update TODO + tranche snapshot.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -433,6 +444,7 @@ Last updated: 2026-02-27
   - `runtime_voice_status.py`
   - `runtime_observability_snapshot.py`
   - `runtime_watchdog.py`
+  - `runtime_entrypoint.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -472,6 +484,7 @@ Last updated: 2026-02-27
   - Persona-style update + memory summary upsert moved from `Jarvis._set_persona_style` into `runtime_preferences.set_persona_style`.
   - Observability status publication moved from `Jarvis._publish_observability_status` into `runtime_observability_status.publish_observability_status`.
   - Telemetry tool-error counter refresh moved from `Jarvis._refresh_tool_error_counters` into `runtime_telemetry.refresh_tool_error_counters`.
+  - CLI backup/restore and asyncio event-loop orchestration moved from `main()` body into `runtime_entrypoint` helpers.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -515,7 +528,9 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_runtime_watchdog.py tests/test_runtime_observability_snapshot.py tests/test_runtime_voice_status.py tests/test_runtime_turn.py tests/test_main_audio.py`: `21 passed`.
   - `uv run pytest -q tests/test_runtime_telemetry.py tests/test_runtime_observability_status.py tests/test_main_lifecycle.py tests/test_import_boundaries.py -k "runtime_telemetry or runtime_observability_status or publish_observability_status or refresh_tool_error_counters or import_boundary"`: `208 passed, 35 deselected`.
   - `uv run pytest -q tests/test_runtime_watchdog.py tests/test_runtime_observability_snapshot.py tests/test_runtime_voice_status.py tests/test_runtime_preferences.py tests/test_runtime_multimodal.py`: `19 passed`.
+  - `uv run pytest -q tests/test_runtime_entrypoint.py tests/test_import_boundaries.py tests/test_main_lifecycle.py -k "runtime_entrypoint or import_boundary or backup or restore or main"`: `242 passed`.
+  - `uv run pytest -q tests/test_runtime_observability_status.py tests/test_runtime_telemetry.py tests/test_runtime_watchdog.py tests/test_runtime_observability_snapshot.py tests/test_runtime_voice_status.py`: `14 passed`.
   - `./scripts/test_soak_reliability.sh 2`: accepted; `cycles_completed=2/2`, `phase_count=8`, `failed_count=0`, artifact `.artifacts/quality/soak-profile-fast-repeat2.json`.
-  - `make check`: `831 passed`.
-  - `make security-gate`: `831 passed`; fault subset `3 passed`.
+  - `make check`: `836 passed`.
+  - `make security-gate`: `836 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

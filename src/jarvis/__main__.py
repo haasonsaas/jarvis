@@ -15,9 +15,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import logging
-import signal
 import time
 import threading
 from pathlib import Path
@@ -161,6 +159,10 @@ from jarvis.runtime_multimodal import (
     multimodal_grounding_snapshot_for_runtime as _runtime_multimodal_grounding_snapshot_for_runtime,
 )
 from jarvis.runtime_watchdog import watchdog_loop as _runtime_watchdog_loop
+from jarvis.runtime_entrypoint import (
+    maybe_run_backup_or_restore as _runtime_maybe_run_backup_or_restore,
+    run_jarvis_event_loop as _runtime_run_jarvis_event_loop,
+)
 from jarvis.runtime_constants import (
     ATTENTION_RECENCY_SEC,
     CONVERSATION_TRACE_MAXLEN,
@@ -988,40 +990,16 @@ def main():
         datefmt="%H:%M:%S",
     )
 
-    if args.backup or args.restore:
-        config = Config()
-        try:
-            if args.backup:
-                result = create_backup_bundle(config, args.backup)
-            else:
-                result = restore_backup_bundle(config, args.restore, overwrite=bool(args.force))
-        except Exception as exc:
-            print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
-            raise SystemExit(1) from exc
-        print(json.dumps(result, indent=2))
+    if _runtime_maybe_run_backup_or_restore(
+        args,
+        config_class=Config,
+        create_backup_bundle_fn=create_backup_bundle,
+        restore_backup_bundle_fn=restore_backup_bundle,
+    ):
         return
 
     jarvis = Jarvis(args)
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    task = loop.create_task(jarvis.run())
-
-    def shutdown(sig, frame):
-        task.cancel()
-
-    signal.signal(signal.SIGINT, shutdown)
-    if hasattr(signal, "SIGTERM"):
-        signal.signal(signal.SIGTERM, shutdown)
-
-    try:
-        loop.run_until_complete(task)
-    finally:
-        with suppress(Exception):
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        with suppress(Exception):
-            loop.run_until_complete(loop.shutdown_default_executor())
-        loop.close()
+    _runtime_run_jarvis_event_loop(jarvis)
 
 
 if __name__ == "__main__":
