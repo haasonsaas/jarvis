@@ -36,7 +36,7 @@ from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, normalize_service_error
 from jarvis.tools.service_policy import (
     SENSITIVE_DOMAINS,  # noqa: F401  # compatibility export for domain modules
     HA_MUTATING_ALLOWED_ACTIONS,
-    INTEGRATION_TOOL_MAP,
+    INTEGRATION_TOOL_MAP,  # noqa: F401  # accessed by runtime module via services alias
     SAFE_MODE_BLOCKED_TOOLS,
     SENSITIVE_AUDIT_KEY_TOKENS,  # noqa: F401  # accessed by runtime module via services alias
     INBOUND_REDACT_HEADER_TOKENS,  # noqa: F401  # accessed by runtime module via services alias
@@ -178,6 +178,15 @@ from jarvis.tools.services_preview_runtime import (
     preview_gate as _runtime_preview_gate,
     prune_plan_previews as _runtime_prune_plan_previews,
     tokenized_words as _runtime_tokenized_words,
+)
+from jarvis.tools.services_circuit_runtime import (
+    ensure_circuit_breaker_state as _runtime_ensure_circuit_breaker_state,
+    integration_circuit_open as _runtime_integration_circuit_open,
+    integration_circuit_open_message as _runtime_integration_circuit_open_message,
+    integration_circuit_snapshot as _runtime_integration_circuit_snapshot,
+    integration_for_tool as _runtime_integration_for_tool,
+    integration_record_failure as _runtime_integration_record_failure,
+    integration_record_success as _runtime_integration_record_success,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -830,89 +839,31 @@ def _effective_act_timeout(total_sec: Any, *, minimum: float = 0.1, maximum: flo
 
 
 def _integration_for_tool(tool_name: str) -> str | None:
-    return INTEGRATION_TOOL_MAP.get(str(tool_name).strip().lower())
+    return _runtime_integration_for_tool(_services_module(), tool_name)
 
 
 def _ensure_circuit_breaker_state(integration: str) -> dict[str, Any]:
-    normalized = str(integration or "").strip().lower()
-    if not normalized:
-        normalized = "unknown"
-    state = _integration_circuit_breakers.get(normalized)
-    if state is not None:
-        return state
-    state = {
-        "integration": normalized,
-        "consecutive_failures": 0,
-        "open_until": 0.0,
-        "opened_count": 0,
-        "cooldown_sec": 0.0,
-        "last_error": "",
-        "last_failure_at": 0.0,
-        "last_success_at": 0.0,
-    }
-    _integration_circuit_breakers[normalized] = state
-    return state
+    return _runtime_ensure_circuit_breaker_state(_services_module(), integration)
 
 
 def _integration_circuit_open(integration: str, *, now_ts: float | None = None) -> tuple[bool, float]:
-    state = _ensure_circuit_breaker_state(integration)
-    now = time.time() if now_ts is None else float(now_ts)
-    open_until = float(state.get("open_until", 0.0) or 0.0)
-    if open_until <= now:
-        return False, 0.0
-    return True, max(0.0, open_until - now)
+    return _runtime_integration_circuit_open(_services_module(), integration, now_ts=now_ts)
 
 
 def _integration_record_failure(integration: str, error_code: str) -> None:
-    normalized_code = str(error_code or "").strip().lower()
-    if normalized_code not in CIRCUIT_BREAKER_ERROR_CODES:
-        return
-    state = _ensure_circuit_breaker_state(integration)
-    now = time.time()
-    failures = int(state.get("consecutive_failures", 0)) + 1
-    state["consecutive_failures"] = failures
-    state["last_error"] = normalized_code
-    state["last_failure_at"] = now
-    if failures < CIRCUIT_BREAKER_FAILURE_THRESHOLD:
-        return
-    opened_count = int(state.get("opened_count", 0))
-    cooldown = min(
-        CIRCUIT_BREAKER_MAX_COOLDOWN_SEC,
-        CIRCUIT_BREAKER_BASE_COOLDOWN_SEC * (2 ** max(0, opened_count)),
-    )
-    state["cooldown_sec"] = float(cooldown)
-    state["open_until"] = now + float(cooldown)
-    state["opened_count"] = opened_count + 1
+    _runtime_integration_record_failure(_services_module(), integration, error_code)
 
 
 def _integration_record_success(integration: str) -> None:
-    state = _ensure_circuit_breaker_state(integration)
-    state["consecutive_failures"] = 0
-    state["open_until"] = 0.0
-    state["cooldown_sec"] = 0.0
-    state["last_error"] = ""
-    state["last_success_at"] = time.time()
+    _runtime_integration_record_success(_services_module(), integration)
 
 
 def _integration_circuit_snapshot(integration: str, *, now_ts: float | None = None) -> dict[str, Any]:
-    state = _ensure_circuit_breaker_state(integration)
-    now = time.time() if now_ts is None else float(now_ts)
-    open_until = float(state.get("open_until", 0.0) or 0.0)
-    return {
-        "open": open_until > now,
-        "open_remaining_sec": max(0.0, open_until - now),
-        "consecutive_failures": int(state.get("consecutive_failures", 0)),
-        "opened_count": int(state.get("opened_count", 0)),
-        "cooldown_sec": float(state.get("cooldown_sec", 0.0) or 0.0),
-        "last_error": str(state.get("last_error", "")),
-        "last_failure_at": float(state.get("last_failure_at", 0.0) or 0.0),
-        "last_success_at": float(state.get("last_success_at", 0.0) or 0.0),
-    }
+    return _runtime_integration_circuit_snapshot(_services_module(), integration, now_ts=now_ts)
 
 
 def _integration_circuit_open_message(integration: str, remaining_sec: float) -> str:
-    label = str(integration).replace("_", " ").strip() or "integration"
-    return f"{label.title()} circuit breaker is open; retry in about {int(max(1.0, remaining_sec))}s."
+    return _runtime_integration_circuit_open_message(integration, remaining_sec)
 
 
 def _normalize_nudge_policy(value: Any) -> str:
