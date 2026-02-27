@@ -9,6 +9,7 @@ Canonical tool error taxonomy shared by service tools and telemetry.
 | `api_error` | `pushover_notify`, `reminder_notify_due` |
 | `auth` | `smart_home`, `smart_home_state`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `slack_notify`, `discord_notify`, `email_send`, `webhook_trigger` |
 | `cancelled` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `slack_notify`, `discord_notify`, `weather_lookup`, `webhook_trigger` |
+| `circuit_open` | integrations guarded by circuit breaker (`home_assistant*`, `todoist_*`, `pushover_notify`, `weather_lookup`, `webhook_trigger`, `slack_notify`, `discord_notify`, `email_send`) |
 | `http_error` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `slack_notify`, `discord_notify`, `weather_lookup`, `webhook_trigger` |
 | `invalid_data` | `smart_home`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `media_control`, `weather_lookup`, `webhook_trigger`, `timer_*`, `reminder_*`, `calendar_*`, `task_plan_*`, `memory_*` |
 | `invalid_json` | `smart_home*`, `home_assistant_capabilities`, `home_assistant_conversation`, `home_assistant_todo`, `home_assistant_timer`, `home_assistant_area_entities`, `calendar_*`, `todoist_*`, `pushover_notify`, `weather_lookup` |
@@ -39,6 +40,7 @@ Do not edit this list without updating `src/jarvis/tool_errors.py` and tests.
 api_error
 auth
 cancelled
+circuit_open
 http_error
 invalid_data
 invalid_json

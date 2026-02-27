@@ -74,7 +74,7 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
-SYSTEM_STATUS_CONTRACT_VERSION = "1.4"
+SYSTEM_STATUS_CONTRACT_VERSION = "1.5"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
@@ -83,6 +83,39 @@ CALENDAR_DEFAULT_WINDOW_HOURS = 24.0
 CALENDAR_MAX_WINDOW_HOURS = 24.0 * 31.0
 PLAN_PREVIEW_TTL_SEC = 300.0
 PLAN_PREVIEW_MAX_PENDING = 1000
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3
+CIRCUIT_BREAKER_BASE_COOLDOWN_SEC = 15.0
+CIRCUIT_BREAKER_MAX_COOLDOWN_SEC = 300.0
+CIRCUIT_BREAKER_ERROR_CODES = {
+    "timeout",
+    "cancelled",
+    "network_client_error",
+    "http_error",
+    "api_error",
+    "auth",
+    "unexpected",
+}
+INTEGRATION_TOOL_MAP = {
+    "smart_home": "home_assistant",
+    "smart_home_state": "home_assistant",
+    "home_assistant_capabilities": "home_assistant",
+    "home_assistant_conversation": "home_assistant",
+    "home_assistant_todo": "home_assistant",
+    "home_assistant_timer": "home_assistant",
+    "home_assistant_area_entities": "home_assistant",
+    "media_control": "home_assistant",
+    "calendar_events": "home_assistant",
+    "calendar_next_event": "home_assistant",
+    "todoist_add_task": "todoist",
+    "todoist_list_tasks": "todoist",
+    "pushover_notify": "pushover",
+    "reminder_notify_due": "pushover",
+    "weather_lookup": "weather",
+    "webhook_trigger": "webhook",
+    "slack_notify": "channels",
+    "discord_notify": "channels",
+    "email_send": "email",
+}
 SAFE_MODE_BLOCKED_TOOLS = {
     "memory_add",
     "memory_update",
@@ -173,6 +206,7 @@ _skill_registry: SkillRegistry | None = None
 _inbound_webhook_events: list[dict[str, Any]] = []
 _inbound_webhook_seq: int = 1
 _pending_plan_previews: dict[str, dict[str, Any]] = {}
+_integration_circuit_breakers: dict[str, dict[str, Any]] = {}
 SENSITIVE_AUDIT_KEY_TOKENS = {
     "code",
     "pin",
@@ -784,6 +818,9 @@ SERVICE_ERROR_CODES = TOOL_SERVICE_ERROR_CODES
 
 def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
     normalized = normalize_service_error_code(code)
+    integration = _integration_for_tool(tool_name)
+    if integration is not None:
+        _integration_record_failure(integration, normalized)
     record_summary(tool_name, "error", start_time, normalized)
 
 
@@ -830,7 +867,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _plan_preview_require_ack, _safe_mode_enabled
     global _memory_retention_days, _audit_retention_days
     global _memory_pii_guardrails_enabled, _audit_encryption_enabled, _data_encryption_key
-    global _timer_id_seq, _reminder_id_seq
+    global _timer_id_seq, _reminder_id_seq, _integration_circuit_breakers
     _config = config
     _memory = memory_store
     _audit_log_max_bytes = int(config.audit_log_max_bytes)
@@ -924,6 +961,9 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _runtime_voice_state.clear()
     _runtime_observability_state.clear()
     _runtime_skills_state.clear()
+    _integration_circuit_breakers.clear()
+    for integration in sorted(set(INTEGRATION_TOOL_MAP.values())):
+        _ensure_circuit_breaker_state(integration)
     _load_timers_from_store()
     _load_reminders_from_store()
     global _tool_allowlist, _tool_denylist
@@ -1544,6 +1584,92 @@ def _effective_act_timeout(total_sec: Any, *, minimum: float = 0.1, maximum: flo
     return min(requested, budget)
 
 
+def _integration_for_tool(tool_name: str) -> str | None:
+    return INTEGRATION_TOOL_MAP.get(str(tool_name).strip().lower())
+
+
+def _ensure_circuit_breaker_state(integration: str) -> dict[str, Any]:
+    normalized = str(integration or "").strip().lower()
+    if not normalized:
+        normalized = "unknown"
+    state = _integration_circuit_breakers.get(normalized)
+    if state is not None:
+        return state
+    state = {
+        "integration": normalized,
+        "consecutive_failures": 0,
+        "open_until": 0.0,
+        "opened_count": 0,
+        "cooldown_sec": 0.0,
+        "last_error": "",
+        "last_failure_at": 0.0,
+        "last_success_at": 0.0,
+    }
+    _integration_circuit_breakers[normalized] = state
+    return state
+
+
+def _integration_circuit_open(integration: str, *, now_ts: float | None = None) -> tuple[bool, float]:
+    state = _ensure_circuit_breaker_state(integration)
+    now = time.time() if now_ts is None else float(now_ts)
+    open_until = float(state.get("open_until", 0.0) or 0.0)
+    if open_until <= now:
+        return False, 0.0
+    return True, max(0.0, open_until - now)
+
+
+def _integration_record_failure(integration: str, error_code: str) -> None:
+    normalized_code = str(error_code or "").strip().lower()
+    if normalized_code not in CIRCUIT_BREAKER_ERROR_CODES:
+        return
+    state = _ensure_circuit_breaker_state(integration)
+    now = time.time()
+    failures = int(state.get("consecutive_failures", 0)) + 1
+    state["consecutive_failures"] = failures
+    state["last_error"] = normalized_code
+    state["last_failure_at"] = now
+    if failures < CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+        return
+    opened_count = int(state.get("opened_count", 0))
+    cooldown = min(
+        CIRCUIT_BREAKER_MAX_COOLDOWN_SEC,
+        CIRCUIT_BREAKER_BASE_COOLDOWN_SEC * (2 ** max(0, opened_count)),
+    )
+    state["cooldown_sec"] = float(cooldown)
+    state["open_until"] = now + float(cooldown)
+    state["opened_count"] = opened_count + 1
+
+
+def _integration_record_success(integration: str) -> None:
+    state = _ensure_circuit_breaker_state(integration)
+    state["consecutive_failures"] = 0
+    state["open_until"] = 0.0
+    state["cooldown_sec"] = 0.0
+    state["last_error"] = ""
+    state["last_success_at"] = time.time()
+
+
+def _integration_circuit_snapshot(integration: str, *, now_ts: float | None = None) -> dict[str, Any]:
+    state = _ensure_circuit_breaker_state(integration)
+    now = time.time() if now_ts is None else float(now_ts)
+    open_until = float(state.get("open_until", 0.0) or 0.0)
+    return {
+        "open": open_until > now,
+        "open_remaining_sec": max(0.0, open_until - now),
+        "consecutive_failures": int(state.get("consecutive_failures", 0)),
+        "opened_count": int(state.get("opened_count", 0)),
+        "cooldown_sec": float(state.get("cooldown_sec", 0.0) or 0.0),
+        "last_error": str(state.get("last_error", "")),
+        "last_failure_at": float(state.get("last_failure_at", 0.0) or 0.0),
+        "last_success_at": float(state.get("last_success_at", 0.0) or 0.0),
+    }
+
+
+def _integration_circuit_open_message(integration: str, remaining_sec: float) -> str:
+    label = str(integration).replace("_", " ").strip() or "integration"
+    return f"{label.title()} circuit breaker is open; retry in about {int(max(1.0, remaining_sec))}s."
+
+
 def _normalize_nudge_policy(value: Any) -> str:
     normalized = str(value or "adaptive").strip().lower()
     if normalized in {"interrupt", "defer", "adaptive"}:
@@ -2020,6 +2146,8 @@ def _ha_action_allowed(domain: str, action: str) -> bool:
 
 
 async def _ha_get_state(entity_id: str) -> tuple[dict[str, Any] | None, str | None]:
+    if _integration_circuit_open("home_assistant")[0]:
+        return None, "circuit_open"
     cached = _ha_cached_state(entity_id)
     if cached is not None:
         return cached, None
@@ -2037,6 +2165,7 @@ async def _ha_get_state(entity_id: str) -> tuple[dict[str, Any] | None, str | No
                     if not isinstance(data, dict):
                         return None, "invalid_json"
                     _ha_state_cache[entity_id] = (time.monotonic() + HA_STATE_CACHE_TTL_SEC, data)
+                    _integration_record_success("home_assistant")
                     return data, None
                 if resp.status == 401:
                     return None, "auth"
@@ -2054,6 +2183,8 @@ async def _ha_get_state(entity_id: str) -> tuple[dict[str, Any] | None, str | No
 
 
 async def _ha_get_domain_services(domain: str) -> tuple[list[str] | None, str | None]:
+    if _integration_circuit_open("home_assistant")[0]:
+        return None, "circuit_open"
     assert _config is not None
     url = f"{_config.hass_url}/api/services"
     timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(5.0))
@@ -2082,7 +2213,9 @@ async def _ha_get_domain_services(domain: str) -> tuple[list[str] | None, str | 
                                 if str(name).strip()
                             }
                         )
+                        _integration_record_success("home_assistant")
                         return names, None
+                    _integration_record_success("home_assistant")
                     return [], None
                 if resp.status == 401:
                     return None, "auth"
@@ -2105,6 +2238,8 @@ async def _ha_call_service(
     return_response: bool = False,
     timeout_sec: float = 10.0,
 ) -> tuple[list[Any] | None, str | None]:
+    if _integration_circuit_open("home_assistant")[0]:
+        return None, "circuit_open"
     assert _config is not None
     suffix = "?return_response" if return_response else ""
     url = f"{_config.hass_url}/api/services/{domain}/{service}{suffix}"
@@ -2120,6 +2255,7 @@ async def _ha_call_service(
                         return None, "invalid_json"
                     if not isinstance(data, list):
                         return None, "invalid_json"
+                    _integration_record_success("home_assistant")
                     return data, None
                 if resp.status == 401:
                     return None, "auth"
@@ -2142,6 +2278,8 @@ async def _ha_get_json(
     params: dict[str, str] | None = None,
     timeout_sec: float = 10.0,
 ) -> tuple[Any | None, str | None]:
+    if _integration_circuit_open("home_assistant")[0]:
+        return None, "circuit_open"
     assert _config is not None
     url = f"{_config.hass_url}{path}"
     timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec))
@@ -2150,9 +2288,11 @@ async def _ha_get_json(
             async with session.get(url, headers=_ha_headers(), params=params or None) as resp:
                 if resp.status == 200:
                     try:
-                        return await resp.json(), None
+                        payload = await resp.json()
                     except Exception:
                         return None, "invalid_json"
+                    _integration_record_success("home_assistant")
+                    return payload, None
                 if resp.status == 401:
                     return None, "auth"
                 if resp.status == 404:
@@ -2169,6 +2309,8 @@ async def _ha_get_json(
 
 
 async def _ha_render_template(template_text: str, *, timeout_sec: float = 10.0) -> tuple[str | None, str | None]:
+    if _integration_circuit_open("home_assistant")[0]:
+        return None, "circuit_open"
     assert _config is not None
     url = f"{_config.hass_url}/api/template"
     timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec))
@@ -2178,9 +2320,11 @@ async def _ha_render_template(template_text: str, *, timeout_sec: float = 10.0) 
             async with session.post(url, headers=headers, data=template_text) as resp:
                 if resp.status == 200:
                     try:
-                        return await resp.text(), None
+                        payload = await resp.text()
                     except Exception:
                         return None, "invalid_json"
+                    _integration_record_success("home_assistant")
+                    return payload, None
                 if resp.status == 401:
                     return None, "auth"
                 if resp.status == 404:
@@ -2277,34 +2421,41 @@ def _integration_health_snapshot() -> dict[str, Any]:
             "configured": home_configured,
             "home_enabled": bool(_config and _config.home_enabled),
             "permission_profile": _home_permission_profile,
+            "circuit_breaker": _integration_circuit_snapshot("home_assistant"),
         },
         "todoist": {
             "configured": todoist_configured,
             "permission_profile": _todoist_permission_profile,
+            "circuit_breaker": _integration_circuit_snapshot("todoist"),
         },
         "pushover": {
             "configured": pushover_configured,
             "permission_profile": _notification_permission_profile,
+            "circuit_breaker": _integration_circuit_snapshot("pushover"),
         },
         "weather": {
             "provider": "open-meteo",
             "units_default": _weather_units,
             "timeout_sec": _weather_timeout_sec,
+            "circuit_breaker": _integration_circuit_snapshot("weather"),
         },
         "webhook": {
             "allowlist_count": len(_webhook_allowlist),
             "auth_token_configured": bool(_webhook_auth_token),
             "timeout_sec": _webhook_timeout_sec,
             "inbound_events": len(_inbound_webhook_events),
+            "circuit_breaker": _integration_circuit_snapshot("webhook"),
         },
         "email": {
             "configured": bool(_email_smtp_host and _email_from and _email_default_to),
             "permission_profile": _email_permission_profile,
             "timeout_sec": _email_timeout_sec,
+            "circuit_breaker": _integration_circuit_snapshot("email"),
         },
         "channels": {
             "slack_configured": bool(_slack_webhook_url),
             "discord_configured": bool(_discord_webhook_url),
+            "circuit_breaker": _integration_circuit_snapshot("channels"),
         },
     }
 
@@ -2611,6 +2762,8 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                 return {"content": [{"type": "text", "text": "Home Assistant state preflight timed out."}]}
             if state_error == "cancelled":
                 return {"content": [{"type": "text", "text": "Home Assistant state preflight was cancelled."}]}
+            if state_error == "circuit_open":
+                return {"content": [{"type": "text", "text": "Home Assistant circuit breaker is open; retry shortly."}]}
             if state_error == "network_client_error":
                 return {"content": [{"type": "text", "text": "Failed to reach Home Assistant for state preflight."}]}
             return {"content": [{"type": "text", "text": "Unable to validate entity state before action."}]}
@@ -2672,6 +2825,7 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                     tool_feedback("done")
                     _ha_invalidate_state(entity_id)
                     _touch_action(domain, action, entity_id)
+                    _integration_record_success("home_assistant")
                     record_summary(
                         "smart_home",
                         "ok",
@@ -2749,6 +2903,8 @@ async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
         if error_code == "cancelled":
             return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
+        if error_code == "circuit_open":
+            return {"content": [{"type": "text", "text": "Home Assistant circuit breaker is open; retry shortly."}]}
         if error_code == "network_client_error":
             return {"content": [{"type": "text", "text": "Failed to reach Home Assistant."}]}
         return {"content": [{"type": "text", "text": "Unexpected Home Assistant error."}]}
@@ -2800,6 +2956,8 @@ async def home_assistant_capabilities(args: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
         if state_error == "cancelled":
             return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
+        if state_error == "circuit_open":
+            return {"content": [{"type": "text", "text": "Home Assistant circuit breaker is open; retry shortly."}]}
         if state_error == "network_client_error":
             return {"content": [{"type": "text", "text": "Failed to reach Home Assistant."}]}
         return {"content": [{"type": "text", "text": "Unexpected Home Assistant error."}]}
@@ -2827,6 +2985,8 @@ async def home_assistant_capabilities(args: dict[str, Any]) -> dict[str, Any]:
                 return {"content": [{"type": "text", "text": "Home Assistant service catalog request timed out."}]}
             if service_error == "cancelled":
                 return {"content": [{"type": "text", "text": "Home Assistant service catalog request was cancelled."}]}
+            if service_error == "circuit_open":
+                return {"content": [{"type": "text", "text": "Home Assistant circuit breaker is open; retry shortly."}]}
             if service_error == "network_client_error":
                 return {"content": [{"type": "text", "text": "Failed to reach Home Assistant service catalog endpoint."}]}
             return {"content": [{"type": "text", "text": "Unable to fetch Home Assistant service catalog."}]}
@@ -2882,6 +3042,18 @@ async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("home_assistant_conversation", start_time, "missing_config")
         _audit("home_assistant_conversation", {"result": "missing_config"})
         return {"content": [{"type": "text", "text": "Home Assistant not configured. Set HASS_URL and HASS_TOKEN in .env."}]}
+    circuit_open, circuit_remaining = _integration_circuit_open("home_assistant")
+    if circuit_open:
+        _record_service_error("home_assistant_conversation", start_time, "circuit_open")
+        _audit("home_assistant_conversation", {"result": "circuit_open"})
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": _integration_circuit_open_message("home_assistant", circuit_remaining),
+                }
+            ]
+        }
     if not _home_conversation_enabled:
         _record_service_error("home_assistant_conversation", start_time, "policy")
         _audit("home_assistant_conversation", {"result": "denied", "reason": "conversation_disabled"})
@@ -3009,6 +3181,7 @@ async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
                     if not speech:
                         speech = "Home Assistant processed the command."
                     conversation_id = str(body.get("conversation_id", "")).strip()
+                    _integration_record_success("home_assistant")
                     record_summary("home_assistant_conversation", "ok", start_time)
                     _audit(
                         "home_assistant_conversation",
@@ -3554,6 +3727,8 @@ async def media_control(args: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": "Media control request timed out."}]}
         if error_code == "cancelled":
             return {"content": [{"type": "text", "text": "Media control request was cancelled."}]}
+        if error_code == "circuit_open":
+            return {"content": [{"type": "text", "text": "Home Assistant circuit breaker is open; retry shortly."}]}
         if error_code == "network_client_error":
             return {"content": [{"type": "text", "text": "Failed to reach Home Assistant media endpoint."}]}
         return {"content": [{"type": "text", "text": "Unexpected Home Assistant media control error."}]}
@@ -3574,6 +3749,10 @@ async def weather_lookup(args: dict[str, Any]) -> dict[str, Any]:
     if not _tool_permitted("weather_lookup"):
         record_summary("weather_lookup", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    circuit_open, circuit_remaining = _integration_circuit_open("weather")
+    if circuit_open:
+        _record_service_error("weather_lookup", start_time, "circuit_open")
+        return {"content": [{"type": "text", "text": _integration_circuit_open_message("weather", circuit_remaining)}]}
     location = str(args.get("location", "")).strip()
     if not location:
         _record_service_error("weather_lookup", start_time, "missing_fields")
@@ -3671,6 +3850,7 @@ async def weather_lookup(args: dict[str, Any]) -> dict[str, Any]:
     place_label = f"{place_name}, {country}" if country else place_name
     temp_unit = "F" if units == "imperial" else "C"
     wind_unit = "mph" if units == "imperial" else "km/h"
+    _integration_record_success("weather")
     record_summary("weather_lookup", "ok", start_time)
     return {
         "content": [
@@ -3699,6 +3879,10 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    circuit_open, circuit_remaining = _integration_circuit_open("webhook")
+    if circuit_open:
+        _record_service_error("webhook_trigger", start_time, "circuit_open")
+        return {"content": [{"type": "text", "text": _integration_circuit_open_message("webhook", circuit_remaining)}]}
     url = str(args.get("url", "")).strip()
     if not url:
         _record_service_error("webhook_trigger", start_time, "missing_fields")
@@ -3797,6 +3981,7 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
             async with session.request(method, url, **request_kwargs) as resp:
                 body = await resp.text()
                 if 200 <= resp.status < 300:
+                    _integration_record_success("webhook")
                     record_summary("webhook_trigger", "ok", start_time)
                     _audit(
                         "webhook_trigger",
@@ -3876,6 +4061,10 @@ async def slack_notify(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("slack_notify", "denied", start_time, "policy")
         _audit("slack_notify", {"result": "denied", "reason": "policy"})
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    circuit_open, circuit_remaining = _integration_circuit_open("channels")
+    if circuit_open:
+        _record_service_error("slack_notify", start_time, "circuit_open")
+        return {"content": [{"type": "text", "text": _integration_circuit_open_message("channels", circuit_remaining)}]}
     if not _slack_webhook_url:
         _record_service_error("slack_notify", start_time, "missing_config")
         _audit("slack_notify", {"result": "missing_config"})
@@ -3907,6 +4096,7 @@ async def slack_notify(args: dict[str, Any]) -> dict[str, Any]:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(_slack_webhook_url, json={"text": message}) as resp:
                 if 200 <= resp.status < 300:
+                    _integration_record_success("channels")
                     record_summary("slack_notify", "ok", start_time)
                     _audit(
                         "slack_notify",
@@ -3949,6 +4139,10 @@ async def discord_notify(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("discord_notify", "denied", start_time, "policy")
         _audit("discord_notify", {"result": "denied", "reason": "policy"})
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    circuit_open, circuit_remaining = _integration_circuit_open("channels")
+    if circuit_open:
+        _record_service_error("discord_notify", start_time, "circuit_open")
+        return {"content": [{"type": "text", "text": _integration_circuit_open_message("channels", circuit_remaining)}]}
     if not _discord_webhook_url:
         _record_service_error("discord_notify", start_time, "missing_config")
         _audit("discord_notify", {"result": "missing_config"})
@@ -3980,6 +4174,7 @@ async def discord_notify(args: dict[str, Any]) -> dict[str, Any]:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(_discord_webhook_url, json={"content": message}) as resp:
                 if 200 <= resp.status < 300:
+                    _integration_record_success("channels")
                     record_summary("discord_notify", "ok", start_time)
                     _audit(
                         "discord_notify",
@@ -4064,6 +4259,10 @@ async def email_send(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("email_send", "denied", start_time, "policy")
         _audit("email_send", {"result": "denied", "reason": "policy"})
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    circuit_open, circuit_remaining = _integration_circuit_open("email")
+    if circuit_open:
+        _record_service_error("email_send", start_time, "circuit_open")
+        return {"content": [{"type": "text", "text": _integration_circuit_open_message("email", circuit_remaining)}]}
     if not _email_smtp_host or not _email_from or not _email_default_to:
         _record_service_error("email_send", start_time, "missing_config")
         _audit("email_send", {"result": "missing_config"})
@@ -4143,6 +4342,7 @@ async def email_send(args: dict[str, Any]) -> dict[str, Any]:
         _audit("email_send", {"result": "unexpected", "to": recipient})
         log.exception("Unexpected email_send failure")
         return {"content": [{"type": "text", "text": "Unexpected email send error."}]}
+    _integration_record_success("email")
     _record_email_history(recipient, subject)
     record_summary("email_send", "ok", start_time)
     _audit(
@@ -4618,6 +4818,8 @@ async def calendar_events(args: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": "Calendar request timed out."}]}
         if error_code == "cancelled":
             return {"content": [{"type": "text", "text": "Calendar request was cancelled."}]}
+        if error_code == "circuit_open":
+            return {"content": [{"type": "text", "text": "Home Assistant circuit breaker is open; retry shortly."}]}
         if error_code == "network_client_error":
             return {"content": [{"type": "text", "text": "Failed to reach Home Assistant calendar endpoint."}]}
         if error_code == "invalid_json":
@@ -4674,6 +4876,8 @@ async def calendar_next_event(args: dict[str, Any]) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": "Calendar request timed out."}]}
         if error_code == "cancelled":
             return {"content": [{"type": "text", "text": "Calendar request was cancelled."}]}
+        if error_code == "circuit_open":
+            return {"content": [{"type": "text", "text": "Home Assistant circuit breaker is open; retry shortly."}]}
         if error_code == "network_client_error":
             return {"content": [{"type": "text", "text": "Failed to reach Home Assistant calendar endpoint."}]}
         if error_code == "invalid_json":
@@ -4702,6 +4906,10 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("todoist_add_task", "denied", start_time, "policy")
         _audit("todoist_add_task", {"result": "denied", "reason": "policy"})
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    circuit_open, circuit_remaining = _integration_circuit_open("todoist")
+    if circuit_open:
+        _record_service_error("todoist_add_task", start_time, "circuit_open")
+        return {"content": [{"type": "text", "text": _integration_circuit_open_message("todoist", circuit_remaining)}]}
     if not _config or not str(_config.todoist_api_token).strip():
         _record_service_error("todoist_add_task", start_time, "missing_config")
         _audit("todoist_add_task", {"result": "missing_config"})
@@ -4785,6 +4993,7 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
                         _audit("todoist_add_task", {"result": "invalid_json"})
                         return {"content": [{"type": "text", "text": "Invalid Todoist response while creating task."}]}
                     task_id = data.get("id")
+                    _integration_record_success("todoist")
                     record_summary("todoist_add_task", "ok", start_time)
                     _audit(
                         "todoist_add_task",
@@ -4832,6 +5041,10 @@ async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("todoist_list_tasks", "denied", start_time, "policy")
         _audit("todoist_list_tasks", {"result": "denied", "reason": "policy"})
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    circuit_open, circuit_remaining = _integration_circuit_open("todoist")
+    if circuit_open:
+        _record_service_error("todoist_list_tasks", start_time, "circuit_open")
+        return {"content": [{"type": "text", "text": _integration_circuit_open_message("todoist", circuit_remaining)}]}
     if not _config or not str(_config.todoist_api_token).strip():
         _record_service_error("todoist_list_tasks", start_time, "missing_config")
         _audit("todoist_list_tasks", {"result": "missing_config"})
@@ -4868,6 +5081,7 @@ async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
                             _audit("todoist_list_tasks", {"result": "invalid_json"})
                             return {"content": [{"type": "text", "text": "Invalid Todoist response."}]}
                         tasks = data[:limit]
+                        _integration_record_success("todoist")
                         if not tasks:
                             record_summary("todoist_list_tasks", "empty", start_time)
                             _audit(
@@ -4965,6 +5179,10 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("pushover_notify", "denied", start_time, "policy")
         _audit("pushover_notify", {"result": "denied", "reason": "policy"})
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    circuit_open, circuit_remaining = _integration_circuit_open("pushover")
+    if circuit_open:
+        _record_service_error("pushover_notify", start_time, "circuit_open")
+        return {"content": [{"type": "text", "text": _integration_circuit_open_message("pushover", circuit_remaining)}]}
     if not _config or not str(_config.pushover_api_token).strip() or not str(_config.pushover_user_key).strip():
         _record_service_error("pushover_notify", start_time, "missing_config")
         _audit("pushover_notify", {"result": "missing_config"})
@@ -5016,6 +5234,7 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
                         _record_service_error("pushover_notify", start_time, "api_error")
                         _audit("pushover_notify", {"result": "api_error", "error": error_text})
                         return {"content": [{"type": "text", "text": f"Pushover rejected notification{f': {error_text}' if error_text else '.'}"}]}
+                    _integration_record_success("pushover")
                     record_summary("pushover_notify", "ok", start_time)
                     _audit(
                         "pushover_notify",
@@ -5338,6 +5557,16 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "webhook",
             "email",
             "channels",
+        ],
+        "integration_circuit_breaker_required": [
+            "open",
+            "open_remaining_sec",
+            "consecutive_failures",
+            "opened_count",
+            "cooldown_sec",
+            "last_error",
+            "last_failure_at",
+            "last_success_at",
         ],
         "identity_required": [
             "enabled",

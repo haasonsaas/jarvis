@@ -420,6 +420,24 @@ class TestServicesTools:
         mock_session_cls.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_weather_circuit_breaker_blocks_requests_and_surfaces_status(self):
+        from jarvis.tools import services
+
+        for _ in range(services.CIRCUIT_BREAKER_FAILURE_THRESHOLD):
+            services._integration_record_failure("weather", "network_client_error")
+
+        with patch("aiohttp.ClientSession") as mock_session_cls:
+            blocked = await services.weather_lookup({"location": "Boston"})
+
+        text = blocked["content"][0]["text"].lower()
+        assert "circuit breaker is open" in text
+        mock_session_cls.assert_not_called()
+
+        status = await services.system_status({})
+        payload = json.loads(status["content"][0]["text"])
+        assert payload["integrations"]["weather"]["circuit_breaker"]["open"] is True
+
+    @pytest.mark.asyncio
     async def test_todoist_permission_profile_readonly_denies_add(self, tmp_path):
         from jarvis.config import Config
         from jarvis.memory import MemoryStore
@@ -3053,7 +3071,7 @@ class TestServicesTools:
 
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.4"
+        assert payload["schema_version"] == "1.5"
         assert "local_time" in payload
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
@@ -3100,6 +3118,11 @@ class TestServicesTools:
         assert "webhook" in payload["integrations"]
         assert "email" in payload["integrations"]
         assert "channels" in payload["integrations"]
+        assert "circuit_breaker" in payload["integrations"]["weather"]
+        assert "open" in payload["integrations"]["weather"]["circuit_breaker"]
+        assert "circuit_breaker" in payload["integrations"]["webhook"]
+        assert "circuit_breaker" in payload["integrations"]["todoist"]
+        assert "circuit_breaker" in payload["integrations"]["channels"]
         assert "identity" in payload
         assert isinstance(payload["identity"]["enabled"], bool)
         assert isinstance(payload["identity"]["trusted_user_count"], int)
@@ -3122,7 +3145,7 @@ class TestServicesTools:
 
         result = await services.system_status_contract({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.4"
+        assert payload["schema_version"] == "1.5"
         assert "top_level_required" in payload
         assert "tool_policy" in payload["top_level_required"]
         assert "identity" in payload["top_level_required"]
@@ -3158,6 +3181,8 @@ class TestServicesTools:
         assert "integrations_required" in payload
         assert "email" in payload["integrations_required"]
         assert "channels" in payload["integrations_required"]
+        assert "integration_circuit_breaker_required" in payload
+        assert "open" in payload["integration_circuit_breaker_required"]
         assert "identity_required" in payload
         assert "enabled" in payload["identity_required"]
         assert "user_profiles" in payload["identity_required"]

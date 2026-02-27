@@ -9,6 +9,7 @@ TOOL_SERVICE_ERROR_CODES: set[str] = {
     "invalid_data",
     "timeout",
     "cancelled",
+    "circuit_open",
     "network_client_error",
     "invalid_json",
     "api_error",

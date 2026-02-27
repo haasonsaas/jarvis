@@ -103,7 +103,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 ## 10) Reliability and Runtime Safety (6 items)
 
-- [ ] `RX01` Add per-integration circuit breakers with cooldown/backoff state in status. `P0`
+- [x] `RX01` Add per-integration circuit breakers with cooldown/backoff state in status. `P0`
 - [ ] `RX02` Add persistent recovery journal for interrupted actions and post-restart reconciliation. `P0`
 - [ ] `RX03` Add dead-letter queue for failed outbound notifications/webhooks with replay controls. `P1`
 - [x] `RX04` Add stricter timeout budgets per turn phase (listen/think/speak/act). `P0`
@@ -163,7 +163,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q11` Implement `BX02` turn choreography pass.
 - [x] `Q12` Implement `VX02` adaptive end-of-turn timing.
 - [x] `Q13` Implement `JX06` style consistency regression tests.
-- [ ] `Q14` Implement `RX01` integration circuit breakers.
+- [x] `Q14` Implement `RX01` integration circuit breakers.
 - [ ] `Q15` Implement `RX02` recovery journal and resume.
 - [ ] `Q16` Implement `OX03` conversation trace panel.
 - [ ] `Q17` Implement `MX02` memory confidence/source trail.
