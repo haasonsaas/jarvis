@@ -122,6 +122,10 @@ Smart home safety defaults:
 - Operational runbook: [`docs/operations/home-control-policy.md`](docs/operations/home-control-policy.md).
 - Integration runbook: [`docs/operations/integration-policy.md`](docs/operations/integration-policy.md).
 - Trust/identity runbook: [`docs/operations/trust-policy.md`](docs/operations/trust-policy.md).
+- Dialogue response mode auto-switches by request context:
+  - `brief` for urgent/short-answer requests,
+  - `deep` for explicit detailed walkthrough requests,
+  - `normal` otherwise.
 - Home Assistant conversation tool requires both:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`

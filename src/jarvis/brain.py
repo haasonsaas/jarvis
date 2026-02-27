@@ -98,6 +98,38 @@ STYLE_INSTRUCTIONS = {
     "composed": "Use calm, precise phrasing with concise structure and restrained wit.",
     "friendly": "Use warm, approachable phrasing while keeping answers short and practical.",
 }
+RESPONSE_MODE_INSTRUCTIONS = {
+    "brief": "Keep the response to one to two short sentences and prioritize immediate actionability.",
+    "normal": "Keep the response concise and complete in roughly one to three sentences unless clarification is needed.",
+    "deep": "Provide a fuller explanation with reasoning and tradeoffs while staying practical and grounded.",
+}
+RESPONSE_MODE_BRIEF_TERMS = {
+    "quick",
+    "quickly",
+    "brief",
+    "short",
+    "tldr",
+    "urgent",
+    "asap",
+    "immediately",
+    "right now",
+    "hurry",
+    "emergency",
+    "one sentence",
+}
+RESPONSE_MODE_DEEP_TERMS = {
+    "deep dive",
+    "in detail",
+    "detailed",
+    "thorough",
+    "step by step",
+    "walk me through",
+    "explain why",
+    "full breakdown",
+    "comprehensive",
+    "tradeoffs",
+    "pros and cons",
+}
 
 
 class Brain:
@@ -152,6 +184,7 @@ class Brain:
                 "mcp__jarvis-services__get_time",
                 "mcp__jarvis-services__system_status",
                 "mcp__jarvis-services__system_status_contract",
+                "mcp__jarvis-services__jarvis_scorecard",
                 "mcp__jarvis-services__memory_add",
                 "mcp__jarvis-services__memory_search",
                 "mcp__jarvis-services__memory_recent",
@@ -225,6 +258,24 @@ class Brain:
         instruction = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["composed"])
         return f"Mode={style}. {instruction}"
 
+    def _resolve_response_mode(self, user_text: str) -> str:
+        sample = str(user_text or "").strip().lower()
+        if not sample:
+            return "normal"
+        if any(term in sample for term in RESPONSE_MODE_BRIEF_TERMS):
+            return "brief"
+        if any(term in sample for term in RESPONSE_MODE_DEEP_TERMS):
+            return "deep"
+        token_count = len(re.findall(r"[a-z0-9']+", sample))
+        if token_count >= 35:
+            return "deep"
+        return "normal"
+
+    def _response_mode_instruction(self, user_text: str) -> str:
+        mode = self._resolve_response_mode(user_text)
+        instruction = RESPONSE_MODE_INSTRUCTIONS.get(mode, RESPONSE_MODE_INSTRUCTIONS["normal"])
+        return f"Mode={mode}. {instruction}"
+
     def _interaction_contract_context(self) -> str:
         rules = INTERACTION_CONTRACT.get("response_order", ()) + INTERACTION_CONTRACT.get("ambiguity_and_safety", ())
         if not rules:
@@ -279,6 +330,10 @@ class Brain:
                 memory_context = "\n".join(memory_lines)
                 if memory_context:
                     user_text = f"{user_text}\n\nContext (memory):\n{memory_context}"
+
+        response_mode_instruction = self._response_mode_instruction(query_text)
+        if response_mode_instruction:
+            user_text = f"{user_text}\n\nResponse mode:\n{response_mode_instruction}"
 
         style_instruction = self._style_instruction_context()
         if style_instruction:

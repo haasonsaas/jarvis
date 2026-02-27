@@ -3,7 +3,13 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from jarvis.brain import Brain, INTERACTION_CONTRACT, STYLE_INSTRUCTIONS, _find_sentence_boundary
+from jarvis.brain import (
+    Brain,
+    INTERACTION_CONTRACT,
+    RESPONSE_MODE_INSTRUCTIONS,
+    STYLE_INSTRUCTIONS,
+    _find_sentence_boundary,
+)
 from jarvis.presence import PresenceLoop, State
 
 
@@ -75,6 +81,14 @@ class TestBrain:
         assert "Interaction Contract:" in prompt
         assert "Response Order:" in prompt
         assert "Ambiguity And Safety:" in prompt
+
+    def test_response_mode_resolves_brief_for_urgent_text(self, brain):
+        mode = brain._resolve_response_mode("Quick, this is urgent, give me the short answer right now.")
+        assert mode == "brief"
+
+    def test_response_mode_resolves_deep_for_detailed_text(self, brain):
+        mode = brain._resolve_response_mode("Can you do a deep dive and explain this in detail step by step?")
+        assert mode == "deep"
 
     @pytest.mark.asyncio
     async def test_respond_sets_thinking_state(self, brain):
@@ -260,11 +274,52 @@ class TestBrain:
                 pass
 
         payload = captured.get("text", "")
+        assert "Response mode:" in payload
+        assert "Mode=normal" in payload
+        assert RESPONSE_MODE_INSTRUCTIONS["normal"] in payload
         assert "Prompt style:" in payload
         assert "Mode=friendly" in payload
         assert "Response contract:" in payload
         contract_rule = INTERACTION_CONTRACT["response_order"][0]
         assert contract_rule in payload
+
+    @pytest.mark.asyncio
+    async def test_respond_includes_brief_response_mode_instruction(self, brain):
+        captured = {}
+
+        async def fake_query(text: str, session_id: str):
+            captured["text"] = text
+
+        with patch.object(brain._client, "query", new=AsyncMock(side_effect=fake_query)), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([])
+            async for _ in brain.respond("Quick answer please, this is urgent."):
+                pass
+
+        payload = captured.get("text", "")
+        assert "Response mode:" in payload
+        assert "Mode=brief" in payload
+        assert RESPONSE_MODE_INSTRUCTIONS["brief"] in payload
+
+    @pytest.mark.asyncio
+    async def test_respond_includes_deep_response_mode_instruction(self, brain):
+        captured = {}
+
+        async def fake_query(text: str, session_id: str):
+            captured["text"] = text
+
+        with patch.object(brain._client, "query", new=AsyncMock(side_effect=fake_query)), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([])
+            async for _ in brain.respond("Please provide a deep dive and explain this in detail step by step."):
+                pass
+
+        payload = captured.get("text", "")
+        assert "Response mode:" in payload
+        assert "Mode=deep" in payload
+        assert RESPONSE_MODE_INSTRUCTIONS["deep"] in payload
 
     @pytest.mark.asyncio
     async def test_memory_persona_style_overrides_config(self, brain):
@@ -337,6 +392,7 @@ class TestBrain:
 
         payload = captured.get("text", "")
         assert prompt in payload
+        assert "Response mode:" in payload
         assert "Prompt style:" in payload
         assert f"Mode={style}" in payload
         assert STYLE_INSTRUCTIONS[style] in payload
