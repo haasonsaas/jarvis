@@ -70,6 +70,7 @@ import pytest
         ("jarvis.tools.services_schedule_facade_runtime", "jarvis.tools.services"),
         ("jarvis.tools.services_memory_facade_runtime", "jarvis.tools.services"),
         ("jarvis.tools.services_status_facade_runtime", "jarvis.tools.services"),
+        ("jarvis.tools.services_ha_facade_runtime", "jarvis.tools.services"),
         ("jarvis.tools.service_schemas", "jarvis.tools.services"),
         ("jarvis.tools.service_schemas_home", "jarvis.tools.services"),
         ("jarvis.tools.service_schemas_comms", "jarvis.tools.services"),

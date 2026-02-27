@@ -93,14 +93,14 @@ from jarvis.tools.services_status_facade_runtime import (
     skills_status_snapshot as _facade_skills_status_snapshot,
     voice_attention_snapshot as _facade_voice_attention_snapshot,
 )
-from jarvis.tools.services_ha_runtime import (
-    ha_call_service as _runtime_ha_call_service,
-    ha_conversation_speech as _runtime_ha_conversation_speech,
-    ha_get_domain_services as _runtime_ha_get_domain_services,
-    ha_get_json as _runtime_ha_get_json,
-    ha_get_state as _runtime_ha_get_state,
-    ha_render_template as _runtime_ha_render_template,
-    ha_request_json as _runtime_ha_request_json,
+from jarvis.tools.services_ha_facade_runtime import (
+    ha_call_service as _facade_ha_call_service,
+    ha_conversation_speech as _facade_ha_conversation_speech,
+    ha_get_domain_services as _facade_ha_get_domain_services,
+    ha_get_json as _facade_ha_get_json,
+    ha_get_state as _facade_ha_get_state,
+    ha_render_template as _facade_ha_render_template,
+    ha_request_json as _facade_ha_request_json,
 )
 from jarvis.tools.services_email_runtime import (
     record_email_history as _runtime_record_email_history,
@@ -901,64 +901,12 @@ def _ha_action_allowed(domain: str, action: str) -> bool:
     return action in allowed
 
 
-async def _ha_get_state(entity_id: str) -> tuple[dict[str, Any] | None, str | None]:
-    return await _runtime_ha_get_state(_services_module(), entity_id)
-
-
-async def _ha_get_domain_services(domain: str) -> tuple[list[str] | None, str | None]:
-    return await _runtime_ha_get_domain_services(_services_module(), domain)
-
-
-async def _ha_call_service(
-    domain: str,
-    service: str,
-    service_data: dict[str, Any],
-    *,
-    return_response: bool = False,
-    timeout_sec: float = 10.0,
-) -> tuple[list[Any] | None, str | None]:
-    return await _runtime_ha_call_service(
-        _services_module(),
-        domain,
-        service,
-        service_data,
-        return_response=return_response,
-        timeout_sec=timeout_sec,
-    )
-
-
-async def _ha_get_json(
-    path: str,
-    *,
-    params: dict[str, str] | None = None,
-    timeout_sec: float = 10.0,
-) -> tuple[Any | None, str | None]:
-    return await _runtime_ha_get_json(
-        _services_module(),
-        path,
-        params=params,
-        timeout_sec=timeout_sec,
-    )
-
-
-async def _ha_request_json(
-    method: str,
-    path: str,
-    *,
-    payload: dict[str, Any] | None = None,
-    timeout_sec: float = 10.0,
-) -> tuple[Any | None, str | None]:
-    return await _runtime_ha_request_json(
-        _services_module(),
-        method,
-        path,
-        payload=payload,
-        timeout_sec=timeout_sec,
-    )
-
-
-async def _ha_render_template(template_text: str, *, timeout_sec: float = 10.0) -> tuple[str | None, str | None]:
-    return await _runtime_ha_render_template(_services_module(), template_text, timeout_sec=timeout_sec)
+_ha_get_state = _facade_ha_get_state
+_ha_get_domain_services = _facade_ha_get_domain_services
+_ha_call_service = _facade_ha_call_service
+_ha_get_json = _facade_ha_get_json
+_ha_request_json = _facade_ha_request_json
+_ha_render_template = _facade_ha_render_template
 
 
 def _collect_json_lists_by_key(value: Any, key: str) -> list[Any]:
@@ -1008,8 +956,7 @@ _jarvis_scorecard_snapshot = _facade_jarvis_scorecard_snapshot
 
 # ── Home Assistant ────────────────────────────────────────────
 
-def _ha_conversation_speech(payload: dict[str, Any]) -> str:
-    return _runtime_ha_conversation_speech(payload)
+_ha_conversation_speech = _facade_ha_conversation_speech
 
 
 def _record_email_history(recipient: str, subject: str) -> None:

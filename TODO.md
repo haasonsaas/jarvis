@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/86 Runtime Decomposition
+# Jarvis TODO — Wave 74/87 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 119
-- Completed: 119
+- Total items: 127
+- Completed: 127
 - Remaining: 0
 
 ---
@@ -182,6 +182,17 @@ Last updated: 2026-02-27
 - [x] `W86-P07` Run `make security-gate`.
 - [x] `W86-P08` Run `./scripts/jarvis_readiness.sh fast`.
 
+## Q) Wave 87 (completed): Home Assistant wrapper extraction
+
+- [x] `W87-Q01` Profile Home Assistant wrapper block in `services.py`.
+- [x] `W87-Q02` Create `services_ha_facade_runtime.py` for Home Assistant helper wrappers.
+- [x] `W87-Q03` Preserve `services.py` compatibility names used by runtime/domain modules.
+- [x] `W87-Q04` Extend import-boundary coverage for Home Assistant facade module.
+- [x] `W87-Q05` Run focused Home Assistant + home tools regression tests.
+- [x] `W87-Q06` Run `make check`.
+- [x] `W87-Q07` Run `make security-gate`.
+- [x] `W87-Q08` Run `./scripts/jarvis_readiness.sh fast`.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -199,6 +210,7 @@ Last updated: 2026-02-27
   - `services_schedule_facade_runtime.py`
   - `services_memory_facade_runtime.py`
   - `services_status_facade_runtime.py`
+  - `services_ha_facade_runtime.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -215,6 +227,7 @@ Last updated: 2026-02-27
   - Schedule/timer/reminder wrapper family moved behind `services_schedule_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Memory/planning wrapper family moved behind `services_memory_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Status/scorecard wrapper family moved behind `services_status_facade_runtime.py` with `services.py` compatibility aliases maintained.
+  - Home Assistant wrapper family moved behind `services_ha_facade_runtime.py` with `services.py` compatibility aliases maintained.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -230,6 +243,7 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_tools_services.py -k "timer or reminder"`: `13 passed`.
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_memory.py tests/test_tools_services.py -k "memory_"`: `34 passed`.
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py tests/test_main_lifecycle.py -k "system_status or scorecard or observability or identity_status or voice_attention"`: `12 passed`.
-  - `make check`: `778 passed`.
-  - `make security-gate`: `778 passed`; fault subset `3 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py -k "home_assistant or smart_home_state or media_control or calendar_events or calendar_next_event or home_orchestrator"`: `43 passed`.
+  - `make check`: `779 passed`.
+  - `make security-gate`: `779 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
