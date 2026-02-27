@@ -98,6 +98,12 @@ class TestConfig:
         c = Config(wake_mode="invalid-mode")
         assert c.wake_mode == "always_listening"
 
+    def test_wake_calibration_profile_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(wake_calibration_profile="street-noise")
+        assert c.wake_calibration_profile == "default"
+
     def test_voice_timeout_profile_normalizes(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         from jarvis.config import Config

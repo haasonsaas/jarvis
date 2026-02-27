@@ -100,7 +100,7 @@ cp .env.example .env
 # Optional: MEMORY_RETENTION_DAYS / AUDIT_RETENTION_DAYS (0 disables pruning)
 # Optional: MEMORY_PII_GUARDRAILS_ENABLED=true|false
 # Optional: MEMORY_ENCRYPTION_ENABLED / AUDIT_ENCRYPTION_ENABLED / JARVIS_DATA_KEY
-# Optional: WAKE_MODE / WAKE_WORDS / WAKE_WORD_SENSITIVITY / VOICE_TIMEOUT_PROFILE
+# Optional: WAKE_MODE / WAKE_CALIBRATION_PROFILE / WAKE_WORDS / WAKE_WORD_SENSITIVITY / VOICE_TIMEOUT_PROFILE
 # Optional: STT_FALLBACK_ENABLED / WHISPER_MODEL_FALLBACK / TTS_FALLBACK_TEXT_ONLY
 # Optional: MODEL_FAILOVER_ENABLED / MODEL_SECONDARY_MODE / WATCHDOG_* / TURN_TIMEOUT_ACT_SEC / STARTUP_STRICT
 # Optional: OPERATOR_SERVER_ENABLED / OPERATOR_SERVER_HOST / OPERATOR_SERVER_PORT / OPERATOR_AUTH_TOKEN
@@ -134,6 +134,8 @@ Smart home safety defaults:
   - `cautious` for volatile/time-sensitive prompts (`latest`, `today`, `right now`),
   - `calibrated` for estimate/prediction prompts,
   - `direct` for stable factual prompts.
+- Wake-word false-trigger suppression supports calibration profiles (`default`, `quiet_room`, `noisy_room`, `tv_room`, `far_field`):
+  - profile tunes wake sensitivity, minimum post-wake phrase length, and adaptive suppression window after repeated wake-only triggers.
 - Home Assistant conversation tool requires both:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`

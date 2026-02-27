@@ -6,11 +6,12 @@ from jarvis.voice_attention import VoiceAttentionConfig, VoiceAttentionControlle
 pytestmark = pytest.mark.fast
 
 
-def _controller(mode: str = "wake_word") -> VoiceAttentionController:
+def _controller(mode: str = "wake_word", calibration_profile: str = "default") -> VoiceAttentionController:
     return VoiceAttentionController(
         VoiceAttentionConfig(
             wake_words=["jarvis"],
             mode=mode,
+            wake_calibration_profile=calibration_profile,
             wake_word_sensitivity=0.8,
             followup_window_sec=5.0,
         )
@@ -27,6 +28,15 @@ def test_wake_word_mode_requires_wake_word_outside_followup_window():
     assert allowed.accepted is True
     assert allowed.reason == "accepted_wake_word"
     assert "turn on the lights" in allowed.text
+
+
+def test_noisy_room_profile_applies_calibration_settings():
+    attention = _controller("wake_word", calibration_profile="noisy_room")
+    status = attention.status(now=0.0)
+    assert status["wake_calibration_profile"] == "noisy_room"
+    assert status["wake_word_sensitivity"] >= 0.8
+    assert status["false_trigger_threshold"] == 2
+    assert status["false_trigger_window_sec"] >= 30.0
 
 
 def test_followup_window_allows_multi_turn_without_repeating_wake_word():
@@ -112,3 +122,17 @@ def test_status_includes_adaptive_timeout_diagnostics():
     assert "adaptive_silence_timeout_sec" in status
     assert "speech_rate_wps" in status
     assert "interruption_likelihood" in status
+    assert "wake_calibration_profile" in status
+    assert "effective_wake_word_sensitivity" in status
+
+
+def test_repeated_wake_word_only_triggers_suppression_window():
+    attention = _controller("wake_word", calibration_profile="noisy_room")
+
+    first = attention.process_transcript("jarvis", now=100.0)
+    second = attention.process_transcript("jarvis", now=106.0)
+    third = attention.process_transcript("jarvis", now=112.0)
+
+    assert first.reason in {"wake_word_only", "wake_word_only_suppressed"}
+    assert second.reason in {"wake_word_only", "wake_word_only_suppressed"}
+    assert third.reason == "suppressed_false_trigger_window"

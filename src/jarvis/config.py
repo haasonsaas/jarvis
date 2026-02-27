@@ -122,6 +122,7 @@ class Config:
     doa_change_threshold: float = field(default_factory=lambda: _env_float("DOA_CHANGE_THRESHOLD", 0.04))
     doa_timeout: float = field(default_factory=lambda: _env_float("DOA_TIMEOUT", 1.0))
     wake_mode: str = field(default_factory=lambda: os.environ.get("WAKE_MODE", "always_listening"))
+    wake_calibration_profile: str = field(default_factory=lambda: os.environ.get("WAKE_CALIBRATION_PROFILE", "default"))
     wake_words: list[str] = field(default_factory=lambda: _env_list("WAKE_WORDS") or ["jarvis"])
     wake_word_sensitivity: float = field(default_factory=lambda: _env_float("WAKE_WORD_SENSITIVITY", 0.82))
     voice_followup_window_sec: float = field(default_factory=lambda: _env_positive_float("VOICE_FOLLOWUP_WINDOW_SEC", 6.0))
@@ -356,6 +357,7 @@ class Config:
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
         self.wake_mode = self._normalize_wake_mode(self.wake_mode)
+        self.wake_calibration_profile = self._normalize_wake_calibration_profile(self.wake_calibration_profile)
         self.voice_timeout_profile = self._normalize_voice_timeout_profile(self.voice_timeout_profile)
         self.model_secondary_mode = self._normalize_model_secondary_mode(self.model_secondary_mode)
         self.home_permission_profile = self._normalize_home_permission_profile(self.home_permission_profile)
@@ -385,6 +387,10 @@ class Config:
             raw = os.environ.get("WAKE_MODE", "")
             if raw.strip().lower() not in {"always_listening", "wake_word", "push_to_talk"}:
                 self.startup_warnings.append("WAKE_MODE invalid; using always_listening.")
+        if _env_is_set("WAKE_CALIBRATION_PROFILE") and self.wake_calibration_profile == "default":
+            raw = os.environ.get("WAKE_CALIBRATION_PROFILE", "")
+            if raw.strip().lower() not in {"default", "quiet_room", "noisy_room", "tv_room", "far_field"}:
+                self.startup_warnings.append("WAKE_CALIBRATION_PROFILE invalid; using default.")
         if _env_is_set("VOICE_TIMEOUT_PROFILE") and self.voice_timeout_profile == "normal":
             raw = os.environ.get("VOICE_TIMEOUT_PROFILE", "")
             if raw.strip().lower() not in {"short", "normal", "long"}:
@@ -474,6 +480,13 @@ class Config:
         if normalized in {"always_listening", "wake_word", "push_to_talk"}:
             return normalized
         return "always_listening"
+
+    @staticmethod
+    def _normalize_wake_calibration_profile(profile: str) -> str:
+        normalized = (profile or "default").strip().lower()
+        if normalized in {"default", "quiet_room", "noisy_room", "tv_room", "far_field"}:
+            return normalized
+        return "default"
 
     @staticmethod
     def _normalize_voice_timeout_profile(profile: str) -> str:

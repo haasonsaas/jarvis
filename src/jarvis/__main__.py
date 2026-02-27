@@ -223,6 +223,7 @@ class Jarvis:
             VoiceAttentionConfig(
                 wake_words=list(self.config.wake_words),
                 mode=self.config.wake_mode,
+                wake_calibration_profile=self.config.wake_calibration_profile,
                 wake_word_sensitivity=self.config.wake_word_sensitivity,
                 followup_window_sec=self.config.voice_followup_window_sec,
                 timeout_profile=self.config.voice_timeout_profile,
