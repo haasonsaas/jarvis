@@ -651,7 +651,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
     audit_status = _audit_status()
     health = _health_rollup(
         config_present=(_config is not None),
-        memory_status=memory_status if isinstance(memory_status, dict) else None,
+        memory_state=memory_status if isinstance(memory_status, dict) else None,
         recent_tools=recent_tools,
         identity_status=identity_status,
     )
@@ -1127,7 +1127,7 @@ async def jarvis_scorecard(args: dict[str, Any]) -> dict[str, Any]:
     audit_status = _audit_status()
     health = _health_rollup(
         config_present=(_config is not None),
-        memory_status=memory_status if isinstance(memory_status, dict) else None,
+        memory_state=memory_status if isinstance(memory_status, dict) else None,
         recent_tools=recent_tools,
         identity_status=identity_status,
     )

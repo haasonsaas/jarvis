@@ -54,23 +54,26 @@ from jarvis.audio.runtime_audio import (
     to_mono as _audio_to_mono,
     resample_audio as _audio_resample,
 )
+from jarvis.runtime_turn import (
+    classify_user_intent as _turn_classify_user_intent,
+    completion_success_from_summaries as _turn_completion_success_from_summaries,
+    is_followup_carryover_candidate as _turn_is_followup_carryover_candidate,
+    looks_like_user_correction as _turn_looks_like_user_correction,
+    policy_decisions_from_summaries as _turn_policy_decisions_from_summaries,
+    tool_call_trace_items as _turn_tool_call_trace_items,
+    turn_tool_summaries_since as _turn_tool_summaries_since,
+    update_followup_carryover as _turn_update_followup_carryover,
+    with_followup_carryover as _turn_with_followup_carryover,
+)
 from jarvis.runtime_constants import (
-    ACTION_INTENT_TERMS,
     ATTENTION_RECENCY_SEC,
     CONFIRMATION_PHRASE,
     CONVERSATION_TRACE_MAXLEN,
-    CORRECTION_TERMS,
     EPISODIC_TIMELINE_MAXLEN,
-    FOLLOWUP_CARRYOVER_ACK_TERMS,
-    FOLLOWUP_CARRYOVER_MAX_AGE_SEC,
-    FOLLOWUP_CARRYOVER_PREFIX_TERMS,
-    FOLLOWUP_CARRYOVER_REFERENCE_TERMS,
-    FOLLOWUP_CARRYOVER_SHORT_REPLY_MAX_WORDS,
     INTENDED_QUERY_MIN_ATTENTION,
     MEMORY_FORGET_RE,
     MEMORY_UPDATE_RE,
     MIN_UTTERANCE,
-    QUESTION_START_TERMS,
     REPAIR_CONFIRMATION_TEMPLATE,
     REPAIR_CONFIDENCE_THRESHOLD,
     REPAIR_MIN_WORDS,
@@ -1768,96 +1771,27 @@ class Jarvis:
 
     @staticmethod
     def _classify_user_intent(text: str) -> str:
-        phrase = str(text or "").strip().lower()
-        if not phrase:
-            return "answer"
-        tokens = set(re.findall(r"[a-z']+", phrase))
-        has_action = bool(tokens & ACTION_INTENT_TERMS)
-        starts_with_question = any(phrase.startswith(f"{term} ") for term in QUESTION_START_TERMS)
-        has_question = phrase.endswith("?") or starts_with_question
-        if has_action and has_question:
-            return "hybrid"
-        if has_action:
-            return "action"
-        return "answer"
+        return _turn_classify_user_intent(text)
 
     @staticmethod
     def _looks_like_user_correction(text: str) -> bool:
-        phrase = str(text or "").strip().lower()
-        if not phrase:
-            return False
-        if any(term in phrase for term in CORRECTION_TERMS):
-            return True
-        return bool(re.search(r"\b(?:no|nope|nah)\b.+\b(?:meant|wanted|said)\b", phrase))
+        return _turn_looks_like_user_correction(text)
 
     def _is_followup_carryover_candidate(self, text: str, *, now_ts: float | None = None) -> bool:
-        phrase = str(text or "").strip().lower()
-        if not phrase:
-            return False
         context = getattr(self, "_followup_carryover", {})
-        if not isinstance(context, dict):
-            return False
-        previous_text = str(context.get("text", "")).strip()
-        previous_intent = str(context.get("intent", "")).strip().lower()
-        unresolved = bool(context.get("unresolved", False))
-        try:
-            previous_ts = float(context.get("timestamp", 0.0))
-        except (TypeError, ValueError):
-            previous_ts = 0.0
-        if not math.isfinite(previous_ts) or previous_ts < 0.0:
-            previous_ts = 0.0
-        if not previous_text or previous_intent not in {"action", "hybrid"}:
-            return False
-        if now_ts is None:
-            now_value = time.time()
-        else:
-            try:
-                now_value = float(now_ts)
-            except (TypeError, ValueError):
-                now_value = time.time()
-        if not math.isfinite(now_value):
-            now_value = time.time()
-        if (now_value - previous_ts) > FOLLOWUP_CARRYOVER_MAX_AGE_SEC:
-            return False
-        if len(phrase) > 220:
-            return False
-        if any(phrase.startswith(prefix) for prefix in FOLLOWUP_CARRYOVER_PREFIX_TERMS):
-            return True
-        word_list = [token for token in re.findall(r"[a-z0-9']+", phrase)]
-        words = set(word_list)
-        if words & FOLLOWUP_CARRYOVER_REFERENCE_TERMS:
-            return True
-        if not unresolved:
-            return False
-        if phrase.endswith("?"):
-            return False
-        if not word_list or len(word_list) > FOLLOWUP_CARRYOVER_SHORT_REPLY_MAX_WORDS:
-            return False
-        if words.issubset(FOLLOWUP_CARRYOVER_ACK_TERMS):
-            return False
-        if words & ACTION_INTENT_TERMS:
-            return False
-        if word_list[0] in QUESTION_START_TERMS:
-            return False
-        return True
+        return _turn_is_followup_carryover_candidate(
+            text,
+            context=context,
+            now_ts=now_ts,
+        )
 
     def _with_followup_carryover(self, text: str, *, now_ts: float | None = None) -> tuple[str, bool]:
-        if not self._is_followup_carryover_candidate(text, now_ts=now_ts):
-            return text, False
         context = getattr(self, "_followup_carryover", {})
-        previous_text = str(context.get("text", "")).strip()[:220]
-        unresolved = bool(context.get("unresolved", False))
-        policy = (
-            "Previous request may still have unresolved slots; preserve target/entity context unless user overrides."
-            if unresolved
-            else "Preserve prior action context unless the user explicitly overrides target or scope."
+        return _turn_with_followup_carryover(
+            text,
+            context=context,
+            now_ts=now_ts,
         )
-        augmented = (
-            f"{text}\n\nFollow-up intent carryover:\n"
-            f"Previous request: {previous_text}\n"
-            f"{policy}"
-        )
-        return augmented, True
 
     def _update_followup_carryover(
         self,
@@ -1867,113 +1801,33 @@ class Jarvis:
         resolved: bool | None,
         now_ts: float | None = None,
     ) -> None:
-        phrase = str(text or "").strip()
-        if not phrase:
-            return
-        intent = str(intent_class or "").strip().lower()
-        unresolved = intent in {"action", "hybrid"} and resolved is not True
-        if now_ts is None:
-            timestamp = time.time()
-        else:
-            try:
-                timestamp = float(now_ts)
-            except (TypeError, ValueError):
-                timestamp = time.time()
-        if not math.isfinite(timestamp) or timestamp < 0.0:
-            timestamp = time.time()
-        payload = {
-            "text": phrase[:280],
-            "intent": intent,
-            "timestamp": timestamp,
-            "unresolved": unresolved,
-        }
-        self._followup_carryover = payload
+        payload = _turn_update_followup_carryover(
+            text,
+            intent_class,
+            resolved=resolved,
+            now_ts=now_ts,
+        )
+        if payload is not None:
+            self._followup_carryover = payload
 
     @staticmethod
     def _turn_tool_summaries_since(started_at: float) -> list[dict[str, Any]]:
-        with suppress(Exception):
-            summaries = list_summaries(limit=200)
-            if isinstance(summaries, list):
-                matched: list[dict[str, Any]] = []
-                for item in summaries:
-                    if not isinstance(item, dict):
-                        continue
-                    timestamp_raw = item.get("timestamp")
-                    try:
-                        timestamp = float(timestamp_raw)
-                    except (TypeError, ValueError):
-                        continue
-                    if not math.isfinite(timestamp) or timestamp < started_at:
-                        continue
-                    name = str(item.get("name", "")).strip().lower()
-                    if name in {"system_status", "system_status_contract", "tool_summary", "tool_summary_text"}:
-                        continue
-                    matched.append(item)
-                return matched
-        return []
+        return _turn_tool_summaries_since(
+            started_at,
+            list_summaries_fn=list_summaries,
+        )
 
     @staticmethod
     def _completion_success_from_summaries(summaries: list[dict[str, Any]]) -> bool | None:
-        if not summaries:
-            return None
-        success_statuses = {"ok", "dry_run", "noop", "cooldown"}
-        failure_statuses = {"error", "denied"}
-        has_success = any(str(item.get("status", "")).strip().lower() in success_statuses for item in summaries)
-        has_failure = any(str(item.get("status", "")).strip().lower() in failure_statuses for item in summaries)
-        if has_success:
-            return True
-        if has_failure:
-            return False
-        return None
+        return _turn_completion_success_from_summaries(summaries)
 
     @staticmethod
     def _tool_call_trace_items(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        calls: list[dict[str, Any]] = []
-        for item in summaries:
-            if not isinstance(item, dict):
-                continue
-            try:
-                duration = float(item.get("duration_ms", 0.0))
-            except (TypeError, ValueError):
-                duration = 0.0
-            if not math.isfinite(duration) or duration < 0.0:
-                duration = 0.0
-            calls.append(
-                {
-                    "name": str(item.get("name", "tool")),
-                    "status": str(item.get("status", "unknown")),
-                    "duration_ms": duration,
-                    "detail": str(item.get("detail", "")),
-                    "effect": str(item.get("effect", "")),
-                    "risk": str(item.get("risk", "")),
-                }
-            )
-        return calls
+        return _turn_tool_call_trace_items(summaries)
 
     @staticmethod
     def _policy_decisions_from_summaries(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        decisions: list[dict[str, Any]] = []
-        for item in summaries:
-            if not isinstance(item, dict):
-                continue
-            status = str(item.get("status", "")).strip().lower()
-            detail = str(item.get("detail", "")).strip().lower()
-            if not status and not detail:
-                continue
-            if (
-                status in {"denied", "dry_run", "cooldown"}
-                or detail in {"policy", "circuit_open"}
-                or "policy" in detail
-                or "preview" in detail
-            ):
-                decisions.append(
-                    {
-                        "tool": str(item.get("name", "tool")),
-                        "status": status,
-                        "detail": detail,
-                    }
-                )
-        return decisions
+        return _turn_policy_decisions_from_summaries(summaries)
 
     def _record_conversation_trace(
         self,

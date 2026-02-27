@@ -26,7 +26,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import aiohttp
-from claude_agent_sdk import tool, create_sdk_mcp_server
 
 from jarvis.config import Config
 from jarvis.skills import SkillRegistry
@@ -55,9 +54,10 @@ from jarvis.tools.service_policy import (
 )
 from jarvis.tools.service_schemas import (
     SERVICE_RUNTIME_REQUIRED_FIELDS,  # noqa: F401  # compatibility export for tests/importers
-    SERVICE_TOOL_SCHEMAS,
+    SERVICE_TOOL_SCHEMAS,  # noqa: F401  # compatibility export for tests/importers
 )
-from jarvis.tools.services_domains.home import (
+from jarvis.tools.services_server import create_services_server  # noqa: F401  # compatibility export for callers
+from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
     smart_home,
     smart_home_state,
@@ -68,7 +68,7 @@ from jarvis.tools.services_domains.home import (
     home_assistant_area_entities,
     media_control,
 )
-from jarvis.tools.services_domains.planner import (
+from jarvis.tools.services_domains.planner import (  # noqa: F401  # compatibility exports for tests/importers
     planner_engine,
     task_plan_create,
     task_plan_list,
@@ -83,7 +83,7 @@ from jarvis.tools.services_domains.planner import (
     reminder_complete,
     reminder_notify_due,
 )
-from jarvis.tools.services_domains.integrations import (
+from jarvis.tools.services_domains.integrations import (  # noqa: F401  # compatibility exports for tests/importers
     integration_hub,
     weather_lookup,
     webhook_trigger,
@@ -94,7 +94,7 @@ from jarvis.tools.services_domains.integrations import (
     calendar_events,
     calendar_next_event,
 )
-from jarvis.tools.services_domains.comms import (
+from jarvis.tools.services_domains.comms import (  # noqa: F401  # compatibility exports for tests/importers
     slack_notify,
     discord_notify,
     email_send,
@@ -103,7 +103,7 @@ from jarvis.tools.services_domains.comms import (
     todoist_list_tasks,
     pushover_notify,
 )
-from jarvis.tools.services_domains.governance import (
+from jarvis.tools.services_domains.governance import (  # noqa: F401  # compatibility exports for tests/importers
     tool_summary,
     tool_summary_text,
     skills_list,
@@ -117,7 +117,7 @@ from jarvis.tools.services_domains.governance import (
     quality_evaluator,
     embodiment_presence,
 )
-from jarvis.tools.services_domains.trust import (
+from jarvis.tools.services_domains.trust import (  # noqa: F401  # compatibility exports for tests/importers
     proactive_assistant,
     memory_add,
     memory_update,
@@ -3503,7 +3503,7 @@ def _expansion_snapshot() -> dict[str, Any]:
 def _health_rollup(
     *,
     config_present: bool,
-    memory_status: dict[str, Any] | None,
+    memory_state: dict[str, Any] | None,
     recent_tools: list[dict[str, object]] | dict[str, str],
     identity_status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -3512,7 +3512,7 @@ def _health_rollup(
     if not config_present:
         level = "error"
         reasons.append("config_unbound")
-    if isinstance(memory_status, dict) and "error" in memory_status:
+    if isinstance(memory_state, dict) and "error" in memory_state:
         reasons.append("memory_error")
     if isinstance(recent_tools, dict) and "error" in recent_tools:
         reasons.append("tool_summary_error")
@@ -4100,452 +4100,3 @@ def _planner_ready_nodes(graph: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 
-
-
-# ── Build MCP server ──────────────────────────────────────────
-
-smart_home_tool = tool(
-    "smart_home",
-    "Control smart home devices via Home Assistant. "
-    "For destructive actions (unlock doors, disable alarms, open covers), set dry_run=true first. "
-    "Always explain what you're about to do before executing.",
-    SERVICE_TOOL_SCHEMAS["smart_home"],
-)(smart_home)
-
-
-smart_home_state_tool = tool(
-    "smart_home_state",
-    "Get the current state of a Home Assistant entity.",
-    SERVICE_TOOL_SCHEMAS["smart_home_state"],
-)(smart_home_state)
-
-home_assistant_capabilities_tool = tool(
-    "home_assistant_capabilities",
-    "Inspect a Home Assistant entity and list available domain services for safer planning.",
-    SERVICE_TOOL_SCHEMAS["home_assistant_capabilities"],
-)(home_assistant_capabilities)
-
-home_assistant_conversation_tool = tool(
-    "home_assistant_conversation",
-    "Send a natural language command to Home Assistant's conversation API. Requires confirm=true.",
-    SERVICE_TOOL_SCHEMAS["home_assistant_conversation"],
-)(home_assistant_conversation)
-
-home_assistant_todo_tool = tool(
-    "home_assistant_todo",
-    "Manage Home Assistant to-do entities (list/add/remove).",
-    SERVICE_TOOL_SCHEMAS["home_assistant_todo"],
-)(home_assistant_todo)
-
-home_assistant_timer_tool = tool(
-    "home_assistant_timer",
-    "Control Home Assistant timer entities (state/start/pause/cancel/finish).",
-    SERVICE_TOOL_SCHEMAS["home_assistant_timer"],
-)(home_assistant_timer)
-
-home_assistant_area_entities_tool = tool(
-    "home_assistant_area_entities",
-    "Resolve entities in a Home Assistant area, optionally including live state.",
-    SERVICE_TOOL_SCHEMAS["home_assistant_area_entities"],
-)(home_assistant_area_entities)
-
-media_control_tool = tool(
-    "media_control",
-    "Control media_player entities with a simplified action interface.",
-    SERVICE_TOOL_SCHEMAS["media_control"],
-)(media_control)
-
-weather_lookup_tool = tool(
-    "weather_lookup",
-    "Fetch current weather using the Open-Meteo provider.",
-    SERVICE_TOOL_SCHEMAS["weather_lookup"],
-)(weather_lookup)
-
-webhook_trigger_tool = tool(
-    "webhook_trigger",
-    "Send an outbound webhook request to an allowlisted host.",
-    SERVICE_TOOL_SCHEMAS["webhook_trigger"],
-)(webhook_trigger)
-
-webhook_inbound_list_tool = tool(
-    "webhook_inbound_list",
-    "List recently received inbound webhook callback events.",
-    SERVICE_TOOL_SCHEMAS["webhook_inbound_list"],
-)(webhook_inbound_list)
-
-webhook_inbound_clear_tool = tool(
-    "webhook_inbound_clear",
-    "Clear stored inbound webhook callback events.",
-    SERVICE_TOOL_SCHEMAS["webhook_inbound_clear"],
-)(webhook_inbound_clear)
-
-slack_notify_tool = tool(
-    "slack_notify",
-    "Send a Slack notification via incoming webhook.",
-    SERVICE_TOOL_SCHEMAS["slack_notify"],
-)(slack_notify)
-
-discord_notify_tool = tool(
-    "discord_notify",
-    "Send a Discord notification via webhook.",
-    SERVICE_TOOL_SCHEMAS["discord_notify"],
-)(discord_notify)
-
-email_send_tool = tool(
-    "email_send",
-    "Send an email through configured SMTP. Requires confirm=true.",
-    SERVICE_TOOL_SCHEMAS["email_send"],
-)(email_send)
-
-email_summary_tool = tool(
-    "email_summary",
-    "Summarize recently sent emails recorded by Jarvis.",
-    SERVICE_TOOL_SCHEMAS["email_summary"],
-)(email_summary)
-
-dead_letter_list_tool = tool(
-    "dead_letter_list",
-    "List dead-letter queue entries for failed outbound notifications/webhooks.",
-    SERVICE_TOOL_SCHEMAS["dead_letter_list"],
-)(dead_letter_list)
-
-dead_letter_replay_tool = tool(
-    "dead_letter_replay",
-    "Replay failed outbound dead-letter entries by id or filter.",
-    SERVICE_TOOL_SCHEMAS["dead_letter_replay"],
-)(dead_letter_replay)
-
-todoist_add_task_tool = tool(
-    "todoist_add_task",
-    "Create a task in Todoist (project configurable via env).",
-    SERVICE_TOOL_SCHEMAS["todoist_add_task"],
-)(todoist_add_task)
-
-todoist_list_tasks_tool = tool(
-    "todoist_list_tasks",
-    "List active tasks from Todoist.",
-    SERVICE_TOOL_SCHEMAS["todoist_list_tasks"],
-)(todoist_list_tasks)
-
-pushover_notify_tool = tool(
-    "pushover_notify",
-    "Send a push notification via Pushover.",
-    SERVICE_TOOL_SCHEMAS["pushover_notify"],
-)(pushover_notify)
-
-
-get_time_tool = tool(
-    "get_time",
-    "Get the current local time (device clock).",
-    SERVICE_TOOL_SCHEMAS["get_time"],
-)(get_time)
-
-system_status_tool = tool(
-    "system_status",
-    "Report current runtime capabilities and health snapshot.",
-    SERVICE_TOOL_SCHEMAS["system_status"],
-)(system_status)
-
-system_status_contract_tool = tool(
-    "system_status_contract",
-    "Return the stable system_status schema contract for automation clients.",
-    SERVICE_TOOL_SCHEMAS["system_status_contract"],
-)(system_status_contract)
-
-jarvis_scorecard_tool = tool(
-    "jarvis_scorecard",
-    "Return a unified scorecard across latency, reliability, initiative, and trust.",
-    SERVICE_TOOL_SCHEMAS["jarvis_scorecard"],
-)(jarvis_scorecard)
-
-memory_add_tool = tool(
-    "memory_add",
-    "Store a long-term memory (facts, preferences, summaries).",
-    SERVICE_TOOL_SCHEMAS["memory_add"],
-)(memory_add)
-
-memory_update_tool = tool(
-    "memory_update",
-    "Update existing memory text by id.",
-    SERVICE_TOOL_SCHEMAS["memory_update"],
-)(memory_update)
-
-memory_forget_tool = tool(
-    "memory_forget",
-    "Forget (delete) a memory by id.",
-    SERVICE_TOOL_SCHEMAS["memory_forget"],
-)(memory_forget)
-
-memory_search_tool = tool(
-    "memory_search",
-    "Search long-term memory for relevant entries.",
-    SERVICE_TOOL_SCHEMAS["memory_search"],
-)(memory_search)
-
-memory_status_tool = tool(
-    "memory_status",
-    "Report memory index status and availability.",
-    SERVICE_TOOL_SCHEMAS["memory_status"],
-)(memory_status)
-
-memory_recent_tool = tool(
-    "memory_recent",
-    "List recent memory entries.",
-    SERVICE_TOOL_SCHEMAS["memory_recent"],
-)(memory_recent)
-
-memory_summary_add_tool = tool(
-    "memory_summary_add",
-    "Store or update a short memory summary for a topic.",
-    SERVICE_TOOL_SCHEMAS["memory_summary_add"],
-)(memory_summary_add)
-
-memory_summary_list_tool = tool(
-    "memory_summary_list",
-    "List recent memory summaries.",
-    SERVICE_TOOL_SCHEMAS["memory_summary_list"],
-)(memory_summary_list)
-
-task_plan_create_tool = tool(
-    "task_plan_create",
-    "Create a multi-step task plan and store it.",
-    SERVICE_TOOL_SCHEMAS["task_plan_create"],
-)(task_plan_create)
-
-task_plan_list_tool = tool(
-    "task_plan_list",
-    "List stored task plans (optionally open only).",
-    SERVICE_TOOL_SCHEMAS["task_plan_list"],
-)(task_plan_list)
-
-task_plan_update_tool = tool(
-    "task_plan_update",
-    "Update a task plan step status.",
-    SERVICE_TOOL_SCHEMAS["task_plan_update"],
-)(task_plan_update)
-
-task_plan_summary_tool = tool(
-    "task_plan_summary",
-    "Summarize progress for a task plan.",
-    SERVICE_TOOL_SCHEMAS["task_plan_summary"],
-)(task_plan_summary)
-
-task_plan_next_tool = tool(
-    "task_plan_next",
-    "Get the next pending step in a task plan.",
-    SERVICE_TOOL_SCHEMAS["task_plan_next"],
-)(task_plan_next)
-
-timer_create_tool = tool(
-    "timer_create",
-    "Create a countdown timer.",
-    SERVICE_TOOL_SCHEMAS["timer_create"],
-)(timer_create)
-
-timer_list_tool = tool(
-    "timer_list",
-    "List active timers and their remaining time.",
-    SERVICE_TOOL_SCHEMAS["timer_list"],
-)(timer_list)
-
-timer_cancel_tool = tool(
-    "timer_cancel",
-    "Cancel an active timer by id or label.",
-    SERVICE_TOOL_SCHEMAS["timer_cancel"],
-)(timer_cancel)
-
-reminder_create_tool = tool(
-    "reminder_create",
-    "Create a reminder with a due time.",
-    SERVICE_TOOL_SCHEMAS["reminder_create"],
-)(reminder_create)
-
-reminder_list_tool = tool(
-    "reminder_list",
-    "List reminders and due status.",
-    SERVICE_TOOL_SCHEMAS["reminder_list"],
-)(reminder_list)
-
-reminder_complete_tool = tool(
-    "reminder_complete",
-    "Mark a reminder as completed.",
-    SERVICE_TOOL_SCHEMAS["reminder_complete"],
-)(reminder_complete)
-
-reminder_notify_due_tool = tool(
-    "reminder_notify_due",
-    "Send Pushover notifications for due reminders that have not been notified yet.",
-    SERVICE_TOOL_SCHEMAS["reminder_notify_due"],
-)(reminder_notify_due)
-
-calendar_events_tool = tool(
-    "calendar_events",
-    "List calendar events from Home Assistant within a time window.",
-    SERVICE_TOOL_SCHEMAS["calendar_events"],
-)(calendar_events)
-
-calendar_next_event_tool = tool(
-    "calendar_next_event",
-    "Fetch the next upcoming calendar event from Home Assistant.",
-    SERVICE_TOOL_SCHEMAS["calendar_next_event"],
-)(calendar_next_event)
-
-tool_summary_tool = tool(
-    "tool_summary",
-    "Return recent tool execution summaries (latency/outcome).",
-    SERVICE_TOOL_SCHEMAS["tool_summary"],
-)(tool_summary)
-
-tool_summary_text_tool = tool(
-    "tool_summary_text",
-    "Summarize recent tool executions for the user.",
-    SERVICE_TOOL_SCHEMAS["tool_summary_text"],
-)(tool_summary_text)
-
-skills_list_tool = tool(
-    "skills_list",
-    "List discovered skills and their lifecycle status.",
-    SERVICE_TOOL_SCHEMAS["skills_list"],
-)(skills_list)
-
-skills_enable_tool = tool(
-    "skills_enable",
-    "Enable a discovered skill by name.",
-    SERVICE_TOOL_SCHEMAS["skills_enable"],
-)(skills_enable)
-
-skills_disable_tool = tool(
-    "skills_disable",
-    "Disable a discovered skill by name.",
-    SERVICE_TOOL_SCHEMAS["skills_disable"],
-)(skills_disable)
-
-skills_version_tool = tool(
-    "skills_version",
-    "Return a skill version by name.",
-    SERVICE_TOOL_SCHEMAS["skills_version"],
-)(skills_version)
-
-proactive_assistant_tool = tool(
-    "proactive_assistant",
-    "Run proactive briefing/anomaly/digest workflows and follow-through queueing.",
-    SERVICE_TOOL_SCHEMAS["proactive_assistant"],
-)(proactive_assistant)
-
-memory_governance_tool = tool(
-    "memory_governance",
-    "Manage per-user memory overlays and run memory quality audits/cleanup.",
-    SERVICE_TOOL_SCHEMAS["memory_governance"],
-)(memory_governance)
-
-identity_trust_tool = tool(
-    "identity_trust",
-    "Manage identity confidence, trust policies, guest mode sessions, and household profiles.",
-    SERVICE_TOOL_SCHEMAS["identity_trust"],
-)(identity_trust)
-
-home_orchestrator_tool = tool(
-    "home_orchestrator",
-    "Create and execute multi-entity home plans with area policy checks and task tracking.",
-    SERVICE_TOOL_SCHEMAS["home_orchestrator"],
-)(home_orchestrator)
-
-skills_governance_tool = tool(
-    "skills_governance",
-    "Negotiate skills, inspect dependency health, enforce quotas, and run skill harness checks.",
-    SERVICE_TOOL_SCHEMAS["skills_governance"],
-)(skills_governance)
-
-planner_engine_tool = tool(
-    "planner_engine",
-    "Planner/executor split with task graphs, checkpoint/resume, deferred scheduling, and self-critique.",
-    SERVICE_TOOL_SCHEMAS["planner_engine"],
-)(planner_engine)
-
-quality_evaluator_tool = tool(
-    "quality_evaluator",
-    "Generate weekly quality artifacts and run deterministic evaluation datasets.",
-    SERVICE_TOOL_SCHEMAS["quality_evaluator"],
-)(quality_evaluator)
-
-embodiment_presence_tool = tool(
-    "embodiment_presence",
-    "Manage micro-expressions, gaze calibration, gesture envelopes, privacy posture, and motion safety envelopes.",
-    SERVICE_TOOL_SCHEMAS["embodiment_presence"],
-)(embodiment_presence)
-
-integration_hub_tool = tool(
-    "integration_hub",
-    "Run calendar/notes/messaging/commute/shopping/research orchestration workflows and release-channel operations.",
-    SERVICE_TOOL_SCHEMAS["integration_hub"],
-)(integration_hub)
-
-def create_services_server():
-    return create_sdk_mcp_server(
-        name="jarvis-services",
-        version="0.1.0",
-        tools=[
-            smart_home_tool,
-            smart_home_state_tool,
-            home_assistant_capabilities_tool,
-            home_assistant_conversation_tool,
-            home_assistant_todo_tool,
-            home_assistant_timer_tool,
-            home_assistant_area_entities_tool,
-            media_control_tool,
-            weather_lookup_tool,
-            webhook_trigger_tool,
-            webhook_inbound_list_tool,
-            webhook_inbound_clear_tool,
-            slack_notify_tool,
-            discord_notify_tool,
-            email_send_tool,
-            email_summary_tool,
-            dead_letter_list_tool,
-            dead_letter_replay_tool,
-            todoist_add_task_tool,
-            todoist_list_tasks_tool,
-            pushover_notify_tool,
-            get_time_tool,
-            system_status_tool,
-            system_status_contract_tool,
-            jarvis_scorecard_tool,
-            tool_summary_tool,
-            tool_summary_text_tool,
-            skills_list_tool,
-            skills_enable_tool,
-            skills_disable_tool,
-            skills_version_tool,
-            memory_add_tool,
-            memory_update_tool,
-            memory_forget_tool,
-            memory_search_tool,
-            memory_recent_tool,
-            memory_status_tool,
-            memory_summary_add_tool,
-            memory_summary_list_tool,
-            task_plan_create_tool,
-            task_plan_list_tool,
-            task_plan_update_tool,
-            task_plan_summary_tool,
-            task_plan_next_tool,
-            timer_create_tool,
-            timer_list_tool,
-            timer_cancel_tool,
-            reminder_create_tool,
-            reminder_list_tool,
-            reminder_complete_tool,
-            reminder_notify_due_tool,
-            calendar_events_tool,
-            calendar_next_event_tool,
-            proactive_assistant_tool,
-            memory_governance_tool,
-            identity_trust_tool,
-            home_orchestrator_tool,
-            skills_governance_tool,
-            planner_engine_tool,
-            quality_evaluator_tool,
-            embodiment_presence_tool,
-            integration_hub_tool,
-        ],
-    )
