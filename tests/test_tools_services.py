@@ -3079,7 +3079,7 @@ class TestServicesTools:
 
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.6"
+        assert payload["schema_version"] == "1.7"
         assert "local_time" in payload
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
@@ -3143,6 +3143,14 @@ class TestServicesTools:
         assert "observability" in payload
         assert "intent_metrics" in payload["observability"]
         assert "correction_frequency" in payload["observability"]["intent_metrics"]
+        assert "scorecard" in payload
+        assert "overall" in payload["scorecard"]
+        assert "dimensions" in payload["scorecard"]
+        assert "latency" in payload["scorecard"]["dimensions"]
+        assert "reliability" in payload["scorecard"]["dimensions"]
+        assert "initiative" in payload["scorecard"]["dimensions"]
+        assert "trust" in payload["scorecard"]["dimensions"]
+        assert 0.0 <= float(payload["scorecard"]["overall"]["score"]) <= 1.0
         assert "retention_policy" in payload
         assert "memory_retention_days" in payload["retention_policy"]
         assert "recovery_journal" in payload
@@ -3160,7 +3168,7 @@ class TestServicesTools:
 
         result = await services.system_status_contract({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.6"
+        assert payload["schema_version"] == "1.7"
         assert "top_level_required" in payload
         assert "tool_policy" in payload["top_level_required"]
         assert "identity" in payload["top_level_required"]
@@ -3168,6 +3176,7 @@ class TestServicesTools:
         assert "turn_timeouts" in payload["top_level_required"]
         assert "skills" in payload["top_level_required"]
         assert "observability" in payload["top_level_required"]
+        assert "scorecard" in payload["top_level_required"]
         assert "plan_preview" in payload["top_level_required"]
         assert "tool_policy_required" in payload
         assert "home_conversation_permission_profile" in payload["tool_policy_required"]
@@ -3206,12 +3215,45 @@ class TestServicesTools:
         assert "intent_metrics" in payload["observability_required"]
         assert "observability_intent_metrics_required" in payload
         assert "completion_success_rate" in payload["observability_intent_metrics_required"]
+        assert "scorecard_required" in payload
+        assert "overall" in payload["scorecard_required"]
+        assert "scorecard_dimensions_required" in payload
+        assert "latency" in payload["scorecard_dimensions_required"]
+        assert "scorecard_dimension_required" in payload
+        assert "score" in payload["scorecard_dimension_required"]
         assert "plan_preview_required" in payload
         assert "strict_mode" in payload["plan_preview_required"]
         assert "retention_policy_required" in payload
         assert "recovery_journal_required" in payload
         assert "unresolved_count" in payload["recovery_journal_required"]
         assert "interrupted_count" in payload["recovery_journal_required"]
+
+    @pytest.mark.asyncio
+    async def test_jarvis_scorecard_reports_unified_dimensions(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        services.AUDIT_LOG = tmp_path / "audit.jsonl"
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        await services.memory_add({"text": "scorecard probe"})
+
+        result = await services.jarvis_scorecard({})
+        payload = json.loads(result["content"][0]["text"])
+        assert "overall" in payload
+        assert "dimensions" in payload
+        assert "weights" in payload
+        assert 0.0 <= float(payload["overall"]["score"]) <= 1.0
+        assert payload["overall"]["grade"] in {"excellent", "strong", "fair", "weak"}
+        assert "latency" in payload["dimensions"]
+        assert "reliability" in payload["dimensions"]
+        assert "initiative" in payload["dimensions"]
+        assert "trust" in payload["dimensions"]
+        assert "p95_ms" in payload["dimensions"]["latency"]
+        assert "open_circuit_breakers" in payload["dimensions"]["reliability"]
+        assert "action_or_hybrid_ratio" in payload["dimensions"]["initiative"]
+        assert "approval_required" in payload["dimensions"]["trust"]
 
     def test_recovery_journal_begin_finish_status(self, tmp_path):
         from jarvis.tools import services

@@ -75,7 +75,7 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
-SYSTEM_STATUS_CONTRACT_VERSION = "1.6"
+SYSTEM_STATUS_CONTRACT_VERSION = "1.7"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
@@ -637,6 +637,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "get_time": {},
     "system_status": {},
     "system_status_contract": {},
+    "jarvis_scorecard": {},
     "memory_add": {
         "type": "object",
         "properties": {
@@ -820,6 +821,7 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "get_time": set(),
     "system_status": set(),
     "system_status_contract": set(),
+    "jarvis_scorecard": set(),
     "memory_add": {"text"},
     "memory_update": {"memory_id", "text"},
     "memory_forget": {"memory_id"},
@@ -2902,6 +2904,181 @@ def _health_rollup(
     if reasons and level != "error":
         level = "degraded"
     return {"health_level": level, "reasons": reasons}
+
+
+def _score_label(score: float) -> str:
+    value = _as_float(score, 0.0, minimum=0.0, maximum=1.0)
+    if value >= 0.9:
+        return "excellent"
+    if value >= 0.75:
+        return "strong"
+    if value >= 0.6:
+        return "fair"
+    return "weak"
+
+
+def _recent_tool_rows(recent_tools: list[dict[str, object]] | dict[str, str] | Any) -> list[dict[str, object]]:
+    if not isinstance(recent_tools, list):
+        return []
+    rows: list[dict[str, object]] = []
+    for row in recent_tools:
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _duration_p95_ms(rows: list[dict[str, object]]) -> float:
+    durations: list[float] = []
+    for row in rows:
+        try:
+            value = float(row.get("duration_ms", 0.0))
+        except (TypeError, ValueError):
+            value = 0.0
+        if math.isfinite(value) and value >= 0.0:
+            durations.append(value)
+    if not durations:
+        return 0.0
+    ordered = sorted(durations)
+    index = max(0, min(len(ordered) - 1, math.ceil(len(ordered) * 0.95) - 1))
+    return ordered[index]
+
+
+def _jarvis_scorecard_snapshot(
+    *,
+    recent_tools: list[dict[str, object]] | dict[str, str],
+    health: dict[str, Any],
+    observability: dict[str, Any],
+    identity: dict[str, Any],
+    tool_policy: dict[str, Any],
+    audit: dict[str, Any],
+    integrations: dict[str, Any],
+) -> dict[str, Any]:
+    rows = _recent_tool_rows(recent_tools)
+
+    p95_ms = _duration_p95_ms(rows)
+    latency_score = 0.75 if p95_ms <= 0.0 else max(0.0, min(1.0, 1.0 - (p95_ms / 4000.0)))
+
+    success_statuses = {"ok", "dry_run", "noop", "cooldown", "empty"}
+    failure_statuses = {"error", "denied"}
+    success_count = 0
+    failure_count = 0
+    for row in rows:
+        status = str(row.get("status", "")).strip().lower()
+        if status in success_statuses:
+            success_count += 1
+        elif status in failure_statuses:
+            failure_count += 1
+    total_scored = success_count + failure_count
+    success_rate = (success_count / total_scored) if total_scored > 0 else 0.85
+    reliability_score = success_rate
+    health_level = str(health.get("health_level", "ok")).strip().lower()
+    if health_level == "degraded":
+        reliability_score -= 0.08
+    elif health_level == "error":
+        reliability_score -= 0.20
+    open_breakers = 0
+    if isinstance(integrations, dict):
+        for payload in integrations.values():
+            if not isinstance(payload, dict):
+                continue
+            breaker = payload.get("circuit_breaker")
+            if isinstance(breaker, dict) and bool(breaker.get("open")):
+                open_breakers += 1
+    reliability_score -= min(0.25, open_breakers * 0.05)
+    reliability_score = _as_float(reliability_score, 0.0, minimum=0.0, maximum=1.0)
+
+    intent = observability.get("intent_metrics") if isinstance(observability, dict) else None
+    intent_payload = intent if isinstance(intent, dict) else {}
+    turn_count = _as_float(intent_payload.get("turn_count", 0.0), 0.0, minimum=0.0)
+    action_count = _as_float(intent_payload.get("action_intent_count", 0.0), 0.0, minimum=0.0)
+    hybrid_count = _as_float(intent_payload.get("hybrid_intent_count", 0.0), 0.0, minimum=0.0)
+    completion_success = _as_float(intent_payload.get("completion_success_rate", 0.0), 0.0, minimum=0.0, maximum=1.0)
+    correction_frequency = _as_float(intent_payload.get("correction_frequency", 0.0), 0.0, minimum=0.0, maximum=1.0)
+    if turn_count <= 0.0:
+        action_or_hybrid_ratio = 0.0
+        initiative_score = 0.50
+    else:
+        action_or_hybrid_ratio = max(0.0, min(1.0, (action_count + hybrid_count) / turn_count))
+        action_signal = min(1.0, action_or_hybrid_ratio / 0.35)
+        correction_signal = max(0.0, 1.0 - min(1.0, correction_frequency / 0.25))
+        initiative_score = (0.45 * completion_success) + (0.35 * action_signal) + (0.20 * correction_signal)
+    initiative_score = _as_float(initiative_score, 0.0, minimum=0.0, maximum=1.0)
+
+    identity_enabled = bool(identity.get("enabled")) if isinstance(identity, dict) else False
+    require_approval = bool(identity.get("require_approval")) if isinstance(identity, dict) else False
+    trusted_users = _as_int(identity.get("trusted_user_count", 0), 0, minimum=0) if isinstance(identity, dict) else 0
+    approval_code_configured = bool(identity.get("approval_code_configured")) if isinstance(identity, dict) else False
+    approval_configured = approval_code_configured or trusted_users > 0
+    safe_mode_enabled = bool(tool_policy.get("safe_mode_enabled")) if isinstance(tool_policy, dict) else False
+    plan_preview_ack = bool(tool_policy.get("plan_preview_require_ack")) if isinstance(tool_policy, dict) else False
+    audit_redaction = bool(audit.get("redaction_enabled")) if isinstance(audit, dict) else False
+    audit_encrypted = bool(audit.get("encrypted")) if isinstance(audit, dict) else False
+    trust_score = 0.30
+    trust_score += 0.20 if identity_enabled else 0.08
+    trust_score += 0.14 if require_approval and approval_configured else (0.04 if require_approval else 0.10)
+    trust_score += 0.10 if plan_preview_ack else 0.04
+    trust_score += 0.12 if audit_redaction else 0.0
+    trust_score += 0.06 if audit_encrypted else 0.0
+    trust_score += 0.06 if safe_mode_enabled else 0.0
+    if require_approval and not approval_configured:
+        trust_score -= 0.15
+    trust_score = _as_float(trust_score, 0.0, minimum=0.0, maximum=1.0)
+
+    weights = {
+        "latency": 0.30,
+        "reliability": 0.30,
+        "initiative": 0.20,
+        "trust": 0.20,
+    }
+    overall_score = (
+        (weights["latency"] * latency_score)
+        + (weights["reliability"] * reliability_score)
+        + (weights["initiative"] * initiative_score)
+        + (weights["trust"] * trust_score)
+    )
+    overall_score = _as_float(overall_score, 0.0, minimum=0.0, maximum=1.0)
+
+    return {
+        "overall": {
+            "score": round(overall_score, 4),
+            "grade": _score_label(overall_score),
+        },
+        "dimensions": {
+            "latency": {
+                "score": round(latency_score, 4),
+                "grade": _score_label(latency_score),
+                "p95_ms": round(p95_ms, 2),
+                "sample_count": len(rows),
+            },
+            "reliability": {
+                "score": round(reliability_score, 4),
+                "grade": _score_label(reliability_score),
+                "success_rate": round(_as_float(success_rate, 0.0, minimum=0.0, maximum=1.0), 4),
+                "failure_rate": round(1.0 - _as_float(success_rate, 0.0, minimum=0.0, maximum=1.0), 4),
+                "open_circuit_breakers": open_breakers,
+            },
+            "initiative": {
+                "score": round(initiative_score, 4),
+                "grade": _score_label(initiative_score),
+                "completion_success_rate": round(completion_success, 4),
+                "action_or_hybrid_ratio": round(action_or_hybrid_ratio, 4),
+                "correction_frequency": round(correction_frequency, 4),
+            },
+            "trust": {
+                "score": round(trust_score, 4),
+                "grade": _score_label(trust_score),
+                "identity_enabled": identity_enabled,
+                "approval_required": require_approval,
+                "approval_configured": approval_configured,
+                "safe_mode_enabled": safe_mode_enabled,
+                "plan_preview_ack_required": plan_preview_ack,
+                "audit_redaction_enabled": audit_redaction,
+                "audit_encrypted": audit_encrypted,
+            },
+        },
+        "weights": weights,
+        "computed_at": time.time(),
+    }
 
 
 # ── Home Assistant ────────────────────────────────────────────
@@ -5837,11 +6014,44 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         recent_tools = {"error": str(e)}
     identity_status = _identity_status_snapshot()
+    tool_policy_status = {
+        "allow_count": len(_tool_allowlist),
+        "deny_count": len(_tool_denylist),
+        "home_permission_profile": _home_permission_profile,
+        "safe_mode_enabled": _safe_mode_enabled,
+        "home_require_confirm_execute": bool(_home_require_confirm_execute),
+        "home_conversation_enabled": bool(_home_conversation_enabled),
+        "home_conversation_permission_profile": _home_conversation_permission_profile,
+        "todoist_permission_profile": _todoist_permission_profile,
+        "notification_permission_profile": _notification_permission_profile,
+        "nudge_policy": _nudge_policy,
+        "nudge_quiet_hours_start": _nudge_quiet_hours_start,
+        "nudge_quiet_hours_end": _nudge_quiet_hours_end,
+        "nudge_quiet_window_active": _quiet_window_active(),
+        "email_permission_profile": _email_permission_profile,
+        "memory_pii_guardrails_enabled": _memory_pii_guardrails_enabled,
+        "identity_enforcement_enabled": _identity_enforcement_enabled,
+        "identity_default_profile": _identity_default_profile,
+        "identity_require_approval": _identity_require_approval,
+        "plan_preview_require_ack": _plan_preview_require_ack,
+    }
+    observability_status = _observability_snapshot()
+    integrations_status = _integration_health_snapshot()
+    audit_status = _audit_status()
     health = _health_rollup(
         config_present=(_config is not None),
         memory_status=memory_status if isinstance(memory_status, dict) else None,
         recent_tools=recent_tools,
         identity_status=identity_status,
+    )
+    scorecard = _jarvis_scorecard_snapshot(
+        recent_tools=recent_tools,
+        health=health,
+        observability=observability_status,
+        identity=identity_status,
+        tool_policy=tool_policy_status,
+        audit=audit_status,
+        integrations=integrations_status,
     )
 
     status = {
@@ -5860,27 +6070,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         "memory_enabled": bool(_config and _config.memory_enabled),
         "backchannel_style": _config.backchannel_style if _config else "unknown",
         "persona_style": _config.persona_style if _config else "unknown",
-        "tool_policy": {
-            "allow_count": len(_tool_allowlist),
-            "deny_count": len(_tool_denylist),
-            "home_permission_profile": _home_permission_profile,
-            "safe_mode_enabled": _safe_mode_enabled,
-            "home_require_confirm_execute": bool(_home_require_confirm_execute),
-            "home_conversation_enabled": bool(_home_conversation_enabled),
-            "home_conversation_permission_profile": _home_conversation_permission_profile,
-            "todoist_permission_profile": _todoist_permission_profile,
-            "notification_permission_profile": _notification_permission_profile,
-            "nudge_policy": _nudge_policy,
-            "nudge_quiet_hours_start": _nudge_quiet_hours_start,
-            "nudge_quiet_hours_end": _nudge_quiet_hours_end,
-            "nudge_quiet_window_active": _quiet_window_active(),
-            "email_permission_profile": _email_permission_profile,
-            "memory_pii_guardrails_enabled": _memory_pii_guardrails_enabled,
-            "identity_enforcement_enabled": _identity_enforcement_enabled,
-            "identity_default_profile": _identity_default_profile,
-            "identity_require_approval": _identity_require_approval,
-            "plan_preview_require_ack": _plan_preview_require_ack,
-        },
+        "tool_policy": tool_policy_status,
         "timers": _timer_status(),
         "reminders": _reminder_status(),
         "voice_attention": _voice_attention_snapshot(),
@@ -5891,10 +6081,11 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "speak_sec": _turn_timeout_speak_sec,
             "act_sec": _turn_timeout_act_sec,
         },
-        "integrations": _integration_health_snapshot(),
+        "integrations": integrations_status,
         "identity": identity_status,
         "skills": _skills_status_snapshot(),
-        "observability": _observability_snapshot(),
+        "observability": observability_status,
+        "scorecard": scorecard,
         "plan_preview": {
             "pending_count": len(_pending_plan_previews),
             "ttl_sec": PLAN_PREVIEW_TTL_SEC,
@@ -5906,7 +6097,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         },
         "recovery_journal": _recovery_journal_status(limit=20),
         "memory": memory_status,
-        "audit": _audit_status(),
+        "audit": audit_status,
         "recent_tools": recent_tools,
         "health": health,
     }
@@ -5942,6 +6133,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "identity",
             "skills",
             "observability",
+            "scorecard",
             "plan_preview",
             "retention_policy",
             "recovery_journal",
@@ -6061,6 +6253,26 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "correction_count",
             "correction_frequency",
         ],
+        "scorecard_required": [
+            "overall",
+            "dimensions",
+            "weights",
+            "computed_at",
+        ],
+        "scorecard_overall_required": [
+            "score",
+            "grade",
+        ],
+        "scorecard_dimensions_required": [
+            "latency",
+            "reliability",
+            "initiative",
+            "trust",
+        ],
+        "scorecard_dimension_required": [
+            "score",
+            "grade",
+        ],
         "plan_preview_required": [
             "pending_count",
             "ttl_sec",
@@ -6086,6 +6298,67 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
     }
     record_summary("system_status_contract", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(contract)}]}
+
+
+async def jarvis_scorecard(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("jarvis_scorecard"):
+        record_summary("jarvis_scorecard", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+
+    memory_status: dict[str, Any] | None = None
+    if _memory is not None:
+        try:
+            memory_status = _memory.memory_status()
+        except Exception as exc:
+            memory_status = {"error": str(exc)}
+
+    try:
+        recent_tools = list_summaries(limit=200)
+    except Exception as exc:
+        recent_tools = {"error": str(exc)}
+    identity_status = _identity_status_snapshot()
+    tool_policy_status = {
+        "allow_count": len(_tool_allowlist),
+        "deny_count": len(_tool_denylist),
+        "home_permission_profile": _home_permission_profile,
+        "safe_mode_enabled": _safe_mode_enabled,
+        "home_require_confirm_execute": bool(_home_require_confirm_execute),
+        "home_conversation_enabled": bool(_home_conversation_enabled),
+        "home_conversation_permission_profile": _home_conversation_permission_profile,
+        "todoist_permission_profile": _todoist_permission_profile,
+        "notification_permission_profile": _notification_permission_profile,
+        "nudge_policy": _nudge_policy,
+        "nudge_quiet_hours_start": _nudge_quiet_hours_start,
+        "nudge_quiet_hours_end": _nudge_quiet_hours_end,
+        "nudge_quiet_window_active": _quiet_window_active(),
+        "email_permission_profile": _email_permission_profile,
+        "memory_pii_guardrails_enabled": _memory_pii_guardrails_enabled,
+        "identity_enforcement_enabled": _identity_enforcement_enabled,
+        "identity_default_profile": _identity_default_profile,
+        "identity_require_approval": _identity_require_approval,
+        "plan_preview_require_ack": _plan_preview_require_ack,
+    }
+    observability_status = _observability_snapshot()
+    integrations_status = _integration_health_snapshot()
+    audit_status = _audit_status()
+    health = _health_rollup(
+        config_present=(_config is not None),
+        memory_status=memory_status if isinstance(memory_status, dict) else None,
+        recent_tools=recent_tools,
+        identity_status=identity_status,
+    )
+    scorecard = _jarvis_scorecard_snapshot(
+        recent_tools=recent_tools,
+        health=health,
+        observability=observability_status,
+        identity=identity_status,
+        tool_policy=tool_policy_status,
+        audit=audit_status,
+        integrations=integrations_status,
+    )
+    record_summary("jarvis_scorecard", "ok", start_time)
+    return {"content": [{"type": "text", "text": json.dumps(scorecard, default=str)}]}
 
 
 # ── Memory + planning ───────────────────────────────────────
@@ -6898,6 +7171,12 @@ system_status_contract_tool = tool(
     SERVICE_TOOL_SCHEMAS["system_status_contract"],
 )(system_status_contract)
 
+jarvis_scorecard_tool = tool(
+    "jarvis_scorecard",
+    "Return a unified scorecard across latency, reliability, initiative, and trust.",
+    SERVICE_TOOL_SCHEMAS["jarvis_scorecard"],
+)(jarvis_scorecard)
+
 memory_add_tool = tool(
     "memory_add",
     "Store a long-term memory (facts, preferences, summaries).",
@@ -7093,6 +7372,7 @@ def create_services_server():
             get_time_tool,
             system_status_tool,
             system_status_contract_tool,
+            jarvis_scorecard_tool,
             tool_summary_tool,
             tool_summary_text_tool,
             skills_list_tool,

@@ -117,7 +117,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [ ] `EX03` Add policy-decision analytics (allow/deny reason distribution by user and tool). `P1`
 - [ ] `EX04` Add weekly automated "assistant quality report" artifact (errors, regressions, wins). `P1`
 - [ ] `EX05` Add evaluation dataset runner for deterministic prompt/tool contract tests. `P1`
-- [ ] `EX06` Add "Jarvis scorecard" combining latency, reliability, initiative, and trust metrics. `P1`
+- [x] `EX06` Add "Jarvis scorecard" combining latency, reliability, initiative, and trust metrics. `P1`
 
 ## 12) Embodiment and Presence (6 items)
 
@@ -169,4 +169,4 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q17` Implement `MX02` memory confidence/source trail.
 - [x] `Q18` Implement `IX06` readable audit explainability.
 - [x] `Q19` Implement `DX03` backup/restore CLI.
-- [ ] `Q20` Implement `EX06` unified Jarvis scorecard.
+- [x] `Q20` Implement `EX06` unified Jarvis scorecard.

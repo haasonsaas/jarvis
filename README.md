@@ -133,9 +133,11 @@ Smart home safety defaults:
   - `media_control` for simplified `media_player` actions (`play`, `pause`, `volume_set`, etc.)
 - Automation consumers can use:
   - `system_status` (includes `schema_version`)
+  - `system_status.scorecard` (unified latency/reliability/initiative/trust scoring)
   - `system_status.turn_timeouts` (listen/think/speak/act timeout budgets)
   - `system_status.integrations.*.circuit_breaker` (open/remaining/failure state per integration)
   - `system_status.recovery_journal` (interrupted-action reconciliation summary)
+  - `jarvis_scorecard` (standalone scorecard payload for dashboards and alerts)
   - `system_status_contract` (stable required-field contract)
 - Memory retrieval now includes confidence/provenance details:
   - `memory_search` and `memory_recent` lines expose `confidence=...`, `source=...`, and `trail=id/source/created_at`.
