@@ -186,6 +186,32 @@ def _reset_runtime_state(services_module: Any) -> None:
     s._deferred_action_seq = 1
 
 
+def quality_reports_snapshot(services_module: Any, *, limit: int = 10) -> list[dict[str, Any]]:
+    s = services_module
+    if not s._quality_reports:
+        return []
+    capped = s._as_int(limit, 10, minimum=1, maximum=50)
+    return [dict(item) for item in s._quality_reports[-capped:]][::-1]
+
+
+def append_quality_report(services_module: Any, report: dict[str, Any]) -> None:
+    s = services_module
+    s._quality_reports.append({str(key): value for key, value in report.items()})
+    if len(s._quality_reports) > s.CACHED_QUALITY_REPORT_MAX:
+        del s._quality_reports[: len(s._quality_reports) - s.CACHED_QUALITY_REPORT_MAX]
+    s._persist_expansion_state()
+
+
+def json_safe_clone(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): json_safe_clone(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [json_safe_clone(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
 def replace_state_dict(services_module: Any, target: dict[str, Any], source: Any) -> None:
     s = services_module
     target.clear()

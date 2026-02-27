@@ -55,10 +55,13 @@ from jarvis.tools.service_schemas import (
 )
 from jarvis.tools.services_server import create_services_server  # noqa: F401  # compatibility export for callers
 from jarvis.tools.services_runtime_state import (
+    append_quality_report as _runtime_append_quality_report,
     bind_runtime_state as _runtime_bind_runtime_state,
     expansion_state_payload as _runtime_expansion_state_payload,
+    json_safe_clone as _runtime_json_safe_clone,
     load_expansion_state as _runtime_load_expansion_state,
     persist_expansion_state as _runtime_persist_expansion_state,
+    quality_reports_snapshot as _runtime_quality_reports_snapshot,
     replace_state_dict as _runtime_replace_state_dict,
 )
 from jarvis.tools.services_integrations_runtime import (
@@ -912,27 +915,15 @@ def _home_area_policy_violation(
 
 
 def _quality_reports_snapshot(*, limit: int = 10) -> list[dict[str, Any]]:
-    if not _quality_reports:
-        return []
-    capped = _as_int(limit, 10, minimum=1, maximum=50)
-    return [dict(item) for item in _quality_reports[-capped:]][::-1]
+    return _runtime_quality_reports_snapshot(_services_module(), limit=limit)
 
 
 def _append_quality_report(report: dict[str, Any]) -> None:
-    _quality_reports.append({str(key): value for key, value in report.items()})
-    if len(_quality_reports) > CACHED_QUALITY_REPORT_MAX:
-        del _quality_reports[: len(_quality_reports) - CACHED_QUALITY_REPORT_MAX]
-    _persist_expansion_state()
+    _runtime_append_quality_report(_services_module(), report)
 
 
 def _json_safe_clone(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {str(key): _json_safe_clone(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_json_safe_clone(item) for item in value]
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    return str(value)
+    return _runtime_json_safe_clone(value)
 
 
 def _replace_state_dict(target: dict[str, Any], source: Any) -> None:
