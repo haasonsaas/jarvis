@@ -60,6 +60,8 @@ import pytest
         ("jarvis.tools.services_domains.planner_schedule", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.planner_timers", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.planner_reminders", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.planner_reminders_crud", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.planner_reminders_notify", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.planner_taskplan", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.trust_memory_ops", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.trust_memory_query", "jarvis.tools.services"),
