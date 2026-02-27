@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 20 (Recovery and Dead-Letter Runtime Decomposition)
+# Jarvis TODO — Wave 21 (Audit and Redaction Runtime Decomposition)
 
 Last updated: 2026-02-27
 
@@ -16,25 +16,22 @@ Last updated: 2026-02-27
 
 ## A) Decomposition
 
-- [x] `W20-S01` Extract recovery journal helpers from `services.py` into `src/jarvis/tools/services_recovery_runtime.py` (`_read/_write_recovery_journal_entries`, `_recovery_begin`, `_recovery_finish`, `_recovery_reconcile_interrupted`, `_recovery_journal_status`).
-- [x] `W20-S02` Extract dead-letter queue helpers into `services_recovery_runtime.py` (`_read/_write/_append_dead_letter_entries`, `_dead_letter_matches`, `_dead_letter_queue_status`, `_dead_letter_enqueue`).
-- [x] `W20-S03` Extract replay utility helpers into `services_recovery_runtime.py` (`_tool_response_text`, `_tool_response_success`).
-- [x] `W20-S04` Replace extracted functions in `services.py` with compatibility wrappers and preserve `_RecoveryOperation` compatibility surface.
+- [x] `W21-S01` Extract audit encryption/decryption helpers from `services.py` into `src/jarvis/tools/services_audit_runtime.py` (`_configure_audit_encryption`, `_encrypt_audit_line`, `_decode_audit_line`).
+- [x] `W21-S02` Extract audit decision narrative helpers (`_audit_outcome`, `_audit_reason_code`, `_humanize_chain_token`, `_audit_decision_explanation`) into `services_audit_runtime.py`.
+- [x] `W21-S03` Extract audit logging and redaction helpers (`_audit`, `_rotate_audit_log_if_needed`, `_redact_sensitive_for_audit`, `_metadata_only_audit_details`) into `services_audit_runtime.py`.
+- [x] `W21-S04` Extract inbound sanitization and PII helpers (`_sanitize_inbound_headers`, `_sanitize_inbound_payload`, `_contains_pii`) into `services_audit_runtime.py`.
+- [x] `W21-S05` Replace extracted functions in `services.py` with compatibility wrappers, keeping runtime constants exported via `services` module alias.
 
-## B) Behavioral parity
+## B) Quality and verification
 
-- [x] `W20-B01` Preserve existing recovery/dead-letter semantics and audit behavior while delegating to runtime module.
-
-## C) Quality and verification
-
-- [x] `W20-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after extraction.
+- [x] `W21-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after extraction.
 
 ---
 
 ## Outcome snapshot (current)
 
-- New recovery runtime helper module: `src/jarvis/tools/services_recovery_runtime.py`.
-- `src/jarvis/tools/services.py` reduced to `2,576` lines (from `2,817` before this wave).
+- New audit runtime helper module: `src/jarvis/tools/services_audit_runtime.py`.
+- `src/jarvis/tools/services.py` reduced to `2,361` lines (from `2,576` before this wave).
 - Full gates are green:
   - `make check` (`555 passed`)
   - `make security-gate` (`555 passed`; fault-injection subset `3 passed`)

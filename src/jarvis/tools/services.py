@@ -7,7 +7,6 @@ Everything is audit-logged.
 from __future__ import annotations
 
 import asyncio  # noqa: F401
-import base64
 import hashlib
 import hmac  # noqa: F401  # accessed by domain modules via services module alias
 import json
@@ -40,10 +39,10 @@ from jarvis.tools.service_policy import (
     INTEGRATION_TOOL_MAP,
     SAFE_MODE_BLOCKED_TOOLS,
     SENSITIVE_AUDIT_KEY_TOKENS,
-    INBOUND_REDACT_HEADER_TOKENS,
-    INBOUND_MAX_STRING_CHARS,
-    INBOUND_MAX_COLLECTION_ITEMS,
-    AUDIT_REDACTED,
+    INBOUND_REDACT_HEADER_TOKENS,  # noqa: F401  # accessed by runtime module via services alias
+    INBOUND_MAX_STRING_CHARS,  # noqa: F401  # accessed by runtime module via services alias
+    INBOUND_MAX_COLLECTION_ITEMS,  # noqa: F401  # accessed by runtime module via services alias
+    AUDIT_REDACTED,  # noqa: F401  # accessed by runtime module via services alias
     AMBIGUOUS_REFERENCE_TERMS,
     HIGH_RISK_INTENT_TERMS,
     EXPLICIT_TARGET_TERMS,
@@ -51,7 +50,7 @@ from jarvis.tools.service_policy import (
     MEMORY_SCOPE_TAG_PREFIX,
     MEMORY_SCOPES,
     MEMORY_QUERY_SCOPE_HINTS,
-    AUDIT_REASON_MESSAGES,
+    AUDIT_REASON_MESSAGES,  # noqa: F401  # accessed by runtime module via services alias
 )
 from jarvis.tools.service_schemas import (
     SERVICE_RUNTIME_REQUIRED_FIELDS,  # noqa: F401  # compatibility export for tests/importers
@@ -117,6 +116,22 @@ from jarvis.tools.services_recovery_runtime import (
     tool_response_text as _runtime_tool_response_text,
     write_dead_letter_entries as _runtime_write_dead_letter_entries,
     write_recovery_journal_entry as _runtime_write_recovery_journal_entry,
+)
+from jarvis.tools.services_audit_runtime import (
+    audit as _runtime_audit,
+    audit_decision_explanation as _runtime_audit_decision_explanation,
+    audit_outcome as _runtime_audit_outcome,
+    audit_reason_code as _runtime_audit_reason_code,
+    configure_audit_encryption as _runtime_configure_audit_encryption,
+    contains_pii as _runtime_contains_pii,
+    decode_audit_line as _runtime_decode_audit_line,
+    encrypt_audit_line as _runtime_encrypt_audit_line,
+    humanize_chain_token as _runtime_humanize_chain_token,
+    metadata_only_audit_details as _runtime_metadata_only_audit_details,
+    redact_sensitive_for_audit as _runtime_redact_sensitive_for_audit,
+    rotate_audit_log_if_needed as _runtime_rotate_audit_log_if_needed,
+    sanitize_inbound_headers as _runtime_sanitize_inbound_headers,
+    sanitize_inbound_payload as _runtime_sanitize_inbound_payload,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -483,57 +498,15 @@ def _tool_permitted(name: str) -> bool:
 
 
 def _configure_audit_encryption(*, enabled: bool, key: str) -> None:
-    global _audit_encryption_enabled, _data_encryption_key, _audit_fernet
-    _audit_encryption_enabled = bool(enabled)
-    _data_encryption_key = str(key or "").strip()
-    if not _audit_encryption_enabled:
-        _audit_fernet = None
-        return
-    if not _data_encryption_key or Fernet is None:
-        _audit_fernet = None
-        return
-    candidate = _data_encryption_key.encode("utf-8")
-    try:
-        Fernet(candidate)
-        fernet_key = candidate
-    except Exception:
-        digest = hashlib.sha256(candidate).digest()
-        fernet_key = base64.urlsafe_b64encode(digest)
-    _audit_fernet = Fernet(fernet_key)
+    _runtime_configure_audit_encryption(_services_module(), enabled=enabled, key=key)
 
 
 def _encrypt_audit_line(payload: dict[str, Any]) -> str:
-    line = json.dumps(payload, default=str)
-    if not _audit_encryption_enabled or _audit_fernet is None:
-        return line
-    token = _audit_fernet.encrypt(line.encode("utf-8")).decode("utf-8")
-    return json.dumps({"enc": token}, default=str)
+    return _runtime_encrypt_audit_line(_services_module(), payload)
 
 
 def _decode_audit_line(line: str) -> dict[str, Any] | None:
-    text = line.strip()
-    if not text:
-        return None
-    try:
-        payload = json.loads(text)
-    except Exception:
-        return None
-    if isinstance(payload, dict) and "enc" in payload:
-        token = str(payload.get("enc", "")).strip()
-        if not token or _audit_fernet is None:
-            return {"encrypted": True, "error": "missing_encryption_key"}
-        try:
-            raw = _audit_fernet.decrypt(token.encode("utf-8")).decode("utf-8")
-        except InvalidToken:
-            return {"encrypted": True, "error": "invalid_token"}
-        try:
-            decrypted = json.loads(raw)
-        except Exception:
-            return {"encrypted": True, "error": "invalid_payload"}
-        if isinstance(decrypted, dict):
-            return decrypted
-        return {"encrypted": True, "error": "invalid_payload"}
-    return payload if isinstance(payload, dict) else None
+    return _runtime_decode_audit_line(_services_module(), line)
 
 
 def decode_audit_entry_line(line: str) -> dict[str, Any] | None:
@@ -541,240 +514,52 @@ def decode_audit_entry_line(line: str) -> dict[str, Any] | None:
 
 
 def _audit_outcome(details: dict[str, Any]) -> str:
-    policy_decision = str(details.get("policy_decision", "")).strip().lower()
-    result = str(details.get("result", "")).strip().lower()
-    if policy_decision in {"denied", "blocked"}:
-        return "blocked"
-    if policy_decision in {"allowed", "execute"}:
-        return "allowed"
-    if policy_decision == "dry_run":
-        return "dry_run"
-    if policy_decision == "preview_required":
-        return "preview_required"
-    if result in {"denied", "blocked"}:
-        return "blocked"
-    if result in {"ok", "success", "delivered"}:
-        return "allowed"
-    if result in {"timeout", "cancelled", "network_client_error", "http_error", "api_error", "auth", "unexpected"}:
-        return "failed"
-    if result in {"missing_config", "missing_fields", "invalid_data", "invalid_json"}:
-        return "failed"
-    if result:
-        return "observed"
-    return "unknown"
+    return _runtime_audit_outcome(details)
 
 
 def _audit_reason_code(details: dict[str, Any]) -> str:
-    reason = str(details.get("reason", "")).strip().lower()
-    if reason:
-        return reason
-    policy_decision = str(details.get("policy_decision", "")).strip().lower()
-    if policy_decision:
-        return policy_decision
-    result = str(details.get("result", "")).strip().lower()
-    return result
+    return _runtime_audit_reason_code(details)
 
 
 def _humanize_chain_token(token: str) -> str:
-    text = str(token).strip()
-    if not text:
-        return ""
-    if text.startswith("deny:"):
-        reason = text.split(":", 1)[1].replace("_", " ")
-        return f"deny ({reason})"
-    if text.startswith("decision:"):
-        reason = text.split(":", 1)[1].replace("_", " ")
-        return f"decision ({reason})"
-    if text.startswith("tool="):
-        return f"tool {text.split('=', 1)[1]}"
-    if text.startswith("requester="):
-        return f"requester {text.split('=', 1)[1]}"
-    if text.startswith("profile="):
-        return f"profile {text.split('=', 1)[1]}"
-    return text.replace("_", " ")
+    return _runtime_humanize_chain_token(token)
 
 
 def _audit_decision_explanation(action: str, details: dict[str, Any]) -> str:
-    outcome = _audit_outcome(details)
-    reason_code = _audit_reason_code(details)
-    if outcome == "blocked":
-        intro = "Blocked"
-    elif outcome == "allowed":
-        intro = "Allowed"
-    elif outcome == "dry_run":
-        intro = "Dry run"
-    elif outcome == "preview_required":
-        intro = "Preview required"
-    elif outcome == "failed":
-        intro = "Failed"
-    elif outcome == "observed":
-        intro = "Recorded"
-    else:
-        intro = "Logged"
-
-    reason_msg = AUDIT_REASON_MESSAGES.get(reason_code, "")
-    if not reason_msg and reason_code:
-        reason_msg = reason_code.replace("_", " ")
-
-    chain = details.get("decision_chain")
-    chain_tokens = chain if isinstance(chain, list) else []
-    chain_hint = ""
-    if chain_tokens:
-        tail = [_humanize_chain_token(item) for item in chain_tokens[-2:]]
-        tail = [item for item in tail if item]
-        if tail:
-            chain_hint = f" Decision path: {' -> '.join(tail)}."
-
-    action_label = str(action).replace("_", " ").strip() or "action"
-    if reason_msg:
-        return f"{intro}: {action_label} was {reason_msg}.{chain_hint}".strip()
-    return f"{intro}: {action_label} was processed.{chain_hint}".strip()
+    return _runtime_audit_decision_explanation(_services_module(), action, details)
 
 
 def _audit(action: str, details: dict) -> None:
-    """Append to local audit log: what was heard, what was done, why."""
-    enriched = {str(key): value for key, value in details.items()}
-    if "requester_id" not in enriched:
-        enriched["requester_id"] = _identity_default_user
-    if "requester_profile" not in enriched:
-        enriched["requester_profile"] = _identity_user_profiles.get(
-            str(enriched["requester_id"]).strip().lower(),
-            _identity_default_profile,
-        )
-    if "requester_trusted" not in enriched:
-        requester = str(enriched["requester_id"]).strip().lower()
-        enriched["requester_trusted"] = requester in _identity_trusted_users or str(
-            enriched["requester_profile"]
-        ).strip().lower() == "trusted"
-    if "speaker_verified" not in enriched:
-        enriched["speaker_verified"] = False
-    if "identity_source" not in enriched:
-        enriched["identity_source"] = "default"
-    if "decision_chain" not in enriched:
-        enriched["decision_chain"] = ["identity_default_context"]
-    if "decision_outcome" not in enriched:
-        enriched["decision_outcome"] = _audit_outcome(enriched)
-    if "decision_reason" not in enriched:
-        enriched["decision_reason"] = _audit_reason_code(enriched)
-    if "decision_explanation" not in enriched:
-        enriched["decision_explanation"] = _audit_decision_explanation(action, enriched)
-
-    metadata_only = _metadata_only_audit_details(action, enriched)
-    redacted = _redact_sensitive_for_audit(metadata_only)
-    details_json = json.dumps(redacted, default=str)
-    entry = {
-        "timestamp": time.time(),
-        "action": action,
-        **redacted,
-    }
-    try:
-        _rotate_audit_log_if_needed()
-        with open(AUDIT_LOG, "a") as f:
-            f.write(_encrypt_audit_line(entry) + "\n")
-    except OSError as e:
-        log.warning("Failed to write audit log: %s", e)
-    log.info("AUDIT: %s — %s", action, details_json)
+    _runtime_audit(_services_module(), action, details)
 
 
 def _rotate_audit_log_if_needed() -> None:
-    if _audit_log_backups < 1:
-        return
-    try:
-        if AUDIT_LOG.exists() and AUDIT_LOG.stat().st_size >= _audit_log_max_bytes:
-            for idx in range(_audit_log_backups, 0, -1):
-                src = AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.{idx}")
-                dst = AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.{idx + 1}")
-                if src.exists():
-                    if idx == _audit_log_backups:
-                        src.unlink(missing_ok=True)
-                    else:
-                        src.rename(dst)
-            rotated = AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.1")
-            AUDIT_LOG.rename(rotated)
-    except OSError as e:
-        log.warning("Failed to rotate audit log: %s", e)
+    _runtime_rotate_audit_log_if_needed(_services_module())
 
 
 def _redact_sensitive_for_audit(value: Any, *, key_hint: str | None = None) -> Any:
-    if key_hint:
-        lowered = key_hint.strip().lower()
-        if any(token in lowered for token in SENSITIVE_AUDIT_KEY_TOKENS):
-            return AUDIT_REDACTED
-    if isinstance(value, dict):
-        return {
-            str(key): _redact_sensitive_for_audit(item, key_hint=str(key))
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_redact_sensitive_for_audit(item, key_hint=key_hint) for item in value]
-    return value
+    return _runtime_redact_sensitive_for_audit(_services_module(), value, key_hint=key_hint)
 
 
 def _metadata_only_audit_details(action: str, details: dict[str, Any]) -> dict[str, Any]:
-    forbidden = AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS.get(action)
-    if not forbidden:
-        return {str(key): value for key, value in details.items()}
-    sanitized: dict[str, Any] = {}
-    for key, value in details.items():
-        key_text = str(key)
-        if key_text.strip().lower() in forbidden:
-            continue
-        sanitized[key_text] = value
-    return sanitized
+    return _runtime_metadata_only_audit_details(_services_module(), action, details)
 
 
 def _sanitize_inbound_headers(headers: dict[str, Any] | None) -> dict[str, str]:
-    sanitized: dict[str, str] = {}
-    for key, value in (headers or {}).items():
-        key_text = str(key)
-        lowered = key_text.strip().lower()
-        value_text = str(value)
-        if any(token in lowered for token in INBOUND_REDACT_HEADER_TOKENS):
-            sanitized[key_text] = AUDIT_REDACTED
-            continue
-        sanitized[key_text] = value_text
-    return sanitized
+    return _runtime_sanitize_inbound_headers(_services_module(), headers)
 
 
 def _sanitize_inbound_payload(value: Any, *, key_hint: str | None = None, depth: int = 0) -> Any:
-    if depth > 8:
-        return "<max_depth>"
-    if key_hint:
-        lowered = key_hint.strip().lower()
-        if any(token in lowered for token in SENSITIVE_AUDIT_KEY_TOKENS):
-            return AUDIT_REDACTED
-    if isinstance(value, dict):
-        out: dict[str, Any] = {}
-        for idx, (key, item) in enumerate(value.items()):
-            if idx >= INBOUND_MAX_COLLECTION_ITEMS:
-                out["<truncated_keys>"] = max(0, len(value) - INBOUND_MAX_COLLECTION_ITEMS)
-                break
-            key_text = str(key)
-            out[key_text] = _sanitize_inbound_payload(item, key_hint=key_text, depth=depth + 1)
-        return out
-    if isinstance(value, list):
-        limited = value[:INBOUND_MAX_COLLECTION_ITEMS]
-        out = [_sanitize_inbound_payload(item, key_hint=key_hint, depth=depth + 1) for item in limited]
-        if len(value) > INBOUND_MAX_COLLECTION_ITEMS:
-            out.append(f"<truncated_items:{len(value) - INBOUND_MAX_COLLECTION_ITEMS}>")
-        return out
-    if isinstance(value, str):
-        if len(value) > INBOUND_MAX_STRING_CHARS:
-            return value[:INBOUND_MAX_STRING_CHARS] + "...<truncated>"
-        return value
-    if isinstance(value, (int, float, bool)) or value is None:
-        return value
-    text = str(value)
-    if len(text) > INBOUND_MAX_STRING_CHARS:
-        return text[:INBOUND_MAX_STRING_CHARS] + "...<truncated>"
-    return text
+    return _runtime_sanitize_inbound_payload(
+        _services_module(),
+        value,
+        key_hint=key_hint,
+        depth=depth,
+    )
 
 
 def _contains_pii(text: str) -> bool:
-    sample = text.strip()
-    if not sample:
-        return False
-    return any(pattern.search(sample) is not None for pattern in _PII_PATTERNS)
+    return _runtime_contains_pii(_services_module(), text)
 
 
 def _identity_context(args: dict[str, Any] | None) -> dict[str, Any]:
