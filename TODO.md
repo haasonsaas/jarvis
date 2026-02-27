@@ -1,11 +1,6 @@
-# Jarvis TODO — Wave 4 (Provider Execution + Automation + Autonomy)
+# Jarvis TODO — Wave 5 (Personality + Simulation Validation)
 
 Last updated: 2026-02-27
-
-This wave focused on three requested outcomes:
-1. real provider-backed `integration_hub` execution paths,
-2. Home Assistant automation create/apply/rollback pipeline with dry-run diff,
-3. long-horizon autonomy scheduling with explicit safety checkpoints.
 
 ## Status legend
 - `[ ]` Not started
@@ -13,64 +8,63 @@ This wave focused on three requested outcomes:
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 30
-- Completed: 30
+- Total items: 28
+- Completed: 28
 - Remaining: 0
 
 ---
 
-## A) Provider-Backed Integration Execution
+## A) Research and design alignment
 
-- [x] `W4-I01` Replace `integration_hub` calendar upsert draft-only flow with executable Home Assistant path.
-- [x] `W4-I02` Replace `integration_hub` calendar delete draft-only flow with executable Home Assistant path.
-- [x] `W4-I03` Keep safe draft fallback for calendar actions when Home Assistant is unavailable.
-- [x] `W4-I04` Add calendar payload normalization for all-day vs datetime event fields.
-- [x] `W4-I05` Upgrade `integration_hub` messaging send phase to actually dispatch by channel.
-- [x] `W4-I06` Wire messaging send dispatch to existing channel tools (`slack_notify`, `discord_notify`, `email_send`, `pushover_notify`).
-- [x] `W4-I07` Return delivery tool/result metadata from messaging flows.
-- [x] `W4-I08` Add optional Notion-backed notes capture execution path.
-- [x] `W4-I09` Keep notes backend graceful fallback when Notion credentials are not configured.
-- [x] `W4-I10` Extend integration schema fields for calendar/message execution inputs.
+- [x] `W5-R01` Review assistant personality guidance from major voice UX sources.
+- [x] `W5-R02` Capture practical design constraints for safety-sensitive dialog.
+- [x] `W5-R03` Define implementation mapping from research to runtime behavior.
+- [x] `W5-R04` Publish research notes in docs with source links.
 
-## B) Home Assistant Automation Pipeline
+## B) Personality model upgrades
 
-- [x] `W4-H01` Add automation draft store (`automation_create`) in `home_orchestrator`.
-- [x] `W4-H02` Add normalized automation config validation (`alias`, `trigger`, `actions`).
-- [x] `W4-H03` Add dry-run diff preview for automation apply (`automation_apply`, `dry_run=true`).
-- [x] `W4-H04` Add confirmed apply path (`dry_run=false`, `confirm=true`).
-- [x] `W4-H05` Add HA-native config apply helper with method fallback and reload.
-- [x] `W4-H06` Add local-only apply toggle (`ha_apply=false`) for simulation/testing workflows.
-- [x] `W4-H07` Add rollback preview path (`automation_rollback`, `dry_run=true`).
-- [x] `W4-H08` Add rollback execute path with confirmation and HA/local support.
-- [x] `W4-H09` Add automation status/query endpoint (`automation_status`) for draft/applied states.
-- [x] `W4-H10` Persist automation drafts/applied states across restarts.
+- [x] `W5-P01` Add a first-class `jarvis` persona style to the prompt style model.
+- [x] `W5-P02` Support `jarvis` persona normalization in config parsing.
+- [x] `W5-P03` Add persona style aliases (`witty`, `classic*`) that normalize to `jarvis`.
+- [x] `W5-P04` Add context-aware persona posture classifier (`social|task|safety`).
+- [x] `W5-P05` Inject persona posture instruction into per-turn prompt assembly.
+- [x] `W5-P06` Ensure high-impact/safety requests route to non-humorous posture.
+- [x] `W5-P07` Ensure social/small-talk requests route to light, bounded wit posture.
+- [x] `W5-P08` Keep interaction contract and confidence policy integration intact.
 
-## C) Long-Horizon Autonomy Loop + Safety Checkpoints
+## C) Operator/runtime controls
 
-- [x] `W4-A01` Add autonomy scheduling action (`autonomy_schedule`) in `planner_engine`.
-- [x] `W4-A02` Add per-task risk + checkpoint policy metadata on scheduled autonomy tasks.
-- [x] `W4-A03` Add explicit checkpoint update action (`autonomy_checkpoint`).
-- [x] `W4-A04` Add autonomy cycle runner (`autonomy_cycle`) that executes due tasks.
-- [x] `W4-A05` Block high/medium risk due tasks when checkpoints are missing.
-- [x] `W4-A06` Add recurring autonomy task support via `recurrence_sec`.
-- [x] `W4-A07` Feed executed autonomy tasks into proactive follow-through queue.
-- [x] `W4-A08` Add autonomy status/health summary action (`autonomy_status`).
-- [x] `W4-A09` Persist autonomy checkpoints + cycle history across restarts.
-- [x] `W4-A10` Expose autonomy counts in expansion/system status snapshots.
+- [x] `W5-O01` Extend valid persona styles in runtime control schema and handlers.
+- [x] `W5-O02` Add per-user voice profile `tone` dimension (`auto|formal|witty|empathetic|direct`).
+- [x] `W5-O03` Add `tone` parsing in active voice profile resolution.
+- [x] `W5-O04` Apply tone-aware guidance in `_with_voice_profile_guidance`.
+- [x] `W5-O05` Persist and restore `tone` via runtime state load/save paths.
+- [x] `W5-O06` Include `tone` in import/export runtime profile handling.
+- [x] `W5-O07` Update operator dashboard buttons for persona `jarvis` and tone presets.
+- [x] `W5-O08` Tune demo preset to use `jarvis` persona by default.
 
-## D) Runtime/Config/Documentation/Test Coverage
+## D) Contracts and telemetry
 
-- [x] `W4-R01` Add Notion config fields (`NOTION_API_TOKEN`, `NOTION_DATABASE_ID`) to config model.
-- [x] `W4-R02` Add startup warning for partially-configured Notion credentials.
-- [x] `W4-R03` Update `.env.example` for Notion integration settings.
-- [x] `W4-R04` Update README for new integration/orchestration/autonomy capabilities.
-- [x] `W4-R05` Add integration tests for executable calendar/messaging flows.
-- [x] `W4-R06` Add orchestration tests for automation create/apply/rollback/status.
-- [x] `W4-R07` Add planner tests for checkpoint-gated autonomy cycle execution.
-- [x] `W4-R08` Keep readiness and regression suite green after all changes.
+- [x] `W5-C01` Add `tone` default to voice profile snapshots in `system_status`.
+- [x] `W5-C02` Extend `system_status_contract` voice profile required fields for `tone`.
+- [x] `W5-C03` Keep existing status schema version and compatibility checks green.
+
+## E) Simulation validation and checks
+
+- [x] `W5-S01` Add dedicated simulation regression script (`scripts/test_sim.sh`).
+- [x] `W5-S02` Add `make test-sim` target for repeatable sim validation.
+- [x] `W5-S03` Include personality/voice-control lifecycle tests in sim suite.
+- [x] `W5-S04` Execute sim suite and verify passing results.
+- [x] `W5-S05` Re-run full lint/test/security/readiness gates after changes.
+
+## F) Documentation updates
+
+- [x] `W5-D01` Add personality env vars (`PERSONA_STYLE`, `BACKCHANNEL_STYLE`) to `.env.example`.
+- [x] `W5-D02` Update README personality section with posture and tone capabilities.
+- [x] `W5-D03` Document simulation validation command (`make test-sim`).
 
 ---
 
 ## Remaining for this wave
 
-All requested items for this wave are implemented and validated.
+All Wave 5 items are implemented and validated in local simulation/testing gates.

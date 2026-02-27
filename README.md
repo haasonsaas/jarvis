@@ -94,6 +94,7 @@ cp .env.example .env
 # Optional: WEATHER_UNITS=metric|imperial / WEATHER_TIMEOUT_SEC
 # Optional: WEBHOOK_ALLOWLIST=example.com,api.example.com / WEBHOOK_AUTH_TOKEN / WEBHOOK_TIMEOUT_SEC
 # Optional: SLACK_WEBHOOK_URL / DISCORD_WEBHOOK_URL
+# Optional: PERSONA_STYLE=terse|composed|friendly|jarvis / BACKCHANNEL_STYLE=quiet|balanced|expressive
 # Optional: IDENTITY_ENFORCEMENT_ENABLED / IDENTITY_DEFAULT_USER / IDENTITY_DEFAULT_PROFILE
 # Optional: IDENTITY_USER_PROFILES / IDENTITY_TRUSTED_USERS
 # Optional: IDENTITY_REQUIRE_APPROVAL / IDENTITY_APPROVAL_CODE
@@ -147,7 +148,11 @@ Smart home safety defaults:
 - Low-confidence action requests trigger a lightweight repair loop:
   - Jarvis asks `I may have misheard you as ...` and accepts either `confirm` or an immediate corrected phrase.
 - Per-user voice profiles can tune speaking behavior:
-  - `set_voice_profile` / `clear_voice_profile` / `list_voice_profiles` manage per-user `verbosity`, `confirmations`, and `pace`.
+  - `set_voice_profile` / `clear_voice_profile` / `list_voice_profiles` manage per-user `verbosity`, `confirmations`, `pace`, and `tone`.
+- Personality posture auto-switches by context:
+  - `social`: allows one brief dry-wit line where appropriate,
+  - `task`: stays precise and execution-focused,
+  - `safety`: disables humor and favors explicit confirmation language.
 - Home Assistant conversation tool requires both:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`
@@ -201,6 +206,7 @@ Smart home safety defaults:
 - Security maintenance: [`docs/operations/security-maintenance.md`](docs/operations/security-maintenance.md).
 - Error taxonomy: [`docs/operations/error-taxonomy.md`](docs/operations/error-taxonomy.md).
 - Observability runbook: [`docs/operations/observability-runbook.md`](docs/operations/observability-runbook.md).
+- Personality research and tuning notes: [`docs/operations/personality-research.md`](docs/operations/personality-research.md).
 - Fault resilience profiles:
   - local: `make test-fault-profiles` (runs `quick`, `network`, `storage`, `contract`)
   - CI: scheduled `Fault Profiles` workflow runs weekly with per-profile artifacts
@@ -323,6 +329,9 @@ make check
 # Fast local regression pass
 make test-fast
 
+# Simulation-focused validation pass
+make test-sim
+
 # Fault-injection oriented subset (network, HTTP, summary, and storage taxonomy)
 make test-faults
 
@@ -344,6 +353,7 @@ uv run pytest -q -m slow
 Equivalent scripts are available under `scripts/`:
 - `scripts/check.sh`
 - `scripts/test_fast.sh`
+- `scripts/test_sim.sh`
 - `scripts/test_faults.sh`
 - `scripts/test_soak.sh`
 - `scripts/security_gate.sh`

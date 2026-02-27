@@ -97,6 +97,7 @@ STYLE_INSTRUCTIONS = {
     "terse": "Keep responses extremely brief and direct. Default to one sentence unless detail is explicitly requested.",
     "composed": "Use calm, precise phrasing with concise structure and restrained wit.",
     "friendly": "Use warm, approachable phrasing while keeping answers short and practical.",
+    "jarvis": "Use formal composure with understated dry wit. Be anticipatory and crisp, never sycophantic.",
 }
 RESPONSE_MODE_INSTRUCTIONS = {
     "brief": "Keep the response to one to two short sentences and prioritize immediate actionability.",
@@ -187,6 +188,51 @@ CONFIDENCE_CALIBRATED_TERMS = {
     "prediction",
     "could",
     "should",
+}
+PERSONA_POSTURE_INSTRUCTIONS = {
+    "social": "Allow at most one light dry-wit line when it adds warmth; keep it short and helpful.",
+    "task": "Prioritize precision and concise execution language; keep humor minimal and secondary.",
+    "safety": "Use explicit, unambiguous language with zero humor; confirm risky actions before execution.",
+}
+PERSONA_SOCIAL_TERMS = {
+    "joke",
+    "funny",
+    "banter",
+    "chat",
+    "hello",
+    "hi",
+    "thanks",
+    "thank",
+    "goodnight",
+    "morning",
+}
+PERSONA_SOCIAL_PHRASES = {
+    "how are you",
+    "good morning",
+    "good evening",
+    "tell me a joke",
+    "make me laugh",
+}
+PERSONA_SAFETY_TERMS = {
+    "lock",
+    "unlock",
+    "alarm",
+    "arm",
+    "disarm",
+    "security",
+    "garage",
+    "door",
+    "delete",
+    "remove",
+    "send",
+    "email",
+    "webhook",
+}
+PERSONA_STYLE_ALIASES = {
+    "witty": "jarvis",
+    "classic": "jarvis",
+    "classic_jarvis": "jarvis",
+    "jarvis_classic": "jarvis",
 }
 
 
@@ -379,6 +425,25 @@ class Brain:
         instruction = CONFIDENCE_POLICY_INSTRUCTIONS.get(mode, CONFIDENCE_POLICY_INSTRUCTIONS["direct"])
         return f"Mode={mode}. {instruction}"
 
+    def _persona_posture_mode(self, user_text: str) -> str:
+        sample = str(user_text or "").strip().lower()
+        if not sample:
+            return "task"
+        words = {token for token in re.findall(r"[a-z0-9']+", sample)}
+        if words & PERSONA_SAFETY_TERMS:
+            return "safety"
+        if any(phrase in sample for phrase in PERSONA_SOCIAL_PHRASES) or (words & PERSONA_SOCIAL_TERMS):
+            return "social"
+        strategy = self._first_response_strategy(user_text)
+        if strategy in {"act", "clarify"}:
+            return "task"
+        return "task"
+
+    def _persona_posture_instruction(self, user_text: str) -> str:
+        mode = self._persona_posture_mode(user_text)
+        instruction = PERSONA_POSTURE_INSTRUCTIONS.get(mode, PERSONA_POSTURE_INSTRUCTIONS["task"])
+        return f"Mode={mode}. {instruction}"
+
     def _interaction_contract_context(self) -> str:
         rules = INTERACTION_CONTRACT.get("response_order", ()) + INTERACTION_CONTRACT.get("ambiguity_and_safety", ())
         if not rules:
@@ -445,6 +510,10 @@ class Brain:
         confidence_instruction = self._confidence_policy_instruction(query_text)
         if confidence_instruction:
             user_text = f"{user_text}\n\nConfidence policy:\n{confidence_instruction}"
+
+        persona_posture_instruction = self._persona_posture_instruction(query_text)
+        if persona_posture_instruction:
+            user_text = f"{user_text}\n\nPersona posture:\n{persona_posture_instruction}"
 
         style_instruction = self._style_instruction_context()
         if style_instruction:
@@ -528,6 +597,7 @@ def _memory_relevant(query: str, entry: Any) -> bool:
 
 def _normalize_persona_style(style: str) -> str:
     normalized = (style or "composed").strip().lower()
+    normalized = PERSONA_STYLE_ALIASES.get(normalized, normalized)
     if normalized in STYLE_INSTRUCTIONS:
         return normalized
     return "composed"

@@ -4155,7 +4155,7 @@ def _voice_attention_snapshot() -> dict[str, Any]:
             "turn_choreography": default_choreography,
             "stt_diagnostics": default_stt_diagnostics,
             "voice_profile_user": "unknown",
-            "voice_profile": {"verbosity": "normal", "confirmations": "standard", "pace": "normal"},
+            "voice_profile": {"verbosity": "normal", "confirmations": "standard", "pace": "normal", "tone": "auto"},
             "voice_profile_count": 0,
         }
     snapshot = {str(key): value for key, value in _runtime_voice_state.items()}
@@ -4174,12 +4174,13 @@ def _voice_attention_snapshot() -> dict[str, Any]:
         snapshot["stt_diagnostics"] = stt_diag
     snapshot.setdefault("voice_profile_user", "unknown")
     if not isinstance(snapshot.get("voice_profile"), dict):
-        snapshot["voice_profile"] = {"verbosity": "normal", "confirmations": "standard", "pace": "normal"}
+        snapshot["voice_profile"] = {"verbosity": "normal", "confirmations": "standard", "pace": "normal", "tone": "auto"}
     else:
         profile = {str(key): value for key, value in snapshot["voice_profile"].items()}
         profile.setdefault("verbosity", "normal")
         profile.setdefault("confirmations", "standard")
         profile.setdefault("pace", "normal")
+        profile.setdefault("tone", "auto")
         snapshot["voice_profile"] = profile
     snapshot.setdefault("voice_profile_count", 0)
     return snapshot
@@ -7931,6 +7932,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "verbosity",
             "confirmations",
             "pace",
+            "tone",
         ],
         "turn_timeouts_required": [
             "watchdog_enabled",

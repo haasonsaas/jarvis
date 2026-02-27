@@ -115,6 +115,12 @@ class TestConfig:
         c = Config(persona_style="chatty")
         assert c.persona_style == "composed"
 
+    def test_persona_style_allows_jarvis_and_aliases(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        assert Config(persona_style="jarvis").persona_style == "jarvis"
+        assert Config(persona_style="witty").persona_style == "jarvis"
+
     def test_wake_mode_normalizes(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         from jarvis.config import Config

@@ -108,6 +108,14 @@ class TestBrain:
         mode = brain._confidence_policy_mode("Can you estimate how likely this is to fail?")
         assert mode == "calibrated"
 
+    def test_persona_posture_mode_resolves_safety_for_high_impact_action(self, brain):
+        mode = brain._persona_posture_mode("Please lock the front door right now.")
+        assert mode == "safety"
+
+    def test_persona_posture_mode_resolves_social_for_small_talk(self, brain):
+        mode = brain._persona_posture_mode("Good morning Jarvis, how are you?")
+        assert mode == "social"
+
     @pytest.mark.asyncio
     async def test_respond_sets_thinking_state(self, brain):
         """Brain should set THINKING state when processing begins."""
@@ -301,6 +309,8 @@ class TestBrain:
         assert "Confidence policy:" in payload
         assert "Mode=direct" in payload
         assert CONFIDENCE_POLICY_INSTRUCTIONS["direct"] in payload
+        assert "Persona posture:" in payload
+        assert "Mode=social" in payload
         assert "Prompt style:" in payload
         assert "Mode=friendly" in payload
         assert "Response contract:" in payload
@@ -430,7 +440,7 @@ class TestBrain:
         assert "Mode=friendly" in captured.get("text", "")
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("style", ["terse", "composed", "friendly"])
+    @pytest.mark.parametrize("style", ["terse", "composed", "friendly", "jarvis"])
     @pytest.mark.parametrize(
         "prompt",
         [

@@ -207,6 +207,7 @@ def _dashboard_html(auth_mode: str = "token") -> str:
         <button onclick=\"control('set_persona_style',{style:'terse'})\">Persona Terse</button>
         <button onclick=\"control('set_persona_style',{style:'composed'})\">Persona Composed</button>
         <button onclick=\"control('set_persona_style',{style:'friendly'})\">Persona Friendly</button>
+        <button onclick=\"control('set_persona_style',{style:'jarvis'})\">Persona Jarvis</button>
       </div>
       <div>
         <button onclick=\"control('set_backchannel_style',{style:'quiet'})\">Backchannel Quiet</button>
@@ -222,8 +223,8 @@ def _dashboard_html(auth_mode: str = "token") -> str:
         <button data-danger=\"true\" onclick=\"control('rollback_personality_preview',{})\">Rollback Preview</button>
       </div>
       <div>
-        <button onclick=\"control('set_voice_profile',{user:'operator',verbosity:'brief',confirmations:'minimal',pace:'fast'})\">Operator Brief Profile</button>
-        <button onclick=\"control('set_voice_profile',{user:'operator',verbosity:'detailed',confirmations:'strict',pace:'slow'})\">Operator Detailed Profile</button>
+        <button onclick=\"control('set_voice_profile',{user:'operator',verbosity:'brief',confirmations:'minimal',pace:'fast',tone:'direct'})\">Operator Brief Profile</button>
+        <button onclick=\"control('set_voice_profile',{user:'operator',verbosity:'detailed',confirmations:'strict',pace:'slow',tone:'formal'})\">Operator Detailed Profile</button>
       </div>
       <div>
         <button onclick=\"control('list_voice_profiles',{})\">List Voice Profiles</button>

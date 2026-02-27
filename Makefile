@@ -1,4 +1,4 @@
-.PHONY: check test-fast test-faults test-fault-profiles test-soak security-gate \
+.PHONY: check test-fast test-sim test-faults test-fault-profiles test-soak security-gate \
 	bootstrap quality-report eval-dataset release-channel-check release-acceptance readiness
 
 check:
@@ -7,6 +7,9 @@ check:
 
 test-fast:
 	uv run pytest -q tests/test_config.py tests/test_memory.py tests/test_tools_robot.py tests/test_tools_services.py
+
+test-sim:
+	./scripts/test_sim.sh
 
 test-faults:
 	./scripts/test_faults.sh

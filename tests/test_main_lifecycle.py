@@ -218,6 +218,16 @@ def test_with_voice_profile_guidance_applies_non_default_verbosity():
     assert "concise" in guided
 
 
+def test_with_voice_profile_guidance_applies_tone_preference():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis.config = SimpleNamespace(identity_default_user="operator")
+    jarvis._voice_user_profiles = {"operator": {"tone": "formal"}}
+
+    guided = Jarvis._with_voice_profile_guidance(jarvis, "Turn on the lights.")
+    assert "Voice profile preference" in guided
+    assert "formal, composed phrasing" in guided
+
+
 def test_requires_confirmation_respects_voice_profile_confirmation_mode():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis.config = SimpleNamespace(identity_default_user="operator")
@@ -748,12 +758,13 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     set_voice_profile = await Jarvis._operator_control_handler(
         jarvis,
         "set_voice_profile",
-        {"user": "operator", "verbosity": "brief", "confirmations": "minimal", "pace": "fast"},
+        {"user": "operator", "verbosity": "brief", "confirmations": "minimal", "pace": "fast", "tone": "witty"},
     )
     assert set_voice_profile["ok"] is True
     assert set_voice_profile["profile"]["verbosity"] == "brief"
     assert set_voice_profile["profile"]["confirmations"] == "minimal"
     assert set_voice_profile["profile"]["pace"] == "fast"
+    assert set_voice_profile["profile"]["tone"] == "witty"
 
     list_voice_profiles = await Jarvis._operator_control_handler(jarvis, "list_voice_profiles", {})
     assert list_voice_profiles["ok"] is True

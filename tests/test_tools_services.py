@@ -3197,6 +3197,7 @@ class TestServicesTools:
         assert "verbosity" in payload["voice_attention"]["voice_profile"]
         assert "confirmations" in payload["voice_attention"]["voice_profile"]
         assert "pace" in payload["voice_attention"]["voice_profile"]
+        assert "tone" in payload["voice_attention"]["voice_profile"]
         assert "voice_profile_count" in payload["voice_attention"]
         assert "phase" in payload["voice_attention"]["turn_choreography"]
         assert "turn_timeouts" in payload
@@ -3307,6 +3308,7 @@ class TestServicesTools:
         assert "confidence_band" in payload["voice_attention_stt_diagnostics_required"]
         assert "voice_attention_voice_profile_required" in payload
         assert "confirmations" in payload["voice_attention_voice_profile_required"]
+        assert "tone" in payload["voice_attention_voice_profile_required"]
         assert "turn_timeouts_required" in payload
         assert "act_sec" in payload["turn_timeouts_required"]
         assert "integrations_required" in payload

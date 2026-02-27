@@ -93,11 +93,12 @@ TELEMETRY_SERVICE_ERROR_DETAILS = TOOL_SERVICE_ERROR_CODES - TELEMETRY_STORAGE_E
 WATCHDOG_POLL_SEC = 0.05
 CONVERSATION_TRACE_MAXLEN = 200
 EPISODIC_TIMELINE_MAXLEN = 200
-VALID_PERSONA_STYLES = {"terse", "composed", "friendly"}
+VALID_PERSONA_STYLES = {"terse", "composed", "friendly", "jarvis"}
 VALID_BACKCHANNEL_STYLES = {"quiet", "balanced", "expressive"}
 VALID_VOICE_PROFILE_VERBOSITY = {"brief", "normal", "detailed"}
 VALID_VOICE_PROFILE_CONFIRMATIONS = {"minimal", "standard", "strict"}
 VALID_VOICE_PROFILE_PACE = {"slow", "normal", "fast"}
+VALID_VOICE_PROFILE_TONE = {"auto", "formal", "witty", "empathetic", "direct"}
 VALID_CONTROL_PRESETS = {"quiet_hours", "demo_mode", "maintenance_mode"}
 VALID_OPERATOR_AUTH_MODES = {"off", "token", "session"}
 MEMORY_FORGET_RE = re.compile(
@@ -722,6 +723,7 @@ class Jarvis:
                         "verbosity": sorted(VALID_VOICE_PROFILE_VERBOSITY),
                         "confirmations": sorted(VALID_VOICE_PROFILE_CONFIRMATIONS),
                         "pace": sorted(VALID_VOICE_PROFILE_PACE),
+                        "tone": sorted(VALID_VOICE_PROFILE_TONE),
                     },
                 },
                 "clear_voice_profile": {"required": ["user"], "types": {"user": "string"}},
@@ -845,12 +847,15 @@ class Jarvis:
                         VALID_VOICE_PROFILE_CONFIRMATIONS,
                     )
                     pace = self._parse_control_choice(raw_profile.get("pace"), VALID_VOICE_PROFILE_PACE)
+                    tone = self._parse_control_choice(raw_profile.get("tone"), VALID_VOICE_PROFILE_TONE)
                     if verbosity is not None:
                         profile["verbosity"] = verbosity
                     if confirmations is not None:
                         profile["confirmations"] = confirmations
                     if pace is not None:
                         profile["pace"] = pace
+                    if tone is not None:
+                        profile["tone"] = tone
                     if profile:
                         parsed_profiles[user] = profile
                 self._voice_user_profiles = parsed_profiles
@@ -976,6 +981,7 @@ class Jarvis:
             "verbosity": "normal",
             "confirmations": "standard",
             "pace": "normal",
+            "tone": "auto",
         }
         key = str(user or self._active_voice_user()).strip().lower()
         profiles = getattr(self, "_voice_user_profiles", None)
@@ -985,24 +991,37 @@ class Jarvis:
                 verbosity = self._parse_control_choice(raw.get("verbosity"), VALID_VOICE_PROFILE_VERBOSITY)
                 confirmations = self._parse_control_choice(raw.get("confirmations"), VALID_VOICE_PROFILE_CONFIRMATIONS)
                 pace = self._parse_control_choice(raw.get("pace"), VALID_VOICE_PROFILE_PACE)
+                tone = self._parse_control_choice(raw.get("tone"), VALID_VOICE_PROFILE_TONE)
                 if verbosity is not None:
                     profile["verbosity"] = verbosity
                 if confirmations is not None:
                     profile["confirmations"] = confirmations
                 if pace is not None:
                     profile["pace"] = pace
+                if tone is not None:
+                    profile["tone"] = tone
         return profile
 
     def _with_voice_profile_guidance(self, text: str) -> str:
         profile = self._active_voice_profile()
+        guidance: list[str] = []
         verbosity = profile.get("verbosity", "normal")
         if verbosity == "brief":
-            guidance = "User voice preference: keep responses concise unless safety requires detail."
+            guidance.append("User voice preference: keep responses concise unless safety requires detail.")
         elif verbosity == "detailed":
-            guidance = "User voice preference: provide fuller detail and explicit steps."
-        else:
+            guidance.append("User voice preference: provide fuller detail and explicit steps.")
+        tone = profile.get("tone", "auto")
+        if tone == "formal":
+            guidance.append("User voice preference: use formal, composed phrasing and avoid slang.")
+        elif tone == "witty":
+            guidance.append("User voice preference: allow occasional dry wit, but keep it brief and situational.")
+        elif tone == "empathetic":
+            guidance.append("User voice preference: lead with empathy before solution steps when appropriate.")
+        elif tone == "direct":
+            guidance.append("User voice preference: use direct task language with minimal social framing.")
+        if not guidance:
             return text
-        return f"{text}\n\nVoice profile preference:\n{guidance}"
+        return f"{text}\n\nVoice profile preference:\n" + "\n".join(f"- {line}" for line in guidance)
 
     def _runtime_invariant_snapshot(self) -> dict[str, Any]:
         recent = list(getattr(self, "_runtime_invariant_recent", []))
@@ -1294,12 +1313,15 @@ class Jarvis:
                 verbosity = self._parse_control_choice(raw_profile.get("verbosity"), VALID_VOICE_PROFILE_VERBOSITY)
                 confirmations = self._parse_control_choice(raw_profile.get("confirmations"), VALID_VOICE_PROFILE_CONFIRMATIONS)
                 pace = self._parse_control_choice(raw_profile.get("pace"), VALID_VOICE_PROFILE_PACE)
+                tone = self._parse_control_choice(raw_profile.get("tone"), VALID_VOICE_PROFILE_TONE)
                 if verbosity is not None:
                     parsed["verbosity"] = verbosity
                 if confirmations is not None:
                     parsed["confirmations"] = confirmations
                 if pace is not None:
                     parsed["pace"] = pace
+                if tone is not None:
+                    parsed["tone"] = tone
                 if parsed:
                     parsed_profiles[user] = parsed
             self._voice_user_profiles = parsed_profiles
@@ -1335,7 +1357,7 @@ class Jarvis:
                 "home_enabled": False,
                 "safe_mode_enabled": True,
                 "tts_enabled": True,
-                "persona_style": "friendly",
+                "persona_style": "jarvis",
                 "backchannel_style": "expressive",
             }
         if name == "maintenance_mode":
@@ -2328,6 +2350,7 @@ class Jarvis:
             verbosity = self._parse_control_choice(data.get("verbosity"), VALID_VOICE_PROFILE_VERBOSITY)
             confirmations = self._parse_control_choice(data.get("confirmations"), VALID_VOICE_PROFILE_CONFIRMATIONS)
             pace = self._parse_control_choice(data.get("pace"), VALID_VOICE_PROFILE_PACE)
+            tone = self._parse_control_choice(data.get("tone"), VALID_VOICE_PROFILE_TONE)
             profile_patch: dict[str, str] = {}
             if "verbosity" in data:
                 if verbosity is None:
@@ -2356,11 +2379,20 @@ class Jarvis:
                         "expected": sorted(VALID_VOICE_PROFILE_PACE),
                     }
                 profile_patch["pace"] = pace
+            if "tone" in data:
+                if tone is None:
+                    return {
+                        "ok": False,
+                        "error": "invalid_payload",
+                        "field": "tone",
+                        "expected": sorted(VALID_VOICE_PROFILE_TONE),
+                    }
+                profile_patch["tone"] = tone
             if not profile_patch:
                 return {
                     "ok": False,
                     "error": "invalid_payload",
-                    "message": "provide at least one of verbosity, confirmations, or pace",
+                    "message": "provide at least one of verbosity, confirmations, pace, or tone",
                 }
             profiles = getattr(self, "_voice_user_profiles", {})
             if not isinstance(profiles, dict):

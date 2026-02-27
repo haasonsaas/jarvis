@@ -411,7 +411,7 @@ class Config:
                 self.startup_warnings.append("BACKCHANNEL_STYLE invalid; using balanced.")
         if _env_is_set("PERSONA_STYLE") and self.persona_style == "composed":
             raw = os.environ.get("PERSONA_STYLE", "")
-            if raw.strip().lower() not in {"terse", "composed", "friendly"}:
+            if raw.strip().lower() not in {"terse", "composed", "friendly", "jarvis"}:
                 self.startup_warnings.append("PERSONA_STYLE invalid; using composed.")
         if _env_is_set("WAKE_MODE") and self.wake_mode == "always_listening":
             raw = os.environ.get("WAKE_MODE", "")
@@ -504,7 +504,14 @@ class Config:
     @staticmethod
     def _normalize_persona_style(style: str) -> str:
         normalized = (style or "composed").strip().lower()
-        if normalized in {"terse", "composed", "friendly"}:
+        aliases = {
+            "witty": "jarvis",
+            "classic": "jarvis",
+            "classic_jarvis": "jarvis",
+            "jarvis_classic": "jarvis",
+        }
+        normalized = aliases.get(normalized, normalized)
+        if normalized in {"terse", "composed", "friendly", "jarvis"}:
             return normalized
         return "composed"
 
