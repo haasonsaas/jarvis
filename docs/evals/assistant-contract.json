@@ -1,18 +1,1365 @@
 {
   "cases": [
     {
-      "id": "status_contract",
-      "expected_contains": ["schema_version", "tool_policy", "health"],
-      "expected_tools": ["system_status"],
-      "actual_response": "schema_version tool_policy health",
-      "actual_tools": ["system_status"]
+      "id": "status_contract_schema",
+      "expected_contains": [
+        "schema_version",
+        "tool_policy",
+        "health",
+        "voice_attention"
+      ],
+      "expected_tools": [
+        "system_status_contract"
+      ],
+      "actual_response": "schema_version tool_policy health voice_attention",
+      "actual_tools": [
+        "system_status_contract"
+      ]
     },
     {
-      "id": "identity_guardrail",
-      "expected_contains": ["approval"],
-      "expected_tools": ["identity_trust"],
-      "actual_response": "requires approval",
-      "actual_tools": ["identity_trust"]
+      "id": "status_runtime_voice_profile",
+      "expected_contains": [
+        "voice_profile",
+        "tone",
+        "adaptive_silence_timeout_sec"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile tone adaptive_silence_timeout_sec",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "scorecard_snapshot",
+      "expected_contains": [
+        "overall",
+        "dimensions",
+        "latency",
+        "trust"
+      ],
+      "expected_tools": [
+        "jarvis_scorecard"
+      ],
+      "actual_response": "overall dimensions latency trust",
+      "actual_tools": [
+        "jarvis_scorecard"
+      ]
+    },
+    {
+      "id": "identity_guardrail_approval",
+      "expected_contains": [
+        "approval",
+        "identity_confidence",
+        "policy"
+      ],
+      "expected_tools": [
+        "identity_trust"
+      ],
+      "actual_response": "approval identity_confidence policy",
+      "actual_tools": [
+        "identity_trust"
+      ]
+    },
+    {
+      "id": "identity_guest_start",
+      "expected_contains": [
+        "guest",
+        "expires_at",
+        "capabilities"
+      ],
+      "expected_tools": [
+        "identity_trust"
+      ],
+      "actual_response": "guest expires_at capabilities",
+      "actual_tools": [
+        "identity_trust"
+      ]
+    },
+    {
+      "id": "identity_guest_end",
+      "expected_contains": [
+        "guest",
+        "ended",
+        "token"
+      ],
+      "expected_tools": [
+        "identity_trust"
+      ],
+      "actual_response": "guest ended token",
+      "actual_tools": [
+        "identity_trust"
+      ]
+    },
+    {
+      "id": "policy_preview_ack",
+      "expected_contains": [
+        "plan_preview",
+        "strict_mode",
+        "ttl_sec"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "plan_preview strict_mode ttl_sec",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "home_dry_run_lock",
+      "expected_contains": [
+        "dry_run",
+        "confirm",
+        "lock"
+      ],
+      "expected_tools": [
+        "smart_home"
+      ],
+      "actual_response": "dry_run confirm lock",
+      "actual_tools": [
+        "smart_home"
+      ]
+    },
+    {
+      "id": "home_state_fetch",
+      "expected_contains": [
+        "entity_id",
+        "state"
+      ],
+      "expected_tools": [
+        "smart_home_state"
+      ],
+      "actual_response": "entity_id state",
+      "actual_tools": [
+        "smart_home_state"
+      ]
+    },
+    {
+      "id": "ha_capabilities_inspect",
+      "expected_contains": [
+        "services",
+        "domain",
+        "entity_id"
+      ],
+      "expected_tools": [
+        "home_assistant_capabilities"
+      ],
+      "actual_response": "services domain entity_id",
+      "actual_tools": [
+        "home_assistant_capabilities"
+      ]
+    },
+    {
+      "id": "ha_conversation_guard",
+      "expected_contains": [
+        "confirm",
+        "conversation",
+        "response"
+      ],
+      "expected_tools": [
+        "home_assistant_conversation"
+      ],
+      "actual_response": "confirm conversation response",
+      "actual_tools": [
+        "home_assistant_conversation"
+      ]
+    },
+    {
+      "id": "ha_todo_list",
+      "expected_contains": [
+        "action",
+        "list",
+        "items"
+      ],
+      "expected_tools": [
+        "home_assistant_todo"
+      ],
+      "actual_response": "action list items",
+      "actual_tools": [
+        "home_assistant_todo"
+      ]
+    },
+    {
+      "id": "ha_todo_add",
+      "expected_contains": [
+        "action",
+        "add",
+        "item"
+      ],
+      "expected_tools": [
+        "home_assistant_todo"
+      ],
+      "actual_response": "action add item",
+      "actual_tools": [
+        "home_assistant_todo"
+      ]
+    },
+    {
+      "id": "ha_timer_start",
+      "expected_contains": [
+        "action",
+        "start",
+        "duration"
+      ],
+      "expected_tools": [
+        "home_assistant_timer"
+      ],
+      "actual_response": "action start duration",
+      "actual_tools": [
+        "home_assistant_timer"
+      ]
+    },
+    {
+      "id": "ha_timer_state",
+      "expected_contains": [
+        "action",
+        "state",
+        "remaining"
+      ],
+      "expected_tools": [
+        "home_assistant_timer"
+      ],
+      "actual_response": "action state remaining",
+      "actual_tools": [
+        "home_assistant_timer"
+      ]
+    },
+    {
+      "id": "ha_area_entities",
+      "expected_contains": [
+        "area",
+        "entities",
+        "include_state"
+      ],
+      "expected_tools": [
+        "home_assistant_area_entities"
+      ],
+      "actual_response": "area entities include_state",
+      "actual_tools": [
+        "home_assistant_area_entities"
+      ]
+    },
+    {
+      "id": "media_control_volume",
+      "expected_contains": [
+        "action",
+        "volume_set",
+        "entity_id"
+      ],
+      "expected_tools": [
+        "media_control"
+      ],
+      "actual_response": "action volume_set entity_id",
+      "actual_tools": [
+        "media_control"
+      ]
+    },
+    {
+      "id": "calendar_events_window",
+      "expected_contains": [
+        "window",
+        "events",
+        "entity_id"
+      ],
+      "expected_tools": [
+        "calendar_events"
+      ],
+      "actual_response": "window events entity_id",
+      "actual_tools": [
+        "calendar_events"
+      ]
+    },
+    {
+      "id": "calendar_next_event",
+      "expected_contains": [
+        "next_event",
+        "start",
+        "summary"
+      ],
+      "expected_tools": [
+        "calendar_next_event"
+      ],
+      "actual_response": "next_event start summary",
+      "actual_tools": [
+        "calendar_next_event"
+      ]
+    },
+    {
+      "id": "home_orch_plan",
+      "expected_contains": [
+        "action",
+        "plan",
+        "step_count"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "action plan step_count",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_orch_execute_partial",
+      "expected_contains": [
+        "partial_failure",
+        "executed_count",
+        "failed_count"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "partial_failure executed_count failed_count",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_area_policy_set",
+      "expected_contains": [
+        "area",
+        "policy",
+        "blocked_actions"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "area policy blocked_actions",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_area_policy_list",
+      "expected_contains": [
+        "policy_count",
+        "policies"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "policy_count policies",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_automation_suggest",
+      "expected_contains": [
+        "suggestions",
+        "ha_automation_yaml"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "suggestions ha_automation_yaml",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_automation_create",
+      "expected_contains": [
+        "automation_create",
+        "draft_id",
+        "config_preview"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "automation_create draft_id config_preview",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_automation_apply_preview",
+      "expected_contains": [
+        "automation_apply",
+        "dry_run",
+        "diff"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "automation_apply dry_run diff",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_automation_apply_execute",
+      "expected_contains": [
+        "applied",
+        "ha_status",
+        "diff"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "applied ha_status diff",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_automation_rollback_preview",
+      "expected_contains": [
+        "automation_rollback",
+        "dry_run",
+        "has_previous_revision"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "automation_rollback dry_run has_previous_revision",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_automation_rollback_execute",
+      "expected_contains": [
+        "rolled_back",
+        "ha_status",
+        "restored_revision"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "rolled_back ha_status restored_revision",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_automation_status",
+      "expected_contains": [
+        "automation_status",
+        "draft_count",
+        "applied_count"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "automation_status draft_count applied_count",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_task_start",
+      "expected_contains": [
+        "task_start",
+        "task_id",
+        "in_progress"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "task_start task_id in_progress",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_task_update",
+      "expected_contains": [
+        "task_update",
+        "status",
+        "progress"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "task_update status progress",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "home_task_list",
+      "expected_contains": [
+        "task_list",
+        "tasks",
+        "task_count"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "task_list tasks task_count",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "planner_plan",
+      "expected_contains": [
+        "planner",
+        "executor",
+        "steps"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "planner executor steps",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "planner_graph_create",
+      "expected_contains": [
+        "task_graph_create",
+        "graph_id",
+        "ready_nodes"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "task_graph_create graph_id ready_nodes",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "planner_graph_update",
+      "expected_contains": [
+        "task_graph_update",
+        "updated",
+        "ready_nodes"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "task_graph_update updated ready_nodes",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "planner_graph_resume",
+      "expected_contains": [
+        "task_graph_resume",
+        "ready_nodes"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "task_graph_resume ready_nodes",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "planner_deferred_schedule",
+      "expected_contains": [
+        "deferred_schedule",
+        "scheduled",
+        "deferred_count"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "deferred_schedule scheduled deferred_count",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "planner_deferred_list",
+      "expected_contains": [
+        "deferred_list",
+        "items",
+        "deferred_count"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "deferred_list items deferred_count",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "planner_autonomy_schedule",
+      "expected_contains": [
+        "autonomy_schedule",
+        "checkpoint_id",
+        "autonomy_task_count"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy_schedule checkpoint_id autonomy_task_count",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "planner_autonomy_checkpoint",
+      "expected_contains": [
+        "autonomy_checkpoint",
+        "approved",
+        "affected_task_count"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy_checkpoint approved affected_task_count",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "planner_autonomy_cycle",
+      "expected_contains": [
+        "autonomy_cycle",
+        "executed_count",
+        "blocked_count"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy_cycle executed_count blocked_count",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "planner_autonomy_status",
+      "expected_contains": [
+        "autonomy_status",
+        "status_counts",
+        "next_due_at"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy_status status_counts next_due_at",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "planner_self_critique",
+      "expected_contains": [
+        "self_critique",
+        "complexity",
+        "recommendation"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "self_critique complexity recommendation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "integration_calendar_upsert",
+      "expected_contains": [
+        "calendar_upsert",
+        "service_data",
+        "summary"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "calendar_upsert service_data summary",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_calendar_delete",
+      "expected_contains": [
+        "calendar_delete",
+        "event_id",
+        "service_data"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "calendar_delete event_id service_data",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_notes_local",
+      "expected_contains": [
+        "notes_capture",
+        "backend",
+        "path"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "notes_capture backend path",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_notes_notion",
+      "expected_contains": [
+        "notes_capture",
+        "notion",
+        "page_id"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "notes_capture notion page_id",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_messaging_draft",
+      "expected_contains": [
+        "messaging_flow",
+        "phase",
+        "draft_only"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "messaging_flow phase draft_only",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_messaging_send_slack",
+      "expected_contains": [
+        "messaging_flow",
+        "delivery_tool",
+        "slack_notify"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "messaging_flow delivery_tool slack_notify",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_messaging_send_email",
+      "expected_contains": [
+        "messaging_flow",
+        "delivery_tool",
+        "email_send"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "messaging_flow delivery_tool email_send",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_commute_brief",
+      "expected_contains": [
+        "commute_brief",
+        "recommended_mode",
+        "traffic_delay_min"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "commute_brief recommended_mode traffic_delay_min",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_shopping_orchestrate",
+      "expected_contains": [
+        "shopping_orchestrate",
+        "orchestration_steps",
+        "item_count"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "shopping_orchestrate orchestration_steps item_count",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_research_policy",
+      "expected_contains": [
+        "research_workflow",
+        "allow_web",
+        "policy_gate"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "research_workflow allow_web policy_gate",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_release_get",
+      "expected_contains": [
+        "release_channel_get",
+        "active_channel",
+        "migration_checks"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "release_channel_get active_channel migration_checks",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_release_set",
+      "expected_contains": [
+        "release_channel_set",
+        "active_channel",
+        "check"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "release_channel_set active_channel check",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "integration_release_check",
+      "expected_contains": [
+        "release_channel_check",
+        "passed",
+        "channel"
+      ],
+      "expected_tools": [
+        "integration_hub"
+      ],
+      "actual_response": "release_channel_check passed channel",
+      "actual_tools": [
+        "integration_hub"
+      ]
+    },
+    {
+      "id": "todoist_add_task_control",
+      "expected_contains": [
+        "content",
+        "due_string",
+        "task"
+      ],
+      "expected_tools": [
+        "todoist_add_task"
+      ],
+      "actual_response": "content due_string task",
+      "actual_tools": [
+        "todoist_add_task"
+      ]
+    },
+    {
+      "id": "todoist_list_tasks",
+      "expected_contains": [
+        "items",
+        "format",
+        "project"
+      ],
+      "expected_tools": [
+        "todoist_list_tasks"
+      ],
+      "actual_response": "items format project",
+      "actual_tools": [
+        "todoist_list_tasks"
+      ]
+    },
+    {
+      "id": "pushover_notify_send",
+      "expected_contains": [
+        "message",
+        "title",
+        "priority"
+      ],
+      "expected_tools": [
+        "pushover_notify"
+      ],
+      "actual_response": "message title priority",
+      "actual_tools": [
+        "pushover_notify"
+      ]
+    },
+    {
+      "id": "slack_notify_send",
+      "expected_contains": [
+        "message",
+        "webhook",
+        "channel"
+      ],
+      "expected_tools": [
+        "slack_notify"
+      ],
+      "actual_response": "message webhook channel",
+      "actual_tools": [
+        "slack_notify"
+      ]
+    },
+    {
+      "id": "discord_notify_send",
+      "expected_contains": [
+        "message",
+        "webhook",
+        "discord"
+      ],
+      "expected_tools": [
+        "discord_notify"
+      ],
+      "actual_response": "message webhook discord",
+      "actual_tools": [
+        "discord_notify"
+      ]
+    },
+    {
+      "id": "email_send_confirm",
+      "expected_contains": [
+        "confirm",
+        "subject",
+        "recipient"
+      ],
+      "expected_tools": [
+        "email_send"
+      ],
+      "actual_response": "confirm subject recipient",
+      "actual_tools": [
+        "email_send"
+      ]
+    },
+    {
+      "id": "email_summary_recent",
+      "expected_contains": [
+        "recent",
+        "count",
+        "recipient"
+      ],
+      "expected_tools": [
+        "email_summary"
+      ],
+      "actual_response": "recent count recipient",
+      "actual_tools": [
+        "email_summary"
+      ]
+    },
+    {
+      "id": "webhook_trigger_allowlist",
+      "expected_contains": [
+        "https",
+        "allowlist",
+        "status"
+      ],
+      "expected_tools": [
+        "webhook_trigger"
+      ],
+      "actual_response": "https allowlist status",
+      "actual_tools": [
+        "webhook_trigger"
+      ]
+    },
+    {
+      "id": "weather_lookup_metric",
+      "expected_contains": [
+        "temperature",
+        "units",
+        "metric"
+      ],
+      "expected_tools": [
+        "weather_lookup"
+      ],
+      "actual_response": "temperature units metric",
+      "actual_tools": [
+        "weather_lookup"
+      ]
+    },
+    {
+      "id": "dead_letter_list_open",
+      "expected_contains": [
+        "pending_count",
+        "entries",
+        "status"
+      ],
+      "expected_tools": [
+        "dead_letter_list"
+      ],
+      "actual_response": "pending_count entries status",
+      "actual_tools": [
+        "dead_letter_list"
+      ]
+    },
+    {
+      "id": "dead_letter_replay_specific",
+      "expected_contains": [
+        "replayed_count",
+        "entry_id",
+        "result"
+      ],
+      "expected_tools": [
+        "dead_letter_replay"
+      ],
+      "actual_response": "replayed_count entry_id result",
+      "actual_tools": [
+        "dead_letter_replay"
+      ]
+    },
+    {
+      "id": "tool_summary_recent",
+      "expected_contains": [
+        "name",
+        "status",
+        "duration_ms"
+      ],
+      "expected_tools": [
+        "tool_summary"
+      ],
+      "actual_response": "name status duration_ms",
+      "actual_tools": [
+        "tool_summary"
+      ]
+    },
+    {
+      "id": "tool_summary_text_recent",
+      "expected_contains": [
+        "summary",
+        "errors",
+        "successes"
+      ],
+      "expected_tools": [
+        "tool_summary_text"
+      ],
+      "actual_response": "summary errors successes",
+      "actual_tools": [
+        "tool_summary_text"
+      ]
+    },
+    {
+      "id": "memory_add_scope",
+      "expected_contains": [
+        "scope",
+        "confidence",
+        "source"
+      ],
+      "expected_tools": [
+        "memory_add"
+      ],
+      "actual_response": "scope confidence source",
+      "actual_tools": [
+        "memory_add"
+      ]
+    },
+    {
+      "id": "memory_search_scoped",
+      "expected_contains": [
+        "scope",
+        "confidence",
+        "trail"
+      ],
+      "expected_tools": [
+        "memory_search"
+      ],
+      "actual_response": "scope confidence trail",
+      "actual_tools": [
+        "memory_search"
+      ]
+    },
+    {
+      "id": "memory_recent_scoped",
+      "expected_contains": [
+        "scope",
+        "entries",
+        "confidence"
+      ],
+      "expected_tools": [
+        "memory_recent"
+      ],
+      "actual_response": "scope entries confidence",
+      "actual_tools": [
+        "memory_recent"
+      ]
+    },
+    {
+      "id": "memory_status_model",
+      "expected_contains": [
+        "confidence_model",
+        "scope_policy"
+      ],
+      "expected_tools": [
+        "memory_status"
+      ],
+      "actual_response": "confidence_model scope_policy",
+      "actual_tools": [
+        "memory_status"
+      ]
+    },
+    {
+      "id": "memory_governance_audit",
+      "expected_contains": [
+        "stale",
+        "duplicates",
+        "cleanup"
+      ],
+      "expected_tools": [
+        "memory_governance"
+      ],
+      "actual_response": "stale duplicates cleanup",
+      "actual_tools": [
+        "memory_governance"
+      ]
+    },
+    {
+      "id": "proactive_briefing",
+      "expected_contains": [
+        "briefing",
+        "follow_through",
+        "digest"
+      ],
+      "expected_tools": [
+        "proactive_assistant"
+      ],
+      "actual_response": "briefing follow_through digest",
+      "actual_tools": [
+        "proactive_assistant"
+      ]
+    },
+    {
+      "id": "skills_list_snapshot",
+      "expected_contains": [
+        "skills",
+        "enabled",
+        "namespace"
+      ],
+      "expected_tools": [
+        "skills_list"
+      ],
+      "actual_response": "skills enabled namespace",
+      "actual_tools": [
+        "skills_list"
+      ]
+    },
+    {
+      "id": "skills_enable_flow",
+      "expected_contains": [
+        "name",
+        "enabled",
+        "detail"
+      ],
+      "expected_tools": [
+        "skills_enable"
+      ],
+      "actual_response": "name enabled detail",
+      "actual_tools": [
+        "skills_enable"
+      ]
+    },
+    {
+      "id": "skills_disable_flow",
+      "expected_contains": [
+        "name",
+        "disabled",
+        "detail"
+      ],
+      "expected_tools": [
+        "skills_disable"
+      ],
+      "actual_response": "name disabled detail",
+      "actual_tools": [
+        "skills_disable"
+      ]
+    },
+    {
+      "id": "skills_version_lookup",
+      "expected_contains": [
+        "name",
+        "version"
+      ],
+      "expected_tools": [
+        "skills_version"
+      ],
+      "actual_response": "name version",
+      "actual_tools": [
+        "skills_version"
+      ]
+    },
+    {
+      "id": "skills_governance_negotiate",
+      "expected_contains": [
+        "requested_capabilities",
+        "selected",
+        "candidates"
+      ],
+      "expected_tools": [
+        "skills_governance"
+      ],
+      "actual_response": "requested_capabilities selected candidates",
+      "actual_tools": [
+        "skills_governance"
+      ]
+    },
+    {
+      "id": "skills_governance_quota",
+      "expected_contains": [
+        "quota_set",
+        "rate_per_min",
+        "cpu_sec"
+      ],
+      "expected_tools": [
+        "skills_governance"
+      ],
+      "actual_response": "quota_set rate_per_min cpu_sec",
+      "actual_tools": [
+        "skills_governance"
+      ]
+    },
+    {
+      "id": "quality_weekly_report",
+      "expected_contains": [
+        "weekly_report",
+        "artifact_path",
+        "top_failures"
+      ],
+      "expected_tools": [
+        "quality_evaluator"
+      ],
+      "actual_response": "weekly_report artifact_path top_failures",
+      "actual_tools": [
+        "quality_evaluator"
+      ]
+    },
+    {
+      "id": "quality_dataset_run",
+      "expected_contains": [
+        "dataset_run",
+        "pass_rate",
+        "accepted"
+      ],
+      "expected_tools": [
+        "quality_evaluator"
+      ],
+      "actual_response": "dataset_run pass_rate accepted",
+      "actual_tools": [
+        "quality_evaluator"
+      ]
+    },
+    {
+      "id": "quality_reports_list",
+      "expected_contains": [
+        "reports_list",
+        "reports",
+        "count"
+      ],
+      "expected_tools": [
+        "quality_evaluator"
+      ],
+      "actual_response": "reports_list reports count",
+      "actual_tools": [
+        "quality_evaluator"
+      ]
+    },
+    {
+      "id": "embodiment_expression_library",
+      "expected_contains": [
+        "expression_library",
+        "library_count",
+        "micro_expression"
+      ],
+      "expected_tools": [
+        "embodiment_presence"
+      ],
+      "actual_response": "expression_library library_count micro_expression",
+      "actual_tools": [
+        "embodiment_presence"
+      ]
+    },
+    {
+      "id": "embodiment_gaze_calibrate",
+      "expected_contains": [
+        "gaze_calibrate",
+        "distance_cm",
+        "seat_offset_deg"
+      ],
+      "expected_tools": [
+        "embodiment_presence"
+      ],
+      "actual_response": "gaze_calibrate distance_cm seat_offset_deg",
+      "actual_tools": [
+        "embodiment_presence"
+      ]
+    },
+    {
+      "id": "embodiment_gesture_profile",
+      "expected_contains": [
+        "gesture_profile",
+        "amplitude",
+        "profile_key"
+      ],
+      "expected_tools": [
+        "embodiment_presence"
+      ],
+      "actual_response": "gesture_profile amplitude profile_key",
+      "actual_tools": [
+        "embodiment_presence"
+      ]
+    },
+    {
+      "id": "embodiment_privacy_posture",
+      "expected_contains": [
+        "privacy_posture",
+        "state",
+        "reason"
+      ],
+      "expected_tools": [
+        "embodiment_presence"
+      ],
+      "actual_response": "privacy_posture state reason",
+      "actual_tools": [
+        "embodiment_presence"
+      ]
+    },
+    {
+      "id": "embodiment_safety_envelope",
+      "expected_contains": [
+        "safety_envelope",
+        "proximity_limit_cm",
+        "hardware_state"
+      ],
+      "expected_tools": [
+        "embodiment_presence"
+      ],
+      "actual_response": "safety_envelope proximity_limit_cm hardware_state",
+      "actual_tools": [
+        "embodiment_presence"
+      ]
+    },
+    {
+      "id": "embodiment_status",
+      "expected_contains": [
+        "status",
+        "privacy_posture",
+        "motion_safety_envelope"
+      ],
+      "expected_tools": [
+        "embodiment_presence"
+      ],
+      "actual_response": "status privacy_posture motion_safety_envelope",
+      "actual_tools": [
+        "embodiment_presence"
+      ]
     }
   ]
 }

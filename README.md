@@ -217,6 +217,7 @@ Smart home safety defaults:
 - Release channel checks: run `./scripts/check_release_channel.py --channel dev|beta|stable`.
 - Weekly quality artifact: run `./scripts/generate_quality_report.py --output-dir .artifacts/quality --markdown --compare-with .artifacts/quality/weekly-quality-<previous>.json`.
 - Deterministic eval dataset runner: run `./scripts/run_eval_dataset.py docs/evals/assistant-contract.json --strict --min-pass-rate 1.0 --max-failed 0`.
+  - Current dataset includes 91 contract cases spanning home orchestration, planner/autonomy, integrations, comms, trust, and status contracts.
 - Unified readiness gate: run `./scripts/jarvis_readiness.sh fast|full` (or `make readiness`).
 - One-command host bootstrap: run `./scripts/bootstrap.sh`.
 - Container profile: `docker compose up --build` (simulation/no-vision default).
@@ -398,7 +399,12 @@ jarvis/
 │       ├── presence.py        # 30Hz presence loop (the soul)
 │       ├── tools/
 │       │   ├── robot.py       # embody, play_emotion, play_dance
-│       │   └── services.py    # smart_home + Todoist + Pushover + memory/planning tools
+│       │   ├── services.py    # shared runtime/helpers + MCP tool registry
+│       │   └── services_domains/
+│       │       ├── home.py        # home_orchestrator domain handler
+│       │       ├── planner.py     # planner_engine domain handler
+│       │       ├── integrations.py # integration_hub domain handler
+│       │       └── comms.py       # channel/email/todoist/pushover handlers
 │       ├── audio/
 │       │   ├── vad.py         # Silero voice activity detection
 │       │   ├── stt.py         # faster-whisper transcription
