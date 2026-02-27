@@ -68,6 +68,9 @@ from jarvis.runtime_operator_server import (
 from jarvis.runtime_observability_status import (
     default_observability_status_snapshot as _runtime_default_observability_status_snapshot,
 )
+from jarvis.runtime_observability_snapshot import (
+    publish_observability_snapshot as _runtime_publish_observability_snapshot,
+)
 from jarvis.runtime_conversation_trace import (
     operator_conversation_trace_provider as _runtime_operator_conversation_trace_provider,
     operator_episodic_timeline_provider as _runtime_operator_episodic_timeline_provider,
@@ -155,6 +158,7 @@ from jarvis.runtime_preferences import (
 from jarvis.runtime_multimodal import (
     multimodal_grounding_snapshot as _runtime_multimodal_grounding_snapshot,
 )
+from jarvis.runtime_watchdog import watchdog_loop as _runtime_watchdog_loop
 from jarvis.runtime_constants import (
     ATTENTION_RECENCY_SEC,
     CONVERSATION_TRACE_MAXLEN,
@@ -706,62 +710,23 @@ class Jarvis:
         return _runtime_transcribe_with_fallback(self, audio)
 
     def _publish_observability_snapshot(self, *, force: bool = False) -> None:
-        observability = getattr(self, "_observability", None)
-        if observability is None:
-            return
-        now = time.monotonic()
-        if not force and (now - self._last_observability_snapshot_at) < self.config.observability_snapshot_interval_sec:
-            return
-        self._last_observability_snapshot_at = now
-        snapshot = self._telemetry_snapshot()
-        with suppress(Exception):
-            observability.record_snapshot(snapshot)
-        with suppress(Exception):
-            observability.record_tool_summaries(list_summaries(limit=100))
-        alerts = []
-        with suppress(Exception):
-            alerts = observability.detect_failure_burst(window_sec=300.0)
-        if alerts:
-            log.warning("Observability alerts: %s", alerts)
-        self._publish_observability_status()
+        _runtime_publish_observability_snapshot(
+            self,
+            force=force,
+            list_summaries_fn=list_summaries,
+            logger=log,
+        )
 
     async def _watchdog_loop(self) -> None:
-        state_name = str(getattr(self.presence.signals.state, "value", "unknown")).lower()
-        state_since = time.monotonic()
-        while True:
-            now = time.monotonic()
-            if (now - float(getattr(self, "_runtime_invariant_checked_monotonic", 0.0))) >= 2.0:
-                with suppress(Exception):
-                    self._check_runtime_invariants(auto_heal=True)
-            current = str(getattr(self.presence.signals.state, "value", "unknown")).lower()
-            if current != state_name:
-                state_name = current
-                state_since = now
-            timeout = None
-            if current == str(State.LISTENING.value):
-                timeout = self.config.watchdog_listening_timeout_sec
-            elif current == str(State.THINKING.value):
-                timeout = self.config.watchdog_thinking_timeout_sec
-            elif current == str(State.SPEAKING.value):
-                timeout = self.config.watchdog_speaking_timeout_sec
-            if timeout is not None and (now - state_since) > timeout:
-                log.warning("Watchdog reset triggered for state=%s", current)
-                self.presence.signals.state = State.IDLE
-                self._barge_in.set()
-                self._flush_output()
-                self._clear_tts_queue()
-                self._barge_in.clear()
-                self._telemetry["fallback_responses"] += 1.0
-                observability = getattr(self, "_observability", None)
-                if observability is not None:
-                    with suppress(Exception):
-                        observability.record_event(
-                            "watchdog_reset",
-                            {"state": current, "timeout_sec": timeout},
-                        )
-                state_name = str(State.IDLE.value)
-                state_since = now
-            await asyncio.sleep(WATCHDOG_POLL_SEC)
+        await _runtime_watchdog_loop(
+            self,
+            state_idle=State.IDLE,
+            state_listening=State.LISTENING,
+            state_thinking=State.THINKING,
+            state_speaking=State.SPEAKING,
+            poll_sec=WATCHDOG_POLL_SEC,
+            logger=log,
+        )
 
     async def _operator_status_provider(self) -> dict[str, Any]:
         return await _runtime_operator_status_provider(
