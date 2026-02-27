@@ -259,6 +259,8 @@ class Config:
     todoist_project_id: str = field(default_factory=lambda: os.environ.get("TODOIST_PROJECT_ID", ""))
     todoist_permission_profile: str = field(default_factory=lambda: os.environ.get("TODOIST_PERMISSION_PROFILE", "control"))
     todoist_timeout_sec: float = field(default_factory=lambda: _env_positive_float("TODOIST_TIMEOUT_SEC", 10.0))
+    notion_api_token: str = field(default_factory=lambda: os.environ.get("NOTION_API_TOKEN", ""))
+    notion_database_id: str = field(default_factory=lambda: os.environ.get("NOTION_DATABASE_ID", ""))
     pushover_api_token: str = field(default_factory=lambda: os.environ.get("PUSHOVER_API_TOKEN", ""))
     pushover_user_key: str = field(default_factory=lambda: os.environ.get("PUSHOVER_USER_KEY", ""))
     notification_permission_profile: str = field(default_factory=lambda: os.environ.get("NOTIFICATION_PERMISSION_PROFILE", "allow"))
@@ -668,6 +670,10 @@ class Config:
             and not has_todoist_token
         ):
             warnings.append("TODOIST_PERMISSION_PROFILE=control set while TODOIST_API_TOKEN is empty.")
+        has_notion_token = bool((self.notion_api_token or "").strip())
+        has_notion_database = bool((self.notion_database_id or "").strip())
+        if has_notion_token != has_notion_database:
+            warnings.append("Notion config incomplete; set both NOTION_API_TOKEN and NOTION_DATABASE_ID.")
         has_pushover_token = bool((self.pushover_api_token or "").strip())
         has_pushover_user = bool((self.pushover_user_key or "").strip())
         if has_pushover_token != has_pushover_user:

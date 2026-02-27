@@ -93,9 +93,12 @@ GUEST_SESSION_MAX_TTL_SEC = 24.0 * 3600.0
 HOME_TASK_MAX_TRACKED = 400
 PLANNER_TASK_GRAPH_MAX = 300
 DEFERRED_ACTION_MAX = 500
+HOME_AUTOMATION_MAX_TRACKED = 300
+AUTONOMY_CYCLE_HISTORY_MAX = 200
 QUALITY_REPORT_DIR_DEFAULT = Path.home() / ".jarvis" / "quality-reports"
 NOTES_CAPTURE_DIR_DEFAULT = Path.home() / ".jarvis" / "notes"
 RELEASE_CHANNELS = {"dev", "beta", "stable"}
+NOTION_API_VERSION = "2022-06-28"
 SKILL_SANDBOX_TEMPLATES: dict[str, dict[str, Any]] = {
     "read-only": {
         "filesystem": "read_only",
@@ -200,6 +203,8 @@ _email_from: str = ""
 _email_default_to: str = ""
 _email_use_tls: bool = True
 _email_timeout_sec: float = 10.0
+_notion_api_token: str = ""
+_notion_database_id: str = ""
 _weather_units: str = "metric"
 _weather_timeout_sec: float = 8.0
 _webhook_allowlist: list[str] = []
@@ -260,11 +265,16 @@ _household_profiles: dict[str, dict[str, Any]] = {}
 _home_area_policies: dict[str, dict[str, Any]] = {}
 _home_task_runs: dict[str, dict[str, Any]] = {}
 _home_task_seq: int = 1
+_home_automation_drafts: dict[str, dict[str, Any]] = {}
+_home_automation_applied: dict[str, dict[str, Any]] = {}
+_home_automation_seq: int = 1
 _skill_quotas: dict[str, dict[str, Any]] = {}
 _planner_task_graphs: dict[str, dict[str, Any]] = {}
 _planner_task_seq: int = 1
 _deferred_actions: dict[str, dict[str, Any]] = {}
 _deferred_action_seq: int = 1
+_autonomy_checkpoints: dict[str, dict[str, Any]] = {}
+_autonomy_cycle_history: list[dict[str, Any]] = []
 _quality_reports: list[dict[str, Any]] = []
 _micro_expression_library: dict[str, dict[str, Any]] = {}
 _gaze_calibrations: dict[str, dict[str, Any]] = {}
@@ -951,7 +961,14 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "home_orchestrator": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "description": "plan | execute | area_policy_set | area_policy_list | automation_suggest | task_start | task_update | task_list"},
+            "action": {
+                "type": "string",
+                "description": (
+                    "plan | execute | area_policy_set | area_policy_list | automation_suggest | "
+                    "automation_create | automation_apply | automation_rollback | automation_status | "
+                    "task_start | task_update | task_list"
+                ),
+            },
             "request_text": {"type": "string"},
             "plan": {"type": "object"},
             "actions": {"type": "array", "items": {"type": "object"}},
@@ -962,6 +979,14 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "status": {"type": "string"},
             "progress": {"type": "number"},
             "notes": {"type": "string"},
+            "alias": {"type": "string"},
+            "automation_id": {"type": "string"},
+            "draft_id": {"type": "string"},
+            "trigger": {"type": "object"},
+            "condition": {"type": "array", "items": {"type": "object"}},
+            "dry_run": {"type": "boolean"},
+            "confirm": {"type": "boolean"},
+            "ha_apply": {"type": "boolean"},
         },
         "required": ["action"],
     },
@@ -984,7 +1009,14 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "planner_engine": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "description": "plan | task_graph_create | task_graph_update | task_graph_resume | deferred_schedule | deferred_list | self_critique"},
+            "action": {
+                "type": "string",
+                "description": (
+                    "plan | task_graph_create | task_graph_update | task_graph_resume | deferred_schedule | "
+                    "deferred_list | self_critique | autonomy_schedule | autonomy_checkpoint | "
+                    "autonomy_cycle | autonomy_status"
+                ),
+            },
             "goal": {"type": "string"},
             "steps": {"type": "array", "items": {"type": "object"}},
             "graph_id": {"type": "string"},
@@ -995,6 +1027,13 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "payload": {"type": "object"},
             "plan": {"type": "object"},
             "limit": {"type": "integer"},
+            "risk": {"type": "string"},
+            "requires_checkpoint": {"type": "boolean"},
+            "checkpoint_id": {"type": "string"},
+            "approved": {"type": "boolean"},
+            "approved_checkpoints": {"type": "array", "items": {"type": "string"}},
+            "recurrence_sec": {"type": "number"},
+            "now": {"type": "number"},
         },
         "required": ["action"],
     },
@@ -1049,9 +1088,18 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "path": {"type": "string"},
             "title": {"type": "string"},
             "content": {"type": "string"},
+            "calendar_entity_id": {"type": "string"},
+            "start": {"type": "string"},
+            "end": {"type": "string"},
+            "summary": {"type": "string"},
+            "description": {"type": "string"},
+            "location": {"type": "string"},
+            "event_payload": {"type": "object"},
             "channel": {"type": "string"},
             "phase": {"type": "string"},
             "message": {"type": "string"},
+            "subject": {"type": "string"},
+            "to": {"type": "string"},
             "traffic": {"type": "object"},
             "transit": {"type": "object"},
             "items": {"type": "array", "items": {"type": "string"}},
@@ -1175,6 +1223,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _todoist_timeout_sec, _pushover_timeout_sec
     global _email_smtp_host, _email_smtp_port, _email_smtp_username, _email_smtp_password
     global _email_from, _email_default_to, _email_use_tls, _email_timeout_sec
+    global _notion_api_token, _notion_database_id
     global _weather_units, _weather_timeout_sec
     global _webhook_allowlist, _webhook_auth_token, _webhook_timeout_sec
     global _turn_timeout_listen_sec, _turn_timeout_think_sec, _turn_timeout_speak_sec, _turn_timeout_act_sec
@@ -1186,7 +1235,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _memory_pii_guardrails_enabled, _audit_encryption_enabled, _data_encryption_key
     global _timer_id_seq, _reminder_id_seq, _integration_circuit_breakers, _recovery_journal_path, _dead_letter_queue_path
     global _expansion_state_path, _release_channel_config_path, _quality_report_dir, _notes_capture_dir
-    global _home_task_seq, _planner_task_seq, _deferred_action_seq
+    global _home_task_seq, _home_automation_seq, _planner_task_seq, _deferred_action_seq
     _config = config
     _memory = memory_store
     _audit_log_max_bytes = int(config.audit_log_max_bytes)
@@ -1227,6 +1276,8 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _email_default_to = str(getattr(config, "email_default_to", "")).strip()
     _email_use_tls = bool(getattr(config, "email_use_tls", True))
     _email_timeout_sec = float(getattr(config, "email_timeout_sec", 10.0))
+    _notion_api_token = str(getattr(config, "notion_api_token", "")).strip()
+    _notion_database_id = str(getattr(config, "notion_database_id", "")).strip()
     _weather_units = str(getattr(config, "weather_units", "metric")).strip().lower()
     if _weather_units not in {"metric", "imperial"}:
         _weather_units = "metric"
@@ -1316,9 +1367,13 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _household_profiles.clear()
     _home_area_policies.clear()
     _home_task_runs.clear()
+    _home_automation_drafts.clear()
+    _home_automation_applied.clear()
     _skill_quotas.clear()
     _planner_task_graphs.clear()
     _deferred_actions.clear()
+    _autonomy_checkpoints.clear()
+    _autonomy_cycle_history.clear()
     _quality_reports.clear()
     _micro_expression_library.clear()
     _gaze_calibrations.clear()
@@ -1333,6 +1388,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _release_channel_state["last_check_passed"] = False
     _release_channel_state["migration_checks"] = []
     _home_task_seq = 1
+    _home_automation_seq = 1
     _planner_task_seq = 1
     _deferred_action_seq = 1
     for integration in sorted(set(INTEGRATION_TOOL_MAP.values())):
@@ -2442,11 +2498,16 @@ def _expansion_state_payload() -> dict[str, Any]:
         "home_area_policies": _json_safe_clone(_home_area_policies),
         "home_task_runs": _json_safe_clone(_home_task_runs),
         "home_task_seq": int(_home_task_seq),
+        "home_automation_drafts": _json_safe_clone(_home_automation_drafts),
+        "home_automation_applied": _json_safe_clone(_home_automation_applied),
+        "home_automation_seq": int(_home_automation_seq),
         "skill_quotas": _json_safe_clone(_skill_quotas),
         "planner_task_graphs": _json_safe_clone(_planner_task_graphs),
         "planner_task_seq": int(_planner_task_seq),
         "deferred_actions": _json_safe_clone(_deferred_actions),
         "deferred_action_seq": int(_deferred_action_seq),
+        "autonomy_checkpoints": _json_safe_clone(_autonomy_checkpoints),
+        "autonomy_cycle_history": _json_safe_clone(_autonomy_cycle_history[-AUTONOMY_CYCLE_HISTORY_MAX:]),
         "quality_reports": _json_safe_clone(_quality_reports[-CACHED_QUALITY_REPORT_MAX:]),
         "micro_expression_library": _json_safe_clone(_micro_expression_library),
         "gaze_calibrations": _json_safe_clone(_gaze_calibrations),
@@ -2509,12 +2570,22 @@ def _load_expansion_state() -> None:
     _replace_state_dict(_household_profiles, payload.get("household_profiles"))
     _replace_state_dict(_home_area_policies, payload.get("home_area_policies"))
     _replace_state_dict(_home_task_runs, payload.get("home_task_runs"))
+    _replace_state_dict(_home_automation_drafts, payload.get("home_automation_drafts"))
+    _replace_state_dict(_home_automation_applied, payload.get("home_automation_applied"))
     _replace_state_dict(_skill_quotas, payload.get("skill_quotas"))
     _replace_state_dict(_planner_task_graphs, payload.get("planner_task_graphs"))
     _replace_state_dict(_deferred_actions, payload.get("deferred_actions"))
+    _replace_state_dict(_autonomy_checkpoints, payload.get("autonomy_checkpoints"))
     _replace_state_dict(_micro_expression_library, payload.get("micro_expression_library"))
     _replace_state_dict(_gaze_calibrations, payload.get("gaze_calibrations"))
     _replace_state_dict(_gesture_envelopes, payload.get("gesture_envelopes"))
+
+    autonomy_history = payload.get("autonomy_cycle_history")
+    _autonomy_cycle_history.clear()
+    if isinstance(autonomy_history, list):
+        for row in autonomy_history[-AUTONOMY_CYCLE_HISTORY_MAX:]:
+            if isinstance(row, dict):
+                _autonomy_cycle_history.append({str(key): _json_safe_clone(value) for key, value in row.items()})
 
     _guest_sessions.clear()
     guest_sessions = payload.get("guest_sessions")
@@ -2608,8 +2679,9 @@ def _load_expansion_state() -> None:
             else []
         )
 
-    global _home_task_seq, _planner_task_seq, _deferred_action_seq
+    global _home_task_seq, _home_automation_seq, _planner_task_seq, _deferred_action_seq
     _home_task_seq = _as_int(payload.get("home_task_seq", 1), 1, minimum=1)
+    _home_automation_seq = _as_int(payload.get("home_automation_seq", 1), 1, minimum=1)
     _planner_task_seq = _as_int(payload.get("planner_task_seq", 1), 1, minimum=1)
     _deferred_action_seq = _as_int(payload.get("deferred_action_seq", 1), 1, minimum=1)
     _prune_guest_sessions()
@@ -2751,6 +2823,80 @@ def _capture_note(*, backend: str, title: str, content: str, path_hint: str = ""
         "stored": False,
         "status": "unsupported_backend",
     }
+
+
+def _notion_configured() -> bool:
+    return bool(_notion_api_token and _notion_database_id)
+
+
+async def _capture_note_notion(*, title: str, content: str) -> tuple[dict[str, Any] | None, str | None]:
+    if not _notion_configured():
+        return None, "missing_config"
+    payload = {
+        "parent": {"database_id": _notion_database_id},
+        "properties": {
+            "title": {
+                "title": [
+                    {
+                        "type": "text",
+                        "text": {"content": title[:200]},
+                    }
+                ]
+            }
+        },
+        "children": [
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [
+                        {
+                            "type": "text",
+                            "text": {"content": content[:2000]},
+                        }
+                    ]
+                },
+            }
+        ],
+    }
+    headers = {
+        "Authorization": f"Bearer {_notion_api_token}",
+        "Notion-Version": NOTION_API_VERSION,
+        "Content-Type": "application/json",
+    }
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_webhook_timeout_sec, minimum=1.0, maximum=30.0))
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post("https://api.notion.com/v1/pages", headers=headers, json=payload) as resp:
+                if resp.status in {200, 201}:
+                    try:
+                        body = await resp.json()
+                    except Exception:
+                        return None, "invalid_json"
+                    if not isinstance(body, dict):
+                        return None, "invalid_json"
+                    page_id = str(body.get("id", "")).strip()
+                    url = str(body.get("url", "")).strip()
+                    if not page_id:
+                        return None, "invalid_json"
+                    return {
+                        "backend": "notion",
+                        "stored": True,
+                        "status": "created",
+                        "page_id": page_id,
+                        "url": url,
+                    }, None
+                if resp.status in {401, 403}:
+                    return None, "auth"
+                return None, "http_error"
+    except asyncio.TimeoutError:
+        return None, "timeout"
+    except asyncio.CancelledError:
+        return None, "cancelled"
+    except aiohttp.ClientError:
+        return None, "network_client_error"
+    except Exception:
+        return None, "unexpected"
 
 
 def _duration_seconds(value: Any) -> float | None:
@@ -3739,6 +3885,59 @@ async def _ha_get_json(
         return None, "unexpected"
 
 
+async def _ha_request_json(
+    method: str,
+    path: str,
+    *,
+    payload: dict[str, Any] | None = None,
+    timeout_sec: float = 10.0,
+) -> tuple[Any | None, str | None]:
+    if _integration_circuit_open("home_assistant")[0]:
+        return None, "circuit_open"
+    assert _config is not None
+    normalized_method = str(method).strip().upper() or "GET"
+    url = f"{_config.hass_url}{path}"
+    timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(timeout_sec))
+    headers = _ha_headers()
+    if payload is not None:
+        headers = {**headers, "Content-Type": "application/json"}
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.request(
+                normalized_method,
+                url,
+                headers=headers,
+                json=payload if payload is not None else None,
+            ) as resp:
+                if resp.status in {200, 201, 202, 204}:
+                    if resp.status == 204:
+                        _integration_record_success("home_assistant")
+                        return {}, None
+                    text = await resp.text()
+                    if not text.strip():
+                        _integration_record_success("home_assistant")
+                        return {}, None
+                    try:
+                        body = json.loads(text)
+                    except Exception:
+                        return None, "invalid_json"
+                    _integration_record_success("home_assistant")
+                    return body, None
+                if resp.status == 401:
+                    return None, "auth"
+                if resp.status == 404:
+                    return None, "not_found"
+                return None, "http_error"
+    except asyncio.TimeoutError:
+        return None, "timeout"
+    except asyncio.CancelledError:
+        return None, "cancelled"
+    except aiohttp.ClientError:
+        return None, "network_client_error"
+    except Exception:
+        return None, "unexpected"
+
+
 async def _ha_render_template(template_text: str, *, timeout_sec: float = 10.0) -> tuple[str | None, str | None]:
     if _integration_circuit_open("home_assistant")[0]:
         return None, "circuit_open"
@@ -4079,6 +4278,8 @@ def _expansion_snapshot() -> dict[str, Any]:
         "home_orchestration": {
             "area_policy_count": len(_home_area_policies),
             "tracked_task_count": len(_home_task_runs),
+            "automation_draft_count": len(_home_automation_drafts),
+            "automation_applied_count": len(_home_automation_applied),
         },
         "skills_governance": {
             "quota_count": len(_skill_quotas),
@@ -4087,6 +4288,23 @@ def _expansion_snapshot() -> dict[str, Any]:
         "planner_engine": {
             "task_graph_count": len(_planner_task_graphs),
             "deferred_action_count": len(_deferred_actions),
+            "autonomy_task_count": sum(
+                1
+                for row in _deferred_actions.values()
+                if isinstance(row, dict) and str(row.get("kind", "")).strip().lower() == "autonomy_task"
+            ),
+            "autonomy_waiting_checkpoint_count": sum(
+                1
+                for row in _deferred_actions.values()
+                if isinstance(row, dict)
+                and str(row.get("kind", "")).strip().lower() == "autonomy_task"
+                and str(row.get("status", "")).strip().lower() == "waiting_checkpoint"
+            ),
+            "autonomy_last_cycle_at": (
+                float(_autonomy_cycle_history[-1].get("timestamp", 0.0))
+                if _autonomy_cycle_history
+                else 0.0
+            ),
         },
         "quality_evaluator": {
             "cached_report_count": len(_quality_reports),
@@ -7880,6 +8098,8 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
         "expansion_home_orchestration_required": [
             "area_policy_count",
             "tracked_task_count",
+            "automation_draft_count",
+            "automation_applied_count",
         ],
         "expansion_skills_governance_required": [
             "quota_count",
@@ -7888,6 +8108,9 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
         "expansion_planner_engine_required": [
             "task_graph_count",
             "deferred_action_count",
+            "autonomy_task_count",
+            "autonomy_waiting_checkpoint_count",
+            "autonomy_last_cycle_at",
         ],
         "expansion_quality_evaluator_required": [
             "cached_report_count",
@@ -9275,6 +9498,110 @@ def _home_plan_from_request(request_text: str) -> dict[str, Any]:
     }
 
 
+def _slugify_identifier(value: str, *, fallback: str = "item") -> str:
+    normalized = re.sub(r"[^a-z0-9_]+", "_", str(value or "").strip().lower()).strip("_")
+    return normalized or fallback
+
+
+def _json_preview(value: Any, *, limit: int = 500) -> str:
+    text = json.dumps(value, sort_keys=True, default=str)
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "...<truncated>"
+
+
+def _structured_diff(previous: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    prev = previous if isinstance(previous, dict) else {}
+    curr = current if isinstance(current, dict) else {}
+    added = sorted(key for key in curr.keys() if key not in prev)
+    removed = sorted(key for key in prev.keys() if key not in curr)
+    changed = sorted(
+        key
+        for key in curr.keys()
+        if key in prev and _json_preview(prev.get(key)) != _json_preview(curr.get(key))
+    )
+    return {
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+        "has_changes": bool(added or removed or changed),
+        "previous_preview": _json_preview(prev),
+        "current_preview": _json_preview(curr),
+    }
+
+
+def _normalize_automation_config(args: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    alias = str(args.get("alias", "")).strip()
+    if not alias:
+        return None, "alias is required."
+    trigger = args.get("trigger") if isinstance(args.get("trigger"), dict) else {}
+    conditions = args.get("condition") if isinstance(args.get("condition"), list) else []
+    actions = args.get("actions") if isinstance(args.get("actions"), list) else []
+    if not trigger:
+        return None, "trigger object is required."
+    if not actions:
+        return None, "actions list is required."
+    normalized_actions = [dict(row) for row in actions if isinstance(row, dict)]
+    if not normalized_actions:
+        return None, "actions list must contain object entries."
+    return {
+        "alias": alias,
+        "trigger": dict(trigger),
+        "condition": [dict(row) for row in conditions if isinstance(row, dict)],
+        "action": normalized_actions,
+        "mode": str(args.get("mode", "single")).strip().lower() or "single",
+    }, ""
+
+
+def _automation_entry_from_draft(draft: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "draft_id": str(draft.get("draft_id", "")),
+        "automation_id": str(draft.get("automation_id", "")),
+        "alias": str(draft.get("alias", "")),
+        "status": str(draft.get("status", "draft")),
+        "updated_at": float(draft.get("updated_at", 0.0) or 0.0),
+    }
+
+
+async def _apply_ha_automation_config(automation_id: str, config_payload: dict[str, Any]) -> tuple[bool, str]:
+    if not _config or not _config.has_home_assistant:
+        return False, "missing_config"
+    path = f"/api/config/automation/config/{automation_id}"
+    _, error_code = await _ha_request_json("PUT", path, payload=config_payload)
+    if error_code in {"http_error", "not_found"}:
+        _, error_code = await _ha_request_json("POST", path, payload=config_payload)
+    if error_code is not None:
+        return False, error_code
+    _, reload_error = await _ha_call_service("automation", "reload", {})
+    if reload_error is not None:
+        return False, reload_error
+    return True, ""
+
+
+async def _delete_ha_automation_config(automation_id: str) -> tuple[bool, str]:
+    if not _config or not _config.has_home_assistant:
+        return False, "missing_config"
+    path = f"/api/config/automation/config/{automation_id}"
+    _, error_code = await _ha_request_json("DELETE", path)
+    if error_code is not None:
+        return False, error_code
+    _, reload_error = await _ha_call_service("automation", "reload", {})
+    if reload_error is not None:
+        return False, reload_error
+    return True, ""
+
+
+def _autonomy_tasks() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in _deferred_actions.values():
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("kind", "")).strip().lower() != "autonomy_task":
+            continue
+        rows.append(row)
+    return rows
+
+
 async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("home_orchestrator"):
@@ -9392,6 +9719,201 @@ async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
         ][:5]
         payload = {"action": action, "suggestion_count": len(suggestions), "suggestions": suggestions}
         record_summary("home_orchestrator", "ok", start_time, effect=f"automation_suggestions={len(suggestions)}", risk="low")
+        return _expansion_payload_response(payload)
+
+    if action == "automation_create":
+        config_payload, error = _normalize_automation_config(args)
+        if config_payload is None:
+            _record_service_error("home_orchestrator", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": error}]}
+        global _home_automation_seq
+        draft_id = f"automation-draft-{_home_automation_seq}"
+        _home_automation_seq += 1
+        automation_id = _slugify_identifier(
+            str(args.get("automation_id", "")).strip() or config_payload.get("alias", "automation"),
+            fallback="automation",
+        )
+        now = time.time()
+        draft = {
+            "draft_id": draft_id,
+            "automation_id": automation_id,
+            "alias": str(config_payload.get("alias", "")),
+            "config": config_payload,
+            "status": "draft",
+            "created_at": now,
+            "updated_at": now,
+        }
+        _home_automation_drafts[draft_id] = draft
+        if len(_home_automation_drafts) > HOME_AUTOMATION_MAX_TRACKED:
+            oldest = sorted(
+                _home_automation_drafts.items(),
+                key=lambda pair: float(pair[1].get("updated_at", 0.0)),
+            )[: len(_home_automation_drafts) - HOME_AUTOMATION_MAX_TRACKED]
+            for key, _ in oldest:
+                _home_automation_drafts.pop(key, None)
+        payload = {
+            "action": action,
+            "draft": _automation_entry_from_draft(draft),
+            "config_preview": _json_preview(config_payload),
+            "draft_count": len(_home_automation_drafts),
+        }
+        record_summary("home_orchestrator", "ok", start_time, effect="automation_create", risk="low")
+        return _expansion_payload_response(payload)
+
+    if action == "automation_apply":
+        draft_id = str(args.get("draft_id", "")).strip()
+        draft = _home_automation_drafts.get(draft_id)
+        if not isinstance(draft, dict):
+            _record_service_error("home_orchestrator", start_time, "not_found")
+            return {"content": [{"type": "text", "text": "draft_id not found."}]}
+        automation_id = str(draft.get("automation_id", "")).strip()
+        dry_run = _as_bool(args.get("dry_run"), default=True)
+        confirm = _as_bool(args.get("confirm"), default=False)
+        ha_apply = _as_bool(args.get("ha_apply"), default=True)
+        applied_row = _home_automation_applied.get(automation_id, {})
+        previous = applied_row.get("current") if isinstance(applied_row, dict) and isinstance(applied_row.get("current"), dict) else {}
+        current = draft.get("config") if isinstance(draft.get("config"), dict) else {}
+        diff = _structured_diff(previous if isinstance(previous, dict) else {}, current if isinstance(current, dict) else {})
+        if dry_run:
+            payload = {
+                "action": action,
+                "dry_run": True,
+                "draft": _automation_entry_from_draft(draft),
+                "diff": diff,
+                "ha_apply": bool(ha_apply),
+            }
+            record_summary("home_orchestrator", "ok", start_time, effect="automation_apply_preview", risk="low")
+            return _expansion_payload_response(payload)
+        if not confirm:
+            _record_service_error("home_orchestrator", start_time, "confirm_required")
+            return {"content": [{"type": "text", "text": "automation_apply requires confirm=true when dry_run=false."}]}
+        ha_status = "skipped"
+        if ha_apply:
+            ok, error_code = await _apply_ha_automation_config(automation_id, current if isinstance(current, dict) else {})
+            if not ok:
+                _record_service_error("home_orchestrator", start_time, error_code or "unexpected")
+                return {"content": [{"type": "text", "text": f"Home Assistant automation apply failed: {error_code or 'unexpected'}."}]}
+            ha_status = "applied"
+        row = _home_automation_applied.setdefault(automation_id, {"history": []})
+        history = row.get("history")
+        if not isinstance(history, list):
+            history = []
+        existing_current = row.get("current")
+        if isinstance(existing_current, dict) and existing_current:
+            history.append(
+                {
+                    "config": existing_current,
+                    "saved_at": float(row.get("updated_at", time.time()) or time.time()),
+                    "source_draft_id": str(row.get("last_draft_id", "")),
+                }
+            )
+        if len(history) > 20:
+            history = history[-20:]
+        row["history"] = history
+        row["current"] = current
+        row["updated_at"] = time.time()
+        row["last_draft_id"] = draft_id
+        draft["status"] = "applied"
+        draft["updated_at"] = time.time()
+        payload = {
+            "action": action,
+            "dry_run": False,
+            "applied": True,
+            "ha_status": ha_status,
+            "draft": _automation_entry_from_draft(draft),
+            "diff": diff,
+        }
+        record_summary("home_orchestrator", "ok", start_time, effect="automation_apply", risk="medium")
+        return _expansion_payload_response(payload)
+
+    if action == "automation_rollback":
+        automation_id = _slugify_identifier(str(args.get("automation_id", "")).strip(), fallback="")
+        if not automation_id:
+            _record_service_error("home_orchestrator", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "automation_id is required for automation_rollback."}]}
+        row = _home_automation_applied.get(automation_id)
+        if not isinstance(row, dict):
+            _record_service_error("home_orchestrator", start_time, "not_found")
+            return {"content": [{"type": "text", "text": "automation_id has no applied state."}]}
+        current = row.get("current") if isinstance(row.get("current"), dict) else {}
+        history = row.get("history") if isinstance(row.get("history"), list) else []
+        previous_entry = history[-1] if history else {}
+        previous = previous_entry.get("config") if isinstance(previous_entry, dict) and isinstance(previous_entry.get("config"), dict) else {}
+        dry_run = _as_bool(args.get("dry_run"), default=True)
+        confirm = _as_bool(args.get("confirm"), default=False)
+        ha_apply = _as_bool(args.get("ha_apply"), default=True)
+        diff = _structured_diff(current if isinstance(current, dict) else {}, previous if isinstance(previous, dict) else {})
+        if dry_run:
+            payload = {
+                "action": action,
+                "dry_run": True,
+                "automation_id": automation_id,
+                "has_previous_revision": bool(previous),
+                "diff": diff,
+                "ha_apply": bool(ha_apply),
+            }
+            record_summary("home_orchestrator", "ok", start_time, effect="automation_rollback_preview", risk="low")
+            return _expansion_payload_response(payload)
+        if not confirm:
+            _record_service_error("home_orchestrator", start_time, "confirm_required")
+            return {"content": [{"type": "text", "text": "automation_rollback requires confirm=true when dry_run=false."}]}
+        ha_status = "skipped"
+        if ha_apply:
+            if isinstance(previous, dict) and previous:
+                ok, error_code = await _apply_ha_automation_config(automation_id, previous)
+            else:
+                ok, error_code = await _delete_ha_automation_config(automation_id)
+            if not ok:
+                _record_service_error("home_orchestrator", start_time, error_code or "unexpected")
+                return {"content": [{"type": "text", "text": f"Home Assistant automation rollback failed: {error_code or 'unexpected'}."}]}
+            ha_status = "rolled_back"
+        if history:
+            history.pop()
+        if isinstance(previous, dict) and previous:
+            row["current"] = previous
+            row["history"] = history
+            row["updated_at"] = time.time()
+        else:
+            _home_automation_applied.pop(automation_id, None)
+        payload = {
+            "action": action,
+            "dry_run": False,
+            "rolled_back": True,
+            "ha_status": ha_status,
+            "automation_id": automation_id,
+            "restored_revision": bool(previous),
+            "diff": diff,
+        }
+        record_summary("home_orchestrator", "ok", start_time, effect="automation_rollback", risk="medium")
+        return _expansion_payload_response(payload)
+
+    if action == "automation_status":
+        draft_id = str(args.get("draft_id", "")).strip()
+        automation_id = _slugify_identifier(str(args.get("automation_id", "")).strip(), fallback="")
+        if draft_id:
+            row = _home_automation_drafts.get(draft_id)
+            payload = {"action": action, "draft_id": draft_id, "draft": _automation_entry_from_draft(row or {})}
+        elif automation_id:
+            row = _home_automation_applied.get(automation_id, {})
+            payload = {
+                "action": action,
+                "automation_id": automation_id,
+                "applied": {
+                    "automation_id": automation_id,
+                    "has_current": bool(isinstance(row, dict) and isinstance(row.get("current"), dict) and row.get("current")),
+                    "history_count": len(row.get("history", [])) if isinstance(row, dict) and isinstance(row.get("history"), list) else 0,
+                    "updated_at": float(row.get("updated_at", 0.0) or 0.0) if isinstance(row, dict) else 0.0,
+                },
+            }
+        else:
+            payload = {
+                "action": action,
+                "draft_count": len(_home_automation_drafts),
+                "applied_count": len(_home_automation_applied),
+                "drafts": [_automation_entry_from_draft(row) for row in sorted(_home_automation_drafts.values(), key=lambda item: str(item.get("draft_id", "")))[:100]],
+                "applied_ids": sorted(_home_automation_applied.keys())[:100],
+            }
+        record_summary("home_orchestrator", "ok", start_time, effect="automation_status", risk="low")
         return _expansion_payload_response(payload)
 
     if action == "task_start":
@@ -9634,6 +10156,7 @@ def _planner_ready_nodes(graph: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
+    global _planner_task_seq, _deferred_action_seq
     start_time = time.monotonic()
     if not _tool_permitted("planner_engine"):
         record_summary("planner_engine", "denied", start_time, "policy")
@@ -9669,7 +10192,6 @@ async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
         return _expansion_payload_response(payload)
 
     if action == "task_graph_create":
-        global _planner_task_seq
         title = str(args.get("title", "Task Graph")).strip() or "Task Graph"
         steps = args.get("steps") if isinstance(args.get("steps"), list) else []
         nodes: list[dict[str, Any]] = []
@@ -9768,7 +10290,6 @@ async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
         return _expansion_payload_response(payload)
 
     if action == "deferred_schedule":
-        global _deferred_action_seq
         title = str(args.get("title", "deferred-action")).strip() or "deferred-action"
         execute_at = _as_float(args.get("execute_at", time.time() + 60.0), time.time() + 60.0, minimum=0.0)
         action_id = f"deferred-{_deferred_action_seq}"
@@ -9794,6 +10315,203 @@ async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
         rows = sorted(_deferred_actions.values(), key=lambda item: float(item.get("execute_at", 0.0)))[:limit]
         payload = {"action": action, "deferred_count": len(_deferred_actions), "items": rows}
         record_summary("planner_engine", "ok", start_time, effect="deferred_list", risk="low")
+        return _expansion_payload_response(payload)
+
+    if action == "autonomy_schedule":
+        title = str(args.get("title", "autonomy-task")).strip() or "autonomy-task"
+        risk = str(args.get("risk", "medium")).strip().lower() or "medium"
+        if risk not in {"low", "medium", "high"}:
+            risk = "medium"
+        now = time.time()
+        execute_at = _as_float(args.get("execute_at", now + 300.0), now + 300.0, minimum=0.0)
+        recurrence_sec = _as_float(args.get("recurrence_sec", 0.0), 0.0, minimum=0.0, maximum=86_400.0 * 30.0)
+        requires_checkpoint = _as_bool(args.get("requires_checkpoint"), default=(risk in {"medium", "high"}))
+        checkpoint_id = _slugify_identifier(
+            str(args.get("checkpoint_id", "")).strip() or f"checkpoint-{_deferred_action_seq}",
+            fallback=f"checkpoint-{_deferred_action_seq}",
+        )
+        approved = _as_bool(args.get("approved"), default=False)
+        action_id = f"deferred-{_deferred_action_seq}"
+        _deferred_action_seq += 1
+        payload_data = args.get("payload") if isinstance(args.get("payload"), dict) else {}
+        entry = {
+            "id": action_id,
+            "title": title,
+            "execute_at": execute_at,
+            "payload": payload_data,
+            "status": "scheduled",
+            "created_at": now,
+            "kind": "autonomy_task",
+            "risk": risk,
+            "requires_checkpoint": requires_checkpoint,
+            "checkpoint_id": checkpoint_id,
+            "checkpoint_status": "approved" if approved else "pending",
+            "recurrence_sec": recurrence_sec,
+            "run_count": 0,
+        }
+        _deferred_actions[action_id] = entry
+        _autonomy_checkpoints.setdefault(
+            checkpoint_id,
+            {
+                "checkpoint_id": checkpoint_id,
+                "approved": approved,
+                "updated_at": now,
+                "notes": "",
+            },
+        )
+        if len(_deferred_actions) > DEFERRED_ACTION_MAX:
+            oldest = sorted(
+                _deferred_actions.items(),
+                key=lambda pair: float(pair[1].get("created_at", 0.0)),
+            )[: len(_deferred_actions) - DEFERRED_ACTION_MAX]
+            for key, _ in oldest:
+                _deferred_actions.pop(key, None)
+        row = {
+            "action": action,
+            "scheduled": dict(entry),
+            "autonomy_task_count": len(_autonomy_tasks()),
+        }
+        record_summary("planner_engine", "ok", start_time, effect="autonomy_schedule", risk="medium" if requires_checkpoint else "low")
+        return _expansion_payload_response(row)
+
+    if action == "autonomy_checkpoint":
+        checkpoint_id = _slugify_identifier(str(args.get("checkpoint_id", "")).strip(), fallback="")
+        if not checkpoint_id:
+            _record_service_error("planner_engine", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "checkpoint_id is required."}]}
+        approved = _as_bool(args.get("approved"), default=False)
+        notes = str(args.get("notes", "")).strip()
+        now = time.time()
+        _autonomy_checkpoints[checkpoint_id] = {
+            "checkpoint_id": checkpoint_id,
+            "approved": approved,
+            "updated_at": now,
+            "notes": notes,
+        }
+        affected = 0
+        for row in _autonomy_tasks():
+            if str(row.get("checkpoint_id", "")) != checkpoint_id:
+                continue
+            row["checkpoint_status"] = "approved" if approved else "pending"
+            if approved and str(row.get("status", "")).strip().lower() == "waiting_checkpoint":
+                row["status"] = "scheduled"
+            affected += 1
+        payload = {
+            "action": action,
+            "checkpoint": dict(_autonomy_checkpoints[checkpoint_id]),
+            "affected_task_count": affected,
+        }
+        record_summary("planner_engine", "ok", start_time, effect="autonomy_checkpoint", risk="low")
+        return _expansion_payload_response(payload)
+
+    if action == "autonomy_cycle":
+        now = _as_float(args.get("now", time.time()), time.time(), minimum=0.0)
+        limit = _as_int(args.get("limit", 20), 20, minimum=1, maximum=200)
+        approved_checkpoints = set(_as_str_list(args.get("approved_checkpoints"), lower=True))
+        due_rows = [
+            row
+            for row in _autonomy_tasks()
+            if str(row.get("status", "")).strip().lower() in {"scheduled", "waiting_checkpoint"}
+            and float(row.get("execute_at", now + 1.0)) <= now
+        ]
+        due_rows.sort(key=lambda row: float(row.get("execute_at", now)))
+        due_rows = due_rows[:limit]
+        executed: list[dict[str, Any]] = []
+        blocked: list[dict[str, Any]] = []
+        for row in due_rows:
+            checkpoint_id = _slugify_identifier(str(row.get("checkpoint_id", "")).strip(), fallback="")
+            requires_checkpoint = bool(row.get("requires_checkpoint", False))
+            checkpoint_approved = bool(
+                str(row.get("checkpoint_status", "")).strip().lower() == "approved"
+                or (checkpoint_id and checkpoint_id in approved_checkpoints)
+                or (
+                    checkpoint_id
+                    and bool(
+                        isinstance(_autonomy_checkpoints.get(checkpoint_id), dict)
+                        and _autonomy_checkpoints[checkpoint_id].get("approved")
+                    )
+                )
+            )
+            if requires_checkpoint and not checkpoint_approved:
+                row["status"] = "waiting_checkpoint"
+                blocked.append(
+                    {
+                        "id": str(row.get("id", "")),
+                        "title": str(row.get("title", "")),
+                        "checkpoint_id": checkpoint_id,
+                        "reason": "checkpoint_required",
+                    }
+                )
+                continue
+            if checkpoint_id:
+                row["checkpoint_status"] = "approved"
+                if checkpoint_id in _autonomy_checkpoints:
+                    _autonomy_checkpoints[checkpoint_id]["approved"] = True
+                    _autonomy_checkpoints[checkpoint_id]["updated_at"] = now
+            row["last_executed_at"] = now
+            row["run_count"] = int(row.get("run_count", 0) or 0) + 1
+            recurrence_sec = _as_float(row.get("recurrence_sec", 0.0), 0.0, minimum=0.0)
+            if recurrence_sec > 0.0:
+                row["status"] = "scheduled"
+                row["execute_at"] = now + recurrence_sec
+            else:
+                row["status"] = "completed"
+            task_payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+            task_text = str(task_payload.get("task") or task_payload.get("action") or row.get("title", "")).strip()
+            if task_text:
+                _proactive_state["pending_follow_through"].append(
+                    {
+                        "created_at": now,
+                        "task": task_text,
+                        "payload": {str(k): v for k, v in task_payload.items()},
+                    }
+                )
+            executed.append(
+                {
+                    "id": str(row.get("id", "")),
+                    "title": str(row.get("title", "")),
+                    "status": str(row.get("status", "")),
+                    "run_count": int(row.get("run_count", 0) or 0),
+                }
+            )
+        cycle_summary = {
+            "timestamp": now,
+            "due_count": len(due_rows),
+            "executed_count": len(executed),
+            "blocked_count": len(blocked),
+        }
+        _autonomy_cycle_history.append(cycle_summary)
+        if len(_autonomy_cycle_history) > AUTONOMY_CYCLE_HISTORY_MAX:
+            del _autonomy_cycle_history[: len(_autonomy_cycle_history) - AUTONOMY_CYCLE_HISTORY_MAX]
+        payload = {
+            "action": action,
+            "cycle": cycle_summary,
+            "executed": executed,
+            "blocked": blocked,
+            "pending_follow_through_count": len(_proactive_state.get("pending_follow_through", [])),
+        }
+        record_summary("planner_engine", "ok", start_time, effect=f"autonomy_cycle:{len(executed)}", risk="medium" if blocked else "low")
+        return _expansion_payload_response(payload)
+
+    if action == "autonomy_status":
+        rows = _autonomy_tasks()
+        status_counts: dict[str, int] = {}
+        for row in rows:
+            status = str(row.get("status", "scheduled")).strip().lower() or "scheduled"
+            status_counts[status] = status_counts.get(status, 0) + 1
+        next_due_at = min(
+            (float(row.get("execute_at", 0.0) or 0.0) for row in rows if str(row.get("status", "")).strip().lower() in {"scheduled", "waiting_checkpoint"}),
+            default=0.0,
+        )
+        payload = {
+            "action": action,
+            "autonomy_task_count": len(rows),
+            "status_counts": status_counts,
+            "next_due_at": next_due_at,
+            "checkpoints": {key: dict(value) for key, value in sorted(_autonomy_checkpoints.items())[:100]},
+            "last_cycle": dict(_autonomy_cycle_history[-1]) if _autonomy_cycle_history else {},
+        }
+        record_summary("planner_engine", "ok", start_time, effect="autonomy_status", risk="low")
         return _expansion_payload_response(payload)
 
     if action == "self_critique":
@@ -9993,13 +10711,65 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
             _record_service_error("integration_hub", start_time, "confirm_required")
             return {"content": [{"type": "text", "text": "calendar_upsert requires confirm=true."}]}
         event = args.get("event") if isinstance(args.get("event"), dict) else {}
-        payload = {
-            "action": action,
-            "status": "drafted",
-            "event_id": str(args.get("event_id", "")).strip() or f"evt-{int(time.time())}",
-            "event": event,
-            "confirmation_policy": "explicit_confirm_required",
-        }
+        calendar_entity_id = (
+            str(args.get("calendar_entity_id", "")).strip()
+            or str(event.get("calendar_entity_id", "")).strip()
+            or str(event.get("entity_id", "")).strip()
+        ).lower()
+        summary = str(args.get("summary", "")).strip() or str(event.get("summary", "")).strip()
+        description = str(args.get("description", "")).strip() or str(event.get("description", "")).strip()
+        location = str(args.get("location", "")).strip() or str(event.get("location", "")).strip()
+        start_value = (
+            str(args.get("start", "")).strip()
+            or str(event.get("start_date_time", "")).strip()
+            or str(event.get("start", "")).strip()
+            or str(event.get("start_date", "")).strip()
+        )
+        end_value = (
+            str(args.get("end", "")).strip()
+            or str(event.get("end_date_time", "")).strip()
+            or str(event.get("end", "")).strip()
+            or str(event.get("end_date", "")).strip()
+        )
+        if not summary or not start_value or not end_value:
+            _record_service_error("integration_hub", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "calendar_upsert requires summary, start, and end values."}]}
+        service_data: dict[str, Any] = {"summary": summary}
+        if calendar_entity_id:
+            service_data["entity_id"] = calendar_entity_id
+        if description:
+            service_data["description"] = description
+        if location:
+            service_data["location"] = location
+        is_all_day = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", start_value)) and bool(
+            re.fullmatch(r"\d{4}-\d{2}-\d{2}", end_value)
+        )
+        if is_all_day:
+            service_data["start_date"] = start_value
+            service_data["end_date"] = end_value
+        else:
+            service_data["start_date_time"] = start_value
+            service_data["end_date_time"] = end_value
+        if _config is not None and _config.has_home_assistant:
+            _, error_code = await _ha_call_service("calendar", "create_event", service_data)
+            if error_code is not None:
+                _record_service_error("integration_hub", start_time, error_code)
+                return {"content": [{"type": "text", "text": f"calendar_upsert failed: {error_code}."}]}
+            payload = {
+                "action": action,
+                "status": "executed",
+                "provider": "home_assistant",
+                "calendar_entity_id": calendar_entity_id,
+                "service_data": service_data,
+            }
+        else:
+            payload = {
+                "action": action,
+                "status": "drafted",
+                "provider": "none",
+                "service_data": service_data,
+                "detail": "Home Assistant is not configured; returning draft payload.",
+            }
         record_summary("integration_hub", "ok", start_time, effect="calendar_upsert", risk="medium")
         return _expansion_payload_response(payload)
 
@@ -10007,12 +10777,33 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
         if not _as_bool(args.get("confirm"), default=False):
             _record_service_error("integration_hub", start_time, "confirm_required")
             return {"content": [{"type": "text", "text": "calendar_delete requires confirm=true."}]}
-        payload = {
-            "action": action,
-            "status": "drafted",
-            "event_id": str(args.get("event_id", "")).strip(),
-            "confirmation_policy": "explicit_confirm_required",
-        }
+        event_id = str(args.get("event_id", "")).strip()
+        calendar_entity_id = str(args.get("calendar_entity_id", "")).strip().lower()
+        if not event_id:
+            _record_service_error("integration_hub", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "calendar_delete requires event_id."}]}
+        service_data: dict[str, Any] = {"event_id": event_id}
+        if calendar_entity_id:
+            service_data["entity_id"] = calendar_entity_id
+        if _config is not None and _config.has_home_assistant:
+            _, error_code = await _ha_call_service("calendar", "delete_event", service_data)
+            if error_code is not None:
+                _record_service_error("integration_hub", start_time, error_code)
+                return {"content": [{"type": "text", "text": f"calendar_delete failed: {error_code}."}]}
+            payload = {
+                "action": action,
+                "status": "executed",
+                "provider": "home_assistant",
+                "service_data": service_data,
+            }
+        else:
+            payload = {
+                "action": action,
+                "status": "drafted",
+                "provider": "none",
+                "service_data": service_data,
+                "detail": "Home Assistant is not configured; returning draft payload.",
+            }
         record_summary("integration_hub", "ok", start_time, effect="calendar_delete", risk="high")
         return _expansion_payload_response(payload)
 
@@ -10023,12 +10814,27 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
         if not content:
             _record_service_error("integration_hub", start_time, "missing_fields")
             return {"content": [{"type": "text", "text": "content is required for notes_capture."}]}
-        captured = _capture_note(
-            backend=backend,
-            title=title,
-            content=content,
-            path_hint=str(args.get("path", "")).strip(),
-        )
+        if backend == "notion":
+            notion_payload, notion_error = await _capture_note_notion(title=title, content=content)
+            if notion_error is None and isinstance(notion_payload, dict):
+                captured = notion_payload
+            elif notion_error == "missing_config":
+                captured = _capture_note(
+                    backend=backend,
+                    title=title,
+                    content=content,
+                    path_hint=str(args.get("path", "")).strip(),
+                )
+            else:
+                _record_service_error("integration_hub", start_time, notion_error or "unexpected")
+                return {"content": [{"type": "text", "text": f"Notion notes_capture failed: {notion_error or 'unexpected'}."}]}
+        else:
+            captured = _capture_note(
+                backend=backend,
+                title=title,
+                content=content,
+                path_hint=str(args.get("path", "")).strip(),
+            )
         payload = {"action": action, **captured}
         record_summary("integration_hub", "ok", start_time, effect=f"notes:{backend}", risk="low")
         return _expansion_payload_response(payload)
@@ -10050,6 +10856,37 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
             "message_preview": message[:200],
             "status": "queued_for_delivery" if phase == "send" else "draft_only",
         }
+        if phase == "send":
+            if not message:
+                _record_service_error("integration_hub", start_time, "missing_fields")
+                return {"content": [{"type": "text", "text": "message is required for messaging send."}]}
+            base_args = dict(args)
+            base_args["confirm"] = True
+            if channel == "slack":
+                result = await slack_notify({**base_args, "message": message})
+                delivery_tool = "slack_notify"
+            elif channel == "discord":
+                result = await discord_notify({**base_args, "message": message})
+                delivery_tool = "discord_notify"
+            elif channel == "email":
+                subject = str(args.get("subject", "")).strip() or "Jarvis message"
+                recipient = str(args.get("to", "")).strip()
+                email_args: dict[str, Any] = {**base_args, "subject": subject, "body": message, "confirm": True}
+                if recipient:
+                    email_args["to"] = recipient
+                result = await email_send(email_args)
+                delivery_tool = "email_send"
+            elif channel == "pushover":
+                result = await pushover_notify({**base_args, "message": message})
+                delivery_tool = "pushover_notify"
+            else:
+                _record_service_error("integration_hub", start_time, "invalid_data")
+                return {"content": [{"type": "text", "text": "channel must be one of slack|discord|email|pushover."}]}
+            result_text = _tool_response_text(result)
+            success = _tool_response_success(result_text)
+            payload["delivery_tool"] = delivery_tool
+            payload["status"] = "delivered" if success else "delivery_failed"
+            payload["delivery_response"] = result_text[:240]
         record_summary("integration_hub", "ok", start_time, effect=f"messaging:{phase}", risk="medium" if phase == "send" else "low")
         return _expansion_payload_response(payload)
 

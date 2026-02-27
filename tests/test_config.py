@@ -57,6 +57,8 @@ class TestConfig:
         monkeypatch.setenv("RELEASE_CHANNEL_CONFIG_PATH", "custom/release.json")
         monkeypatch.setenv("NOTES_CAPTURE_DIR", "/tmp/jarvis-notes")
         monkeypatch.setenv("QUALITY_REPORT_DIR", "/tmp/jarvis-quality")
+        monkeypatch.setenv("NOTION_API_TOKEN", "notion-token")
+        monkeypatch.setenv("NOTION_DATABASE_ID", "db-123")
 
         from jarvis.config import Config
 
@@ -65,6 +67,8 @@ class TestConfig:
         assert c.release_channel_config_path == "custom/release.json"
         assert c.notes_capture_dir == "/tmp/jarvis-notes"
         assert c.quality_report_dir == "/tmp/jarvis-quality"
+        assert c.notion_api_token == "notion-token"
+        assert c.notion_database_id == "db-123"
 
     def test_invalid_sample_rate_raises(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

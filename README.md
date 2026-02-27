@@ -86,6 +86,7 @@ cp .env.example .env
 # Optional: HOME_CONVERSATION_PERMISSION_PROFILE=readonly|control (default readonly)
 # Optional: SAFE_MODE_ENABLED=true (force mutating actions into restricted/dry-run behavior)
 # Optional: TODOIST_API_TOKEN / TODOIST_PROJECT_ID / TODOIST_PERMISSION_PROFILE
+# Optional: NOTION_API_TOKEN / NOTION_DATABASE_ID (integration_hub notion notes backend)
 # Optional: TODOIST_TIMEOUT_SEC=10.0 / PUSHOVER_TIMEOUT_SEC=10.0
 # Optional: PUSHOVER_API_TOKEN / PUSHOVER_USER_KEY / NOTIFICATION_PERMISSION_PROFILE
 # Optional: NUDGE_POLICY=interrupt|defer|adaptive / NUDGE_QUIET_HOURS_START / NUDGE_QUIET_HOURS_END
@@ -254,16 +255,18 @@ Smart home safety defaults:
   - session confidence scoring, domain trust-policy management, guest-mode sessions, household profile admin
 - Home orchestration (`home_orchestrator`):
   - intent-to-plan decomposition, preflighted multi-entity execution with partial failure reporting, area policy constraints, automation suggestions, long-running task tracking
+  - automation pipeline: `automation_create`, `automation_apply`, `automation_rollback`, `automation_status` (supports dry-run diff previews)
 - Skills governance (`skills_governance`):
   - capability negotiation, dependency health, quotas, harness runs, bundle signing metadata, sandbox templates
 - Planning and autonomy (`planner_engine`):
   - planner/executor split output, task graphs with checkpoint/resume, deferred scheduling, self-critique
+  - autonomy loop controls: `autonomy_schedule`, `autonomy_checkpoint`, `autonomy_cycle`, `autonomy_status`
 - Quality and evaluation (`quality_evaluator`):
   - weekly report generation + deterministic dataset-runner summary
 - Embodiment roadmap controls (`embodiment_presence`):
   - micro-expression library, user gaze calibration, adaptive gesture envelopes, privacy posture, motion safety envelope
 - Integration workflows (`integration_hub`):
-  - calendar CRUD policy flow, notes capture backends, messaging draft/review/send flow, commute briefs, shopping orchestration, policy-gated research workflow
+  - calendar CRUD policy flow, notes capture backends (including Notion when configured), messaging draft/review/send flow with channel dispatch, commute briefs, shopping orchestration, policy-gated research workflow
   - release-channel operations: `release_channel_get`, `release_channel_set`, `release_channel_check`
 
 ### First-Time Operator Checklist

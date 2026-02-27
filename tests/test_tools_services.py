@@ -4102,6 +4102,150 @@ class TestServicesTools:
         assert expansion["embodiment_presence"]["privacy_posture"]["state"] == "muted"
 
     @pytest.mark.asyncio
+    async def test_integration_hub_calendar_upsert_executes_with_home_assistant(self, monkeypatch):
+        from jarvis.tools import services
+
+        calls: list[tuple[str, str, dict]] = []
+
+        async def _fake_call(domain, service, service_data, **kwargs):
+            calls.append((domain, service, dict(service_data)))
+            return [], None
+
+        monkeypatch.setattr("jarvis.tools.services._ha_call_service", _fake_call)
+        result = await services.integration_hub(
+            {
+                "action": "calendar_upsert",
+                "confirm": True,
+                "calendar_entity_id": "calendar.family",
+                "summary": "Dinner",
+                "start": "2026-03-01T19:00:00",
+                "end": "2026-03-01T20:00:00",
+                "location": "Kitchen",
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["status"] == "executed"
+        assert payload["provider"] == "home_assistant"
+        assert calls[0][0] == "calendar"
+        assert calls[0][1] == "create_event"
+        assert calls[0][2]["entity_id"] == "calendar.family"
+
+    @pytest.mark.asyncio
+    async def test_integration_hub_messaging_send_dispatches_channel_tool(self, monkeypatch):
+        from jarvis.tools import services
+
+        async def _fake_slack(args):
+            assert args["message"] == "deploy completed"
+            return {"content": [{"type": "text", "text": "Slack notification sent."}]}
+
+        monkeypatch.setattr("jarvis.tools.services.slack_notify", _fake_slack)
+        result = await services.integration_hub(
+            {
+                "action": "messaging_flow",
+                "phase": "send",
+                "channel": "slack",
+                "message": "deploy completed",
+                "confirm": True,
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["status"] == "delivered"
+        assert payload["delivery_tool"] == "slack_notify"
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_automation_pipeline_local_apply_and_rollback(self):
+        from jarvis.tools import services
+
+        created = await services.home_orchestrator(
+            {
+                "action": "automation_create",
+                "alias": "Quiet Lights",
+                "trigger": {"platform": "time", "at": "22:00:00"},
+                "actions": [{"service": "light.turn_off", "target": {"entity_id": "light.downstairs"}}],
+            }
+        )
+        created_payload = json.loads(created["content"][0]["text"])
+        draft_id = created_payload["draft"]["draft_id"]
+        automation_id = created_payload["draft"]["automation_id"]
+
+        preview = await services.home_orchestrator({"action": "automation_apply", "draft_id": draft_id, "dry_run": True})
+        preview_payload = json.loads(preview["content"][0]["text"])
+        assert preview_payload["dry_run"] is True
+        assert "diff" in preview_payload
+
+        applied = await services.home_orchestrator(
+            {
+                "action": "automation_apply",
+                "draft_id": draft_id,
+                "dry_run": False,
+                "confirm": True,
+                "ha_apply": False,
+            }
+        )
+        applied_payload = json.loads(applied["content"][0]["text"])
+        assert applied_payload["applied"] is True
+        assert applied_payload["ha_status"] == "skipped"
+
+        status = await services.home_orchestrator({"action": "automation_status", "automation_id": automation_id})
+        status_payload = json.loads(status["content"][0]["text"])
+        assert status_payload["applied"]["has_current"] is True
+
+        rollback_preview = await services.home_orchestrator(
+            {"action": "automation_rollback", "automation_id": automation_id, "dry_run": True}
+        )
+        rollback_preview_payload = json.loads(rollback_preview["content"][0]["text"])
+        assert rollback_preview_payload["dry_run"] is True
+
+        rollback = await services.home_orchestrator(
+            {
+                "action": "automation_rollback",
+                "automation_id": automation_id,
+                "dry_run": False,
+                "confirm": True,
+                "ha_apply": False,
+            }
+        )
+        rollback_payload = json.loads(rollback["content"][0]["text"])
+        assert rollback_payload["rolled_back"] is True
+
+        status_after = await services.home_orchestrator({"action": "automation_status", "automation_id": automation_id})
+        status_after_payload = json.loads(status_after["content"][0]["text"])
+        assert status_after_payload["applied"]["has_current"] is False
+
+    @pytest.mark.asyncio
+    async def test_planner_engine_autonomy_cycle_requires_checkpoint_then_executes(self):
+        from jarvis.tools import services
+
+        scheduled = await services.planner_engine(
+            {
+                "action": "autonomy_schedule",
+                "title": "Review outage timeline",
+                "execute_at": time.time() - 5.0,
+                "risk": "high",
+                "requires_checkpoint": True,
+                "payload": {"task": "Review outage timeline"},
+            }
+        )
+        scheduled_payload = json.loads(scheduled["content"][0]["text"])
+        checkpoint_id = scheduled_payload["scheduled"]["checkpoint_id"]
+
+        blocked_cycle = await services.planner_engine({"action": "autonomy_cycle", "now": time.time(), "limit": 20})
+        blocked_payload = json.loads(blocked_cycle["content"][0]["text"])
+        assert blocked_payload["cycle"]["blocked_count"] >= 1
+        assert blocked_payload["cycle"]["executed_count"] == 0
+
+        await services.planner_engine({"action": "autonomy_checkpoint", "checkpoint_id": checkpoint_id, "approved": True})
+        executed_cycle = await services.planner_engine({"action": "autonomy_cycle", "now": time.time(), "limit": 20})
+        executed_payload = json.loads(executed_cycle["content"][0]["text"])
+        assert executed_payload["cycle"]["executed_count"] >= 1
+        assert executed_payload["pending_follow_through_count"] >= 1
+
+        status = await services.planner_engine({"action": "autonomy_status"})
+        status_payload = json.loads(status["content"][0]["text"])
+        assert status_payload["autonomy_task_count"] >= 1
+        assert "status_counts" in status_payload
+
+    @pytest.mark.asyncio
     async def test_identity_guest_session_capability_enforced(self):
         from jarvis.tools import services
 
