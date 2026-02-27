@@ -401,10 +401,11 @@ jarvis/
 │       │   ├── robot.py       # embody, play_emotion, play_dance
 │       │   ├── services.py    # shared runtime/helpers + MCP tool registry
 │       │   └── services_domains/
-│       │       ├── home.py        # home_orchestrator domain handler
-│       │       ├── planner.py     # planner_engine domain handler
+│       │       ├── home.py         # home_orchestrator domain handler
+│       │       ├── planner.py      # planner_engine domain handler
 │       │       ├── integrations.py # integration_hub domain handler
-│       │       └── comms.py       # channel/email/todoist/pushover handlers
+│       │       ├── comms.py        # channel/email/todoist/pushover handlers
+│       │       └── governance.py   # skills_governance + quality_evaluator + embodiment_presence
 │       ├── audio/
 │       │   ├── vad.py         # Silero voice activity detection
 │       │   ├── stt.py         # faster-whisper transcription
