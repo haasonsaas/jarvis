@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 73 (HA HTTP + Runtime Persistence Decomposition)
+# Jarvis TODO — Wave 74/75 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,77 +8,73 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 35
-- Completed: 35
-- Remaining: 0
+- Total items: 33
+- Completed: 17
+- Remaining: 16
 
 ---
 
-## A) Scope and baseline
+## A) Wave 74 (completed): governance contract field split
 
-- [x] `W73-A01` Profile next runtime concentration points after Wave 72.
-- [x] `W73-A02` Select `services_ha_http_runtime.py` for split.
-- [x] `W73-A03` Select `services_runtime_state_persistence.py` for split.
-- [x] `W73-A04` Preserve all existing imports consumed by wrappers/callers.
-- [x] `W73-A05` Keep behavior and error-code semantics unchanged.
+- [x] `W74-A01` Profile next low-risk extraction target in status/governance runtime.
+- [x] `W74-A02` Select `services_governance_contract.py` as split target.
+- [x] `W74-A03` Preserve existing public import path: `jarvis.tools.services_governance_contract`.
+- [x] `W74-A04` Keep payload shape and schema version semantics unchanged.
 
-## B) HA HTTP split
+## B) Wave 74 implementation (completed)
 
-- [x] `W73-B01` Create `services_ha_http_state_runtime.py`.
-- [x] `W73-B02` Move `ha_get_state` implementation.
-- [x] `W73-B03` Move `ha_get_domain_services` implementation.
-- [x] `W73-B04` Create `services_ha_http_actions_runtime.py`.
-- [x] `W73-B05` Move `ha_call_service` implementation.
-- [x] `W73-B06` Move `ha_get_json` implementation.
-- [x] `W73-B07` Move `ha_request_json` implementation.
-- [x] `W73-B08` Move `ha_render_template` implementation.
-- [x] `W73-B09` Reduce `services_ha_http_runtime.py` to compatibility wrapper.
+- [x] `W74-B01` Create `services_governance_contract_core_fields.py`.
+- [x] `W74-B02` Move core and voice/timer/reminder required-field groups.
+- [x] `W74-B03` Create `services_governance_contract_operational_fields.py`.
+- [x] `W74-B04` Move integrations/identity/observability/scorecard/recovery required-field groups.
+- [x] `W74-B05` Create `services_governance_contract_expansion_fields.py`.
+- [x] `W74-B06` Move expansion and health required-field groups.
+- [x] `W74-B07` Reduce `services_governance_contract.py` to compatibility wrapper + deep-copy merge.
 
-## C) Runtime persistence split
+## C) Wave 74 validation + release (completed)
 
-- [x] `W73-C01` Create `services_runtime_state_serialize_runtime.py`.
-- [x] `W73-C02` Move `json_safe_clone` and `replace_state_dict` helpers.
-- [x] `W73-C03` Move `expansion_state_payload` implementation.
-- [x] `W73-C04` Move `persist_expansion_state` implementation.
-- [x] `W73-C05` Create `services_runtime_state_load_runtime.py`.
-- [x] `W73-C06` Move `load_expansion_state` implementation.
-- [x] `W73-C07` Wire load module to serialize helpers.
-- [x] `W73-C08` Reduce `services_runtime_state_persistence.py` to compatibility wrapper.
-
-## D) Boundaries and focused verification
-
-- [x] `W73-D01` Extend import-boundary coverage for HA HTTP split modules.
-- [x] `W73-D02` Extend import-boundary coverage for runtime persistence split modules.
-- [x] `W73-D03` Run focused lint on changed modules.
-- [x] `W73-D04` Run `uv run pytest -q tests/test_import_boundaries.py`.
-- [x] `W73-D05` Run targeted HA/home/media + expansion-state tests.
-- [x] `W73-D06` Run targeted bind/system-status sanity tests.
-
-## E) Full validation and release
-
-- [x] `W73-E01` Run full `make check`.
-- [x] `W73-E02` Run full `make security-gate`.
-- [x] `W73-E03` Run `./scripts/jarvis_readiness.sh fast`.
-- [x] `W73-E04` Record wrapper reductions and extracted-module inventory.
-- [x] `W73-E05` Commit Wave 73 tranche.
-- [x] `W73-E06` Push Wave 73 to `origin/main`.
+- [x] `W74-C01` Extend import-boundary coverage for new field modules.
+- [x] `W74-C02` Run `uv run pytest -q tests/test_import_boundaries.py`.
+- [x] `W74-C03` Run targeted system-status contract tests.
+- [x] `W74-C04` Run `make check`.
+- [x] `W74-C05` Run `make security-gate`.
+- [x] `W74-C06` Run `./scripts/jarvis_readiness.sh fast`.
 
 ---
 
-## Outcome snapshot (completed)
+## D) Wave 75 (next): services constants/bootstrap extraction
 
-- Wrapper concentration reductions:
-  - `services_ha_http_runtime.py`: `270 -> 23`
-  - `services_runtime_state_persistence.py`: `287 -> 19`
-- New extracted modules:
-  - `services_ha_http_state_runtime.py`
-  - `services_ha_http_actions_runtime.py`
-  - `services_runtime_state_serialize_runtime.py`
-  - `services_runtime_state_load_runtime.py`
-- Validation status:
-  - `uv run pytest -q tests/test_import_boundaries.py`: `165 passed`.
-  - `uv run pytest -q tests/test_tools_services.py -k "home_assistant or media_control or expansion_state_persists_across_bind or integration_hub_release_channel_actions"`: `26 passed`.
-  - `uv run pytest -q tests/test_tools_services.py -k "bind_clears_action_history or system_status_reports_snapshot"`: `2 passed`.
-  - `make check`: `754 passed`.
-  - `make security-gate`: `754 passed`; fault subset `3 passed`.
+- [ ] `W75-D01` Profile top-level concentration in `src/jarvis/tools/services.py`.
+- [ ] `W75-D02` Extract static defaults/constants into `services_defaults.py`.
+- [ ] `W75-D03` Keep all existing constant names available via `services.py` compatibility re-exports.
+- [ ] `W75-D04` Validate no behavioral change for path defaults and policy constants.
+- [ ] `W75-D05` Add/extend import-boundary test coverage for new defaults module.
+- [ ] `W75-D06` Run focused tests for status/governance and home/comms tools.
+- [ ] `W75-D07` Run `make check`.
+- [ ] `W75-D08` Run `make security-gate`.
+- [ ] `W75-D09` Run `./scripts/jarvis_readiness.sh fast`.
+
+## E) Wave 75 (next): __main__ observability snapshot dedupe
+
+- [ ] `W75-E01` Extract observability fallback snapshot builder from `Jarvis._publish_observability_status`.
+- [ ] `W75-E02` Ensure fallback structure remains contract-identical.
+- [ ] `W75-E03` Add/adjust unit tests to lock fallback shape and metrics keys.
+- [ ] `W75-E04` Re-run targeted `__main__` and runtime tests.
+- [ ] `W75-E05` Run full quality/security/readiness gates.
+- [ ] `W75-E06` Commit and push Wave 75 tranche.
+
+---
+
+## Outcome snapshot (latest completed wave)
+
+- `services_governance_contract.py`: reduced to wrapper that composes field catalogs.
+- New modules:
+  - `services_governance_contract_core_fields.py`
+  - `services_governance_contract_operational_fields.py`
+  - `services_governance_contract_expansion_fields.py`
+- Validation (Wave 74):
+  - `uv run pytest -q tests/test_import_boundaries.py`: `168 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "system_status_contract_payload_includes_tool_policy_keys or system_status_contract_payload_includes_observability_requirements or system_status_reports_snapshot"`: `1 passed`.
+  - `make check`: `757 passed`.
+  - `make security-gate`: `757 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
