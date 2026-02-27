@@ -6,6 +6,23 @@ import json
 from typing import Any, Awaitable, Callable
 
 
+def normalize_operator_auth_mode(mode: Any, *, valid_modes: set[str]) -> str:
+    normalized = str(mode).strip().lower()
+    if normalized not in valid_modes:
+        return "token"
+    return normalized
+
+
+def operator_auth_risk(*, auth_mode: str, token_configured: bool) -> str:
+    if auth_mode == "off":
+        return "high"
+    if not token_configured:
+        return "high"
+    if auth_mode == "session":
+        return "low"
+    return "medium"
+
+
 def _severity_rank(level: str) -> int:
     if level == "high":
         return 3
@@ -132,9 +149,10 @@ async def operator_status_provider(
         else 0
     )
 
-    auth_mode = str(getattr(runtime.config, "operator_auth_mode", "token")).strip().lower()
-    if auth_mode not in valid_operator_auth_modes:
-        auth_mode = "token"
+    auth_mode = normalize_operator_auth_mode(
+        getattr(runtime.config, "operator_auth_mode", "token"),
+        valid_modes=valid_operator_auth_modes,
+    )
 
     status["operator"] = {
         "enabled": bool(runtime.config.operator_server_enabled),
@@ -148,14 +166,10 @@ async def operator_status_provider(
     }
 
     token_set = bool(status["operator"]["auth_token_configured"])
-    if auth_mode == "off":
-        status["operator"]["auth_risk"] = "high"
-    elif not token_set:
-        status["operator"]["auth_risk"] = "high"
-    elif auth_mode == "session":
-        status["operator"]["auth_risk"] = "low"
-    else:
-        status["operator"]["auth_risk"] = "medium"
+    status["operator"]["auth_risk"] = operator_auth_risk(
+        auth_mode=auth_mode,
+        token_configured=token_set,
+    )
 
     status["conversation_trace"] = {
         "recent_count": len(runtime._conversation_traces),

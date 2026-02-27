@@ -55,7 +55,11 @@ from jarvis.audio.runtime_audio import (
     resample_audio as _audio_resample,
 )
 from jarvis.runtime_operator_control import handle_operator_control as _runtime_handle_operator_control
-from jarvis.runtime_operator_status import operator_status_provider as _runtime_operator_status_provider
+from jarvis.runtime_operator_status import (
+    normalize_operator_auth_mode as _runtime_normalize_operator_auth_mode,
+    operator_auth_risk as _runtime_operator_auth_risk,
+    operator_status_provider as _runtime_operator_status_provider,
+)
 from jarvis.runtime_observability_status import (
     default_observability_status_snapshot as _runtime_default_observability_status_snapshot,
 )
@@ -470,18 +474,15 @@ class Jarvis:
         skills = getattr(self, "_skills", None)
         skills_enabled = bool(skills.enabled) if skills is not None else False
         observability = getattr(self, "_observability", None)
-        operator_auth_mode = str(getattr(self.config, "operator_auth_mode", "token")).strip().lower()
-        if operator_auth_mode not in VALID_OPERATOR_AUTH_MODES:
-            operator_auth_mode = "token"
+        operator_auth_mode = _runtime_normalize_operator_auth_mode(
+            getattr(self.config, "operator_auth_mode", "token"),
+            valid_modes=VALID_OPERATOR_AUTH_MODES,
+        )
         operator_token_set = bool(str(getattr(self.config, "operator_auth_token", "")).strip())
-        if operator_auth_mode == "off":
-            operator_auth_risk = "high"
-        elif not operator_token_set:
-            operator_auth_risk = "high"
-        elif operator_auth_mode == "session":
-            operator_auth_risk = "low"
-        else:
-            operator_auth_risk = "medium"
+        operator_auth_risk = _runtime_operator_auth_risk(
+            auth_mode=operator_auth_mode,
+            token_configured=operator_token_set,
+        )
         operator_auth = f"mode={operator_auth_mode} risk={operator_auth_risk}"
         if operator_auth_mode in {"token", "session"}:
             operator_auth = f"{operator_auth} token={'set' if operator_token_set else 'missing'}"

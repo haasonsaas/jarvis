@@ -9,7 +9,31 @@ from jarvis.runtime_constants import (
     VALID_CONTROL_PRESETS,
     VALID_OPERATOR_AUTH_MODES,
 )
-from jarvis.runtime_operator_status import operator_status_provider
+from jarvis.runtime_operator_status import (
+    normalize_operator_auth_mode,
+    operator_auth_risk,
+    operator_status_provider,
+)
+
+
+def test_normalize_operator_auth_mode_defaults_to_token_for_invalid() -> None:
+    assert normalize_operator_auth_mode("bad-mode", valid_modes=VALID_OPERATOR_AUTH_MODES) == "token"
+    assert normalize_operator_auth_mode("SESSION", valid_modes=VALID_OPERATOR_AUTH_MODES) == "session"
+
+
+@pytest.mark.parametrize(
+    ("mode", "token_configured", "expected"),
+    [
+        ("off", False, "high"),
+        ("off", True, "high"),
+        ("token", False, "high"),
+        ("token", True, "medium"),
+        ("session", False, "high"),
+        ("session", True, "low"),
+    ],
+)
+def test_operator_auth_risk_matrix(mode: str, token_configured: bool, expected: str) -> None:
+    assert operator_auth_risk(auth_mode=mode, token_configured=token_configured) == expected
 
 
 @pytest.mark.asyncio
