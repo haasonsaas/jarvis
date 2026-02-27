@@ -27,7 +27,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [ ] `JX03` Add context-aware first-response behavior (acknowledge, answer, act, or ask clarifying question). `P0`
 - [ ] `JX04` Add confidence-aware language policy to avoid overconfident answers when uncertain. `P0`
 - [ ] `JX05` Add "operator personality controls" with live preview and rollback. `P1`
-- [ ] `JX06` Add "Jarvis quality bar" regression checks for tone/style consistency across common prompts. `P1`
+- [x] `JX06` Add "Jarvis quality bar" regression checks for tone/style consistency across common prompts. `P1`
 
 ## 2) Voice and Dialogue Quality (6 items)
 
@@ -162,7 +162,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q10` Implement `EX01` intent-level success metrics.
 - [x] `Q11` Implement `BX02` turn choreography pass.
 - [x] `Q12` Implement `VX02` adaptive end-of-turn timing.
-- [ ] `Q13` Implement `JX06` style consistency regression tests.
+- [x] `Q13` Implement `JX06` style consistency regression tests.
 - [ ] `Q14` Implement `RX01` integration circuit breakers.
 - [ ] `Q15` Implement `RX02` recovery journal and resume.
 - [ ] `Q16` Implement `OX03` conversation trace panel.

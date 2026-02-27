@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from jarvis.brain import Brain, INTERACTION_CONTRACT, _find_sentence_boundary
+from jarvis.brain import Brain, INTERACTION_CONTRACT, STYLE_INSTRUCTIONS, _find_sentence_boundary
 from jarvis.presence import PresenceLoop, State
 
 
@@ -307,6 +307,42 @@ class TestBrain:
                 pass
 
         assert "Mode=friendly" in captured.get("text", "")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("style", ["terse", "composed", "friendly"])
+    @pytest.mark.parametrize(
+        "prompt",
+        [
+            "What's on my calendar this afternoon?",
+            "Turn on the office lamp and set it to 30 percent.",
+            "Summarize what we decided about the weekend trip.",
+            "Draft a short reminder to take out the trash at 8 PM.",
+        ],
+    )
+    async def test_style_regression_common_prompts_keep_contract_and_style(self, brain, style, prompt):
+        brain._config.persona_style = style
+        if brain._memory is not None:
+            brain._memory.upsert_summary("persona_style", style)
+        captured = {}
+
+        async def fake_query(text: str, session_id: str):
+            captured["text"] = text
+
+        with patch.object(brain._client, "query", new=AsyncMock(side_effect=fake_query)), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([])
+            async for _ in brain.respond(prompt):
+                pass
+
+        payload = captured.get("text", "")
+        assert prompt in payload
+        assert "Prompt style:" in payload
+        assert f"Mode={style}" in payload
+        assert STYLE_INSTRUCTIONS[style] in payload
+        assert "Response contract:" in payload
+        assert INTERACTION_CONTRACT["response_order"][0] in payload
+        assert INTERACTION_CONTRACT["ambiguity_and_safety"][0] in payload
 
 
 # ── Helpers ──────────────────────────────────────────────────
