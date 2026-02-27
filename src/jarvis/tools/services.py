@@ -38,7 +38,7 @@ from jarvis.tools.service_policy import (
     HA_MUTATING_ALLOWED_ACTIONS,
     INTEGRATION_TOOL_MAP,
     SAFE_MODE_BLOCKED_TOOLS,
-    SENSITIVE_AUDIT_KEY_TOKENS,
+    SENSITIVE_AUDIT_KEY_TOKENS,  # noqa: F401  # accessed by runtime module via services alias
     INBOUND_REDACT_HEADER_TOKENS,  # noqa: F401  # accessed by runtime module via services alias
     INBOUND_MAX_STRING_CHARS,  # noqa: F401  # accessed by runtime module via services alias
     INBOUND_MAX_COLLECTION_ITEMS,  # noqa: F401  # accessed by runtime module via services alias
@@ -46,7 +46,7 @@ from jarvis.tools.service_policy import (
     AMBIGUOUS_REFERENCE_TERMS,
     HIGH_RISK_INTENT_TERMS,
     EXPLICIT_TARGET_TERMS,
-    AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS,
+    AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS,  # noqa: F401  # accessed by runtime module via services alias
     MEMORY_SCOPE_TAG_PREFIX,
     MEMORY_SCOPES,
     MEMORY_QUERY_SCOPE_HINTS,
@@ -118,16 +118,19 @@ from jarvis.tools.services_recovery_runtime import (
     write_recovery_journal_entry as _runtime_write_recovery_journal_entry,
 )
 from jarvis.tools.services_audit_runtime import (
+    apply_retention_policies as _runtime_apply_retention_policies,
     audit as _runtime_audit,
     audit_decision_explanation as _runtime_audit_decision_explanation,
     audit_outcome as _runtime_audit_outcome,
     audit_reason_code as _runtime_audit_reason_code,
+    audit_status as _runtime_audit_status,
     configure_audit_encryption as _runtime_configure_audit_encryption,
     contains_pii as _runtime_contains_pii,
     decode_audit_line as _runtime_decode_audit_line,
     encrypt_audit_line as _runtime_encrypt_audit_line,
     humanize_chain_token as _runtime_humanize_chain_token,
     metadata_only_audit_details as _runtime_metadata_only_audit_details,
+    prune_audit_file as _runtime_prune_audit_file,
     redact_sensitive_for_audit as _runtime_redact_sensitive_for_audit,
     rotate_audit_log_if_needed as _runtime_rotate_audit_log_if_needed,
     sanitize_inbound_headers as _runtime_sanitize_inbound_headers,
@@ -1410,37 +1413,7 @@ def _touch_action(domain: str, action: str, entity_id: str) -> None:
 
 
 def _audit_status() -> dict[str, Any]:
-    try:
-        exists = AUDIT_LOG.exists()
-        size_bytes = AUDIT_LOG.stat().st_size if exists else 0
-    except OSError:
-        exists = False
-        size_bytes = 0
-    backups = []
-    for idx in range(1, _audit_log_backups + 1):
-        backup_path = AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.{idx}")
-        try:
-            if backup_path.exists():
-                backups.append(
-                    {
-                        "path": str(backup_path),
-                        "size_bytes": int(backup_path.stat().st_size),
-                    }
-                )
-        except OSError:
-            continue
-    return {
-        "path": str(AUDIT_LOG),
-        "exists": exists,
-        "size_bytes": int(size_bytes),
-        "max_bytes": int(_audit_log_max_bytes),
-        "encrypted": bool(_audit_encryption_enabled and _audit_fernet is not None),
-        "encryption_configured": bool(_audit_encryption_enabled),
-        "backups": backups,
-        "redaction_enabled": bool(SENSITIVE_AUDIT_KEY_TOKENS),
-        "redaction_key_count": len(SENSITIVE_AUDIT_KEY_TOKENS),
-        "metadata_only_actions": sorted(AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS),
-    }
+    return _runtime_audit_status(_services_module())
 
 
 def _read_recovery_journal_entries() -> list[dict[str, Any]]:
@@ -1550,63 +1523,11 @@ def _tool_response_success(text: str) -> bool:
 
 
 def _prune_audit_file(path: Path, *, cutoff_ts: float) -> int:
-    if not path.exists():
-        return 0
-    try:
-        lines = path.read_text().splitlines()
-    except OSError:
-        return 0
-    kept: list[str] = []
-    removed = 0
-    for line in lines:
-        raw_line = line.strip()
-        if not raw_line:
-            continue
-        payload = _decode_audit_line(raw_line)
-        if not isinstance(payload, dict):
-            removed += 1
-            continue
-        if payload.get("encrypted") is True and payload.get("error") in {
-            "missing_encryption_key",
-            "invalid_token",
-            "invalid_payload",
-        }:
-            # Do not drop encrypted lines when current process cannot decrypt.
-            kept.append(raw_line)
-            continue
-        ts = payload.get("timestamp")
-        if isinstance(ts, (int, float)) and float(ts) >= cutoff_ts:
-            # Preserve original line format (encrypted/plain) on retention rewrites.
-            kept.append(raw_line)
-        else:
-            removed += 1
-    if removed <= 0:
-        return 0
-    try:
-        if kept:
-            path.write_text("\n".join(kept) + "\n")
-        else:
-            path.unlink(missing_ok=True)
-    except OSError:
-        return 0
-    return removed
+    return _runtime_prune_audit_file(_services_module(), path, cutoff_ts=cutoff_ts)
 
 
 def _apply_retention_policies() -> None:
-    now = time.time()
-    if _memory is not None and _memory_retention_days > 0.0:
-        cutoff = now - (_memory_retention_days * 86_400.0)
-        try:
-            _memory.prune_retention(cutoff_ts=cutoff)
-        except Exception:
-            log.warning("Failed to apply memory retention policy", exc_info=True)
-    if _audit_retention_days > 0.0:
-        cutoff = now - (_audit_retention_days * 86_400.0)
-        paths = [AUDIT_LOG] + [AUDIT_LOG.with_name(f"{AUDIT_LOG.name}.{idx}") for idx in range(1, _audit_log_backups + 1)]
-        for path in paths:
-            removed = _prune_audit_file(path, cutoff_ts=cutoff)
-            if removed > 0:
-                log.info("Applied audit retention policy to %s (removed=%d)", path, removed)
+    _runtime_apply_retention_policies(_services_module())
 
 
 def _prune_timers(now_mono: float | None = None) -> None:
