@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 14 (Operator Control Decomposition)
+# Jarvis TODO — Wave 15 (Services Bind + State Bootstrap Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,28 +8,30 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 4
-- Completed: 4
+- Total items: 5
+- Completed: 5
 - Remaining: 0
 
 ---
 
 ## A) Decomposition
 
-- [x] `W14-S01` Extract `Jarvis._operator_control_handler` command-dispatch logic from `src/jarvis/__main__.py` into `src/jarvis/runtime_operator_control.py`.
-- [x] `W14-S02` Keep public/operator entrypoint compatibility by leaving `Jarvis._operator_control_handler(...)` as a thin delegating wrapper.
-- [x] `W14-S03` Preserve control-policy enums and output payload behavior for wake modes, timeout profiles, personality controls, runtime profile import/export, skills actions, and webhook clearing.
+- [x] `W15-S01` Extract `services.bind(...)` runtime initialization/bootstrap into `src/jarvis/tools/services_runtime_state.py`.
+- [x] `W15-S02` Extract expansion-state helpers (`_replace_state_dict`, `_expansion_state_payload`, `_persist_expansion_state`, `_load_expansion_state`) into `services_runtime_state.py`.
+- [x] `W15-S03` Keep compatibility wrappers in `src/jarvis/tools/services.py` so existing imports/callers continue to use the same function names.
+- [x] `W15-S04` Address time-of-day flakiness in `test_reminder_notify_due_dispatches_and_marks_notified` by making the policy explicit (`interrupt`) in test setup.
 
 ## B) Quality and verification
 
-- [x] `W14-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after the extraction.
+- [x] `W15-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after extraction.
 
 ---
 
 ## Outcome snapshot (current)
 
-- `src/jarvis/__main__.py` now delegates operator action handling to `src/jarvis/runtime_operator_control.py`.
-- `src/jarvis/__main__.py` reduced to `2,919` lines (from `3,258` before this wave).
+- New runtime bootstrap module: `src/jarvis/tools/services_runtime_state.py`.
+- `src/jarvis/tools/services.py` now delegates bind/state-bootstrap responsibilities to that module.
+- `src/jarvis/tools/services.py` reduced to `3,730` lines (from `4,102` before this wave).
 - Full gates are green:
   - `make check` (`555 passed`)
   - `make security-gate` (`555 passed`; fault-injection subset `3 passed`)

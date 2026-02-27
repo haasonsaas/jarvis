@@ -1678,6 +1678,7 @@ class TestServicesTools:
         cfg = Config()
         cfg.pushover_api_token = "token"
         cfg.pushover_user_key = "user"
+        cfg.nudge_policy = "interrupt"
         store = MemoryStore(str(tmp_path / "memory.sqlite"))
         services.bind(cfg, store)
 

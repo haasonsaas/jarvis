@@ -17,6 +17,7 @@ import random
 import re
 import secrets
 import smtplib
+import sys
 import time
 from contextlib import suppress  # noqa: F401  # accessed by domain modules via services module alias
 from datetime import datetime, timezone
@@ -57,6 +58,13 @@ from jarvis.tools.service_schemas import (
     SERVICE_TOOL_SCHEMAS,  # noqa: F401  # compatibility export for tests/importers
 )
 from jarvis.tools.services_server import create_services_server  # noqa: F401  # compatibility export for callers
+from jarvis.tools.services_runtime_state import (
+    bind_runtime_state as _runtime_bind_runtime_state,
+    expansion_state_payload as _runtime_expansion_state_payload,
+    load_expansion_state as _runtime_load_expansion_state,
+    persist_expansion_state as _runtime_persist_expansion_state,
+    replace_state_dict as _runtime_replace_state_dict,
+)
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
     smart_home,
@@ -345,6 +353,10 @@ _release_channel_state: dict[str, Any] = {
 SERVICE_ERROR_CODES = TOOL_SERVICE_ERROR_CODES
 
 
+def _services_module() -> Any:
+    return sys.modules[__name__]
+
+
 def _record_service_error(tool_name: str, start_time: float, code: str) -> None:
     normalized = normalize_service_error_code(code)
     integration = _integration_for_tool(tool_name)
@@ -379,194 +391,7 @@ def set_skill_registry(registry: SkillRegistry | None) -> None:
 
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
-    global _config, _memory, _audit_log_max_bytes, _audit_log_backups
-    global _home_permission_profile, _home_require_confirm_execute, _home_conversation_enabled
-    global _home_conversation_permission_profile
-    global _todoist_permission_profile, _notification_permission_profile, _email_permission_profile
-    global _nudge_policy, _nudge_quiet_hours_start, _nudge_quiet_hours_end
-    global _todoist_timeout_sec, _pushover_timeout_sec
-    global _email_smtp_host, _email_smtp_port, _email_smtp_username, _email_smtp_password
-    global _email_from, _email_default_to, _email_use_tls, _email_timeout_sec
-    global _notion_api_token, _notion_database_id
-    global _weather_units, _weather_timeout_sec
-    global _webhook_allowlist, _webhook_auth_token, _webhook_timeout_sec
-    global _turn_timeout_listen_sec, _turn_timeout_think_sec, _turn_timeout_speak_sec, _turn_timeout_act_sec
-    global _slack_webhook_url, _discord_webhook_url
-    global _identity_enforcement_enabled, _identity_default_user, _identity_default_profile
-    global _identity_user_profiles, _identity_trusted_users, _identity_require_approval, _identity_approval_code
-    global _plan_preview_require_ack, _safe_mode_enabled
-    global _memory_retention_days, _audit_retention_days
-    global _memory_pii_guardrails_enabled, _audit_encryption_enabled, _data_encryption_key
-    global _timer_id_seq, _reminder_id_seq, _integration_circuit_breakers, _recovery_journal_path, _dead_letter_queue_path
-    global _expansion_state_path, _release_channel_config_path, _quality_report_dir, _notes_capture_dir
-    global _home_task_seq, _home_automation_seq, _planner_task_seq, _deferred_action_seq
-    _config = config
-    _memory = memory_store
-    _audit_log_max_bytes = int(config.audit_log_max_bytes)
-    _audit_log_backups = int(config.audit_log_backups)
-    _home_permission_profile = str(getattr(config, "home_permission_profile", "control")).strip().lower()
-    if _home_permission_profile not in {"readonly", "control"}:
-        _home_permission_profile = "control"
-    _home_require_confirm_execute = bool(getattr(config, "home_require_confirm_execute", False))
-    _home_conversation_enabled = bool(getattr(config, "home_conversation_enabled", False))
-    _home_conversation_permission_profile = str(
-        getattr(config, "home_conversation_permission_profile", "readonly")
-    ).strip().lower()
-    if _home_conversation_permission_profile not in {"readonly", "control"}:
-        _home_conversation_permission_profile = "readonly"
-    _todoist_permission_profile = str(getattr(config, "todoist_permission_profile", "control")).strip().lower()
-    if _todoist_permission_profile not in {"readonly", "control"}:
-        _todoist_permission_profile = "control"
-    _notification_permission_profile = str(
-        getattr(config, "notification_permission_profile", "allow")
-    ).strip().lower()
-    if _notification_permission_profile not in {"off", "allow"}:
-        _notification_permission_profile = "allow"
-    _nudge_policy = str(getattr(config, "nudge_policy", "adaptive")).strip().lower()
-    if _nudge_policy not in {"interrupt", "defer", "adaptive"}:
-        _nudge_policy = "adaptive"
-    _nudge_quiet_hours_start = str(getattr(config, "nudge_quiet_hours_start", "22:00")).strip()
-    _nudge_quiet_hours_end = str(getattr(config, "nudge_quiet_hours_end", "07:00")).strip()
-    _email_permission_profile = str(getattr(config, "email_permission_profile", "readonly")).strip().lower()
-    if _email_permission_profile not in {"readonly", "control"}:
-        _email_permission_profile = "readonly"
-    _todoist_timeout_sec = float(getattr(config, "todoist_timeout_sec", 10.0))
-    _pushover_timeout_sec = float(getattr(config, "pushover_timeout_sec", 10.0))
-    _email_smtp_host = str(getattr(config, "email_smtp_host", "")).strip()
-    _email_smtp_port = int(getattr(config, "email_smtp_port", 587))
-    _email_smtp_username = str(getattr(config, "email_smtp_username", "")).strip()
-    _email_smtp_password = str(getattr(config, "email_smtp_password", "")).strip()
-    _email_from = str(getattr(config, "email_from", "")).strip()
-    _email_default_to = str(getattr(config, "email_default_to", "")).strip()
-    _email_use_tls = bool(getattr(config, "email_use_tls", True))
-    _email_timeout_sec = float(getattr(config, "email_timeout_sec", 10.0))
-    _notion_api_token = str(getattr(config, "notion_api_token", "")).strip()
-    _notion_database_id = str(getattr(config, "notion_database_id", "")).strip()
-    _weather_units = str(getattr(config, "weather_units", "metric")).strip().lower()
-    if _weather_units not in {"metric", "imperial"}:
-        _weather_units = "metric"
-    _weather_timeout_sec = float(getattr(config, "weather_timeout_sec", 8.0))
-    _webhook_allowlist = [str(host).strip().lower() for host in getattr(config, "webhook_allowlist", []) if str(host).strip()]
-    _webhook_auth_token = str(getattr(config, "webhook_auth_token", "")).strip()
-    _webhook_timeout_sec = float(getattr(config, "webhook_timeout_sec", 8.0))
-    _turn_timeout_listen_sec = float(getattr(config, "watchdog_listening_timeout_sec", 30.0))
-    _turn_timeout_think_sec = float(getattr(config, "watchdog_thinking_timeout_sec", 60.0))
-    _turn_timeout_speak_sec = float(getattr(config, "watchdog_speaking_timeout_sec", 45.0))
-    _turn_timeout_act_sec = float(getattr(config, "turn_timeout_act_sec", 30.0))
-    _slack_webhook_url = str(getattr(config, "slack_webhook_url", "")).strip()
-    _discord_webhook_url = str(getattr(config, "discord_webhook_url", "")).strip()
-    _identity_enforcement_enabled = bool(getattr(config, "identity_enforcement_enabled", False))
-    _identity_default_user = str(getattr(config, "identity_default_user", "owner")).strip().lower() or "owner"
-    _identity_default_profile = str(getattr(config, "identity_default_profile", "control")).strip().lower()
-    if _identity_default_profile not in {"deny", "readonly", "control", "trusted"}:
-        _identity_default_profile = "control"
-    raw_profiles = getattr(config, "identity_user_profiles", {}) or {}
-    if isinstance(raw_profiles, dict):
-        _identity_user_profiles = {
-            str(user).strip().lower(): str(profile).strip().lower()
-            for user, profile in raw_profiles.items()
-            if str(user).strip()
-            and str(profile).strip().lower() in {"deny", "readonly", "control", "trusted"}
-        }
-    else:
-        _identity_user_profiles = {}
-    raw_trusted_users = getattr(config, "identity_trusted_users", []) or []
-    _identity_trusted_users = {
-        str(user).strip().lower() for user in raw_trusted_users if str(user).strip()
-    }
-    _identity_require_approval = bool(getattr(config, "identity_require_approval", True))
-    _identity_approval_code = str(getattr(config, "identity_approval_code", "")).strip()
-    _plan_preview_require_ack = bool(getattr(config, "plan_preview_require_ack", False))
-    _safe_mode_enabled = bool(getattr(config, "safe_mode_enabled", False))
-    _memory_retention_days = max(0.0, float(getattr(config, "memory_retention_days", 0.0)))
-    _audit_retention_days = max(0.0, float(getattr(config, "audit_retention_days", 0.0)))
-    _memory_pii_guardrails_enabled = bool(getattr(config, "memory_pii_guardrails_enabled", True))
-    _audit_encryption_enabled = bool(getattr(config, "audit_encryption_enabled", False))
-    _data_encryption_key = str(getattr(config, "data_encryption_key", "")).strip()
-    _recovery_journal_path = Path(
-        str(getattr(config, "recovery_journal_path", str(DEFAULT_RECOVERY_JOURNAL)))
-    ).expanduser()
-    _dead_letter_queue_path = Path(
-        str(getattr(config, "dead_letter_queue_path", str(DEFAULT_DEAD_LETTER_QUEUE)))
-    ).expanduser()
-    _expansion_state_path = Path(
-        str(getattr(config, "expansion_state_path", str(DEFAULT_EXPANSION_STATE)))
-    ).expanduser()
-    _release_channel_config_path = Path(
-        str(getattr(config, "release_channel_config_path", str(DEFAULT_RELEASE_CHANNEL_CONFIG)))
-    ).expanduser()
-    _quality_report_dir = Path(
-        str(getattr(config, "quality_report_dir", str(QUALITY_REPORT_DIR_DEFAULT)))
-    ).expanduser()
-    _notes_capture_dir = Path(
-        str(getattr(config, "notes_capture_dir", str(NOTES_CAPTURE_DIR_DEFAULT)))
-    ).expanduser()
-    if not _release_channel_config_path.is_absolute():
-        _release_channel_config_path = (Path.cwd() / _release_channel_config_path).resolve()
-    if not _quality_report_dir.is_absolute():
-        _quality_report_dir = (Path.cwd() / _quality_report_dir).resolve()
-    if not _notes_capture_dir.is_absolute():
-        _notes_capture_dir = (Path.cwd() / _notes_capture_dir).resolve()
-    _configure_audit_encryption(enabled=_audit_encryption_enabled, key=_data_encryption_key)
-    _action_last_seen.clear()
-    _ha_state_cache.clear()
-    _timers.clear()
-    _timer_id_seq = 1
-    _reminders.clear()
-    _reminder_id_seq = 1
-    _email_history.clear()
-    _pending_plan_previews.clear()
-    _runtime_voice_state.clear()
-    _runtime_observability_state.clear()
-    _runtime_skills_state.clear()
-    _integration_circuit_breakers.clear()
-    _proactive_state["pending_follow_through"] = []
-    _proactive_state["digest_snoozed_until"] = 0.0
-    _proactive_state["last_briefing_at"] = 0.0
-    _proactive_state["last_digest_at"] = 0.0
-    _memory_partition_overlays.clear()
-    _memory_quality_last.clear()
-    _identity_trust_policies.clear()
-    _guest_sessions.clear()
-    _household_profiles.clear()
-    _home_area_policies.clear()
-    _home_task_runs.clear()
-    _home_automation_drafts.clear()
-    _home_automation_applied.clear()
-    _skill_quotas.clear()
-    _planner_task_graphs.clear()
-    _deferred_actions.clear()
-    _autonomy_checkpoints.clear()
-    _autonomy_cycle_history.clear()
-    _quality_reports.clear()
-    _micro_expression_library.clear()
-    _gaze_calibrations.clear()
-    _gesture_envelopes.clear()
-    _privacy_posture["state"] = "normal"
-    _privacy_posture["reason"] = "startup"
-    _privacy_posture["updated_at"] = 0.0
-    _motion_safety_envelope["updated_at"] = 0.0
-    _release_channel_state["active_channel"] = "dev"
-    _release_channel_state["last_check_at"] = 0.0
-    _release_channel_state["last_check_channel"] = ""
-    _release_channel_state["last_check_passed"] = False
-    _release_channel_state["migration_checks"] = []
-    _home_task_seq = 1
-    _home_automation_seq = 1
-    _planner_task_seq = 1
-    _deferred_action_seq = 1
-    for integration in sorted(set(INTEGRATION_TOOL_MAP.values())):
-        _ensure_circuit_breaker_state(integration)
-    _load_expansion_state()
-    _recovery_reconcile_interrupted()
-    _load_timers_from_store()
-    _load_reminders_from_store()
-    global _tool_allowlist, _tool_denylist
-    _tool_allowlist = list(config.tool_allowlist)
-    _tool_denylist = list(config.tool_denylist)
-    # Ensure audit dir exists
-    AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
-    _apply_retention_policies()
+    _runtime_bind_runtime_state(_services_module(), config, memory_store)
 
 
 def _tool_permitted(name: str) -> bool:
@@ -1643,212 +1468,19 @@ def _json_safe_clone(value: Any) -> Any:
 
 
 def _replace_state_dict(target: dict[str, Any], source: Any) -> None:
-    target.clear()
-    if not isinstance(source, dict):
-        return
-    target.update({str(key): _json_safe_clone(value) for key, value in source.items()})
+    _runtime_replace_state_dict(_services_module(), target, source)
 
 
 def _expansion_state_payload() -> dict[str, Any]:
-    return {
-        "version": 1,
-        "saved_at": time.time(),
-        "proactive_state": _json_safe_clone(_proactive_state),
-        "memory_partition_overlays": _json_safe_clone(_memory_partition_overlays),
-        "memory_quality_last": _json_safe_clone(_memory_quality_last),
-        "identity_trust_policies": _json_safe_clone(_identity_trust_policies),
-        "guest_sessions": _json_safe_clone(_guest_sessions),
-        "household_profiles": _json_safe_clone(_household_profiles),
-        "home_area_policies": _json_safe_clone(_home_area_policies),
-        "home_task_runs": _json_safe_clone(_home_task_runs),
-        "home_task_seq": int(_home_task_seq),
-        "home_automation_drafts": _json_safe_clone(_home_automation_drafts),
-        "home_automation_applied": _json_safe_clone(_home_automation_applied),
-        "home_automation_seq": int(_home_automation_seq),
-        "skill_quotas": _json_safe_clone(_skill_quotas),
-        "planner_task_graphs": _json_safe_clone(_planner_task_graphs),
-        "planner_task_seq": int(_planner_task_seq),
-        "deferred_actions": _json_safe_clone(_deferred_actions),
-        "deferred_action_seq": int(_deferred_action_seq),
-        "autonomy_checkpoints": _json_safe_clone(_autonomy_checkpoints),
-        "autonomy_cycle_history": _json_safe_clone(_autonomy_cycle_history[-AUTONOMY_CYCLE_HISTORY_MAX:]),
-        "quality_reports": _json_safe_clone(_quality_reports[-CACHED_QUALITY_REPORT_MAX:]),
-        "micro_expression_library": _json_safe_clone(_micro_expression_library),
-        "gaze_calibrations": _json_safe_clone(_gaze_calibrations),
-        "gesture_envelopes": _json_safe_clone(_gesture_envelopes),
-        "privacy_posture": _json_safe_clone(_privacy_posture),
-        "motion_safety_envelope": _json_safe_clone(_motion_safety_envelope),
-        "release_channel_state": _json_safe_clone(_release_channel_state),
-    }
+    return _runtime_expansion_state_payload(_services_module())
 
 
 def _persist_expansion_state() -> None:
-    path = _expansion_state_path
-    payload = _expansion_state_payload()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    except OSError:
-        log.warning("Failed to persist expansion state", exc_info=True)
+    _runtime_persist_expansion_state(_services_module())
 
 
 def _load_expansion_state() -> None:
-    path = _expansion_state_path
-    if not path.exists():
-        return
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        log.warning("Failed to load expansion state", exc_info=True)
-        return
-    if not isinstance(payload, dict):
-        return
-
-    proactive = payload.get("proactive_state")
-    if isinstance(proactive, dict):
-        pending = proactive.get("pending_follow_through")
-        _proactive_state["pending_follow_through"] = (
-            [_json_safe_clone(row) for row in pending if isinstance(row, dict)]
-            if isinstance(pending, list)
-            else []
-        )
-        _proactive_state["digest_snoozed_until"] = _as_float(
-            proactive.get("digest_snoozed_until", 0.0),
-            0.0,
-            minimum=0.0,
-        )
-        _proactive_state["last_briefing_at"] = _as_float(
-            proactive.get("last_briefing_at", 0.0),
-            0.0,
-            minimum=0.0,
-        )
-        _proactive_state["last_digest_at"] = _as_float(
-            proactive.get("last_digest_at", 0.0),
-            0.0,
-            minimum=0.0,
-        )
-
-    _replace_state_dict(_memory_partition_overlays, payload.get("memory_partition_overlays"))
-    _replace_state_dict(_memory_quality_last, payload.get("memory_quality_last"))
-    _replace_state_dict(_identity_trust_policies, payload.get("identity_trust_policies"))
-    _replace_state_dict(_household_profiles, payload.get("household_profiles"))
-    _replace_state_dict(_home_area_policies, payload.get("home_area_policies"))
-    _replace_state_dict(_home_task_runs, payload.get("home_task_runs"))
-    _replace_state_dict(_home_automation_drafts, payload.get("home_automation_drafts"))
-    _replace_state_dict(_home_automation_applied, payload.get("home_automation_applied"))
-    _replace_state_dict(_skill_quotas, payload.get("skill_quotas"))
-    _replace_state_dict(_planner_task_graphs, payload.get("planner_task_graphs"))
-    _replace_state_dict(_deferred_actions, payload.get("deferred_actions"))
-    _replace_state_dict(_autonomy_checkpoints, payload.get("autonomy_checkpoints"))
-    _replace_state_dict(_micro_expression_library, payload.get("micro_expression_library"))
-    _replace_state_dict(_gaze_calibrations, payload.get("gaze_calibrations"))
-    _replace_state_dict(_gesture_envelopes, payload.get("gesture_envelopes"))
-
-    autonomy_history = payload.get("autonomy_cycle_history")
-    _autonomy_cycle_history.clear()
-    if isinstance(autonomy_history, list):
-        for row in autonomy_history[-AUTONOMY_CYCLE_HISTORY_MAX:]:
-            if isinstance(row, dict):
-                _autonomy_cycle_history.append({str(key): _json_safe_clone(value) for key, value in row.items()})
-
-    _guest_sessions.clear()
-    guest_sessions = payload.get("guest_sessions")
-    if isinstance(guest_sessions, dict):
-        now = time.time()
-        for raw_token, raw_row in guest_sessions.items():
-            token = str(raw_token).strip()
-            if not token or not isinstance(raw_row, dict):
-                continue
-            expires_at = _as_float(raw_row.get("expires_at", 0.0), 0.0, minimum=0.0)
-            if expires_at <= now:
-                continue
-            issued_at = _as_float(raw_row.get("issued_at", 0.0), 0.0, minimum=0.0)
-            guest_id = str(raw_row.get("guest_id", "guest")).strip().lower() or "guest"
-            capabilities = sorted(set(_as_str_list(raw_row.get("capabilities"), lower=True)))
-            _guest_sessions[token] = {
-                "token": token,
-                "guest_id": guest_id,
-                "capabilities": capabilities,
-                "issued_at": issued_at,
-                "expires_at": expires_at,
-            }
-
-    quality_rows = payload.get("quality_reports")
-    _quality_reports.clear()
-    if isinstance(quality_rows, list):
-        for row in quality_rows[-CACHED_QUALITY_REPORT_MAX:]:
-            if isinstance(row, dict):
-                _quality_reports.append({str(key): _json_safe_clone(value) for key, value in row.items()})
-
-    privacy_posture = payload.get("privacy_posture")
-    if isinstance(privacy_posture, dict):
-        _privacy_posture["state"] = str(privacy_posture.get("state", "normal")).strip().lower() or "normal"
-        _privacy_posture["reason"] = str(privacy_posture.get("reason", "startup")).strip() or "startup"
-        _privacy_posture["updated_at"] = _as_float(privacy_posture.get("updated_at", 0.0), 0.0, minimum=0.0)
-
-    motion_envelope = payload.get("motion_safety_envelope")
-    if isinstance(motion_envelope, dict):
-        _motion_safety_envelope["proximity_limit_cm"] = _as_float(
-            motion_envelope.get("proximity_limit_cm", _motion_safety_envelope.get("proximity_limit_cm", 35.0)),
-            _as_float(_motion_safety_envelope.get("proximity_limit_cm", 35.0), 35.0),
-            minimum=5.0,
-            maximum=300.0,
-        )
-        _motion_safety_envelope["max_yaw_deg"] = _as_float(
-            motion_envelope.get("max_yaw_deg", _motion_safety_envelope.get("max_yaw_deg", 45.0)),
-            _as_float(_motion_safety_envelope.get("max_yaw_deg", 45.0), 45.0),
-            minimum=0.0,
-            maximum=180.0,
-        )
-        _motion_safety_envelope["max_pitch_deg"] = _as_float(
-            motion_envelope.get("max_pitch_deg", _motion_safety_envelope.get("max_pitch_deg", 20.0)),
-            _as_float(_motion_safety_envelope.get("max_pitch_deg", 20.0), 20.0),
-            minimum=0.0,
-            maximum=90.0,
-        )
-        _motion_safety_envelope["max_roll_deg"] = _as_float(
-            motion_envelope.get("max_roll_deg", _motion_safety_envelope.get("max_roll_deg", 15.0)),
-            _as_float(_motion_safety_envelope.get("max_roll_deg", 15.0), 15.0),
-            minimum=0.0,
-            maximum=90.0,
-        )
-        _motion_safety_envelope["hardware_state"] = (
-            str(motion_envelope.get("hardware_state", "normal")).strip().lower() or "normal"
-        )
-        _motion_safety_envelope["updated_at"] = _as_float(
-            motion_envelope.get("updated_at", 0.0),
-            0.0,
-            minimum=0.0,
-        )
-
-    release_state = payload.get("release_channel_state")
-    if isinstance(release_state, dict):
-        channel = str(release_state.get("active_channel", "dev")).strip().lower()
-        if channel not in RELEASE_CHANNELS:
-            channel = "dev"
-        _release_channel_state["active_channel"] = channel
-        _release_channel_state["last_check_at"] = _as_float(
-            release_state.get("last_check_at", 0.0),
-            0.0,
-            minimum=0.0,
-        )
-        _release_channel_state["last_check_channel"] = (
-            str(release_state.get("last_check_channel", channel)).strip().lower() or channel
-        )
-        _release_channel_state["last_check_passed"] = bool(release_state.get("last_check_passed", False))
-        migration_checks = release_state.get("migration_checks")
-        _release_channel_state["migration_checks"] = (
-            [_json_safe_clone(row) for row in migration_checks if isinstance(row, dict)]
-            if isinstance(migration_checks, list)
-            else []
-        )
-
-    global _home_task_seq, _home_automation_seq, _planner_task_seq, _deferred_action_seq
-    _home_task_seq = _as_int(payload.get("home_task_seq", 1), 1, minimum=1)
-    _home_automation_seq = _as_int(payload.get("home_automation_seq", 1), 1, minimum=1)
-    _planner_task_seq = _as_int(payload.get("planner_task_seq", 1), 1, minimum=1)
-    _deferred_action_seq = _as_int(payload.get("deferred_action_seq", 1), 1, minimum=1)
-    _prune_guest_sessions()
+    _runtime_load_expansion_state(_services_module())
 
 
 def _run_release_channel_check(base: Path, check: dict[str, Any]) -> dict[str, Any]:
@@ -4092,10 +3724,6 @@ def _planner_ready_nodes(graph: dict[str, Any]) -> list[dict[str, Any]]:
         if all(status_by_id.get(dep, "done") == "done" for dep in deps):
             ready.append(dict(node))
     return ready
-
-
-
-
 
 
 
