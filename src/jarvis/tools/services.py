@@ -215,6 +215,14 @@ from jarvis.tools.services_action_runtime import (
     retry_backoff_delay as _runtime_retry_backoff_delay,
     touch_action as _runtime_touch_action,
 )
+from jarvis.tools.services_coercion_runtime import (
+    as_bool as _runtime_as_bool,
+    as_exact_int as _runtime_as_exact_int,
+    as_float as _runtime_as_float,
+    as_int as _runtime_as_int,
+    as_str_list as _runtime_as_str_list,
+    effective_act_timeout as _runtime_effective_act_timeout,
+)
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
     smart_home,
@@ -765,75 +773,15 @@ def _now_local() -> str:
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "y", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "n", "off"}:
-            return False
-        return default
-    if isinstance(value, (int, float)):
-        if isinstance(value, float) and not math.isfinite(value):
-            return default
-        return bool(value)
-    return default
+    return _runtime_as_bool(value, default=default)
 
 
 def _as_int(value: Any, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
-    if isinstance(value, bool):
-        parsed = default
-    elif isinstance(value, int):
-        parsed = value
-    elif isinstance(value, float):
-        if not math.isfinite(value) or not value.is_integer():
-            parsed = default
-        else:
-            parsed = int(value)
-    elif isinstance(value, str):
-        text = value.strip()
-        if text and (text.isdigit() or (text.startswith(("+", "-")) and text[1:].isdigit())):
-            try:
-                parsed = int(text)
-            except ValueError:
-                parsed = default
-        else:
-            parsed = default
-    else:
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError, OverflowError):
-            parsed = default
-    if minimum is not None:
-        parsed = max(minimum, parsed)
-    if maximum is not None:
-        parsed = min(maximum, parsed)
-    return parsed
+    return _runtime_as_int(value, default, minimum=minimum, maximum=maximum)
 
 
 def _as_exact_int(value: Any) -> int | None:
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value) or not value.is_integer():
-            return None
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        if text.isdigit() or (text.startswith(("+", "-")) and text[1:].isdigit()):
-            try:
-                return int(text)
-            except ValueError:
-                return None
-        return None
-    return None
+    return _runtime_as_exact_int(value)
 
 
 def _as_float(
@@ -843,26 +791,11 @@ def _as_float(
     minimum: float | None = None,
     maximum: float | None = None,
 ) -> float:
-    if isinstance(value, bool):
-        parsed = default
-    else:
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            parsed = default
-    if not math.isfinite(parsed):
-        parsed = default
-    if minimum is not None:
-        parsed = max(minimum, parsed)
-    if maximum is not None:
-        parsed = min(maximum, parsed)
-    return parsed
+    return _runtime_as_float(value, default, minimum=minimum, maximum=maximum)
 
 
 def _effective_act_timeout(total_sec: Any, *, minimum: float = 0.1, maximum: float = 120.0) -> float:
-    requested = _as_float(total_sec, _turn_timeout_act_sec, minimum=minimum, maximum=maximum)
-    budget = _as_float(_turn_timeout_act_sec, requested, minimum=minimum, maximum=maximum)
-    return min(requested, budget)
+    return _runtime_effective_act_timeout(_services_module(), total_sec, minimum=minimum, maximum=maximum)
 
 
 def _integration_for_tool(tool_name: str) -> str | None:
@@ -1142,28 +1075,7 @@ def _retry_backoff_delay(
 
 
 def _as_str_list(value: Any, *, lower: bool = False, allow_none: bool = False) -> list[str] | None:
-    if value is None:
-        return None if allow_none else []
-    if isinstance(value, list):
-        cleaned = [str(item).strip() for item in value if str(item).strip()]
-        if lower:
-            cleaned = [item.lower() for item in cleaned]
-        if cleaned:
-            return cleaned
-        return None if allow_none else []
-    if isinstance(value, tuple):
-        cleaned = [str(item).strip() for item in value if str(item).strip()]
-        if lower:
-            cleaned = [item.lower() for item in cleaned]
-        if cleaned:
-            return cleaned
-        return None if allow_none else []
-    text = str(value).strip()
-    if not text:
-        return None if allow_none else []
-    if lower:
-        text = text.lower()
-    return [text]
+    return _runtime_as_str_list(value, lower=lower, allow_none=allow_none)
 
 
 def _action_key(domain: str, action: str, entity_id: str) -> str:
