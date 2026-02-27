@@ -3071,7 +3071,7 @@ class TestServicesTools:
 
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.5"
+        assert payload["schema_version"] == "1.6"
         assert "local_time" in payload
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
@@ -3137,6 +3137,13 @@ class TestServicesTools:
         assert "correction_frequency" in payload["observability"]["intent_metrics"]
         assert "retention_policy" in payload
         assert "memory_retention_days" in payload["retention_policy"]
+        assert "recovery_journal" in payload
+        assert "path" in payload["recovery_journal"]
+        assert "entry_count" in payload["recovery_journal"]
+        assert "tracked_actions" in payload["recovery_journal"]
+        assert "unresolved_count" in payload["recovery_journal"]
+        assert "interrupted_count" in payload["recovery_journal"]
+        assert isinstance(payload["recovery_journal"]["recent"], list)
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
 
     @pytest.mark.asyncio
@@ -3145,7 +3152,7 @@ class TestServicesTools:
 
         result = await services.system_status_contract({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.5"
+        assert payload["schema_version"] == "1.6"
         assert "top_level_required" in payload
         assert "tool_policy" in payload["top_level_required"]
         assert "identity" in payload["top_level_required"]
@@ -3194,6 +3201,61 @@ class TestServicesTools:
         assert "plan_preview_required" in payload
         assert "strict_mode" in payload["plan_preview_required"]
         assert "retention_policy_required" in payload
+        assert "recovery_journal_required" in payload
+        assert "unresolved_count" in payload["recovery_journal_required"]
+        assert "interrupted_count" in payload["recovery_journal_required"]
+
+    def test_recovery_journal_begin_finish_status(self, tmp_path):
+        from jarvis.tools import services
+
+        services._recovery_journal_path = tmp_path / "recovery-journal.jsonl"
+        entry_id = services._recovery_begin(
+            "smart_home",
+            operation="light.turn_on",
+            context={"entity_id": "light.kitchen"},
+        )
+        services._recovery_finish(
+            entry_id,
+            tool_name="smart_home",
+            operation="light.turn_on",
+            status="completed",
+            detail="ok",
+            context={"http_status": 200},
+        )
+
+        status = services._recovery_journal_status(limit=10)
+        assert status["entry_count"] == 2
+        assert status["tracked_actions"] == 1
+        assert status["unresolved_count"] == 0
+        assert status["interrupted_count"] == 0
+        assert status["recent"][-1]["status"] == "completed"
+        assert status["recent"][-1]["detail"] == "ok"
+
+    def test_bind_reconciles_interrupted_recovery_entries(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.tools import services
+
+        journal_path = tmp_path / "recovery-journal.jsonl"
+        started = {
+            "timestamp": time.time(),
+            "entry_id": "entry-test-1",
+            "tool": "webhook_trigger",
+            "operation": "POST api.example.com",
+            "status": "started",
+            "context": {"host": "api.example.com"},
+        }
+        journal_path.write_text(json.dumps(started) + "\n")
+
+        cfg = Config()
+        cfg.recovery_journal_path = str(journal_path)
+        services.bind(cfg)
+
+        status = services._recovery_journal_status(limit=10)
+        assert status["tracked_actions"] == 1
+        assert status["unresolved_count"] == 0
+        assert status["interrupted_count"] == 1
+        assert status["recent"][-1]["status"] == "interrupted"
+        assert status["recent"][-1]["detail"] == "process_restart"
 
     @pytest.mark.asyncio
     async def test_system_status_handles_recent_tools_failure(self, tmp_path, monkeypatch):

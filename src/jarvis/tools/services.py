@@ -45,6 +45,7 @@ log = logging.getLogger(__name__)
 
 # Audit log in user's home dir for predictable location
 AUDIT_LOG = Path.home() / ".jarvis" / "audit.jsonl"
+DEFAULT_RECOVERY_JOURNAL = Path.home() / ".jarvis" / "recovery-journal.jsonl"
 
 # Domains that always default to dry_run
 SENSITIVE_DOMAINS = {"lock", "alarm_control_panel", "cover", "climate"}
@@ -74,7 +75,7 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
-SYSTEM_STATUS_CONTRACT_VERSION = "1.5"
+SYSTEM_STATUS_CONTRACT_VERSION = "1.6"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
@@ -207,6 +208,7 @@ _inbound_webhook_events: list[dict[str, Any]] = []
 _inbound_webhook_seq: int = 1
 _pending_plan_previews: dict[str, dict[str, Any]] = {}
 _integration_circuit_breakers: dict[str, dict[str, Any]] = {}
+_recovery_journal_path: Path = DEFAULT_RECOVERY_JOURNAL
 SENSITIVE_AUDIT_KEY_TOKENS = {
     "code",
     "pin",
@@ -867,7 +869,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _plan_preview_require_ack, _safe_mode_enabled
     global _memory_retention_days, _audit_retention_days
     global _memory_pii_guardrails_enabled, _audit_encryption_enabled, _data_encryption_key
-    global _timer_id_seq, _reminder_id_seq, _integration_circuit_breakers
+    global _timer_id_seq, _reminder_id_seq, _integration_circuit_breakers, _recovery_journal_path
     _config = config
     _memory = memory_store
     _audit_log_max_bytes = int(config.audit_log_max_bytes)
@@ -949,6 +951,9 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _memory_pii_guardrails_enabled = bool(getattr(config, "memory_pii_guardrails_enabled", True))
     _audit_encryption_enabled = bool(getattr(config, "audit_encryption_enabled", False))
     _data_encryption_key = str(getattr(config, "data_encryption_key", "")).strip()
+    _recovery_journal_path = Path(
+        str(getattr(config, "recovery_journal_path", str(DEFAULT_RECOVERY_JOURNAL)))
+    ).expanduser()
     _configure_audit_encryption(enabled=_audit_encryption_enabled, key=_data_encryption_key)
     _action_last_seen.clear()
     _ha_state_cache.clear()
@@ -964,6 +969,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _integration_circuit_breakers.clear()
     for integration in sorted(set(INTEGRATION_TOOL_MAP.values())):
         _ensure_circuit_breaker_state(integration)
+    _recovery_reconcile_interrupted()
     _load_timers_from_store()
     _load_reminders_from_store()
     global _tool_allowlist, _tool_denylist
@@ -1937,6 +1943,206 @@ def _audit_status() -> dict[str, Any]:
     }
 
 
+def _read_recovery_journal_entries() -> list[dict[str, Any]]:
+    path = _recovery_journal_path
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return []
+    entries: list[dict[str, Any]] = []
+    for line in lines:
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            entries.append(payload)
+    return entries
+
+
+def _write_recovery_journal_entry(payload: dict[str, Any]) -> None:
+    path = _recovery_journal_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(payload, default=str)
+    try:
+        with path.open("a") as handle:
+            handle.write(line + "\n")
+    except OSError as exc:
+        log.warning("Failed to write recovery journal entry: %s", exc)
+
+
+def _recovery_begin(tool_name: str, *, operation: str, context: dict[str, Any] | None = None) -> str:
+    entry_id = secrets.token_hex(12)
+    _write_recovery_journal_entry(
+        {
+            "timestamp": time.time(),
+            "entry_id": entry_id,
+            "tool": str(tool_name),
+            "operation": str(operation),
+            "status": "started",
+            "context": context or {},
+        }
+    )
+    return entry_id
+
+
+def _recovery_finish(
+    entry_id: str,
+    *,
+    tool_name: str,
+    operation: str,
+    status: str,
+    detail: str = "",
+    context: dict[str, Any] | None = None,
+) -> None:
+    _write_recovery_journal_entry(
+        {
+            "timestamp": time.time(),
+            "entry_id": str(entry_id),
+            "tool": str(tool_name),
+            "operation": str(operation),
+            "status": str(status),
+            "detail": str(detail),
+            "context": context or {},
+        }
+    )
+
+
+class _RecoveryOperation:
+    def __init__(self, tool_name: str, *, operation: str, context: dict[str, Any] | None = None) -> None:
+        self._tool_name = str(tool_name)
+        self._operation = str(operation)
+        self._base_context = dict(context or {})
+        self._context_updates: dict[str, Any] = {}
+        self._status = "failed"
+        self._detail = ""
+        self._closed = False
+        self._entry_id = _recovery_begin(self._tool_name, operation=self._operation, context=self._base_context)
+
+    def mark_completed(self, *, detail: str = "ok", context: dict[str, Any] | None = None) -> None:
+        self._status = "completed"
+        self._detail = str(detail)
+        if context:
+            self._context_updates.update(context)
+
+    def mark_failed(self, detail: str, *, context: dict[str, Any] | None = None) -> None:
+        self._status = "failed"
+        self._detail = str(detail)
+        if context:
+            self._context_updates.update(context)
+
+    def mark_cancelled(self, *, detail: str = "cancelled", context: dict[str, Any] | None = None) -> None:
+        self._status = "cancelled"
+        self._detail = str(detail)
+        if context:
+            self._context_updates.update(context)
+
+    def __enter__(self) -> _RecoveryOperation:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        _tb: Any,
+    ) -> bool:
+        if self._closed:
+            return False
+        status = self._status
+        detail = self._detail
+        if exc is not None:
+            if isinstance(exc, asyncio.CancelledError):
+                status = "cancelled"
+                if not detail:
+                    detail = "cancelled"
+            else:
+                status = "failed"
+                if not detail:
+                    detail = exc.__class__.__name__
+        if not detail:
+            detail = "ok" if status == "completed" else "failed"
+        context = {**self._base_context, **self._context_updates}
+        _recovery_finish(
+            self._entry_id,
+            tool_name=self._tool_name,
+            operation=self._operation,
+            status=status,
+            detail=detail,
+            context=context,
+        )
+        self._closed = True
+        return False
+
+
+def _recovery_operation(
+    tool_name: str,
+    *,
+    operation: str,
+    context: dict[str, Any] | None = None,
+) -> _RecoveryOperation:
+    return _RecoveryOperation(tool_name, operation=operation, context=context)
+
+
+def _recovery_reconcile_interrupted() -> None:
+    entries = _read_recovery_journal_entries()
+    if not entries:
+        return
+    latest_by_entry: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        entry_id = str(entry.get("entry_id", "")).strip()
+        if not entry_id:
+            continue
+        latest_by_entry[entry_id] = entry
+    for entry_id, entry in latest_by_entry.items():
+        status = str(entry.get("status", "")).strip().lower()
+        if status != "started":
+            continue
+        _recovery_finish(
+            entry_id,
+            tool_name=str(entry.get("tool", "unknown")),
+            operation=str(entry.get("operation", "unknown")),
+            status="interrupted",
+            detail="process_restart",
+            context={"source": "reconcile"},
+        )
+
+
+def _recovery_journal_status(*, limit: int = 20) -> dict[str, Any]:
+    entries = _read_recovery_journal_entries()
+    latest_by_entry: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        entry_id = str(entry.get("entry_id", "")).strip()
+        if not entry_id:
+            continue
+        latest_by_entry[entry_id] = entry
+    unresolved = sum(
+        1
+        for entry in latest_by_entry.values()
+        if str(entry.get("status", "")).strip().lower() == "started"
+    )
+    interrupted = sum(
+        1
+        for entry in latest_by_entry.values()
+        if str(entry.get("status", "")).strip().lower() == "interrupted"
+    )
+    size = max(1, min(100, int(limit)))
+    recent = entries[-size:]
+    return {
+        "path": str(_recovery_journal_path),
+        "exists": _recovery_journal_path.exists(),
+        "entry_count": len(entries),
+        "tracked_actions": len(latest_by_entry),
+        "unresolved_count": unresolved,
+        "interrupted_count": interrupted,
+        "recent": recent,
+    }
+
+
 def _prune_audit_file(path: Path, *, cutoff_ts: float) -> int:
     if not path.exists():
         return 0
@@ -2816,57 +3022,68 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
     headers = {**_ha_headers(), "Content-Type": "application/json"}
     payload = {"entity_id": entity_id, **data}
     timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(10.0))
-
-    try:
-        tool_feedback("start")
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                if resp.status == 200:
-                    tool_feedback("done")
-                    _ha_invalidate_state(entity_id)
-                    _touch_action(domain, action, entity_id)
-                    _integration_record_success("home_assistant")
-                    record_summary(
-                        "smart_home",
-                        "ok",
-                        start_time,
-                        effect=f"executed {domain}.{action} {entity_id}",
-                        risk="medium" if domain in SENSITIVE_DOMAINS else "low",
-                    )
-                    return {"content": [{"type": "text", "text": f"Done: {domain}.{action} on {entity_id}"}]}
-                elif resp.status == 401:
-                    tool_feedback("done")
-                    _record_service_error("smart_home", start_time, "auth")
-                    return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
-                elif resp.status == 404:
-                    tool_feedback("done")
-                    _record_service_error("smart_home", start_time, "not_found")
-                    return {"content": [{"type": "text", "text": f"Service not found: {domain}.{action}"}]}
-                else:
+    with _recovery_operation(
+        "smart_home",
+        operation=f"{domain}.{action}",
+        context={"entity_id": entity_id, "domain": domain},
+    ) as recovery:
+        try:
+            tool_feedback("start")
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, headers=headers, json=payload) as resp:
+                    if resp.status == 200:
+                        tool_feedback("done")
+                        _ha_invalidate_state(entity_id)
+                        _touch_action(domain, action, entity_id)
+                        _integration_record_success("home_assistant")
+                        recovery.mark_completed(detail="ok", context={"http_status": resp.status})
+                        record_summary(
+                            "smart_home",
+                            "ok",
+                            start_time,
+                            effect=f"executed {domain}.{action} {entity_id}",
+                            risk="medium" if domain in SENSITIVE_DOMAINS else "low",
+                        )
+                        return {"content": [{"type": "text", "text": f"Done: {domain}.{action} on {entity_id}"}]}
+                    if resp.status == 401:
+                        tool_feedback("done")
+                        recovery.mark_failed("auth", context={"http_status": resp.status})
+                        _record_service_error("smart_home", start_time, "auth")
+                        return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+                    if resp.status == 404:
+                        tool_feedback("done")
+                        recovery.mark_failed("not_found", context={"http_status": resp.status})
+                        _record_service_error("smart_home", start_time, "not_found")
+                        return {"content": [{"type": "text", "text": f"Service not found: {domain}.{action}"}]}
                     try:
                         text = await resp.text()
                     except Exception:
                         text = "<body unavailable>"
                     tool_feedback("done")
+                    recovery.mark_failed("http_error", context={"http_status": resp.status})
                     _record_service_error("smart_home", start_time, "http_error")
                     return {"content": [{"type": "text", "text": f"Home Assistant error ({resp.status}): {text[:200]}"}]}
-    except asyncio.TimeoutError:
-        tool_feedback("done")
-        _record_service_error("smart_home", start_time, "timeout")
-        return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
-    except asyncio.CancelledError:
-        tool_feedback("done")
-        _record_service_error("smart_home", start_time, "cancelled")
-        return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
-    except aiohttp.ClientError as e:
-        tool_feedback("done")
-        _record_service_error("smart_home", start_time, "network_client_error")
-        return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
-    except Exception:
-        tool_feedback("done")
-        _record_service_error("smart_home", start_time, "unexpected")
-        log.exception("Unexpected smart_home failure")
-        return {"content": [{"type": "text", "text": "Unexpected Home Assistant error."}]}
+        except asyncio.TimeoutError:
+            tool_feedback("done")
+            recovery.mark_failed("timeout")
+            _record_service_error("smart_home", start_time, "timeout")
+            return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
+        except asyncio.CancelledError:
+            tool_feedback("done")
+            recovery.mark_cancelled()
+            _record_service_error("smart_home", start_time, "cancelled")
+            return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
+        except aiohttp.ClientError as e:
+            tool_feedback("done")
+            recovery.mark_failed("network_client_error")
+            _record_service_error("smart_home", start_time, "network_client_error")
+            return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
+        except Exception:
+            tool_feedback("done")
+            recovery.mark_failed("unexpected")
+            _record_service_error("smart_home", start_time, "unexpected")
+            log.exception("Unexpected smart_home failure")
+            return {"content": [{"type": "text", "text": "Unexpected Home Assistant error."}]}
 
 
 async def smart_home_state(args: dict[str, Any]) -> dict[str, Any]:
@@ -3159,86 +3376,107 @@ async def home_assistant_conversation(args: dict[str, Any]) -> dict[str, Any]:
     url = f"{_config.hass_url}/api/conversation/process"
     timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(10.0))
     headers = {**_ha_headers(), "Content-Type": "application/json"}
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                if resp.status == 200:
-                    try:
-                        body = await resp.json()
-                    except Exception:
-                        _record_service_error("home_assistant_conversation", start_time, "invalid_json")
-                        _audit("home_assistant_conversation", {"result": "invalid_json"})
-                        return {"content": [{"type": "text", "text": "Invalid Home Assistant conversation response."}]}
-                    if not isinstance(body, dict):
-                        _record_service_error("home_assistant_conversation", start_time, "invalid_json")
-                        _audit("home_assistant_conversation", {"result": "invalid_json"})
-                        return {"content": [{"type": "text", "text": "Invalid Home Assistant conversation response."}]}
-                    response_type = ""
-                    response = body.get("response")
-                    if isinstance(response, dict):
-                        response_type = str(response.get("response_type", "")).strip()
-                    speech = _ha_conversation_speech(body)
-                    if not speech:
-                        speech = "Home Assistant processed the command."
-                    conversation_id = str(body.get("conversation_id", "")).strip()
-                    _integration_record_success("home_assistant")
-                    record_summary("home_assistant_conversation", "ok", start_time)
-                    _audit(
-                        "home_assistant_conversation",
-                        _identity_enriched_audit(
-                            {
-                                "result": "ok",
+    with _recovery_operation(
+        "home_assistant_conversation",
+        operation="conversation_process",
+        context={"text_length": len(text)},
+    ) as recovery:
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, headers=headers, json=payload) as resp:
+                    if resp.status == 200:
+                        try:
+                            body = await resp.json()
+                        except Exception:
+                            recovery.mark_failed("invalid_json")
+                            _record_service_error("home_assistant_conversation", start_time, "invalid_json")
+                            _audit("home_assistant_conversation", {"result": "invalid_json"})
+                            return {"content": [{"type": "text", "text": "Invalid Home Assistant conversation response."}]}
+                        if not isinstance(body, dict):
+                            recovery.mark_failed("invalid_json")
+                            _record_service_error("home_assistant_conversation", start_time, "invalid_json")
+                            _audit("home_assistant_conversation", {"result": "invalid_json"})
+                            return {"content": [{"type": "text", "text": "Invalid Home Assistant conversation response."}]}
+                        response_type = ""
+                        response = body.get("response")
+                        if isinstance(response, dict):
+                            response_type = str(response.get("response_type", "")).strip()
+                        speech = _ha_conversation_speech(body)
+                        if not speech:
+                            speech = "Home Assistant processed the command."
+                        conversation_id = str(body.get("conversation_id", "")).strip()
+                        _integration_record_success("home_assistant")
+                        recovery.mark_completed(
+                            detail="ok",
+                            context={
                                 "response_type": response_type,
                                 "conversation_id": conversation_id,
-                                "text_length": len(text),
-                                "language": language,
-                                "agent_id": agent_id,
                             },
-                            identity_context,
-                            [*identity_chain, "decision:execute"],
-                        ),
-                    )
-                    suffix = ""
-                    if response_type:
-                        suffix += f" [type={response_type}]"
-                    if conversation_id:
-                        suffix += f" [conversation_id={conversation_id}]"
-                    return {"content": [{"type": "text", "text": f"{speech}{suffix}"}]}
-                if resp.status == 401:
-                    _record_service_error("home_assistant_conversation", start_time, "auth")
-                    _audit("home_assistant_conversation", {"result": "auth"})
-                    return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
-                if resp.status == 404:
-                    _record_service_error("home_assistant_conversation", start_time, "not_found")
-                    _audit("home_assistant_conversation", {"result": "not_found"})
-                    return {"content": [{"type": "text", "text": "Home Assistant conversation endpoint not found."}]}
-                _record_service_error("home_assistant_conversation", start_time, "http_error")
-                _audit("home_assistant_conversation", {"result": "http_error", "status": resp.status})
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"Home Assistant conversation error ({resp.status}).",
-                        }
-                    ]
-                }
-    except asyncio.TimeoutError:
-        _record_service_error("home_assistant_conversation", start_time, "timeout")
-        _audit("home_assistant_conversation", {"result": "timeout"})
-        return {"content": [{"type": "text", "text": "Home Assistant conversation request timed out."}]}
-    except asyncio.CancelledError:
-        _record_service_error("home_assistant_conversation", start_time, "cancelled")
-        _audit("home_assistant_conversation", {"result": "cancelled"})
-        return {"content": [{"type": "text", "text": "Home Assistant conversation request was cancelled."}]}
-    except aiohttp.ClientError:
-        _record_service_error("home_assistant_conversation", start_time, "network_client_error")
-        _audit("home_assistant_conversation", {"result": "network_client_error"})
-        return {"content": [{"type": "text", "text": "Failed to reach Home Assistant conversation endpoint."}]}
-    except Exception:
-        _record_service_error("home_assistant_conversation", start_time, "unexpected")
-        _audit("home_assistant_conversation", {"result": "unexpected"})
-        log.exception("Unexpected home_assistant_conversation failure")
-        return {"content": [{"type": "text", "text": "Unexpected Home Assistant conversation error."}]}
+                        )
+                        record_summary("home_assistant_conversation", "ok", start_time)
+                        _audit(
+                            "home_assistant_conversation",
+                            _identity_enriched_audit(
+                                {
+                                    "result": "ok",
+                                    "response_type": response_type,
+                                    "conversation_id": conversation_id,
+                                    "text_length": len(text),
+                                    "language": language,
+                                    "agent_id": agent_id,
+                                },
+                                identity_context,
+                                [*identity_chain, "decision:execute"],
+                            ),
+                        )
+                        suffix = ""
+                        if response_type:
+                            suffix += f" [type={response_type}]"
+                        if conversation_id:
+                            suffix += f" [conversation_id={conversation_id}]"
+                        return {"content": [{"type": "text", "text": f"{speech}{suffix}"}]}
+                    if resp.status == 401:
+                        recovery.mark_failed("auth", context={"http_status": resp.status})
+                        _record_service_error("home_assistant_conversation", start_time, "auth")
+                        _audit("home_assistant_conversation", {"result": "auth"})
+                        return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+                    if resp.status == 404:
+                        recovery.mark_failed("not_found", context={"http_status": resp.status})
+                        _record_service_error("home_assistant_conversation", start_time, "not_found")
+                        _audit("home_assistant_conversation", {"result": "not_found"})
+                        return {"content": [{"type": "text", "text": "Home Assistant conversation endpoint not found."}]}
+                    recovery.mark_failed("http_error", context={"http_status": resp.status})
+                    _record_service_error("home_assistant_conversation", start_time, "http_error")
+                    _audit("home_assistant_conversation", {"result": "http_error", "status": resp.status})
+                    return {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"Home Assistant conversation error ({resp.status}).",
+                            }
+                        ]
+                    }
+        except asyncio.TimeoutError:
+            recovery.mark_failed("timeout")
+            _record_service_error("home_assistant_conversation", start_time, "timeout")
+            _audit("home_assistant_conversation", {"result": "timeout"})
+            return {"content": [{"type": "text", "text": "Home Assistant conversation request timed out."}]}
+        except asyncio.CancelledError:
+            recovery.mark_cancelled()
+            _record_service_error("home_assistant_conversation", start_time, "cancelled")
+            _audit("home_assistant_conversation", {"result": "cancelled"})
+            return {"content": [{"type": "text", "text": "Home Assistant conversation request was cancelled."}]}
+        except aiohttp.ClientError:
+            recovery.mark_failed("network_client_error")
+            _record_service_error("home_assistant_conversation", start_time, "network_client_error")
+            _audit("home_assistant_conversation", {"result": "network_client_error"})
+            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant conversation endpoint."}]}
+        except Exception:
+            recovery.mark_failed("unexpected")
+            _record_service_error("home_assistant_conversation", start_time, "unexpected")
+            _audit("home_assistant_conversation", {"result": "unexpected"})
+            log.exception("Unexpected home_assistant_conversation failure")
+            return {"content": [{"type": "text", "text": "Unexpected Home Assistant conversation error."}]}
 
 
 async def home_assistant_todo(args: dict[str, Any]) -> dict[str, Any]:
@@ -3364,35 +3602,45 @@ async def home_assistant_todo(args: dict[str, Any]) -> dict[str, Any]:
         service_data = {"entity_id": entity_id, "item": item_id or item}
         success_text = "Removed Home Assistant to-do item."
 
-    _, error_code = await _ha_call_service("todo", service, service_data)
-    if error_code is not None:
-        _record_service_error("home_assistant_todo", start_time, error_code)
-        _audit("home_assistant_todo", {"result": error_code, "action": action, "entity_id": entity_id})
-        if error_code == "auth":
-            return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
-        if error_code == "not_found":
-            return {"content": [{"type": "text", "text": "Home Assistant to-do entity or service not found."}]}
-        if error_code == "timeout":
-            return {"content": [{"type": "text", "text": "Home Assistant to-do request timed out."}]}
-        if error_code == "cancelled":
-            return {"content": [{"type": "text", "text": "Home Assistant to-do request was cancelled."}]}
-        if error_code == "network_client_error":
-            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant to-do service."}]}
-        if error_code == "invalid_json":
-            return {"content": [{"type": "text", "text": "Invalid Home Assistant to-do response."}]}
-        return {"content": [{"type": "text", "text": "Unexpected Home Assistant to-do error."}]}
-    record_summary("home_assistant_todo", "ok", start_time)
-    _audit(
+    with _recovery_operation(
         "home_assistant_todo",
-        {
-            "result": "ok",
-            "action": action,
-            "entity_id": entity_id,
-            "item_length": len(item),
-            "item_id": item_id,
-        },
-    )
-    return {"content": [{"type": "text", "text": success_text}]}
+        operation=f"{action}:{entity_id}",
+        context={"entity_id": entity_id, "action": action},
+    ) as recovery:
+        _, error_code = await _ha_call_service("todo", service, service_data)
+        if error_code is not None:
+            if error_code == "cancelled":
+                recovery.mark_cancelled()
+            else:
+                recovery.mark_failed(error_code)
+            _record_service_error("home_assistant_todo", start_time, error_code)
+            _audit("home_assistant_todo", {"result": error_code, "action": action, "entity_id": entity_id})
+            if error_code == "auth":
+                return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+            if error_code == "not_found":
+                return {"content": [{"type": "text", "text": "Home Assistant to-do entity or service not found."}]}
+            if error_code == "timeout":
+                return {"content": [{"type": "text", "text": "Home Assistant to-do request timed out."}]}
+            if error_code == "cancelled":
+                return {"content": [{"type": "text", "text": "Home Assistant to-do request was cancelled."}]}
+            if error_code == "network_client_error":
+                return {"content": [{"type": "text", "text": "Failed to reach Home Assistant to-do service."}]}
+            if error_code == "invalid_json":
+                return {"content": [{"type": "text", "text": "Invalid Home Assistant to-do response."}]}
+            return {"content": [{"type": "text", "text": "Unexpected Home Assistant to-do error."}]}
+        recovery.mark_completed(detail="ok")
+        record_summary("home_assistant_todo", "ok", start_time)
+        _audit(
+            "home_assistant_todo",
+            {
+                "result": "ok",
+                "action": action,
+                "entity_id": entity_id,
+                "item_length": len(item),
+                "item_id": item_id,
+            },
+        )
+        return {"content": [{"type": "text", "text": success_text}]}
 
 
 async def home_assistant_timer(args: dict[str, Any]) -> dict[str, Any]:
@@ -3503,29 +3751,39 @@ async def home_assistant_timer(args: dict[str, Any]) -> dict[str, Any]:
                         }
                     ]
                 }
-    _, error_code = await _ha_call_service("timer", service_map[action], service_data)
-    if error_code is not None:
-        _record_service_error("home_assistant_timer", start_time, error_code)
-        _audit("home_assistant_timer", {"result": error_code, "action": action, "entity_id": entity_id})
-        if error_code == "auth":
-            return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
-        if error_code == "not_found":
-            return {"content": [{"type": "text", "text": "Home Assistant timer entity or service not found."}]}
-        if error_code == "timeout":
-            return {"content": [{"type": "text", "text": "Home Assistant timer request timed out."}]}
-        if error_code == "cancelled":
-            return {"content": [{"type": "text", "text": "Home Assistant timer request was cancelled."}]}
-        if error_code == "network_client_error":
-            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant timer endpoint."}]}
-        if error_code == "invalid_json":
-            return {"content": [{"type": "text", "text": "Invalid Home Assistant timer response."}]}
-        return {"content": [{"type": "text", "text": "Unexpected Home Assistant timer error."}]}
-    record_summary("home_assistant_timer", "ok", start_time)
-    _audit(
+    with _recovery_operation(
         "home_assistant_timer",
-        {"result": "ok", "action": action, "entity_id": entity_id, "duration": service_data.get("duration")},
-    )
-    return {"content": [{"type": "text", "text": f"Home Assistant timer action executed: {action} on {entity_id}."}]}
+        operation=f"{action}:{entity_id}",
+        context={"entity_id": entity_id, "action": action},
+    ) as recovery:
+        _, error_code = await _ha_call_service("timer", service_map[action], service_data)
+        if error_code is not None:
+            if error_code == "cancelled":
+                recovery.mark_cancelled()
+            else:
+                recovery.mark_failed(error_code)
+            _record_service_error("home_assistant_timer", start_time, error_code)
+            _audit("home_assistant_timer", {"result": error_code, "action": action, "entity_id": entity_id})
+            if error_code == "auth":
+                return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+            if error_code == "not_found":
+                return {"content": [{"type": "text", "text": "Home Assistant timer entity or service not found."}]}
+            if error_code == "timeout":
+                return {"content": [{"type": "text", "text": "Home Assistant timer request timed out."}]}
+            if error_code == "cancelled":
+                return {"content": [{"type": "text", "text": "Home Assistant timer request was cancelled."}]}
+            if error_code == "network_client_error":
+                return {"content": [{"type": "text", "text": "Failed to reach Home Assistant timer endpoint."}]}
+            if error_code == "invalid_json":
+                return {"content": [{"type": "text", "text": "Invalid Home Assistant timer response."}]}
+            return {"content": [{"type": "text", "text": "Unexpected Home Assistant timer error."}]}
+        recovery.mark_completed(detail="ok", context={"duration": service_data.get("duration")})
+        record_summary("home_assistant_timer", "ok", start_time)
+        _audit(
+            "home_assistant_timer",
+            {"result": "ok", "action": action, "entity_id": entity_id, "duration": service_data.get("duration")},
+        )
+        return {"content": [{"type": "text", "text": f"Home Assistant timer action executed: {action} on {entity_id}."}]}
 
 
 async def home_assistant_area_entities(args: dict[str, Any]) -> dict[str, Any]:
@@ -3715,33 +3973,43 @@ async def media_control(args: dict[str, Any]) -> dict[str, Any]:
             text = f"{text}. Safe mode forced dry-run."
         return {"content": [{"type": "text", "text": text}]}
     service_data = {"entity_id": entity_id, **payload_data}
-    _, error_code = await _ha_call_service("media_player", service, service_data)
-    if error_code is not None:
-        _record_service_error("media_control", start_time, error_code)
-        _audit("media_control", {"result": error_code, "entity_id": entity_id, "action": action})
-        if error_code == "auth":
-            return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
-        if error_code == "not_found":
-            return {"content": [{"type": "text", "text": "Media player entity or service not found."}]}
-        if error_code == "timeout":
-            return {"content": [{"type": "text", "text": "Media control request timed out."}]}
-        if error_code == "cancelled":
-            return {"content": [{"type": "text", "text": "Media control request was cancelled."}]}
-        if error_code == "circuit_open":
-            return {"content": [{"type": "text", "text": "Home Assistant circuit breaker is open; retry shortly."}]}
-        if error_code == "network_client_error":
-            return {"content": [{"type": "text", "text": "Failed to reach Home Assistant media endpoint."}]}
-        return {"content": [{"type": "text", "text": "Unexpected Home Assistant media control error."}]}
-    record_summary("media_control", "ok", start_time, effect=f"{service} {entity_id}", risk="low")
-    _audit(
+    with _recovery_operation(
         "media_control",
-        _identity_enriched_audit(
-            {"result": "ok", "entity_id": entity_id, "action": action},
-            identity_context,
-            [*identity_chain, "decision:execute"],
-        ),
-    )
-    return {"content": [{"type": "text", "text": f"Media action executed: {action} on {entity_id}."}]}
+        operation=f"{action}:{entity_id}",
+        context={"entity_id": entity_id, "action": action},
+    ) as recovery:
+        _, error_code = await _ha_call_service("media_player", service, service_data)
+        if error_code is not None:
+            if error_code == "cancelled":
+                recovery.mark_cancelled()
+            else:
+                recovery.mark_failed(error_code)
+            _record_service_error("media_control", start_time, error_code)
+            _audit("media_control", {"result": error_code, "entity_id": entity_id, "action": action})
+            if error_code == "auth":
+                return {"content": [{"type": "text", "text": "Home Assistant authentication failed. Check HASS_TOKEN."}]}
+            if error_code == "not_found":
+                return {"content": [{"type": "text", "text": "Media player entity or service not found."}]}
+            if error_code == "timeout":
+                return {"content": [{"type": "text", "text": "Media control request timed out."}]}
+            if error_code == "cancelled":
+                return {"content": [{"type": "text", "text": "Media control request was cancelled."}]}
+            if error_code == "circuit_open":
+                return {"content": [{"type": "text", "text": "Home Assistant circuit breaker is open; retry shortly."}]}
+            if error_code == "network_client_error":
+                return {"content": [{"type": "text", "text": "Failed to reach Home Assistant media endpoint."}]}
+            return {"content": [{"type": "text", "text": "Unexpected Home Assistant media control error."}]}
+        recovery.mark_completed(detail="ok")
+        record_summary("media_control", "ok", start_time, effect=f"{service} {entity_id}", risk="low")
+        _audit(
+            "media_control",
+            _identity_enriched_audit(
+                {"result": "ok", "entity_id": entity_id, "action": action},
+                identity_context,
+                [*identity_chain, "decision:execute"],
+            ),
+        )
+        return {"content": [{"type": "text", "text": f"Media action executed: {action} on {entity_id}."}]}
 
 
 async def weather_lookup(args: dict[str, Any]) -> dict[str, Any]:
@@ -3976,60 +4244,72 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
     request_kwargs: dict[str, Any] = {"headers": headers or None}
     if method in {"POST", "PUT", "PATCH"}:
         request_kwargs["json"] = payload or {}
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.request(method, url, **request_kwargs) as resp:
-                body = await resp.text()
-                if 200 <= resp.status < 300:
-                    _integration_record_success("webhook")
-                    record_summary("webhook_trigger", "ok", start_time)
+    with _recovery_operation(
+        "webhook_trigger",
+        operation=f"{method} {parsed.hostname or ''}",
+        context={"method": method, "host": parsed.hostname or ""},
+    ) as recovery:
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.request(method, url, **request_kwargs) as resp:
+                    body = await resp.text()
+                    if 200 <= resp.status < 300:
+                        _integration_record_success("webhook")
+                        recovery.mark_completed(detail="ok", context={"http_status": resp.status})
+                        record_summary("webhook_trigger", "ok", start_time)
+                        _audit(
+                            "webhook_trigger",
+                            _identity_enriched_audit(
+                                {
+                                    "result": "ok",
+                                    "method": method,
+                                    "host": parsed.hostname or "",
+                                    "status": resp.status,
+                                    "response_length": len(body),
+                                },
+                                identity_context,
+                                [*identity_chain, "decision:execute"],
+                            ),
+                        )
+                        body_preview = body[:200]
+                        suffix = f" body={body_preview}" if body_preview else ""
+                        return {"content": [{"type": "text", "text": f"Webhook delivered ({resp.status}).{suffix}"}]}
+                    if resp.status in {401, 403}:
+                        recovery.mark_failed("auth", context={"http_status": resp.status})
+                        _record_service_error("webhook_trigger", start_time, "auth")
+                        _audit(
+                            "webhook_trigger",
+                            {"result": "auth", "method": method, "host": parsed.hostname or "", "status": resp.status},
+                        )
+                        return {"content": [{"type": "text", "text": "Webhook authentication failed."}]}
+                    recovery.mark_failed("http_error", context={"http_status": resp.status})
+                    _record_service_error("webhook_trigger", start_time, "http_error")
                     _audit(
                         "webhook_trigger",
-                        _identity_enriched_audit(
-                            {
-                                "result": "ok",
-                                "method": method,
-                                "host": parsed.hostname or "",
-                                "status": resp.status,
-                                "response_length": len(body),
-                            },
-                            identity_context,
-                            [*identity_chain, "decision:execute"],
-                        ),
+                        {"result": "http_error", "method": method, "host": parsed.hostname or "", "status": resp.status},
                     )
-                    body_preview = body[:200]
-                    suffix = f" body={body_preview}" if body_preview else ""
-                    return {"content": [{"type": "text", "text": f"Webhook delivered ({resp.status}).{suffix}"}]}
-                if resp.status in {401, 403}:
-                    _record_service_error("webhook_trigger", start_time, "auth")
-                    _audit(
-                        "webhook_trigger",
-                        {"result": "auth", "method": method, "host": parsed.hostname or "", "status": resp.status},
-                    )
-                    return {"content": [{"type": "text", "text": "Webhook authentication failed."}]}
-                _record_service_error("webhook_trigger", start_time, "http_error")
-                _audit(
-                    "webhook_trigger",
-                    {"result": "http_error", "method": method, "host": parsed.hostname or "", "status": resp.status},
-                )
-                return {"content": [{"type": "text", "text": f"Webhook request failed ({resp.status})."}]}
-    except asyncio.TimeoutError:
-        _record_service_error("webhook_trigger", start_time, "timeout")
-        _audit("webhook_trigger", {"result": "timeout", "method": method, "host": parsed.hostname or ""})
-        return {"content": [{"type": "text", "text": "Webhook request timed out."}]}
-    except asyncio.CancelledError:
-        _record_service_error("webhook_trigger", start_time, "cancelled")
-        _audit("webhook_trigger", {"result": "cancelled", "method": method, "host": parsed.hostname or ""})
-        return {"content": [{"type": "text", "text": "Webhook request was cancelled."}]}
-    except aiohttp.ClientError:
-        _record_service_error("webhook_trigger", start_time, "network_client_error")
-        _audit("webhook_trigger", {"result": "network_client_error", "method": method, "host": parsed.hostname or ""})
-        return {"content": [{"type": "text", "text": "Failed to reach webhook endpoint."}]}
-    except Exception:
-        _record_service_error("webhook_trigger", start_time, "unexpected")
-        _audit("webhook_trigger", {"result": "unexpected", "method": method, "host": parsed.hostname or ""})
-        log.exception("Unexpected webhook_trigger failure")
-        return {"content": [{"type": "text", "text": "Unexpected webhook trigger error."}]}
+                    return {"content": [{"type": "text", "text": f"Webhook request failed ({resp.status})."}]}
+        except asyncio.TimeoutError:
+            recovery.mark_failed("timeout")
+            _record_service_error("webhook_trigger", start_time, "timeout")
+            _audit("webhook_trigger", {"result": "timeout", "method": method, "host": parsed.hostname or ""})
+            return {"content": [{"type": "text", "text": "Webhook request timed out."}]}
+        except asyncio.CancelledError:
+            recovery.mark_cancelled()
+            _record_service_error("webhook_trigger", start_time, "cancelled")
+            _audit("webhook_trigger", {"result": "cancelled", "method": method, "host": parsed.hostname or ""})
+            return {"content": [{"type": "text", "text": "Webhook request was cancelled."}]}
+        except aiohttp.ClientError:
+            recovery.mark_failed("network_client_error")
+            _record_service_error("webhook_trigger", start_time, "network_client_error")
+            _audit("webhook_trigger", {"result": "network_client_error", "method": method, "host": parsed.hostname or ""})
+            return {"content": [{"type": "text", "text": "Failed to reach webhook endpoint."}]}
+        except Exception:
+            recovery.mark_failed("unexpected")
+            _record_service_error("webhook_trigger", start_time, "unexpected")
+            _audit("webhook_trigger", {"result": "unexpected", "method": method, "host": parsed.hostname or ""})
+            log.exception("Unexpected webhook_trigger failure")
+            return {"content": [{"type": "text", "text": "Unexpected webhook trigger error."}]}
 
 
 async def webhook_inbound_list(args: dict[str, Any]) -> dict[str, Any]:
@@ -4092,45 +4372,53 @@ async def slack_notify(args: dict[str, Any]) -> dict[str, Any]:
         )
         return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_webhook_timeout_sec, minimum=0.1, maximum=30.0))
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(_slack_webhook_url, json={"text": message}) as resp:
-                if 200 <= resp.status < 300:
-                    _integration_record_success("channels")
-                    record_summary("slack_notify", "ok", start_time)
-                    _audit(
-                        "slack_notify",
-                        _identity_enriched_audit(
-                            {"result": "ok", "message_length": len(message)},
-                            identity_context,
-                            [*identity_chain, "decision:execute"],
-                        ),
-                    )
-                    return {"content": [{"type": "text", "text": "Slack notification sent."}]}
-                if resp.status in {401, 403}:
-                    _record_service_error("slack_notify", start_time, "auth")
-                    _audit("slack_notify", {"result": "auth", "status": resp.status})
-                    return {"content": [{"type": "text", "text": "Slack webhook authentication failed."}]}
-                _record_service_error("slack_notify", start_time, "http_error")
-                _audit("slack_notify", {"result": "http_error", "status": resp.status})
-                return {"content": [{"type": "text", "text": f"Slack webhook error ({resp.status})."}]}
-    except asyncio.TimeoutError:
-        _record_service_error("slack_notify", start_time, "timeout")
-        _audit("slack_notify", {"result": "timeout"})
-        return {"content": [{"type": "text", "text": "Slack webhook request timed out."}]}
-    except asyncio.CancelledError:
-        _record_service_error("slack_notify", start_time, "cancelled")
-        _audit("slack_notify", {"result": "cancelled"})
-        return {"content": [{"type": "text", "text": "Slack webhook request was cancelled."}]}
-    except aiohttp.ClientError:
-        _record_service_error("slack_notify", start_time, "network_client_error")
-        _audit("slack_notify", {"result": "network_client_error"})
-        return {"content": [{"type": "text", "text": "Failed to reach Slack webhook."}]}
-    except Exception:
-        _record_service_error("slack_notify", start_time, "unexpected")
-        _audit("slack_notify", {"result": "unexpected"})
-        log.exception("Unexpected slack_notify failure")
-        return {"content": [{"type": "text", "text": "Unexpected Slack webhook error."}]}
+    with _recovery_operation("slack_notify", operation="send_slack", context={"message_length": len(message)}) as recovery:
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(_slack_webhook_url, json={"text": message}) as resp:
+                    if 200 <= resp.status < 300:
+                        _integration_record_success("channels")
+                        recovery.mark_completed(detail="ok", context={"http_status": resp.status})
+                        record_summary("slack_notify", "ok", start_time)
+                        _audit(
+                            "slack_notify",
+                            _identity_enriched_audit(
+                                {"result": "ok", "message_length": len(message)},
+                                identity_context,
+                                [*identity_chain, "decision:execute"],
+                            ),
+                        )
+                        return {"content": [{"type": "text", "text": "Slack notification sent."}]}
+                    if resp.status in {401, 403}:
+                        recovery.mark_failed("auth", context={"http_status": resp.status})
+                        _record_service_error("slack_notify", start_time, "auth")
+                        _audit("slack_notify", {"result": "auth", "status": resp.status})
+                        return {"content": [{"type": "text", "text": "Slack webhook authentication failed."}]}
+                    recovery.mark_failed("http_error", context={"http_status": resp.status})
+                    _record_service_error("slack_notify", start_time, "http_error")
+                    _audit("slack_notify", {"result": "http_error", "status": resp.status})
+                    return {"content": [{"type": "text", "text": f"Slack webhook error ({resp.status})."}]}
+        except asyncio.TimeoutError:
+            recovery.mark_failed("timeout")
+            _record_service_error("slack_notify", start_time, "timeout")
+            _audit("slack_notify", {"result": "timeout"})
+            return {"content": [{"type": "text", "text": "Slack webhook request timed out."}]}
+        except asyncio.CancelledError:
+            recovery.mark_cancelled()
+            _record_service_error("slack_notify", start_time, "cancelled")
+            _audit("slack_notify", {"result": "cancelled"})
+            return {"content": [{"type": "text", "text": "Slack webhook request was cancelled."}]}
+        except aiohttp.ClientError:
+            recovery.mark_failed("network_client_error")
+            _record_service_error("slack_notify", start_time, "network_client_error")
+            _audit("slack_notify", {"result": "network_client_error"})
+            return {"content": [{"type": "text", "text": "Failed to reach Slack webhook."}]}
+        except Exception:
+            recovery.mark_failed("unexpected")
+            _record_service_error("slack_notify", start_time, "unexpected")
+            _audit("slack_notify", {"result": "unexpected"})
+            log.exception("Unexpected slack_notify failure")
+            return {"content": [{"type": "text", "text": "Unexpected Slack webhook error."}]}
 
 
 async def discord_notify(args: dict[str, Any]) -> dict[str, Any]:
@@ -4170,45 +4458,53 @@ async def discord_notify(args: dict[str, Any]) -> dict[str, Any]:
         )
         return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
     timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_webhook_timeout_sec, minimum=0.1, maximum=30.0))
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(_discord_webhook_url, json={"content": message}) as resp:
-                if 200 <= resp.status < 300:
-                    _integration_record_success("channels")
-                    record_summary("discord_notify", "ok", start_time)
-                    _audit(
-                        "discord_notify",
-                        _identity_enriched_audit(
-                            {"result": "ok", "message_length": len(message)},
-                            identity_context,
-                            [*identity_chain, "decision:execute"],
-                        ),
-                    )
-                    return {"content": [{"type": "text", "text": "Discord notification sent."}]}
-                if resp.status in {401, 403}:
-                    _record_service_error("discord_notify", start_time, "auth")
-                    _audit("discord_notify", {"result": "auth", "status": resp.status})
-                    return {"content": [{"type": "text", "text": "Discord webhook authentication failed."}]}
-                _record_service_error("discord_notify", start_time, "http_error")
-                _audit("discord_notify", {"result": "http_error", "status": resp.status})
-                return {"content": [{"type": "text", "text": f"Discord webhook error ({resp.status})."}]}
-    except asyncio.TimeoutError:
-        _record_service_error("discord_notify", start_time, "timeout")
-        _audit("discord_notify", {"result": "timeout"})
-        return {"content": [{"type": "text", "text": "Discord webhook request timed out."}]}
-    except asyncio.CancelledError:
-        _record_service_error("discord_notify", start_time, "cancelled")
-        _audit("discord_notify", {"result": "cancelled"})
-        return {"content": [{"type": "text", "text": "Discord webhook request was cancelled."}]}
-    except aiohttp.ClientError:
-        _record_service_error("discord_notify", start_time, "network_client_error")
-        _audit("discord_notify", {"result": "network_client_error"})
-        return {"content": [{"type": "text", "text": "Failed to reach Discord webhook."}]}
-    except Exception:
-        _record_service_error("discord_notify", start_time, "unexpected")
-        _audit("discord_notify", {"result": "unexpected"})
-        log.exception("Unexpected discord_notify failure")
-        return {"content": [{"type": "text", "text": "Unexpected Discord webhook error."}]}
+    with _recovery_operation("discord_notify", operation="send_discord", context={"message_length": len(message)}) as recovery:
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(_discord_webhook_url, json={"content": message}) as resp:
+                    if 200 <= resp.status < 300:
+                        _integration_record_success("channels")
+                        recovery.mark_completed(detail="ok", context={"http_status": resp.status})
+                        record_summary("discord_notify", "ok", start_time)
+                        _audit(
+                            "discord_notify",
+                            _identity_enriched_audit(
+                                {"result": "ok", "message_length": len(message)},
+                                identity_context,
+                                [*identity_chain, "decision:execute"],
+                            ),
+                        )
+                        return {"content": [{"type": "text", "text": "Discord notification sent."}]}
+                    if resp.status in {401, 403}:
+                        recovery.mark_failed("auth", context={"http_status": resp.status})
+                        _record_service_error("discord_notify", start_time, "auth")
+                        _audit("discord_notify", {"result": "auth", "status": resp.status})
+                        return {"content": [{"type": "text", "text": "Discord webhook authentication failed."}]}
+                    recovery.mark_failed("http_error", context={"http_status": resp.status})
+                    _record_service_error("discord_notify", start_time, "http_error")
+                    _audit("discord_notify", {"result": "http_error", "status": resp.status})
+                    return {"content": [{"type": "text", "text": f"Discord webhook error ({resp.status})."}]}
+        except asyncio.TimeoutError:
+            recovery.mark_failed("timeout")
+            _record_service_error("discord_notify", start_time, "timeout")
+            _audit("discord_notify", {"result": "timeout"})
+            return {"content": [{"type": "text", "text": "Discord webhook request timed out."}]}
+        except asyncio.CancelledError:
+            recovery.mark_cancelled()
+            _record_service_error("discord_notify", start_time, "cancelled")
+            _audit("discord_notify", {"result": "cancelled"})
+            return {"content": [{"type": "text", "text": "Discord webhook request was cancelled."}]}
+        except aiohttp.ClientError:
+            recovery.mark_failed("network_client_error")
+            _record_service_error("discord_notify", start_time, "network_client_error")
+            _audit("discord_notify", {"result": "network_client_error"})
+            return {"content": [{"type": "text", "text": "Failed to reach Discord webhook."}]}
+        except Exception:
+            recovery.mark_failed("unexpected")
+            _record_service_error("discord_notify", start_time, "unexpected")
+            _audit("discord_notify", {"result": "unexpected"})
+            log.exception("Unexpected discord_notify failure")
+            return {"content": [{"type": "text", "text": "Unexpected Discord webhook error."}]}
 
 
 def _record_email_history(recipient: str, subject: str) -> None:
@@ -4327,33 +4623,42 @@ async def email_send(args: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         return {"content": [{"type": "text", "text": preview}]}
-    try:
-        await asyncio.to_thread(_send_email_sync, recipient=recipient, subject=subject, body=body)
-    except smtplib.SMTPAuthenticationError:
-        _record_service_error("email_send", start_time, "auth")
-        _audit("email_send", {"result": "auth", "to": recipient})
-        return {"content": [{"type": "text", "text": "Email SMTP authentication failed."}]}
-    except (smtplib.SMTPException, OSError, TimeoutError):
-        _record_service_error("email_send", start_time, "network_client_error")
-        _audit("email_send", {"result": "network_client_error", "to": recipient})
-        return {"content": [{"type": "text", "text": "Failed to reach SMTP server."}]}
-    except Exception:
-        _record_service_error("email_send", start_time, "unexpected")
-        _audit("email_send", {"result": "unexpected", "to": recipient})
-        log.exception("Unexpected email_send failure")
-        return {"content": [{"type": "text", "text": "Unexpected email send error."}]}
-    _integration_record_success("email")
-    _record_email_history(recipient, subject)
-    record_summary("email_send", "ok", start_time)
-    _audit(
+    with _recovery_operation(
         "email_send",
-        _identity_enriched_audit(
-            {"result": "ok", "to": recipient, "subject_length": len(subject), "body_length": len(body)},
-            identity_context,
-            [*identity_chain, "decision:execute"],
-        ),
-    )
-    return {"content": [{"type": "text", "text": f"Email sent to {recipient}."}]}
+        operation=f"send:{recipient}",
+        context={"to": recipient, "subject_length": len(subject)},
+    ) as recovery:
+        try:
+            await asyncio.to_thread(_send_email_sync, recipient=recipient, subject=subject, body=body)
+        except smtplib.SMTPAuthenticationError:
+            recovery.mark_failed("auth")
+            _record_service_error("email_send", start_time, "auth")
+            _audit("email_send", {"result": "auth", "to": recipient})
+            return {"content": [{"type": "text", "text": "Email SMTP authentication failed."}]}
+        except (smtplib.SMTPException, OSError, TimeoutError):
+            recovery.mark_failed("network_client_error")
+            _record_service_error("email_send", start_time, "network_client_error")
+            _audit("email_send", {"result": "network_client_error", "to": recipient})
+            return {"content": [{"type": "text", "text": "Failed to reach SMTP server."}]}
+        except Exception:
+            recovery.mark_failed("unexpected")
+            _record_service_error("email_send", start_time, "unexpected")
+            _audit("email_send", {"result": "unexpected", "to": recipient})
+            log.exception("Unexpected email_send failure")
+            return {"content": [{"type": "text", "text": "Unexpected email send error."}]}
+        _integration_record_success("email")
+        _record_email_history(recipient, subject)
+        recovery.mark_completed(detail="ok")
+        record_summary("email_send", "ok", start_time)
+        _audit(
+            "email_send",
+            _identity_enriched_audit(
+                {"result": "ok", "to": recipient, "subject_length": len(subject), "body_length": len(body)},
+                identity_context,
+                [*identity_chain, "decision:execute"],
+            ),
+        )
+        return {"content": [{"type": "text", "text": f"Email sent to {recipient}."}]}
 
 
 async def email_summary(args: dict[str, Any]) -> dict[str, Any]:
@@ -4978,61 +5283,71 @@ async def todoist_add_task(args: dict[str, Any]) -> dict[str, Any]:
         "Content-Type": "application/json",
     }
     timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_todoist_timeout_sec))
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post("https://api.todoist.com/rest/v2/tasks", headers=headers, json=payload) as resp:
-                if resp.status in {200, 201}:
-                    try:
-                        data = await resp.json()
-                    except Exception:
-                        _record_service_error("todoist_add_task", start_time, "invalid_json")
-                        _audit("todoist_add_task", {"result": "invalid_json"})
-                        return {"content": [{"type": "text", "text": "Invalid Todoist response while creating task."}]}
-                    if not isinstance(data, dict):
-                        _record_service_error("todoist_add_task", start_time, "invalid_json")
-                        _audit("todoist_add_task", {"result": "invalid_json"})
-                        return {"content": [{"type": "text", "text": "Invalid Todoist response while creating task."}]}
-                    task_id = data.get("id")
-                    _integration_record_success("todoist")
-                    record_summary("todoist_add_task", "ok", start_time)
-                    _audit(
-                        "todoist_add_task",
-                        _identity_enriched_audit(
-                            {
-                                "result": "ok",
-                                "task_id": task_id,
-                                "content_length": len(content),
-                                "project_id": payload.get("project_id", ""),
-                            },
-                            identity_context,
-                            [*identity_chain, "decision:execute"],
-                        ),
-                    )
-                    return {"content": [{"type": "text", "text": f"Todoist task created{f' (id={task_id})' if task_id else ''}."}]}
-                if resp.status == 401:
-                    _record_service_error("todoist_add_task", start_time, "auth")
-                    _audit("todoist_add_task", {"result": "auth"})
-                    return {"content": [{"type": "text", "text": "Todoist authentication failed. Check TODOIST_API_TOKEN."}]}
-                _record_service_error("todoist_add_task", start_time, "http_error")
-                _audit("todoist_add_task", {"result": "http_error", "status": resp.status})
-                return {"content": [{"type": "text", "text": f"Todoist error ({resp.status}) creating task."}]}
-    except asyncio.TimeoutError:
-        _record_service_error("todoist_add_task", start_time, "timeout")
-        _audit("todoist_add_task", {"result": "timeout"})
-        return {"content": [{"type": "text", "text": "Todoist request timed out."}]}
-    except asyncio.CancelledError:
-        _record_service_error("todoist_add_task", start_time, "cancelled")
-        _audit("todoist_add_task", {"result": "cancelled"})
-        return {"content": [{"type": "text", "text": "Todoist request was cancelled."}]}
-    except aiohttp.ClientError as e:
-        _record_service_error("todoist_add_task", start_time, "network_client_error")
-        _audit("todoist_add_task", {"result": "network_client_error"})
-        return {"content": [{"type": "text", "text": f"Failed to reach Todoist: {e}"}]}
-    except Exception:
-        _record_service_error("todoist_add_task", start_time, "unexpected")
-        _audit("todoist_add_task", {"result": "unexpected"})
-        log.exception("Unexpected todoist_add_task failure")
-        return {"content": [{"type": "text", "text": "Unexpected Todoist error."}]}
+    with _recovery_operation("todoist_add_task", operation="create_task", context={"content_length": len(content)}) as recovery:
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post("https://api.todoist.com/rest/v2/tasks", headers=headers, json=payload) as resp:
+                    if resp.status in {200, 201}:
+                        try:
+                            data = await resp.json()
+                        except Exception:
+                            recovery.mark_failed("invalid_json")
+                            _record_service_error("todoist_add_task", start_time, "invalid_json")
+                            _audit("todoist_add_task", {"result": "invalid_json"})
+                            return {"content": [{"type": "text", "text": "Invalid Todoist response while creating task."}]}
+                        if not isinstance(data, dict):
+                            recovery.mark_failed("invalid_json")
+                            _record_service_error("todoist_add_task", start_time, "invalid_json")
+                            _audit("todoist_add_task", {"result": "invalid_json"})
+                            return {"content": [{"type": "text", "text": "Invalid Todoist response while creating task."}]}
+                        task_id = data.get("id")
+                        _integration_record_success("todoist")
+                        recovery.mark_completed(detail="ok", context={"task_id": task_id})
+                        record_summary("todoist_add_task", "ok", start_time)
+                        _audit(
+                            "todoist_add_task",
+                            _identity_enriched_audit(
+                                {
+                                    "result": "ok",
+                                    "task_id": task_id,
+                                    "content_length": len(content),
+                                    "project_id": payload.get("project_id", ""),
+                                },
+                                identity_context,
+                                [*identity_chain, "decision:execute"],
+                            ),
+                        )
+                        return {"content": [{"type": "text", "text": f"Todoist task created{f' (id={task_id})' if task_id else ''}."}]}
+                    if resp.status == 401:
+                        recovery.mark_failed("auth", context={"http_status": resp.status})
+                        _record_service_error("todoist_add_task", start_time, "auth")
+                        _audit("todoist_add_task", {"result": "auth"})
+                        return {"content": [{"type": "text", "text": "Todoist authentication failed. Check TODOIST_API_TOKEN."}]}
+                    recovery.mark_failed("http_error", context={"http_status": resp.status})
+                    _record_service_error("todoist_add_task", start_time, "http_error")
+                    _audit("todoist_add_task", {"result": "http_error", "status": resp.status})
+                    return {"content": [{"type": "text", "text": f"Todoist error ({resp.status}) creating task."}]}
+        except asyncio.TimeoutError:
+            recovery.mark_failed("timeout")
+            _record_service_error("todoist_add_task", start_time, "timeout")
+            _audit("todoist_add_task", {"result": "timeout"})
+            return {"content": [{"type": "text", "text": "Todoist request timed out."}]}
+        except asyncio.CancelledError:
+            recovery.mark_cancelled()
+            _record_service_error("todoist_add_task", start_time, "cancelled")
+            _audit("todoist_add_task", {"result": "cancelled"})
+            return {"content": [{"type": "text", "text": "Todoist request was cancelled."}]}
+        except aiohttp.ClientError as e:
+            recovery.mark_failed("network_client_error")
+            _record_service_error("todoist_add_task", start_time, "network_client_error")
+            _audit("todoist_add_task", {"result": "network_client_error"})
+            return {"content": [{"type": "text", "text": f"Failed to reach Todoist: {e}"}]}
+        except Exception:
+            recovery.mark_failed("unexpected")
+            _record_service_error("todoist_add_task", start_time, "unexpected")
+            _audit("todoist_add_task", {"result": "unexpected"})
+            log.exception("Unexpected todoist_add_task failure")
+            return {"content": [{"type": "text", "text": "Unexpected Todoist error."}]}
 
 
 async def todoist_list_tasks(args: dict[str, Any]) -> dict[str, Any]:
@@ -5207,69 +5522,85 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
         "priority": priority,
     }
     timeout = aiohttp.ClientTimeout(total=_effective_act_timeout(_pushover_timeout_sec))
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post("https://api.pushover.net/1/messages.json", data=payload) as resp:
-                if resp.status == 200:
-                    try:
-                        body = await resp.json()
-                    except Exception:
-                        _record_service_error("pushover_notify", start_time, "invalid_json")
-                        _audit("pushover_notify", {"result": "invalid_json"})
-                        return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
-                    if not isinstance(body, dict):
-                        _record_service_error("pushover_notify", start_time, "invalid_json")
-                        _audit("pushover_notify", {"result": "invalid_json"})
-                        return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
-                    status_value = _as_exact_int(body.get("status"))
-                    if status_value is None:
-                        _record_service_error("pushover_notify", start_time, "invalid_json")
-                        _audit("pushover_notify", {"result": "invalid_json"})
-                        return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
-                    if status_value != 1:
-                        errors = body.get("errors")
-                        error_text = ""
-                        if isinstance(errors, list):
-                            error_text = "; ".join(str(item) for item in errors if str(item).strip())
-                        _record_service_error("pushover_notify", start_time, "api_error")
-                        _audit("pushover_notify", {"result": "api_error", "error": error_text})
-                        return {"content": [{"type": "text", "text": f"Pushover rejected notification{f': {error_text}' if error_text else '.'}"}]}
-                    _integration_record_success("pushover")
-                    record_summary("pushover_notify", "ok", start_time)
-                    _audit(
-                        "pushover_notify",
-                        {
-                            "result": "ok",
-                            "title_length": len(title),
-                            "priority": priority,
-                            "message_length": len(message),
-                        },
-                    )
-                    return {"content": [{"type": "text", "text": "Notification sent."}]}
-                if resp.status in {400, 401}:
-                    _record_service_error("pushover_notify", start_time, "auth")
-                    _audit("pushover_notify", {"result": "auth", "status": resp.status})
-                    return {"content": [{"type": "text", "text": "Pushover authentication failed."}]}
-                _record_service_error("pushover_notify", start_time, "http_error")
-                _audit("pushover_notify", {"result": "http_error", "status": resp.status})
-                return {"content": [{"type": "text", "text": f"Pushover error ({resp.status}) sending notification."}]}
-    except asyncio.TimeoutError:
-        _record_service_error("pushover_notify", start_time, "timeout")
-        _audit("pushover_notify", {"result": "timeout"})
-        return {"content": [{"type": "text", "text": "Pushover request timed out."}]}
-    except asyncio.CancelledError:
-        _record_service_error("pushover_notify", start_time, "cancelled")
-        _audit("pushover_notify", {"result": "cancelled"})
-        return {"content": [{"type": "text", "text": "Pushover request was cancelled."}]}
-    except aiohttp.ClientError as e:
-        _record_service_error("pushover_notify", start_time, "network_client_error")
-        _audit("pushover_notify", {"result": "network_client_error"})
-        return {"content": [{"type": "text", "text": f"Failed to reach Pushover: {e}"}]}
-    except Exception:
-        _record_service_error("pushover_notify", start_time, "unexpected")
-        _audit("pushover_notify", {"result": "unexpected"})
-        log.exception("Unexpected pushover_notify failure")
-        return {"content": [{"type": "text", "text": "Unexpected Pushover error."}]}
+    with _recovery_operation(
+        "pushover_notify",
+        operation="send_notification",
+        context={"priority": priority, "message_length": len(message)},
+    ) as recovery:
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post("https://api.pushover.net/1/messages.json", data=payload) as resp:
+                    if resp.status == 200:
+                        try:
+                            body = await resp.json()
+                        except Exception:
+                            recovery.mark_failed("invalid_json")
+                            _record_service_error("pushover_notify", start_time, "invalid_json")
+                            _audit("pushover_notify", {"result": "invalid_json"})
+                            return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
+                        if not isinstance(body, dict):
+                            recovery.mark_failed("invalid_json")
+                            _record_service_error("pushover_notify", start_time, "invalid_json")
+                            _audit("pushover_notify", {"result": "invalid_json"})
+                            return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
+                        status_value = _as_exact_int(body.get("status"))
+                        if status_value is None:
+                            recovery.mark_failed("invalid_json")
+                            _record_service_error("pushover_notify", start_time, "invalid_json")
+                            _audit("pushover_notify", {"result": "invalid_json"})
+                            return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
+                        if status_value != 1:
+                            errors = body.get("errors")
+                            error_text = ""
+                            if isinstance(errors, list):
+                                error_text = "; ".join(str(item) for item in errors if str(item).strip())
+                            recovery.mark_failed("api_error")
+                            _record_service_error("pushover_notify", start_time, "api_error")
+                            _audit("pushover_notify", {"result": "api_error", "error": error_text})
+                            return {"content": [{"type": "text", "text": f"Pushover rejected notification{f': {error_text}' if error_text else '.'}"}]}
+                        _integration_record_success("pushover")
+                        recovery.mark_completed(detail="ok", context={"http_status": resp.status})
+                        record_summary("pushover_notify", "ok", start_time)
+                        _audit(
+                            "pushover_notify",
+                            {
+                                "result": "ok",
+                                "title_length": len(title),
+                                "priority": priority,
+                                "message_length": len(message),
+                            },
+                        )
+                        return {"content": [{"type": "text", "text": "Notification sent."}]}
+                    if resp.status in {400, 401}:
+                        recovery.mark_failed("auth", context={"http_status": resp.status})
+                        _record_service_error("pushover_notify", start_time, "auth")
+                        _audit("pushover_notify", {"result": "auth", "status": resp.status})
+                        return {"content": [{"type": "text", "text": "Pushover authentication failed."}]}
+                    recovery.mark_failed("http_error", context={"http_status": resp.status})
+                    _record_service_error("pushover_notify", start_time, "http_error")
+                    _audit("pushover_notify", {"result": "http_error", "status": resp.status})
+                    return {"content": [{"type": "text", "text": f"Pushover error ({resp.status}) sending notification."}]}
+        except asyncio.TimeoutError:
+            recovery.mark_failed("timeout")
+            _record_service_error("pushover_notify", start_time, "timeout")
+            _audit("pushover_notify", {"result": "timeout"})
+            return {"content": [{"type": "text", "text": "Pushover request timed out."}]}
+        except asyncio.CancelledError:
+            recovery.mark_cancelled()
+            _record_service_error("pushover_notify", start_time, "cancelled")
+            _audit("pushover_notify", {"result": "cancelled"})
+            return {"content": [{"type": "text", "text": "Pushover request was cancelled."}]}
+        except aiohttp.ClientError as e:
+            recovery.mark_failed("network_client_error")
+            _record_service_error("pushover_notify", start_time, "network_client_error")
+            _audit("pushover_notify", {"result": "network_client_error"})
+            return {"content": [{"type": "text", "text": f"Failed to reach Pushover: {e}"}]}
+        except Exception:
+            recovery.mark_failed("unexpected")
+            _record_service_error("pushover_notify", start_time, "unexpected")
+            _audit("pushover_notify", {"result": "unexpected"})
+            log.exception("Unexpected pushover_notify failure")
+            return {"content": [{"type": "text", "text": "Unexpected Pushover error."}]}
 
 
 async def skills_list(args: dict[str, Any]) -> dict[str, Any]:
@@ -5449,6 +5780,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "memory_retention_days": _memory_retention_days,
             "audit_retention_days": _audit_retention_days,
         },
+        "recovery_journal": _recovery_journal_status(limit=20),
         "memory": memory_status,
         "audit": _audit_status(),
         "recent_tools": recent_tools,
@@ -5488,6 +5820,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "observability",
             "plan_preview",
             "retention_policy",
+            "recovery_journal",
             "memory",
             "audit",
             "recent_tools",
@@ -5612,6 +5945,15 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
         "retention_policy_required": [
             "memory_retention_days",
             "audit_retention_days",
+        ],
+        "recovery_journal_required": [
+            "path",
+            "exists",
+            "entry_count",
+            "tracked_actions",
+            "unresolved_count",
+            "interrupted_count",
+            "recent",
         ],
         "health_required": [
             "health_level",

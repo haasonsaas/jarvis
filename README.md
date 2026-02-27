@@ -105,6 +105,7 @@ cp .env.example .env
 # Optional: MODEL_FAILOVER_ENABLED / MODEL_SECONDARY_MODE / WATCHDOG_* / TURN_TIMEOUT_ACT_SEC / STARTUP_STRICT
 # Optional: OPERATOR_SERVER_ENABLED / OPERATOR_SERVER_HOST / OPERATOR_SERVER_PORT / OPERATOR_AUTH_TOKEN
 # Optional: WEBHOOK_INBOUND_ENABLED / WEBHOOK_INBOUND_TOKEN
+# Optional: RECOVERY_JOURNAL_PATH (persistent interrupted-action journal)
 # Optional: OBSERVABILITY_* (DB/state/event paths, burst threshold, snapshot interval)
 # Optional: SKILLS_ENABLED / SKILLS_DIR / SKILLS_ALLOWLIST / SKILLS_REQUIRE_SIGNATURE / SKILLS_SIGNATURE_KEY
 ```
@@ -133,6 +134,8 @@ Smart home safety defaults:
 - Automation consumers can use:
   - `system_status` (includes `schema_version`)
   - `system_status.turn_timeouts` (listen/think/speak/act timeout budgets)
+  - `system_status.integrations.*.circuit_breaker` (open/remaining/failure state per integration)
+  - `system_status.recovery_journal` (interrupted-action reconciliation summary)
   - `system_status_contract` (stable required-field contract)
 - Operator console/API security:
   - Set `OPERATOR_AUTH_TOKEN` when binding `OPERATOR_SERVER_HOST` to a non-loopback interface.

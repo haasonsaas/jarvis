@@ -172,6 +172,12 @@ class Config:
     observability_event_log_path: str = field(
         default_factory=lambda: os.environ.get("OBSERVABILITY_EVENT_LOG_PATH", os.path.expanduser("~/.jarvis/events.jsonl"))
     )
+    recovery_journal_path: str = field(
+        default_factory=lambda: os.environ.get(
+            "RECOVERY_JOURNAL_PATH",
+            os.path.expanduser("~/.jarvis/recovery-journal.jsonl"),
+        )
+    )
     observability_failure_burst_threshold: int = field(
         default_factory=lambda: _env_int("OBSERVABILITY_FAILURE_BURST_THRESHOLD", 5)
     )
