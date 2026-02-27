@@ -1,0 +1,63 @@
+name: Fault Profiles
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Fault profile to run"
+        type: choice
+        default: all
+        options:
+          - all
+          - quick
+          - network
+          - storage
+          - contract
+
+concurrency:
+  group: fault-profiles-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fault-profiles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - quick
+          - network
+          - storage
+          - contract
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.profile == 'all' || github.event.inputs.profile == matrix.profile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Run fault profile
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/fault-profiles
+          ./scripts/run_fault_profiles.sh "${{ matrix.profile }}" | tee ".artifacts/fault-profiles/${{ matrix.profile }}.log"
+
+      - name: Upload profile artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fault-profile-${{ matrix.profile }}-${{ github.run_id }}
+          path: .artifacts/fault-profiles/${{ matrix.profile }}.log
+          if-no-files-found: warn

@@ -3725,10 +3725,12 @@ class TestServicesTools:
     def test_fault_subset_selector_covers_critical_taxonomy_codes(self):
         project_root = Path(__file__).resolve().parents[1]
         script_text = (project_root / "scripts" / "test_faults.sh").read_text()
+        profile_runner_text = (project_root / "scripts" / "run_fault_profiles.sh").read_text()
         makefile_text = (project_root / "Makefile").read_text()
 
         # Keep Makefile and script contract coupled through delegation.
         assert "./scripts/test_faults.sh" in makefile_text
+        assert "./scripts/run_fault_profiles.sh quick" in script_text
 
         critical_codes = {
             "timeout",
@@ -3743,7 +3745,7 @@ class TestServicesTools:
             "network_client_error",
         }
         for code in critical_codes:
-            assert code in script_text
+            assert code in profile_runner_text
 
     def test_error_taxonomy_doc_mentions_home_assistant_conversation_timers_reminders_calendar(self):
         project_root = Path(__file__).resolve().parents[1]

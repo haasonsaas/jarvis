@@ -107,7 +107,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `RX02` Add persistent recovery journal for interrupted actions and post-restart reconciliation. `P0`
 - [ ] `RX03` Add dead-letter queue for failed outbound notifications/webhooks with replay controls. `P1`
 - [x] `RX04` Add stricter timeout budgets per turn phase (listen/think/speak/act). `P0`
-- [ ] `RX05` Add chaos/fault profile runner in CI for scheduled resilience regression tests. `P1`
+- [x] `RX05` Add chaos/fault profile runner in CI for scheduled resilience regression tests. `P1`
 - [x] `RX06` Add runtime invariant checks to detect impossible state combinations and auto-heal. `P1`
 
 ## 11) Observability and Evaluation (6 items)

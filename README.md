@@ -196,6 +196,9 @@ Smart home safety defaults:
 - Security maintenance: [`docs/operations/security-maintenance.md`](docs/operations/security-maintenance.md).
 - Error taxonomy: [`docs/operations/error-taxonomy.md`](docs/operations/error-taxonomy.md).
 - Observability runbook: [`docs/operations/observability-runbook.md`](docs/operations/observability-runbook.md).
+- Fault resilience profiles:
+  - local: `make test-fault-profiles` (runs `quick`, `network`, `storage`, `contract`)
+  - CI: scheduled `Fault Profiles` workflow runs weekly with per-profile artifacts
 - Skills developer guide: [`docs/operations/skills-development.md`](docs/operations/skills-development.md).
 - Provenance verification: [`docs/operations/provenance-verification.md`](docs/operations/provenance-verification.md).
 - Incident response: [`docs/operations/incident-response.md`](docs/operations/incident-response.md).
