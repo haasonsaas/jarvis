@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/96 Runtime Decomposition
+# Jarvis TODO — Wave 74/97 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 199
-- Completed: 199
+- Total items: 207
+- Completed: 207
 - Remaining: 0
 
 ---
@@ -292,6 +292,17 @@ Last updated: 2026-02-27
 - [x] `W96-Z07` Keep quality/security/readiness baselines green.
 - [x] `W96-Z08` Update TODO and release notes with reliability soak status.
 
+## AA) Wave 97 (completed): __main__ operator-server lifecycle extraction
+
+- [x] `W97-AA01` Profile operator-server provider/lifecycle extraction boundary in `src/jarvis/__main__.py`.
+- [x] `W97-AA02` Create `runtime_operator_server.py` for startup diagnostics, metrics/events providers, and server lifecycle helpers.
+- [x] `W97-AA03` Rewire `Jarvis` operator provider methods to runtime helpers.
+- [x] `W97-AA04` Rewire `Jarvis._start_operator_server`/`_stop_operator_server` to runtime helpers while preserving call contracts.
+- [x] `W97-AA05` Add unit coverage for runtime operator-server helper behavior.
+- [x] `W97-AA06` Extend import-boundary coverage for new runtime helper module.
+- [x] `W97-AA07` Run full quality/security/readiness gates.
+- [x] `W97-AA08` Update TODO + tranche snapshot.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -317,6 +328,7 @@ Last updated: 2026-02-27
   - `services_integrations_facade_runtime.py`
   - `runtime_memory_correction.py`
   - `runtime_conversation_trace.py`
+  - `runtime_operator_server.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -344,6 +356,7 @@ Last updated: 2026-02-27
   - STT fallback orchestration moved from `Jarvis._transcribe_with_fallback` body into `runtime_telemetry.transcribe_with_fallback`.
   - Conversation trace + episodic snapshot logic moved from `Jarvis` method bodies into `runtime_conversation_trace.py`.
   - Added repeatable reliability soak entrypoint `scripts/test_soak_reliability.sh` and `make test-soak-reliability` target.
+  - Operator-server provider/lifecycle logic moved from `Jarvis` method bodies into `runtime_operator_server.py`.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -368,7 +381,8 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_voice_profile.py tests/test_runtime_state.py -k "parse_memory_correction_command or classify_user_intent or looks_like_user_correction or parse_control_bool or parse_control_choice or followup_carryover"`: `12 passed`.
   - `uv run pytest -q tests/test_main_audio.py tests/test_main_lifecycle.py tests/test_runtime_voice_profile.py tests/test_runtime_state.py -k "transcribe_with_fallback or parse_memory_correction_command or parse_control_bool or parse_control_choice or followup_carryover"`: `11 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_operator_status.py tests/test_main_audio.py tests/test_import_boundaries.py`: `248 passed`.
+  - `uv run pytest -q tests/test_runtime_operator_server.py tests/test_main_lifecycle.py tests/test_runtime_operator_status.py tests/test_import_boundaries.py -k "operator_server or operator_metrics_provider or operator_events_provider or startup_diagnostics_provider"`: `5 passed`.
   - `./scripts/test_soak_reliability.sh 2`: accepted; `cycles_completed=2/2`, `phase_count=8`, `failed_count=0`, artifact `.artifacts/quality/soak-profile-fast-repeat2.json`.
-  - `make check`: `786 passed`.
-  - `make security-gate`: `786 passed`; fault subset `3 passed`.
+  - `make check`: `791 passed`.
+  - `make security-gate`: `791 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

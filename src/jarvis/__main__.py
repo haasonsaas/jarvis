@@ -60,6 +60,13 @@ from jarvis.runtime_operator_status import (
     operator_auth_risk as _runtime_operator_auth_risk,
     operator_status_provider as _runtime_operator_status_provider,
 )
+from jarvis.runtime_operator_server import (
+    operator_events_provider as _runtime_operator_events_provider,
+    operator_metrics_provider as _runtime_operator_metrics_provider,
+    start_operator_server as _runtime_start_operator_server,
+    startup_diagnostics_provider as _runtime_startup_diagnostics_provider,
+    stop_operator_server as _runtime_stop_operator_server,
+)
 from jarvis.runtime_observability_status import (
     default_observability_status_snapshot as _runtime_default_observability_status_snapshot,
 )
@@ -951,25 +958,13 @@ class Jarvis:
         )
 
     def _startup_diagnostics_provider(self) -> list[str]:
-        warnings = list(getattr(self.config, "startup_warnings", []))
-        blockers = self._startup_blockers()
-        return [*warnings, *[f"BLOCKER: {item}" for item in blockers]]
+        return _runtime_startup_diagnostics_provider(self)
 
     def _operator_metrics_provider(self) -> str:
-        observability = getattr(self, "_observability", None)
-        if observability is None:
-            return ""
-        with suppress(Exception):
-            return observability.prometheus_metrics()
-        return ""
+        return _runtime_operator_metrics_provider(self)
 
     def _operator_events_provider(self) -> list[dict[str, Any]]:
-        observability = getattr(self, "_observability", None)
-        if observability is None:
-            return []
-        with suppress(Exception):
-            return observability.recent_events(limit=100)
-        return []
+        return _runtime_operator_events_provider(self)
 
     _parse_control_bool = staticmethod(_runtime_parse_control_bool)
     _parse_control_choice = staticmethod(_runtime_parse_control_choice)
@@ -1085,55 +1080,15 @@ class Jarvis:
         return await _runtime_handle_operator_control(self, action, payload)
 
     async def _start_operator_server(self) -> None:
-        if not self.config.operator_server_enabled:
-            return
-        if self._operator_server is not None:
-            return
-        server = OperatorServer(
-            host=self.config.operator_server_host,
-            port=self.config.operator_server_port,
-            status_provider=self._operator_status_provider,
-            diagnostics_provider=self._startup_diagnostics_provider,
-            control_handler=self._operator_control_handler,
-            control_schema_provider=self._operator_control_schema,
-            metrics_provider=self._operator_metrics_provider,
-            events_provider=self._operator_events_provider,
-            conversation_trace_provider=self._operator_conversation_trace_provider,
-            inbound_callback=lambda payload, headers, path, source: service_tools.record_inbound_webhook_event(
-                payload=payload,
-                headers=headers,
-                path=path,
-                source=source,
-            ),
-            inbound_enabled=self.config.webhook_inbound_enabled,
-            inbound_token=self.config.webhook_inbound_token or self.config.webhook_auth_token,
-            operator_auth_mode=self.config.operator_auth_mode,
-            operator_auth_token=self.config.operator_auth_token,
+        await _runtime_start_operator_server(
+            self,
+            operator_server_class=OperatorServer,
+            record_inbound_webhook_event_fn=service_tools.record_inbound_webhook_event,
+            logger=log,
         )
-        try:
-            await server.start()
-        except Exception as exc:
-            log.warning("Operator server failed to start: %s", exc)
-            return
-        self._operator_server = server
-        observability = getattr(self, "_observability", None)
-        if observability is not None:
-            with suppress(Exception):
-                observability.record_event(
-                    "operator_server_started",
-                    {
-                        "host": self.config.operator_server_host,
-                        "port": self.config.operator_server_port,
-                    },
-                )
 
     async def _stop_operator_server(self) -> None:
-        server = getattr(self, "_operator_server", None)
-        if server is None:
-            return
-        with suppress(Exception):
-            await server.stop()
-        self._operator_server = None
+        await _runtime_stop_operator_server(self)
 
     def stop(self) -> None:
         """Shut down all subsystems."""
