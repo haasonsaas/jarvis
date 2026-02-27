@@ -195,15 +195,15 @@ from jarvis.tools.services_circuit_facade_runtime import (
     integration_record_failure as _facade_integration_record_failure,
     integration_record_success as _facade_integration_record_success,
 )
-from jarvis.tools.services_policy_runtime import (
-    hhmm_to_minutes as _runtime_hhmm_to_minutes,
-    identity_profile_level as _runtime_identity_profile_level,
-    normalize_nudge_policy as _runtime_normalize_nudge_policy,
-    profile_rank as _runtime_profile_rank,
-    prune_guest_sessions as _runtime_prune_guest_sessions,
-    quiet_window_active as _runtime_quiet_window_active,
-    register_guest_session as _runtime_register_guest_session,
-    resolve_guest_session as _runtime_resolve_guest_session,
+from jarvis.tools.services_policy_facade_runtime import (
+    hhmm_to_minutes as _facade_hhmm_to_minutes,
+    identity_profile_level as _facade_identity_profile_level,
+    normalize_nudge_policy as _facade_normalize_nudge_policy,
+    profile_rank as _facade_profile_rank,
+    prune_guest_sessions as _facade_prune_guest_sessions,
+    quiet_window_active as _facade_quiet_window_active,
+    register_guest_session as _facade_register_guest_session,
+    resolve_guest_session as _facade_resolve_guest_session,
 )
 from jarvis.tools.services_automation_runtime import (
     apply_ha_automation_config as _runtime_apply_ha_automation_config,
@@ -667,48 +667,14 @@ _integration_circuit_snapshot = _facade_integration_circuit_snapshot
 _integration_circuit_open_message = _facade_integration_circuit_open_message
 
 
-def _normalize_nudge_policy(value: Any) -> str:
-    return _runtime_normalize_nudge_policy(value)
-
-
-def _hhmm_to_minutes(value: str) -> int | None:
-    return _runtime_hhmm_to_minutes(value)
-
-
-def _quiet_window_active(*, now_ts: float | None = None) -> bool:
-    return _runtime_quiet_window_active(_services_module(), now_ts=now_ts)
-
-
-def _identity_profile_level(profile: str) -> str:
-    return _runtime_identity_profile_level(profile)
-
-
-def _profile_rank(profile: str) -> int:
-    return _runtime_profile_rank(profile)
-
-
-def _prune_guest_sessions(*, now_ts: float | None = None) -> None:
-    _runtime_prune_guest_sessions(_services_module(), now_ts=now_ts)
-
-
-def _resolve_guest_session(token: str, *, now_ts: float | None = None) -> dict[str, Any] | None:
-    return _runtime_resolve_guest_session(_services_module(), token, now_ts=now_ts)
-
-
-def _register_guest_session(
-    *,
-    guest_id: str,
-    capabilities: list[str],
-    ttl_sec: float,
-    now_ts: float | None = None,
-) -> dict[str, Any]:
-    return _runtime_register_guest_session(
-        _services_module(),
-        guest_id=guest_id,
-        capabilities=capabilities,
-        ttl_sec=ttl_sec,
-        now_ts=now_ts,
-    )
+_normalize_nudge_policy = _facade_normalize_nudge_policy
+_hhmm_to_minutes = _facade_hhmm_to_minutes
+_quiet_window_active = _facade_quiet_window_active
+_identity_profile_level = _facade_identity_profile_level
+_profile_rank = _facade_profile_rank
+_prune_guest_sessions = _facade_prune_guest_sessions
+_resolve_guest_session = _facade_resolve_guest_session
+_register_guest_session = _facade_register_guest_session
 
 
 def _extract_area_from_entity(entity_id: str) -> str:

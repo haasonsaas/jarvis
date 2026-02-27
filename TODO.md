@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/81 Runtime Decomposition
+# Jarvis TODO — Wave 74/82 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 79
-- Completed: 71
+- Total items: 87
+- Completed: 79
 - Remaining: 8
 
 ---
@@ -116,16 +116,27 @@ Last updated: 2026-02-27
 - [x] `W80-J07` Run `make security-gate`.
 - [x] `W80-J08` Run `./scripts/jarvis_readiness.sh fast`.
 
-## K) Wave 81 (next): policy/guest-session wrapper extraction
+## K) Wave 81 (completed): policy/guest-session wrapper extraction
 
-- [ ] `W81-K01` Profile policy/guest-session helper wrapper block in `services.py`.
-- [ ] `W81-K02` Create `services_policy_facade_runtime.py` for policy and guest-session wrappers.
-- [ ] `W81-K03` Preserve `services.py` compatibility names used by runtime/domain modules.
-- [ ] `W81-K04` Extend import-boundary coverage for new policy facade module.
-- [ ] `W81-K05` Run focused guest-session + policy regression tests.
-- [ ] `W81-K06` Run `make check`.
-- [ ] `W81-K07` Run `make security-gate`.
-- [ ] `W81-K08` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W81-K01` Profile policy/guest-session helper wrapper block in `services.py`.
+- [x] `W81-K02` Create `services_policy_facade_runtime.py` for policy and guest-session wrappers.
+- [x] `W81-K03` Preserve `services.py` compatibility names used by runtime/domain modules.
+- [x] `W81-K04` Extend import-boundary coverage for new policy facade module.
+- [x] `W81-K05` Run focused guest-session + policy regression tests.
+- [x] `W81-K06` Run `make check`.
+- [x] `W81-K07` Run `make security-gate`.
+- [x] `W81-K08` Run `./scripts/jarvis_readiness.sh fast`.
+
+## L) Wave 82 (next): recovery/dead-letter wrapper extraction
+
+- [ ] `W82-L01` Profile recovery/dead-letter wrapper block in `services.py`.
+- [ ] `W82-L02` Create `services_recovery_facade_runtime.py` for recovery/dead-letter wrappers.
+- [ ] `W82-L03` Preserve `services.py` compatibility names used by runtime/domain modules.
+- [ ] `W82-L04` Extend import-boundary coverage for recovery facade module.
+- [ ] `W82-L05` Run focused recovery/dead-letter regression tests.
+- [ ] `W82-L06` Run `make check`.
+- [ ] `W82-L07` Run `make security-gate`.
+- [ ] `W82-L08` Run `./scripts/jarvis_readiness.sh fast`.
 
 ---
 
@@ -138,6 +149,7 @@ Last updated: 2026-02-27
   - `services_circuit_facade_runtime.py`
   - `services_audit_facade_runtime.py`
   - `services_identity_facade_runtime.py`
+  - `services_policy_facade_runtime.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -148,15 +160,17 @@ Last updated: 2026-02-27
   - Circuit-breaker wrapper family moved behind `services_circuit_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Audit wrapper family moved behind `services_audit_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Identity wrapper family moved behind `services_identity_facade_runtime.py` with `services.py` compatibility aliases maintained.
+  - Policy + guest-session wrapper family moved behind `services_policy_facade_runtime.py` with `services.py` compatibility aliases maintained.
 - Validation (Wave 75D/E):
-  - `uv run pytest -q tests/test_import_boundaries.py`: `174 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py`: `175 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py -k "publish_observability_status"`: `2 passed`.
   - `uv run pytest -q tests/test_tools_services.py -k "preview_only_returns_plan_preview or strict_preview_ack_requires_token_then_executes or plan_preview"`: `2 passed`.
   - `uv run pytest -q tests/test_tools_services.py -k "weather_circuit_breaker_blocks_requests_and_surfaces_status or system_status_reports_snapshot or integration_circuit_breaker_required"`: `2 passed`.
   - `uv run pytest -q tests/test_tools_services.py -k "audit"`: `17 passed`.
   - `uv run pytest -q tests/test_tools_services.py -k "identity_profile_deny_blocks_webhook_and_records_requester or identity_high_risk_webhook_requires_approval_code or identity_high_risk_webhook_allows_code_or_trusted_approval or identity_guest_session_capability_enforced"`: `4 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "reminder_notify_due_defers_inside_quiet_window or proactive_nudge_decision_adaptive_quiet_window or identity_guest_session_capability_enforced"`: `3 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_main_audio.py tests/test_runtime_state.py`: `54 passed`.
-  - `make check`: `772 passed`.
-  - `make security-gate`: `772 passed`; fault subset `3 passed`.
+  - `make check`: `773 passed`.
+  - `make security-gate`: `773 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
