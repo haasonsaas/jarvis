@@ -81,6 +81,10 @@ TTS_CONFIDENCE_PAUSE_SEC = 0.18
 TTS_LOW_CONFIDENCE_WORDS = {"maybe", "probably", "might", "not sure", "uncertain", "i think", "i believe"}
 INTENDED_QUERY_MIN_ATTENTION = 0.35
 CONFIRMATION_PHRASE = "Did you mean me?"
+REPAIR_CONFIRMATION_TEMPLATE = 'I may have misheard you as: "{text}". Say confirm to proceed, or repeat your request.'
+REPAIR_REPEAT_PROMPT = "Understood. Please repeat your request."
+REPAIR_CONFIDENCE_THRESHOLD = 0.45
+REPAIR_MIN_WORDS = 2
 AFFIRMATIONS = {"yes", "yeah", "yep", "yup", "correct", "affirmative", "sure", "please"}
 NEGATIONS = {"no", "nope", "nah", "negative"}
 TELEMETRY_LOG_EVERY_TURNS = 5
@@ -317,6 +321,8 @@ class Jarvis:
         self._last_doa_speech: bool | None = None
         self._awaiting_confirmation = False
         self._pending_text: str | None = None
+        self._awaiting_repair_confirmation = False
+        self._repair_candidate_text: str | None = None
         self._followup_carryover: dict[str, Any] = {
             "text": "",
             "intent": "",
@@ -726,6 +732,13 @@ class Jarvis:
         self._awaiting_confirmation = bool(payload.get("awaiting_confirmation", False))
         pending = payload.get("pending_text")
         self._pending_text = str(pending) if isinstance(pending, str) else None
+        self._awaiting_repair_confirmation = bool(payload.get("awaiting_repair_confirmation", False))
+        repair_pending = payload.get("repair_candidate_text")
+        self._repair_candidate_text = str(repair_pending) if isinstance(repair_pending, str) else None
+        if not self._awaiting_repair_confirmation:
+            self._repair_candidate_text = None
+        elif not self._repair_candidate_text:
+            self._awaiting_repair_confirmation = False
 
     def _save_runtime_state(self) -> None:
         path = getattr(self, "_runtime_state_path", None)
@@ -751,6 +764,8 @@ class Jarvis:
             },
             "awaiting_confirmation": bool(getattr(self, "_awaiting_confirmation", False)),
             "pending_text": getattr(self, "_pending_text", None),
+            "awaiting_repair_confirmation": bool(getattr(self, "_awaiting_repair_confirmation", False)),
+            "repair_candidate_text": getattr(self, "_repair_candidate_text", None),
         }
         with suppress(OSError):
             path.write_text(json.dumps(payload, indent=2))
@@ -1790,6 +1805,7 @@ class Jarvis:
                     interruption_likelihood=interruption_likelihood,
                 )
 
+                repair_resolved_this_turn = False
                 if self._awaiting_confirmation:
                     normalized = text.strip().lower()
                     intent = self._voice_controller().confirmation_intent(normalized)
@@ -1827,6 +1843,29 @@ class Jarvis:
                         self._awaiting_confirmation = False
                         self._pending_text = None
 
+                if self._awaiting_repair_confirmation:
+                    normalized = text.strip().lower()
+                    intent = self._voice_controller().confirmation_intent(normalized)
+                    words = re.findall(r"[a-z0-9']+", normalized)
+                    if intent == "confirm" and self._repair_candidate_text:
+                        text = self._repair_candidate_text
+                        self._awaiting_repair_confirmation = False
+                        self._repair_candidate_text = None
+                        repair_resolved_this_turn = True
+                    elif intent in {"deny", "repeat"} and len(words) <= 2:
+                        if self.tts:
+                            await self._tts_queue.put((self._active_response_id, REPAIR_REPEAT_PROMPT, True, 0.0))
+                        else:
+                            print(f"  JARVIS: {REPAIR_REPEAT_PROMPT}")
+                        self.presence.signals.state = State.LISTENING
+                        self._awaiting_repair_confirmation = True
+                        self._publish_voice_status()
+                        continue
+                    else:
+                        self._awaiting_repair_confirmation = False
+                        self._repair_candidate_text = None
+                        repair_resolved_this_turn = True
+
                 intent_class = self._classify_user_intent(text)
                 self._telemetry["intent_turns_total"] += 1.0
                 if intent_class == "action":
@@ -1840,6 +1879,31 @@ class Jarvis:
                     self._telemetry["intent_corrections"] += 1.0
 
                 turn_started_at = time.time()
+                if not repair_resolved_this_turn and self._requires_stt_repair(text, intent_class):
+                    self._awaiting_repair_confirmation = True
+                    self._repair_candidate_text = text
+                    prompt = self._repair_prompt(text)
+                    if self.tts:
+                        await self._tts_queue.put((self._active_response_id, prompt, True, 0.0))
+                    else:
+                        print(f"  JARVIS: {prompt}")
+                    self.presence.signals.state = State.LISTENING
+                    self._publish_voice_status()
+                    self._record_conversation_trace(
+                        user_text=text,
+                        intent_class=intent_class,
+                        turn_started_at=turn_started_at,
+                        stt_latency_ms=stt_latency_ms,
+                        llm_first_sentence_ms=0.0,
+                        tts_first_audio_ms=0.0,
+                        response_success=None,
+                        tool_summaries=[],
+                        lifecycle="repair_requested",
+                        used_brain_response=False,
+                        followup_carryover_applied=False,
+                    )
+                    continue
+
                 memory_correction = self._parse_memory_correction_command(text)
                 if memory_correction is not None:
                     tool_name, payload = memory_correction
@@ -2371,6 +2435,38 @@ class Jarvis:
         if self.presence.signals.doa_last_seen and (now - self.presence.signals.doa_last_seen) <= ATTENTION_RECENCY_SEC:
             return 0.5
         return 0.0
+
+    @staticmethod
+    def _repair_prompt(text: str) -> str:
+        excerpt = " ".join(str(text or "").split())
+        if len(excerpt) > 140:
+            excerpt = excerpt[:137].rstrip() + "..."
+        return REPAIR_CONFIRMATION_TEMPLATE.format(text=excerpt)
+
+    def _requires_stt_repair(self, text: str, intent_class: str) -> bool:
+        if intent_class not in {"action", "hybrid"}:
+            return False
+        phrase = str(text or "").strip()
+        if not phrase:
+            return False
+        if self._looks_like_user_correction(phrase):
+            return False
+        words = re.findall(r"[a-z0-9']+", phrase.lower())
+        if len(words) < REPAIR_MIN_WORDS:
+            return False
+        diagnostics = self._stt_diagnostics_snapshot()
+        confidence_band = str(diagnostics.get("confidence_band", "unknown")).strip().lower()
+        try:
+            confidence_score = float(diagnostics.get("confidence_score", 0.0))
+        except (TypeError, ValueError):
+            confidence_score = 0.0
+        if not math.isfinite(confidence_score):
+            confidence_score = 0.0
+        if confidence_band == "low":
+            return True
+        if confidence_band == "unknown" and confidence_score <= 0.0:
+            return bool(diagnostics.get("fallback_used", False))
+        return confidence_score < REPAIR_CONFIDENCE_THRESHOLD
 
     def _requires_confirmation(self, now: float) -> bool:
         attention = self._attention_confidence(now)

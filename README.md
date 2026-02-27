@@ -141,6 +141,8 @@ Smart home safety defaults:
   - explicit new action phrasing (e.g. `turn on the kitchen lights`) remains a new request.
 - Runtime STT confidence diagnostics are exposed in operator status:
   - `voice_attention.stt_diagnostics` reports confidence score/band, model source, fallback usage, and transcript quality signals.
+- Low-confidence action requests trigger a lightweight repair loop:
+  - Jarvis asks `I may have misheard you as ...` and accepts either `confirm` or an immediate corrected phrase.
 - Home Assistant conversation tool requires both:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`

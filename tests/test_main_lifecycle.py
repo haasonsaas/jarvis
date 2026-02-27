@@ -184,6 +184,29 @@ def test_update_followup_carryover_tracks_resolution_status():
     assert jarvis._followup_carryover["intent"] == "answer"
 
 
+def test_requires_stt_repair_for_low_confidence_action_intent():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._stt_diagnostics = {
+        "confidence_score": 0.2,
+        "confidence_band": "low",
+        "fallback_used": False,
+    }
+
+    assert Jarvis._requires_stt_repair(jarvis, "turn on the bedroom lights", "action") is True
+
+
+def test_requires_stt_repair_skips_answers_and_corrections():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._stt_diagnostics = {
+        "confidence_score": 0.2,
+        "confidence_band": "low",
+        "fallback_used": True,
+    }
+
+    assert Jarvis._requires_stt_repair(jarvis, "what time is it", "answer") is False
+    assert Jarvis._requires_stt_repair(jarvis, "actually, I meant the kitchen", "action") is False
+
+
 def test_apply_turn_choreography_sets_presence_bias_fields():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis.presence = SimpleNamespace(signals=SimpleNamespace(turn_lean=0.0, turn_tilt=0.0, turn_glance_yaw=0.0))
@@ -568,6 +591,8 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     save_target._tts_output_enabled = False
     save_target._awaiting_confirmation = True
     save_target._pending_text = "arm the system"
+    save_target._awaiting_repair_confirmation = True
+    save_target._repair_candidate_text = "turn on the porch lights"
     Jarvis._save_runtime_state(save_target)
 
     payload = json.loads(state_path.read_text(encoding="utf-8"))
@@ -577,6 +602,8 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     assert payload["runtime"]["tts_enabled"] is False
     assert payload["runtime"]["persona_style"] == "friendly"
     assert payload["runtime"]["backchannel_style"] == "expressive"
+    assert payload["awaiting_repair_confirmation"] is True
+    assert payload["repair_candidate_text"] == "turn on the porch lights"
 
     load_target = Jarvis.__new__(Jarvis)
     load_target._runtime_state_path = state_path
@@ -593,6 +620,8 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     load_target._tts_output_enabled = True
     load_target._awaiting_confirmation = False
     load_target._pending_text = None
+    load_target._awaiting_repair_confirmation = False
+    load_target._repair_candidate_text = None
     with patch("jarvis.__main__.service_tools.set_safe_mode") as set_safe_mode:
         Jarvis._load_runtime_state(load_target)
     set_safe_mode.assert_called_once_with(True)
@@ -609,4 +638,6 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     assert load_target.config.backchannel_style == "expressive"
     assert load_target._awaiting_confirmation is True
     assert load_target._pending_text == "arm the system"
+    assert load_target._awaiting_repair_confirmation is True
+    assert load_target._repair_candidate_text == "turn on the porch lights"
     load_target.presence.set_backchannel_style.assert_called_with("expressive")
