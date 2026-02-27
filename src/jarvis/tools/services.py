@@ -7,7 +7,7 @@ Everything is audit-logged.
 from __future__ import annotations
 
 import asyncio  # noqa: F401
-import hashlib
+import hashlib  # noqa: F401  # accessed by domain modules via services module alias
 import hmac  # noqa: F401  # accessed by domain modules via services module alias
 import json
 import logging
@@ -43,9 +43,9 @@ from jarvis.tools.service_policy import (
     INBOUND_MAX_STRING_CHARS,  # noqa: F401  # accessed by runtime module via services alias
     INBOUND_MAX_COLLECTION_ITEMS,  # noqa: F401  # accessed by runtime module via services alias
     AUDIT_REDACTED,  # noqa: F401  # accessed by runtime module via services alias
-    AMBIGUOUS_REFERENCE_TERMS,
-    HIGH_RISK_INTENT_TERMS,
-    EXPLICIT_TARGET_TERMS,
+    AMBIGUOUS_REFERENCE_TERMS,  # noqa: F401  # accessed by runtime module via services alias
+    HIGH_RISK_INTENT_TERMS,  # noqa: F401  # accessed by runtime module via services alias
+    EXPLICIT_TARGET_TERMS,  # noqa: F401  # accessed by runtime module via services alias
     AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS,  # noqa: F401  # accessed by runtime module via services alias
     MEMORY_SCOPE_TAG_PREFIX,  # noqa: F401  # accessed by runtime module via services alias
     MEMORY_SCOPES,  # noqa: F401  # accessed by runtime module via services alias
@@ -167,6 +167,17 @@ from jarvis.tools.services_memory_runtime import (
     memory_source_trail as _runtime_memory_source_trail,
     memory_visible_tags as _runtime_memory_visible_tags,
     normalize_memory_scope as _runtime_normalize_memory_scope,
+)
+from jarvis.tools.services_preview_runtime import (
+    consume_plan_preview_token as _runtime_consume_plan_preview_token,
+    is_ambiguous_entity_target as _runtime_is_ambiguous_entity_target,
+    is_ambiguous_high_risk_text as _runtime_is_ambiguous_high_risk_text,
+    issue_plan_preview_token as _runtime_issue_plan_preview_token,
+    plan_preview_message as _runtime_plan_preview_message,
+    plan_preview_signature as _runtime_plan_preview_signature,
+    preview_gate as _runtime_preview_gate,
+    prune_plan_previews as _runtime_prune_plan_previews,
+    tokenized_words as _runtime_tokenized_words,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -635,95 +646,35 @@ def _identity_enriched_audit(details: dict[str, Any], identity: dict[str, Any], 
 
 
 def _tokenized_words(text: str) -> list[str]:
-    return [token for token in re.findall(r"[a-z0-9_']+", text.lower()) if token]
+    return _runtime_tokenized_words(text)
 
 
 def _is_ambiguous_high_risk_text(text: str) -> bool:
-    sample = str(text).strip().lower()
-    if not sample:
-        return False
-    words = _tokenized_words(sample)
-    if not words:
-        return False
-    has_risk_term = any(term in sample for term in HIGH_RISK_INTENT_TERMS)
-    if not has_risk_term:
-        return False
-    has_ambiguous_reference = any(token in AMBIGUOUS_REFERENCE_TERMS for token in words)
-    has_explicit_target = any(token in EXPLICIT_TARGET_TERMS for token in words)
-    return has_ambiguous_reference and not has_explicit_target
+    return _runtime_is_ambiguous_high_risk_text(_services_module(), text)
 
 
 def _is_ambiguous_entity_target(entity_id: str) -> bool:
-    clean = str(entity_id or "").strip().lower()
-    if "." not in clean:
-        return False
-    name = clean.split(".", 1)[1]
-    words = _tokenized_words(name.replace("-", "_"))
-    if not words:
-        return False
-    return any(token in {"all", "group", "everything", "everyone"} for token in words)
+    return _runtime_is_ambiguous_entity_target(entity_id)
 
 
 def _plan_preview_signature(tool_name: str, payload: dict[str, Any]) -> str:
-    normalized = {"tool": tool_name, "payload": payload}
-    encoded = json.dumps(normalized, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return _runtime_plan_preview_signature(tool_name, payload)
 
 
 def _prune_plan_previews(now_ts: float | None = None) -> None:
-    if not _pending_plan_previews:
-        return
-    current = time.time() if now_ts is None else float(now_ts)
-    stale = [token for token, item in _pending_plan_previews.items() if float(item.get("expires_at", 0.0)) <= current]
-    for token in stale:
-        _pending_plan_previews.pop(token, None)
-    if len(_pending_plan_previews) <= PLAN_PREVIEW_MAX_PENDING:
-        return
-    overflow = len(_pending_plan_previews) - PLAN_PREVIEW_MAX_PENDING
-    oldest = sorted(
-        _pending_plan_previews.items(),
-        key=lambda pair: float(pair[1].get("issued_at", 0.0)),
-    )[:overflow]
-    for token, _ in oldest:
-        _pending_plan_previews.pop(token, None)
+    _runtime_prune_plan_previews(_services_module(), now_ts=now_ts)
 
 
 def _issue_plan_preview_token(tool_name: str, signature: str, risk: str, summary: str) -> str:
-    now = time.time()
-    token = secrets.token_urlsafe(12)
-    _pending_plan_previews[token] = {
-        "tool": tool_name,
-        "signature": signature,
-        "risk": risk,
-        "summary": summary,
-        "issued_at": now,
-        "expires_at": now + PLAN_PREVIEW_TTL_SEC,
-    }
-    _prune_plan_previews(now)
-    return token
+    return _runtime_issue_plan_preview_token(_services_module(), tool_name, signature, risk, summary)
 
 
 def _consume_plan_preview_token(token: str, *, tool_name: str, signature: str) -> bool:
-    if not token:
-        return False
-    _prune_plan_previews()
-    row = _pending_plan_previews.get(token)
-    if not isinstance(row, dict):
-        return False
-    if str(row.get("tool", "")) != tool_name:
-        return False
-    if str(row.get("signature", "")) != signature:
-        return False
-    _pending_plan_previews.pop(token, None)
-    return True
+    return _runtime_consume_plan_preview_token(_services_module(), token, tool_name=tool_name, signature=signature)
 
 
 def _plan_preview_message(*, summary: str, risk: str, token: str, ttl_sec: float = PLAN_PREVIEW_TTL_SEC) -> str:
-    ttl = max(1, int(round(ttl_sec)))
-    return (
-        f"PLAN PREVIEW ({risk} risk): {summary}. "
-        f"To execute, resend with preview_token={token} within {ttl}s."
-    )
+    return _runtime_plan_preview_message(summary=summary, risk=risk, token=token, ttl_sec=ttl_sec)
 
 
 def _preview_gate(
@@ -735,22 +686,15 @@ def _preview_gate(
     signature_payload: dict[str, Any],
     enforce_default: bool,
 ) -> str | None:
-    enforce = _as_bool(args.get("require_preview_ack"), default=enforce_default)
-    preview_only = _as_bool(args.get("preview_only"), default=False) or _as_bool(args.get("preview"), default=False)
-    preview_token = str(args.get("preview_token", "")).strip()
-    signature = _plan_preview_signature(tool_name, signature_payload)
-
-    if preview_only:
-        issued = _issue_plan_preview_token(tool_name, signature, risk, summary)
-        return _plan_preview_message(summary=summary, risk=risk, token=issued)
-    if not enforce:
-        return None
-    if not preview_token:
-        issued = _issue_plan_preview_token(tool_name, signature, risk, summary)
-        return _plan_preview_message(summary=summary, risk=risk, token=issued)
-    if not _consume_plan_preview_token(preview_token, tool_name=tool_name, signature=signature):
-        return "Invalid or expired preview_token. Request a new plan preview with preview_only=true."
-    return None
+    return _runtime_preview_gate(
+        _services_module(),
+        tool_name=tool_name,
+        args=args,
+        risk=risk,
+        summary=summary,
+        signature_payload=signature_payload,
+        enforce_default=enforce_default,
+    )
 
 
 def _format_tool_summaries(items: list[dict[str, object]]) -> str:
