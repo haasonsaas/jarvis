@@ -63,6 +63,9 @@ from jarvis.runtime_operator_status import (
 from jarvis.runtime_observability_status import (
     default_observability_status_snapshot as _runtime_default_observability_status_snapshot,
 )
+from jarvis.runtime_memory_correction import (
+    parse_memory_correction_command as _runtime_parse_memory_correction_command,
+)
 from jarvis.runtime_turn import (
     classify_user_intent as _turn_classify_user_intent,
     completion_success_from_summaries as _turn_completion_success_from_summaries,
@@ -126,8 +129,6 @@ from jarvis.runtime_constants import (
     CONVERSATION_TRACE_MAXLEN,
     EPISODIC_TIMELINE_MAXLEN,
     INTENDED_QUERY_MIN_ATTENTION,
-    MEMORY_FORGET_RE,
-    MEMORY_UPDATE_RE,
     MIN_UTTERANCE,
     REPAIR_CONFIRMATION_TEMPLATE,
     REPAIR_CONFIDENCE_THRESHOLD,
@@ -784,9 +785,7 @@ class Jarvis:
             valid_control_presets=VALID_CONTROL_PRESETS,
         )
 
-    @staticmethod
-    def _percentile(values: list[float], q: float) -> float:
-        return _runtime_percentile(values, q)
+    _percentile = staticmethod(_runtime_percentile)
 
     def _conversation_latency_analytics(self) -> dict[str, Any]:
         traces = list(getattr(self, "_conversation_traces", []))
@@ -852,20 +851,13 @@ class Jarvis:
             telemetry_error_counts=getattr(self, "_telemetry_error_counts", {}),
         )
 
-    @staticmethod
-    def _default_stt_diagnostics() -> dict[str, Any]:
-        return _runtime_default_stt_diagnostics()
-
-    @staticmethod
-    def _stt_confidence_band(score: float, *, has_words: bool) -> str:
-        return _runtime_stt_confidence_band(score, has_words=has_words)
+    _default_stt_diagnostics = staticmethod(_runtime_default_stt_diagnostics)
+    _stt_confidence_band = staticmethod(_runtime_stt_confidence_band)
 
     def _stt_diagnostics_snapshot(self) -> dict[str, Any]:
         return _runtime_stt_diagnostics_snapshot(getattr(self, "_stt_diagnostics", None))
 
-    @staticmethod
-    def _transcribe_with_optional_diagnostics(model: Any, audio: np.ndarray) -> tuple[str, dict[str, Any]]:
-        return _runtime_transcribe_with_optional_diagnostics(model, audio)
+    _transcribe_with_optional_diagnostics = staticmethod(_runtime_transcribe_with_optional_diagnostics)
 
     def _update_stt_diagnostics(
         self,
@@ -997,39 +989,11 @@ class Jarvis:
             return observability.recent_events(limit=100)
         return []
 
-    @staticmethod
-    def _parse_control_bool(value: Any) -> bool | None:
-        return _runtime_parse_control_bool(value)
-
-    @staticmethod
-    def _parse_control_choice(value: Any, allowed: set[str]) -> str | None:
-        return _runtime_parse_control_choice(value, allowed)
-
-    @staticmethod
-    def _parse_memory_correction_command(text: str) -> tuple[str, dict[str, Any]] | None:
-        phrase = str(text or "").strip()
-        if not phrase:
-            return None
-        forget_match = MEMORY_FORGET_RE.fullmatch(phrase)
-        if forget_match:
-            memory_id = int(forget_match.group("memory_id"))
-            return "memory_forget", {"memory_id": memory_id}
-        update_match = MEMORY_UPDATE_RE.fullmatch(phrase)
-        if update_match:
-            memory_id = int(update_match.group("memory_id"))
-            updated_text = update_match.group("text").strip()
-            if not updated_text:
-                return None
-            return "memory_update", {"memory_id": memory_id, "text": updated_text}
-        return None
-
-    @staticmethod
-    def _classify_user_intent(text: str) -> str:
-        return _turn_classify_user_intent(text)
-
-    @staticmethod
-    def _looks_like_user_correction(text: str) -> bool:
-        return _turn_looks_like_user_correction(text)
+    _parse_control_bool = staticmethod(_runtime_parse_control_bool)
+    _parse_control_choice = staticmethod(_runtime_parse_control_choice)
+    _parse_memory_correction_command = staticmethod(_runtime_parse_memory_correction_command)
+    _classify_user_intent = staticmethod(_turn_classify_user_intent)
+    _looks_like_user_correction = staticmethod(_turn_looks_like_user_correction)
 
     def _is_followup_carryover_candidate(self, text: str, *, now_ts: float | None = None) -> bool:
         context = getattr(self, "_followup_carryover", {})
@@ -1071,17 +1035,9 @@ class Jarvis:
             list_summaries_fn=list_summaries,
         )
 
-    @staticmethod
-    def _completion_success_from_summaries(summaries: list[dict[str, Any]]) -> bool | None:
-        return _turn_completion_success_from_summaries(summaries)
-
-    @staticmethod
-    def _tool_call_trace_items(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return _turn_tool_call_trace_items(summaries)
-
-    @staticmethod
-    def _policy_decisions_from_summaries(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return _turn_policy_decisions_from_summaries(summaries)
+    _completion_success_from_summaries = staticmethod(_turn_completion_success_from_summaries)
+    _tool_call_trace_items = staticmethod(_turn_tool_call_trace_items)
+    _policy_decisions_from_summaries = staticmethod(_turn_policy_decisions_from_summaries)
 
     def _record_conversation_trace(
         self,

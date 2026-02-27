@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/92 Runtime Decomposition
+# Jarvis TODO — Wave 74/93 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 167
-- Completed: 167
+- Total items: 175
+- Completed: 175
 - Remaining: 0
 
 ---
@@ -248,6 +248,17 @@ Last updated: 2026-02-27
 - [x] `W92-V07` Run `make security-gate`.
 - [x] `W92-V08` Run `./scripts/jarvis_readiness.sh fast`.
 
+## W) Wave 93 (completed): __main__ wrapper dedupe + memory correction extraction
+
+- [x] `W93-W01` Profile low-risk pass-through wrapper cluster in `src/jarvis/__main__.py`.
+- [x] `W93-W02` Create `runtime_memory_correction.py` for memory correction command parsing.
+- [x] `W93-W03` Replace pure pass-through `Jarvis` wrapper methods with `staticmethod` aliases.
+- [x] `W93-W04` Preserve existing `Jarvis` method names and call sites used by runtime modules/tests.
+- [x] `W93-W05` Run focused lifecycle/runtime control and followup-carryover regression tests.
+- [x] `W93-W06` Run `make check`.
+- [x] `W93-W07` Run `make security-gate`.
+- [x] `W93-W08` Run `./scripts/jarvis_readiness.sh fast`.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -271,6 +282,7 @@ Last updated: 2026-02-27
   - `services_planner_facade_runtime.py`
   - `services_coercion_facade_runtime.py`
   - `services_integrations_facade_runtime.py`
+  - `runtime_memory_correction.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -293,6 +305,8 @@ Last updated: 2026-02-27
   - Planner/automation wrapper family moved behind `services_planner_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Coercion wrapper family moved behind `services_coercion_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Integrations/release wrapper family moved behind `services_integrations_facade_runtime.py` with `services.py` compatibility aliases maintained.
+  - `Jarvis` pass-through wrappers for control/intent/telemetry helpers now use direct `staticmethod` aliases where behavior is identical.
+  - Memory correction parsing logic moved from `Jarvis._parse_memory_correction_command` body into `runtime_memory_correction.py`.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -314,6 +328,7 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py -k "planner_engine or home_automation or autonomy or task_plan or deferred_action"`: `24 passed`.
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py -k "non_finite or bool_sensitivity or include_sensitive or memory_search_non_finite_include_sensitive_uses_default_false"`: `5 passed`.
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py -k "release_channel or quality_report_artifact or capture_note or note_capture"`: `2 passed`.
+  - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_voice_profile.py tests/test_runtime_state.py -k "parse_memory_correction_command or classify_user_intent or looks_like_user_correction or parse_control_bool or parse_control_choice or followup_carryover"`: `12 passed`.
   - `make check`: `784 passed`.
   - `make security-gate`: `784 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
