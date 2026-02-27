@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from jarvis.runtime_preferences import (
     detect_voice_profile_updates,
     learn_voice_preferences,
+    set_persona_style,
     voice_profile_summary,
 )
 
@@ -106,3 +107,16 @@ def test_learn_voice_preferences_returns_empty_without_style_updates() -> None:
     assert updates == {}
     runtime._persist_runtime_state_safe.assert_not_called()
     runtime._publish_voice_status.assert_not_called()
+
+
+def test_set_persona_style_updates_config_and_memory_summary() -> None:
+    memory = SimpleNamespace(upsert_summary=MagicMock())
+    runtime = SimpleNamespace(
+        config=SimpleNamespace(persona_style="composed"),
+        brain=SimpleNamespace(_memory=memory),
+    )
+
+    set_persona_style(runtime, "witty")
+
+    assert runtime.config.persona_style == "witty"
+    memory.upsert_summary.assert_called_once_with("persona_style", "witty")

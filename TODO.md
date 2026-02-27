@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/104 Runtime Decomposition
+# Jarvis TODO — Wave 74/105 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 263
-- Completed: 263
+- Total items: 271
+- Completed: 271
 - Remaining: 0
 
 ---
@@ -380,6 +380,17 @@ Last updated: 2026-02-27
 - [x] `W104-AH07` Run full quality/security/readiness gates.
 - [x] `W104-AH08` Update TODO + tranche snapshot.
 
+## AI) Wave 105 (completed): multimodal/runtime persona helper extraction
+
+- [x] `W105-AI01` Profile `_multimodal_grounding_snapshot` and `_set_persona_style` concentration in `src/jarvis/__main__.py`.
+- [x] `W105-AI02` Extend `runtime_multimodal.py` with `multimodal_grounding_snapshot_for_runtime`.
+- [x] `W105-AI03` Extend `runtime_preferences.py` with `set_persona_style`.
+- [x] `W105-AI04` Rewire `Jarvis._multimodal_grounding_snapshot` and `_set_persona_style` to runtime helpers.
+- [x] `W105-AI05` Add focused unit coverage in `tests/test_runtime_multimodal.py` and `tests/test_runtime_preferences.py`.
+- [x] `W105-AI06` Run focused multimodal/preference/runtime-helper regression tests.
+- [x] `W105-AI07` Run full quality/security/readiness gates.
+- [x] `W105-AI08` Update TODO + tranche snapshot.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -446,6 +457,8 @@ Last updated: 2026-02-27
   - Voice-status payload composition and turn-choreography helpers moved from `Jarvis` method bodies into `runtime_voice_status.py`.
   - Preference-learning updates moved from `Jarvis._learn_voice_preferences` body into `runtime_preferences.learn_voice_preferences`.
   - Observability snapshot publication and watchdog loop logic moved from `Jarvis` method bodies into runtime helper modules.
+  - Multimodal grounding snapshot-from-runtime assembly moved from `Jarvis` method body into `runtime_multimodal.multimodal_grounding_snapshot_for_runtime`.
+  - Persona-style update + memory summary upsert moved from `Jarvis._set_persona_style` into `runtime_preferences.set_persona_style`.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -485,7 +498,9 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_runtime_voice_status.py tests/test_runtime_startup.py tests/test_runtime_turn.py tests/test_runtime_lifecycle.py`: `17 passed`.
   - `uv run pytest -q tests/test_runtime_observability_snapshot.py tests/test_runtime_watchdog.py tests/test_main_audio.py tests/test_main_lifecycle.py tests/test_import_boundaries.py -k "runtime_observability_snapshot or runtime_watchdog or watchdog or observability_snapshot or import_boundary"`: `200 passed, 49 deselected`.
   - `uv run pytest -q tests/test_runtime_voice_status.py tests/test_runtime_preferences.py tests/test_runtime_turn.py tests/test_runtime_startup.py tests/test_runtime_lifecycle.py tests/test_runtime_audio_output.py`: `29 passed`.
+  - `uv run pytest -q tests/test_runtime_multimodal.py tests/test_runtime_preferences.py tests/test_main_lifecycle.py tests/test_import_boundaries.py -k "runtime_multimodal or multimodal_grounding_snapshot_for_runtime or runtime_preferences or set_persona_style or learn_voice_preferences or import_boundary"`: `207 passed, 41 deselected`.
+  - `uv run pytest -q tests/test_runtime_watchdog.py tests/test_runtime_observability_snapshot.py tests/test_runtime_voice_status.py tests/test_runtime_turn.py tests/test_main_audio.py`: `21 passed`.
   - `./scripts/test_soak_reliability.sh 2`: accepted; `cycles_completed=2/2`, `phase_count=8`, `failed_count=0`, artifact `.artifacts/quality/soak-profile-fast-repeat2.json`.
-  - `make check`: `823 passed`.
-  - `make security-gate`: `823 passed`; fault subset `3 passed`.
+  - `make check`: `825 passed`.
+  - `make security-gate`: `825 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

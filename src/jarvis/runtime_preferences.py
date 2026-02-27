@@ -268,3 +268,12 @@ def learn_voice_preferences(
     runtime._persist_runtime_state_safe()
     runtime._publish_voice_status()
     return normalized
+
+
+def set_persona_style(runtime: Any, style: str) -> None:
+    runtime.config.persona_style = style
+    brain = getattr(runtime, "brain", None)
+    memory = getattr(brain, "_memory", None)
+    if memory is not None:
+        with suppress(Exception):
+            memory.upsert_summary("persona_style", style)

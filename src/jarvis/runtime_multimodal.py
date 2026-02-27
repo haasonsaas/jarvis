@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import math
+import time
+from contextlib import suppress
 
-from typing import Any
+from typing import Any, Callable
 
 
 def _safe_float(
@@ -149,3 +151,40 @@ def multimodal_grounding_snapshot(
         },
         "reasons": reasons,
     }
+
+
+def multimodal_grounding_snapshot_for_runtime(
+    runtime: Any,
+    *,
+    recency_threshold_sec: float,
+    now_monotonic_fn: Callable[[], float] = time.monotonic,
+) -> dict[str, Any]:
+    signals = getattr(runtime.presence, "signals", None)
+    now_mono = now_monotonic_fn()
+    face_age_sec: float | None = None
+    hand_age_sec: float | None = None
+    doa_age_sec: float | None = None
+    if signals is not None:
+        face_last_seen = getattr(signals, "face_last_seen", None)
+        hand_last_seen = getattr(signals, "hand_last_seen", None)
+        doa_last_seen = getattr(signals, "doa_last_seen", None)
+        if face_last_seen:
+            face_age_sec = max(0.0, now_mono - float(face_last_seen))
+        if hand_last_seen:
+            hand_age_sec = max(0.0, now_mono - float(hand_last_seen))
+        if doa_last_seen:
+            doa_age_sec = max(0.0, now_mono - float(doa_last_seen))
+    attention_source = "unknown"
+    with suppress(Exception):
+        attention_source = str(runtime.presence.attention_source())
+    return multimodal_grounding_snapshot(
+        face_age_sec=face_age_sec,
+        hand_age_sec=hand_age_sec,
+        doa_age_sec=doa_age_sec,
+        doa_angle=getattr(runtime, "_last_doa_angle", None),
+        doa_speech=getattr(runtime, "_last_doa_speech", None),
+        stt_diagnostics=runtime._stt_diagnostics_snapshot(),
+        attention_confidence=runtime._attention_confidence(now_mono),
+        attention_source=attention_source,
+        recency_threshold_sec=recency_threshold_sec,
+    )

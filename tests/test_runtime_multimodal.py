@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from jarvis.runtime_multimodal import multimodal_grounding_snapshot
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from jarvis.runtime_multimodal import (
+    multimodal_grounding_snapshot,
+    multimodal_grounding_snapshot_for_runtime,
+)
 
 
 def test_multimodal_grounding_snapshot_high_confidence() -> None:
@@ -54,3 +60,26 @@ def test_multimodal_grounding_snapshot_context_downgrades_non_speech_doa() -> No
     assert payload["signals"]["doa_recent"] is True
     assert payload["signals"]["doa_speech"] is False
     assert "doa_reports_non_speech" in payload["reasons"]
+
+
+def test_multimodal_grounding_snapshot_for_runtime_computes_signal_ages() -> None:
+    runtime = SimpleNamespace(
+        presence=SimpleNamespace(
+            signals=SimpleNamespace(face_last_seen=8.0, hand_last_seen=9.0, doa_last_seen=9.5),
+            attention_source=lambda: "face",
+        ),
+        _last_doa_angle=20.0,
+        _last_doa_speech=True,
+        _stt_diagnostics_snapshot=lambda: {"confidence_score": 0.8, "confidence_band": "high"},
+        _attention_confidence=MagicMock(return_value=0.9),
+    )
+
+    payload = multimodal_grounding_snapshot_for_runtime(
+        runtime,
+        recency_threshold_sec=30.0,
+        now_monotonic_fn=lambda: 10.0,
+    )
+
+    assert payload["signals"]["face_recent"] is True
+    assert payload["signals"]["doa_recent"] is True
+    runtime._attention_confidence.assert_called_once_with(10.0)

@@ -154,9 +154,10 @@ from jarvis.runtime_voice_profile import (
 )
 from jarvis.runtime_preferences import (
     learn_voice_preferences as _runtime_learn_voice_preferences,
+    set_persona_style as _runtime_set_persona_style,
 )
 from jarvis.runtime_multimodal import (
-    multimodal_grounding_snapshot as _runtime_multimodal_grounding_snapshot,
+    multimodal_grounding_snapshot_for_runtime as _runtime_multimodal_grounding_snapshot_for_runtime,
 )
 from jarvis.runtime_watchdog import watchdog_loop as _runtime_watchdog_loop
 from jarvis.runtime_constants import (
@@ -848,12 +849,7 @@ class Jarvis:
             self._save_runtime_state()
 
     def _set_persona_style(self, style: str) -> None:
-        self.config.persona_style = style
-        brain = getattr(self, "brain", None)
-        memory = getattr(brain, "_memory", None)
-        if memory is not None:
-            with suppress(Exception):
-                memory.upsert_summary("persona_style", style)
+        _runtime_set_persona_style(self, style)
 
     async def _operator_control_handler(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         return await _runtime_handle_operator_control(self, action, payload)
@@ -941,33 +937,8 @@ class Jarvis:
         )
 
     def _multimodal_grounding_snapshot(self) -> dict[str, Any]:
-        signals = getattr(self.presence, "signals", None)
-        now_mono = time.monotonic()
-        face_age_sec: float | None = None
-        hand_age_sec: float | None = None
-        doa_age_sec: float | None = None
-        if signals is not None:
-            face_last_seen = getattr(signals, "face_last_seen", None)
-            hand_last_seen = getattr(signals, "hand_last_seen", None)
-            doa_last_seen = getattr(signals, "doa_last_seen", None)
-            if face_last_seen:
-                face_age_sec = max(0.0, now_mono - float(face_last_seen))
-            if hand_last_seen:
-                hand_age_sec = max(0.0, now_mono - float(hand_last_seen))
-            if doa_last_seen:
-                doa_age_sec = max(0.0, now_mono - float(doa_last_seen))
-        attention_source = "unknown"
-        with suppress(Exception):
-            attention_source = str(self.presence.attention_source())
-        return _runtime_multimodal_grounding_snapshot(
-            face_age_sec=face_age_sec,
-            hand_age_sec=hand_age_sec,
-            doa_age_sec=doa_age_sec,
-            doa_angle=getattr(self, "_last_doa_angle", None),
-            doa_speech=getattr(self, "_last_doa_speech", None),
-            stt_diagnostics=self._stt_diagnostics_snapshot(),
-            attention_confidence=self._attention_confidence(now_mono),
-            attention_source=attention_source,
+        return _runtime_multimodal_grounding_snapshot_for_runtime(
+            self,
             recency_threshold_sec=ATTENTION_RECENCY_SEC,
         )
 
