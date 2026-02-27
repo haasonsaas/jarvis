@@ -1546,6 +1546,49 @@ class TestServicesTools:
         assert rows == []
 
     @pytest.mark.asyncio
+    async def test_reminder_notify_due_defers_inside_quiet_window(self, tmp_path, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.pushover_api_token = "token"
+        cfg.pushover_user_key = "user"
+        cfg.nudge_policy = "defer"
+        now_local = time.localtime()
+        now_minutes = (now_local.tm_hour * 60) + now_local.tm_min
+        start_minutes = (now_minutes - 1) % (24 * 60)
+        end_minutes = (now_minutes + 1) % (24 * 60)
+        cfg.nudge_quiet_hours_start = f"{start_minutes // 60:02d}:{start_minutes % 60:02d}"
+        cfg.nudge_quiet_hours_end = f"{end_minutes // 60:02d}:{end_minutes % 60:02d}"
+
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        reminder_id = store.add_reminder(text="Water plants", due_at=time.time() - 10.0, created_at=time.time() - 120.0)
+        services._reminders[reminder_id] = {
+            "id": reminder_id,
+            "text": "Water plants",
+            "due_at": time.time() - 10.0,
+            "created_at": time.time() - 120.0,
+            "status": "pending",
+            "completed_at": None,
+            "notified_at": None,
+        }
+
+        notify_calls: list[dict] = []
+
+        async def _fake_notify(args):
+            notify_calls.append(dict(args))
+            return {"content": [{"type": "text", "text": "Notification sent."}]}
+
+        monkeypatch.setattr("jarvis.tools.services.pushover_notify", _fake_notify)
+        result = await services.reminder_notify_due({"limit": 5})
+        text = result["content"][0]["text"].lower()
+        assert "deferred 1 due reminder notifications" in text
+        assert notify_calls == []
+
+    @pytest.mark.asyncio
     async def test_calendar_events_success(self, monkeypatch):
         from jarvis.tools import services
 
@@ -2966,6 +3009,10 @@ class TestServicesTools:
         assert payload["tool_policy"]["identity_default_profile"] in {"deny", "readonly", "control", "trusted"}
         assert isinstance(payload["tool_policy"]["identity_require_approval"], bool)
         assert isinstance(payload["tool_policy"]["plan_preview_require_ack"], bool)
+        assert payload["tool_policy"]["nudge_policy"] in {"interrupt", "defer", "adaptive"}
+        assert "nudge_quiet_hours_start" in payload["tool_policy"]
+        assert "nudge_quiet_hours_end" in payload["tool_policy"]
+        assert isinstance(payload["tool_policy"]["nudge_quiet_window_active"], bool)
         assert "memory" in payload
         assert "audit" in payload
         assert payload["audit"]["redaction_enabled"] is True
@@ -3028,6 +3075,10 @@ class TestServicesTools:
         assert "identity_default_profile" in payload["tool_policy_required"]
         assert "identity_require_approval" in payload["tool_policy_required"]
         assert "plan_preview_require_ack" in payload["tool_policy_required"]
+        assert "nudge_policy" in payload["tool_policy_required"]
+        assert "nudge_quiet_hours_start" in payload["tool_policy_required"]
+        assert "nudge_quiet_hours_end" in payload["tool_policy_required"]
+        assert "nudge_quiet_window_active" in payload["tool_policy_required"]
         assert "timers_required" in payload
         assert "reminders_required" in payload
         assert "voice_attention_required" in payload
@@ -3320,6 +3371,7 @@ class TestServicesTools:
         assert schemas["reminder_list"]["properties"]["limit"]["type"] == "integer"
         assert schemas["reminder_complete"]["properties"]["reminder_id"]["type"] == "integer"
         assert schemas["reminder_notify_due"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["reminder_notify_due"]["properties"]["nudge_policy"]["type"] == "string"
         assert schemas["calendar_events"]["properties"]["limit"]["type"] == "integer"
         assert schemas["email_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["webhook_inbound_list"]["properties"]["limit"]["type"] == "integer"

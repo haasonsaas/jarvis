@@ -1,5 +1,6 @@
 import math
 import os
+import re
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
@@ -229,6 +230,9 @@ class Config:
     pushover_api_token: str = field(default_factory=lambda: os.environ.get("PUSHOVER_API_TOKEN", ""))
     pushover_user_key: str = field(default_factory=lambda: os.environ.get("PUSHOVER_USER_KEY", ""))
     notification_permission_profile: str = field(default_factory=lambda: os.environ.get("NOTIFICATION_PERMISSION_PROFILE", "allow"))
+    nudge_policy: str = field(default_factory=lambda: os.environ.get("NUDGE_POLICY", "adaptive"))
+    nudge_quiet_hours_start: str = field(default_factory=lambda: os.environ.get("NUDGE_QUIET_HOURS_START", "22:00"))
+    nudge_quiet_hours_end: str = field(default_factory=lambda: os.environ.get("NUDGE_QUIET_HOURS_END", "07:00"))
     pushover_timeout_sec: float = field(default_factory=lambda: _env_positive_float("PUSHOVER_TIMEOUT_SEC", 10.0))
     email_smtp_host: str = field(default_factory=lambda: os.environ.get("EMAIL_SMTP_HOST", ""))
     email_smtp_port: int = field(default_factory=lambda: _env_int("EMAIL_SMTP_PORT", 587))
@@ -353,6 +357,9 @@ class Config:
         )
         self.todoist_permission_profile = self._normalize_todoist_permission_profile(self.todoist_permission_profile)
         self.notification_permission_profile = self._normalize_notification_permission_profile(self.notification_permission_profile)
+        self.nudge_policy = self._normalize_nudge_policy(self.nudge_policy)
+        self.nudge_quiet_hours_start = self._normalize_hhmm(self.nudge_quiet_hours_start)
+        self.nudge_quiet_hours_end = self._normalize_hhmm(self.nudge_quiet_hours_end)
         self.email_permission_profile = self._normalize_email_permission_profile(self.email_permission_profile)
         self.weather_units = self._normalize_weather_units(self.weather_units)
         self.identity_default_user = self._normalize_identity_default_user(self.identity_default_user)
@@ -398,6 +405,18 @@ class Config:
             raw = os.environ.get("NOTIFICATION_PERMISSION_PROFILE", "")
             if raw.strip().lower() not in {"off", "allow"}:
                 self.startup_warnings.append("NOTIFICATION_PERMISSION_PROFILE invalid; using allow.")
+        if _env_is_set("NUDGE_POLICY") and self.nudge_policy == "adaptive":
+            raw = os.environ.get("NUDGE_POLICY", "")
+            if raw.strip().lower() not in {"interrupt", "defer", "adaptive"}:
+                self.startup_warnings.append("NUDGE_POLICY invalid; using adaptive.")
+        if _env_is_set("NUDGE_QUIET_HOURS_START"):
+            raw = os.environ.get("NUDGE_QUIET_HOURS_START", "")
+            if raw.strip() and not self.nudge_quiet_hours_start:
+                self.startup_warnings.append("NUDGE_QUIET_HOURS_START invalid; expected HH:MM.")
+        if _env_is_set("NUDGE_QUIET_HOURS_END"):
+            raw = os.environ.get("NUDGE_QUIET_HOURS_END", "")
+            if raw.strip() and not self.nudge_quiet_hours_end:
+                self.startup_warnings.append("NUDGE_QUIET_HOURS_END invalid; expected HH:MM.")
         if _env_is_set("EMAIL_PERMISSION_PROFILE") and self.email_permission_profile == "readonly":
             raw = os.environ.get("EMAIL_PERMISSION_PROFILE", "")
             if raw.strip().lower() not in {"readonly", "control"}:
@@ -492,6 +511,27 @@ class Config:
         return "allow"
 
     @staticmethod
+    def _normalize_nudge_policy(policy: str) -> str:
+        normalized = (policy or "adaptive").strip().lower()
+        if normalized in {"interrupt", "defer", "adaptive"}:
+            return normalized
+        return "adaptive"
+
+    @staticmethod
+    def _normalize_hhmm(value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            return ""
+        match = re.fullmatch(r"(\d{1,2}):(\d{2})", text)
+        if not match:
+            return ""
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
+            return ""
+        return f"{hours:02d}:{minutes:02d}"
+
+    @staticmethod
     def _normalize_weather_units(units: str) -> str:
         normalized = (units or "metric").strip().lower()
         if normalized in {"metric", "imperial"}:
@@ -533,6 +573,10 @@ class Config:
 
     def _collect_startup_warnings(self) -> list[str]:
         warnings: list[str] = []
+        if bool(self.nudge_quiet_hours_start) != bool(self.nudge_quiet_hours_end):
+            warnings.append("Quiet-window config incomplete; set both NUDGE_QUIET_HOURS_START and NUDGE_QUIET_HOURS_END.")
+        if self.nudge_quiet_hours_start and self.nudge_quiet_hours_end and self.nudge_quiet_hours_start == self.nudge_quiet_hours_end:
+            warnings.append("NUDGE_QUIET_HOURS_START equals NUDGE_QUIET_HOURS_END; quiet-window deferral is disabled.")
         has_hass_url = bool((self.hass_url or "").strip())
         has_hass_token = bool((self.hass_token or "").strip())
         if has_hass_url != has_hass_token:

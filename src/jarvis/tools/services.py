@@ -107,6 +107,9 @@ _home_conversation_enabled: bool = False
 _home_conversation_permission_profile: str = "readonly"
 _todoist_permission_profile: str = "control"
 _notification_permission_profile: str = "allow"
+_nudge_policy: str = "adaptive"
+_nudge_quiet_hours_start: str = "22:00"
+_nudge_quiet_hours_end: str = "07:00"
 _email_permission_profile: str = "readonly"
 _todoist_timeout_sec: float = 10.0
 _pushover_timeout_sec: float = 10.0
@@ -501,6 +504,8 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "limit": {"type": "integer"},
             "title": {"type": "string"},
+            "nudge_policy": {"type": "string", "description": "interrupt, defer, or adaptive (optional override)."},
+            "urgent_overdue_sec": {"type": "number", "description": "When nudge_policy=adaptive and quiet hours are active, overdue reminders beyond this threshold still send."},
         },
     },
     "calendar_events": {
@@ -775,6 +780,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _home_permission_profile, _home_require_confirm_execute, _home_conversation_enabled
     global _home_conversation_permission_profile
     global _todoist_permission_profile, _notification_permission_profile, _email_permission_profile
+    global _nudge_policy, _nudge_quiet_hours_start, _nudge_quiet_hours_end
     global _todoist_timeout_sec, _pushover_timeout_sec
     global _email_smtp_host, _email_smtp_port, _email_smtp_username, _email_smtp_password
     global _email_from, _email_default_to, _email_use_tls, _email_timeout_sec
@@ -810,6 +816,11 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     ).strip().lower()
     if _notification_permission_profile not in {"off", "allow"}:
         _notification_permission_profile = "allow"
+    _nudge_policy = str(getattr(config, "nudge_policy", "adaptive")).strip().lower()
+    if _nudge_policy not in {"interrupt", "defer", "adaptive"}:
+        _nudge_policy = "adaptive"
+    _nudge_quiet_hours_start = str(getattr(config, "nudge_quiet_hours_start", "22:00")).strip()
+    _nudge_quiet_hours_end = str(getattr(config, "nudge_quiet_hours_end", "07:00")).strip()
     _email_permission_profile = str(getattr(config, "email_permission_profile", "readonly")).strip().lower()
     if _email_permission_profile not in {"readonly", "control"}:
         _email_permission_profile = "readonly"
@@ -1483,6 +1494,37 @@ def _effective_act_timeout(total_sec: Any, *, minimum: float = 0.1, maximum: flo
     requested = _as_float(total_sec, _turn_timeout_act_sec, minimum=minimum, maximum=maximum)
     budget = _as_float(_turn_timeout_act_sec, requested, minimum=minimum, maximum=maximum)
     return min(requested, budget)
+
+
+def _normalize_nudge_policy(value: Any) -> str:
+    normalized = str(value or "adaptive").strip().lower()
+    if normalized in {"interrupt", "defer", "adaptive"}:
+        return normalized
+    return "adaptive"
+
+
+def _hhmm_to_minutes(value: str) -> int | None:
+    text = str(value or "").strip()
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", text)
+    if not match:
+        return None
+    hours = int(match.group(1))
+    minutes = int(match.group(2))
+    if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
+        return None
+    return (hours * 60) + minutes
+
+
+def _quiet_window_active(*, now_ts: float | None = None) -> bool:
+    start = _hhmm_to_minutes(_nudge_quiet_hours_start)
+    end = _hhmm_to_minutes(_nudge_quiet_hours_end)
+    if start is None or end is None or start == end:
+        return False
+    local = time.localtime(time.time() if now_ts is None else float(now_ts))
+    minute = (local.tm_hour * 60) + local.tm_min
+    if start < end:
+        return start <= minute < end
+    return minute >= start or minute < end
 
 
 def _duration_seconds(value: Any) -> float | None:
@@ -4264,9 +4306,41 @@ async def reminder_notify_due(args: dict[str, Any]) -> dict[str, Any]:
         _audit("reminder_notify_due", {"result": "empty", "limit": limit})
         return {"content": [{"type": "text", "text": "No due reminders awaiting notification."}]}
 
+    policy = _normalize_nudge_policy(args.get("nudge_policy", _nudge_policy))
+    quiet_active = _quiet_window_active(now_ts=now)
+    deferred_count = 0
+    dispatch_payloads = due_payloads
+    if quiet_active and policy in {"defer", "adaptive"}:
+        if policy == "defer":
+            deferred_count = len(dispatch_payloads)
+            dispatch_payloads = []
+        else:
+            urgent_overdue_sec = _as_float(args.get("urgent_overdue_sec", 3600.0), 3600.0, minimum=60.0, maximum=86_400.0)
+            urgent_payloads: list[dict[str, Any]] = []
+            for payload in dispatch_payloads:
+                due_at = float(payload.get("due_at", now))
+                overdue_sec = max(0.0, now - due_at)
+                if overdue_sec >= urgent_overdue_sec:
+                    urgent_payloads.append(payload)
+            deferred_count = max(0, len(dispatch_payloads) - len(urgent_payloads))
+            dispatch_payloads = urgent_payloads
+    if not dispatch_payloads and deferred_count > 0:
+        record_summary("reminder_notify_due", "deferred", start_time, effect=f"deferred={deferred_count}", risk="low")
+        _audit(
+            "reminder_notify_due",
+            {
+                "result": "deferred",
+                "policy": policy,
+                "quiet_window_active": quiet_active,
+                "deferred_count": deferred_count,
+                "limit": limit,
+            },
+        )
+        return {"content": [{"type": "text", "text": f"Deferred {deferred_count} due reminder notifications until quiet hours end."}]}
+
     sent = 0
     failed = 0
-    for payload in due_payloads:
+    for payload in dispatch_payloads:
         reminder_id = int(payload.get("id", 0))
         text = str(payload.get("text", "")).strip() or "(untitled)"
         due_local = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(payload.get("due_at", now))))
@@ -4289,13 +4363,34 @@ async def reminder_notify_due(args: dict[str, Any]) -> dict[str, Any]:
             _reminders[reminder_id]["notified_at"] = time.time()
     if sent == 0 and failed > 0:
         _record_service_error("reminder_notify_due", start_time, "api_error")
-        _audit("reminder_notify_due", {"result": "api_error", "sent": sent, "failed": failed})
+        _audit(
+            "reminder_notify_due",
+            {
+                "result": "api_error",
+                "sent": sent,
+                "failed": failed,
+                "deferred_count": deferred_count,
+                "policy": policy,
+                "quiet_window_active": quiet_active,
+            },
+        )
         return {"content": [{"type": "text", "text": "Unable to send due reminder notifications."}]}
     record_summary("reminder_notify_due", "ok", start_time, effect=f"sent={sent}", risk="low")
-    _audit("reminder_notify_due", {"result": "ok", "sent": sent, "failed": failed})
-    return {
-        "content": [{"type": "text", "text": f"Due reminder notifications sent: {sent}" + (f" ({failed} failed)." if failed else ".")}]
-    }
+    _audit(
+        "reminder_notify_due",
+        {
+            "result": "ok",
+            "sent": sent,
+            "failed": failed,
+            "deferred_count": deferred_count,
+            "policy": policy,
+            "quiet_window_active": quiet_active,
+        },
+    )
+    suffix = f" ({failed} failed)." if failed else "."
+    if deferred_count > 0:
+        suffix += f" Deferred: {deferred_count}."
+    return {"content": [{"type": "text", "text": f"Due reminder notifications sent: {sent}{suffix}"}]}
 
 
 async def _calendar_fetch_events(
@@ -4996,6 +5091,10 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "home_conversation_permission_profile": _home_conversation_permission_profile,
             "todoist_permission_profile": _todoist_permission_profile,
             "notification_permission_profile": _notification_permission_profile,
+            "nudge_policy": _nudge_policy,
+            "nudge_quiet_hours_start": _nudge_quiet_hours_start,
+            "nudge_quiet_hours_end": _nudge_quiet_hours_end,
+            "nudge_quiet_window_active": _quiet_window_active(),
             "email_permission_profile": _email_permission_profile,
             "memory_pii_guardrails_enabled": _memory_pii_guardrails_enabled,
             "identity_enforcement_enabled": _identity_enforcement_enabled,
@@ -5079,6 +5178,10 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "home_conversation_permission_profile",
             "todoist_permission_profile",
             "notification_permission_profile",
+            "nudge_policy",
+            "nudge_quiet_hours_start",
+            "nudge_quiet_hours_end",
+            "nudge_quiet_window_active",
             "email_permission_profile",
             "memory_pii_guardrails_enabled",
             "identity_enforcement_enabled",

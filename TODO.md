@@ -42,7 +42,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 - [ ] `PX01` Add proactive briefing engine (morning/evening) built from calendar, reminders, weather, and home state. `P0`
 - [ ] `PX02` Add proactive anomaly notifications (device offline, unusual temp, missed reminder). `P0`
-- [ ] `PX03` Add "nudge policy" (when to interrupt vs defer) with user-configurable quiet windows. `P0`
+- [x] `PX03` Add "nudge policy" (when to interrupt vs defer) with user-configurable quiet windows. `P0`
 - [ ] `PX04` Add routine suggestions based on repeated behavior patterns (opt-in only). `P1`
 - [ ] `PX05` Add proactive follow-through ("I can do that now" for pending tasks after confirmations). `P1`
 - [ ] `PX06` Add proactive event summarization with digest and snooze controls. `P1`
@@ -154,7 +154,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q02` Implement `AX04` ambiguity detector for risky actions.
 - [x] `Q03` Implement `AX05` plan preview before medium/high-risk execution.
 - [x] `Q04` Implement `RX04` turn-phase timeout budgets and status exposure.
-- [ ] `Q05` Implement `PX03` nudge/interrupt policy + quiet windows.
+- [x] `Q05` Implement `PX03` nudge/interrupt policy + quiet windows.
 - [ ] `Q06` Implement `MX03` memory correction voice commands.
 - [ ] `Q07` Implement `IX03` step-up verification flow.
 - [ ] `Q08` Implement `HX06` idempotent home-action guardrail.

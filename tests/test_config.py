@@ -127,6 +127,13 @@ class TestConfig:
         c = Config(notification_permission_profile="enabled")
         assert c.notification_permission_profile == "allow"
 
+    def test_nudge_policy_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+
+        c = Config(nudge_policy="force")
+        assert c.nudge_policy == "adaptive"
+
     def test_email_permission_profile_normalizes(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         from jarvis.config import Config
@@ -168,6 +175,9 @@ class TestConfig:
         monkeypatch.setenv("HOME_CONVERSATION_PERMISSION_PROFILE", "execute-all")
         monkeypatch.setenv("TODOIST_PERMISSION_PROFILE", "write-all")
         monkeypatch.setenv("NOTIFICATION_PERMISSION_PROFILE", "enabled")
+        monkeypatch.setenv("NUDGE_POLICY", "force")
+        monkeypatch.setenv("NUDGE_QUIET_HOURS_START", "25:00")
+        monkeypatch.setenv("NUDGE_QUIET_HOURS_END", "bad")
         monkeypatch.setenv("EMAIL_PERMISSION_PROFILE", "send-all")
         monkeypatch.setenv("EMAIL_TIMEOUT_SEC", "0")
         monkeypatch.setenv("WEATHER_UNITS", "kelvin")
@@ -194,6 +204,9 @@ class TestConfig:
         assert "HOME_CONVERSATION_PERMISSION_PROFILE invalid" in text
         assert "TODOIST_PERMISSION_PROFILE invalid" in text
         assert "NOTIFICATION_PERMISSION_PROFILE invalid" in text
+        assert "NUDGE_POLICY invalid" in text
+        assert "NUDGE_QUIET_HOURS_START invalid" in text
+        assert "NUDGE_QUIET_HOURS_END invalid" in text
         assert "EMAIL_PERMISSION_PROFILE invalid" in text
         assert "EMAIL_TIMEOUT_SEC invalid" in text
         assert "WEATHER_UNITS invalid" in text
@@ -357,6 +370,16 @@ class TestConfig:
         c = Config()
         text = "\n".join(c.startup_warnings)
         assert "email config incomplete" in text.lower()
+
+    def test_startup_warning_for_partial_quiet_window_config(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("NUDGE_QUIET_HOURS_START", "22:00")
+        monkeypatch.setenv("NUDGE_QUIET_HOURS_END", "")
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "quiet-window config incomplete" in text.lower()
 
     def test_startup_warning_for_permissive_profiles_without_credentials(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

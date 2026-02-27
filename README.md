@@ -87,6 +87,7 @@ cp .env.example .env
 # Optional: TODOIST_API_TOKEN / TODOIST_PROJECT_ID / TODOIST_PERMISSION_PROFILE
 # Optional: TODOIST_TIMEOUT_SEC=10.0 / PUSHOVER_TIMEOUT_SEC=10.0
 # Optional: PUSHOVER_API_TOKEN / PUSHOVER_USER_KEY / NOTIFICATION_PERMISSION_PROFILE
+# Optional: NUDGE_POLICY=interrupt|defer|adaptive / NUDGE_QUIET_HOURS_START / NUDGE_QUIET_HOURS_END
 # Optional: EMAIL_SMTP_HOST / EMAIL_FROM / EMAIL_DEFAULT_TO / EMAIL_PERMISSION_PROFILE / EMAIL_TIMEOUT_SEC
 # Optional: WEATHER_UNITS=metric|imperial / WEATHER_TIMEOUT_SEC
 # Optional: WEBHOOK_ALLOWLIST=example.com,api.example.com / WEBHOOK_AUTH_TOKEN / WEBHOOK_TIMEOUT_SEC
@@ -114,6 +115,7 @@ Smart home safety defaults:
 - `PLAN_PREVIEW_REQUIRE_ACK=true` enforces a two-step preview+ack flow (`preview_token`) before mutating medium/high-risk actions.
   - First call can pass `preview_only=true` to get a plan preview token.
   - Execute call must include matching `preview_token=<token>` before token expiry.
+- `NUDGE_POLICY` controls due-reminder interrupts: `interrupt`, `defer`, or `adaptive` (quiet-window aware).
 - Operational runbook: [`docs/operations/home-control-policy.md`](docs/operations/home-control-policy.md).
 - Integration runbook: [`docs/operations/integration-policy.md`](docs/operations/integration-policy.md).
 - Trust/identity runbook: [`docs/operations/trust-policy.md`](docs/operations/trust-policy.md).
