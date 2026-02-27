@@ -141,7 +141,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 - [ ] `DX01` Add one-command local install/bootstrap script for clean hosts. `P1`
 - [ ] `DX02` Add containerized deployment profile for always-on home-server runtime. `P1`
-- [ ] `DX03` Add backup/restore CLI for memory, audit, runtime state, and operator settings. `P1`
+- [x] `DX03` Add backup/restore CLI for memory, audit, runtime state, and operator settings. `P1`
 - [ ] `DX04` Add staged release channels (`dev`, `beta`, `stable`) with migration checks. `P2`
 - [ ] `DX05` Add Home Assistant add-on packaging path and setup guide. `P2`
 - [ ] `DX06` Add release acceptance suite focused on "Jarvis feel" scenarios before ship. `P1`
@@ -168,5 +168,5 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q16` Implement `OX03` conversation trace panel.
 - [x] `Q17` Implement `MX02` memory confidence/source trail.
 - [x] `Q18` Implement `IX06` readable audit explainability.
-- [ ] `Q19` Implement `DX03` backup/restore CLI.
+- [x] `Q19` Implement `DX03` backup/restore CLI.
 - [ ] `Q20` Implement `EX06` unified Jarvis scorecard.

@@ -31,6 +31,7 @@ import numpy as np
 from scipy.signal import resample_poly
 
 from jarvis.config import Config
+from jarvis.backup_restore import create_backup_bundle, restore_backup_bundle
 from jarvis.robot.controller import RobotController
 from jarvis.presence import PresenceLoop, State
 from jarvis.audio.vad import VoiceActivityDetector, CHUNK_SAMPLES
@@ -176,7 +177,7 @@ def _resample_audio(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     return y.astype(np.float32, copy=False)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Jarvis AI Assistant on Reachy Mini")
     p.add_argument("--sim", action="store_true", help="Simulation mode (no robot)")
     p.add_argument("--no-vision", action="store_true", help="Disable face tracking")
@@ -185,7 +186,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-home", action="store_true", help="Disable smart home tools")
     p.add_argument("--no-tts", action="store_true", help="Print responses instead of speaking")
     p.add_argument("--debug", action="store_true", help="Verbose logging")
-    return p.parse_args()
+    maintenance = p.add_mutually_exclusive_group()
+    maintenance.add_argument("--backup", metavar="PATH", help="Write a state backup bundle to PATH and exit.")
+    maintenance.add_argument("--restore", metavar="PATH", help="Restore state from backup bundle PATH and exit.")
+    p.add_argument("--force", action="store_true", help="With --restore, overwrite existing destination files.")
+    return p.parse_args(argv)
 
 
 class Jarvis:
@@ -2071,6 +2076,19 @@ def main():
         format="%(asctime)s %(name)-25s %(levelname)-5s %(message)s",
         datefmt="%H:%M:%S",
     )
+
+    if args.backup or args.restore:
+        config = Config()
+        try:
+            if args.backup:
+                result = create_backup_bundle(config, args.backup)
+            else:
+                result = restore_backup_bundle(config, args.restore, overwrite=bool(args.force))
+        except Exception as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
+            raise SystemExit(1) from exc
+        print(json.dumps(result, indent=2))
+        return
 
     jarvis = Jarvis(args)
 

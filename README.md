@@ -222,6 +222,12 @@ uv run python -m jarvis --sim
 # Verbose logging
 uv run python -m jarvis --debug
 
+# Create a backup bundle (memory, audit logs, runtime state, operator settings)
+uv run python -m jarvis --backup ~/.jarvis/backups/jarvis-$(date +%Y%m%d-%H%M%S).tar.gz
+
+# Restore from a backup bundle (overwrite existing files)
+uv run python -m jarvis --restore ~/.jarvis/backups/jarvis-20260227-120000.tar.gz --force
+
 # Open operator console
 open http://127.0.0.1:8765
 ```
