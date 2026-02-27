@@ -439,3 +439,34 @@ class TestConfig:
         c = Config()
         text = "\n".join(c.startup_warnings)
         assert "Encryption enabled without JARVIS_DATA_KEY" in text
+
+    def test_startup_warning_for_inbound_webhook_without_auth(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("WEBHOOK_INBOUND_ENABLED", "true")
+        monkeypatch.delenv("WEBHOOK_INBOUND_TOKEN", raising=False)
+        monkeypatch.delenv("WEBHOOK_AUTH_TOKEN", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "WEBHOOK_INBOUND_ENABLED=true without WEBHOOK_INBOUND_TOKEN/WEBHOOK_AUTH_TOKEN" in text
+
+    def test_startup_warning_for_non_loopback_operator_host(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("OPERATOR_SERVER_ENABLED", "true")
+        monkeypatch.setenv("OPERATOR_SERVER_HOST", "0.0.0.0")
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "OPERATOR_SERVER_HOST is non-loopback" in text
+
+    def test_startup_warning_when_inbound_enabled_but_operator_disabled(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("OPERATOR_SERVER_ENABLED", "false")
+        monkeypatch.setenv("WEBHOOK_INBOUND_ENABLED", "true")
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "WEBHOOK_INBOUND_ENABLED=true while OPERATOR_SERVER_ENABLED=false" in text

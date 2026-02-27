@@ -1478,6 +1478,14 @@ def _prune_audit_file(path: Path, *, cutoff_ts: float) -> int:
         if not isinstance(payload, dict):
             removed += 1
             continue
+        if payload.get("encrypted") is True and payload.get("error") in {
+            "missing_encryption_key",
+            "invalid_token",
+            "invalid_payload",
+        }:
+            # Do not drop encrypted lines when current process cannot decrypt.
+            kept.append(raw_line)
+            continue
         ts = payload.get("timestamp")
         if isinstance(ts, (int, float)) and float(ts) >= cutoff_ts:
             # Preserve original line format (encrypted/plain) on retention rewrites.

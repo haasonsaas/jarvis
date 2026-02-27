@@ -122,3 +122,22 @@ def test_skill_registry_enable_disable(tmp_path):
     second = SkillRegistry(skills_dir=str(skills_dir), enabled=True)
     second.discover()
     assert second.status_snapshot()["enabled_count"] == 1
+
+
+def test_skill_registry_enable_returns_persist_failure(tmp_path, monkeypatch):
+    skills_dir = tmp_path / "skills"
+    _write_manifest(
+        skills_dir / "planner",
+        {
+            "name": "planner",
+            "version": "1.0.0",
+            "namespace": "skill.planner",
+        },
+    )
+    registry = SkillRegistry(skills_dir=str(skills_dir), enabled=True)
+    registry.discover()
+    monkeypatch.setattr(registry, "_persist_state", lambda: False)
+
+    ok, detail = registry.enable_skill("planner")
+    assert ok is False
+    assert detail == "state_persist_failed"

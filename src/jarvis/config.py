@@ -588,6 +588,17 @@ class Config:
             warnings.append("PUSHOVER_API_TOKEN appears unusually short; verify credential scope.")
         if self.webhook_auth_token.strip() and not self.webhook_allowlist:
             warnings.append("WEBHOOK_AUTH_TOKEN is set while WEBHOOK_ALLOWLIST is empty; webhook_trigger will remain blocked.")
+        if self.webhook_inbound_enabled and not self.operator_server_enabled:
+            warnings.append("WEBHOOK_INBOUND_ENABLED=true while OPERATOR_SERVER_ENABLED=false; inbound webhook endpoint will be unavailable.")
+        if self.webhook_inbound_enabled and not (self.webhook_inbound_token.strip() or self.webhook_auth_token.strip()):
+            warnings.append(
+                "WEBHOOK_INBOUND_ENABLED=true without WEBHOOK_INBOUND_TOKEN/WEBHOOK_AUTH_TOKEN; inbound endpoint is unauthenticated."
+            )
+        operator_host = (self.operator_server_host or "").strip().lower()
+        if self.operator_server_enabled and operator_host and operator_host not in {"127.0.0.1", "localhost", "::1"}:
+            warnings.append(
+                "OPERATOR_SERVER_HOST is non-loopback; operator endpoints may be remotely reachable."
+            )
         if self.slack_webhook_url.strip() and not self.slack_webhook_url.strip().lower().startswith("https://"):
             warnings.append("SLACK_WEBHOOK_URL should use https.")
         if self.discord_webhook_url.strip() and not self.discord_webhook_url.strip().lower().startswith("https://"):

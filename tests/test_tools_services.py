@@ -3305,3 +3305,13 @@ class TestServicesTools:
         assert decoded is not None
         assert decoded.get("encrypted") is True
         assert decoded.get("error") in {"missing_encryption_key", "invalid_token"}
+
+    def test_prune_audit_file_preserves_encrypted_lines_when_key_missing(self, tmp_path):
+        from jarvis.tools import services
+
+        path = tmp_path / "audit.jsonl"
+        line = json.dumps({"enc": "not-decryptable"})
+        path.write_text(line + "\n")
+        removed = services._prune_audit_file(path, cutoff_ts=time.time() + 3600.0)
+        assert removed == 0
+        assert path.read_text().strip() == line

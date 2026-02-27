@@ -281,7 +281,10 @@ class OperatorServer:
         return web.json_response(list(reversed(self._actions))[:limit])
 
     async def _handle_control(self, request: web.Request) -> web.Response:
-        body = await request.json()
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
         action = str(body.get("action", "")).strip()
         payload = body.get("payload")
         if not isinstance(payload, dict):

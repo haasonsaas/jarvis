@@ -75,6 +75,7 @@ class SkillRegistry:
         self._enabled = bool(enabled)
         self._records: dict[str, SkillRecord] = {}
         self._errors: list[dict[str, Any]] = []
+        self._state_error: str | None = None
         self._state_path = Path(state_path).expanduser() if state_path else self._skills_dir / ".state.json"
         self._enabled_overrides: dict[str, bool] = {}
         self._load_state()
@@ -247,7 +248,8 @@ class SkillRegistry:
             return False, record.load_error or "skill_not_loadable"
         record.enabled = True
         self._enabled_overrides[key] = True
-        self._persist_state()
+        if not self._persist_state():
+            return False, "state_persist_failed"
         return True, "enabled"
 
     def disable_skill(self, name: str) -> tuple[bool, str]:
@@ -257,7 +259,8 @@ class SkillRegistry:
             return False, "skill_not_found"
         record.enabled = False
         self._enabled_overrides[key] = False
-        self._persist_state()
+        if not self._persist_state():
+            return False, "state_persist_failed"
         return True, "disabled"
 
     def skill_version(self, name: str) -> str | None:
@@ -284,6 +287,7 @@ class SkillRegistry:
             "allowlist_count": len(self._allowlist),
             "skills": records,
             "load_errors": list(self._errors),
+            "state_error": self._state_error,
         }
 
     def _load_state(self) -> None:
@@ -308,9 +312,15 @@ class SkillRegistry:
             parsed[name] = bool(value)
         self._enabled_overrides = parsed
 
-    def _persist_state(self) -> None:
-        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+    def _persist_state(self) -> bool:
+        self._state_error = None
         payload = {
             "enabled": {name: enabled for name, enabled in sorted(self._enabled_overrides.items())},
         }
-        self._state_path.write_text(json.dumps(payload, indent=2))
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._state_path.write_text(json.dumps(payload, indent=2))
+        except OSError as exc:
+            self._state_error = f"persist_failed:{exc}"
+            return False
+        return True

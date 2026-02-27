@@ -41,6 +41,14 @@ async def test_operator_server_routes_and_control_log(tmp_path):
             dashboard = await (await session.get(f"{base}/")).text()
             assert "@media (max-width: 920px)" in dashboard
 
+            bad_control = await session.post(
+                f"{base}/api/control",
+                data="{not-json",
+                headers={"content-type": "application/json"},
+            )
+            assert bad_control.status == 400
+            assert (await bad_control.json())["error"] == "invalid_json"
+
             status = await (await session.get(f"{base}/api/status")).json()
             assert status["status"] == "ok"
 
