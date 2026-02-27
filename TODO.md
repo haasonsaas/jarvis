@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/100 Runtime Decomposition
+# Jarvis TODO — Wave 74/101 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 231
-- Completed: 231
+- Total items: 239
+- Completed: 239
 - Remaining: 0
 
 ---
@@ -336,6 +336,17 @@ Last updated: 2026-02-27
 - [x] `W100-AD07` Run full quality/security/readiness gates.
 - [x] `W100-AD08` Update TODO + tranche snapshot.
 
+## AE) Wave 101 (completed): startup summary extraction into runtime_startup
+
+- [x] `W101-AE01` Profile `_startup_summary_lines` concentration in `src/jarvis/__main__.py`.
+- [x] `W101-AE02` Extend `runtime_startup.py` with `startup_summary_lines` helper.
+- [x] `W101-AE03` Rewire `Jarvis._startup_summary_lines` to runtime helper without changing output contract.
+- [x] `W101-AE04` Keep operator auth normalization/risk behavior and tool-taxonomy counters unchanged.
+- [x] `W101-AE05` Extend `tests/test_runtime_startup.py` with startup-summary coverage.
+- [x] `W101-AE06` Run focused startup/lifecycle/runtime helper regression tests.
+- [x] `W101-AE07` Run full quality/security/readiness gates.
+- [x] `W101-AE08` Update TODO + tranche snapshot.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -395,6 +406,7 @@ Last updated: 2026-02-27
   - Audio output + TTS stream loop logic moved from `Jarvis` method bodies into `runtime_audio_output.py`.
   - Startup/shutdown orchestration moved from `Jarvis.start`/`Jarvis.stop` into `runtime_lifecycle.py`.
   - Turn-taking, attention-confidence, STT-repair, and confirmation heuristics moved from `Jarvis` method bodies into `runtime_turn.py`.
+  - Startup summary line composition moved from `Jarvis._startup_summary_lines` into `runtime_startup.startup_summary_lines`.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -426,7 +438,9 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_operator_server.py tests/test_runtime_audio_output.py tests/test_import_boundaries.py`: `243 passed`.
   - `uv run pytest -q tests/test_runtime_turn.py tests/test_main_lifecycle.py tests/test_main_audio.py tests/test_import_boundaries.py -k "runtime_turn or requires_stt_repair or requires_confirmation or compute_turn_taking or attention_confidence or import_boundary"`: `200 passed, 47 deselected`.
   - `uv run pytest -q tests/test_runtime_lifecycle.py tests/test_runtime_audio_output.py tests/test_main_lifecycle.py tests/test_import_boundaries.py`: `244 passed`.
+  - `uv run pytest -q tests/test_runtime_startup.py tests/test_main_lifecycle.py tests/test_import_boundaries.py -k "startup_summary_lines or runtime_startup or startup_blockers or operator_auth or import_boundary"`: `197 passed, 41 deselected`.
+  - `uv run pytest -q tests/test_runtime_lifecycle.py tests/test_runtime_audio_output.py tests/test_runtime_turn.py tests/test_main_audio.py`: `23 passed`.
   - `./scripts/test_soak_reliability.sh 2`: accepted; `cycles_completed=2/2`, `phase_count=8`, `failed_count=0`, artifact `.artifacts/quality/soak-profile-fast-repeat2.json`.
-  - `make check`: `809 passed`.
-  - `make security-gate`: `809 passed`; fault subset `3 passed`.
+  - `make check`: `810 passed`.
+  - `make security-gate`: `810 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

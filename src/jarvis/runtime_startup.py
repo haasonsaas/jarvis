@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 
 def operator_control_schema(
@@ -153,3 +153,54 @@ def startup_blockers(
         )
 
     return blockers
+
+
+def startup_summary_lines(
+    runtime: Any,
+    *,
+    normalize_operator_auth_mode_fn: Callable[..., str],
+    operator_auth_risk_fn: Callable[..., str],
+    valid_operator_auth_modes: set[str],
+    tool_service_error_codes: set[str],
+    telemetry_service_error_details: set[str],
+    telemetry_storage_error_details: set[str],
+) -> list[str]:
+    tts_enabled = bool(runtime.tts is not None)
+    tts_reason = "enabled" if tts_enabled else "disabled (no ELEVENLABS_API_KEY or --no-tts)"
+    memory_state = "enabled" if runtime.config.memory_enabled else "disabled"
+    warning_count = len(getattr(runtime.config, "startup_warnings", []))
+    voice = getattr(runtime, "_voice_attention", None)
+    wake_mode = getattr(voice, "mode", "always_listening")
+    timeout_profile = getattr(voice, "timeout_profile", "normal")
+    skills = getattr(runtime, "_skills", None)
+    skills_enabled = bool(skills.enabled) if skills is not None else False
+    observability = getattr(runtime, "_observability", None)
+    operator_auth_mode = normalize_operator_auth_mode_fn(
+        getattr(runtime.config, "operator_auth_mode", "token"),
+        valid_modes=valid_operator_auth_modes,
+    )
+    operator_token_set = bool(str(getattr(runtime.config, "operator_auth_token", "")).strip())
+    operator_auth_risk = operator_auth_risk_fn(
+        auth_mode=operator_auth_mode,
+        token_configured=operator_token_set,
+    )
+    operator_auth = f"mode={operator_auth_mode} risk={operator_auth_risk}"
+    if operator_auth_mode in {"token", "session"}:
+        operator_auth = f"{operator_auth} token={'set' if operator_token_set else 'missing'}"
+    return [
+        f"Mode: {'simulation' if runtime.robot.sim else 'hardware'}",
+        f"Motion: {'on' if runtime.config.motion_enabled else 'off'} | Vision: {'on' if not runtime.args.no_vision and not runtime.robot.sim else 'off'} | Hands: {'on' if runtime.config.hand_track_enabled else 'off'}",
+        f"Home tools: {'on' if runtime.config.home_enabled else 'off'}",
+        f"Safe mode: {'on' if bool(getattr(runtime.config, 'safe_mode_enabled', False)) else 'off'}",
+        f"Home conversation: {'on' if runtime.config.home_conversation_enabled else 'off'}",
+        f"Wake mode: {wake_mode} | calibration: {getattr(runtime.config, 'wake_calibration_profile', 'default')} | timeout profile: {timeout_profile}",
+        f"TTS: {tts_reason}",
+        f"Memory: {memory_state} ({runtime.config.memory_path})",
+        f"Skills: {'on' if skills_enabled else 'off'} ({getattr(runtime.config, 'skills_dir', 'n/a')})",
+        f"Operator server: {'on' if getattr(runtime.config, 'operator_server_enabled', False) else 'off'} ({getattr(runtime.config, 'operator_server_host', '127.0.0.1')}:{getattr(runtime.config, 'operator_server_port', 0)}; {operator_auth})",
+        f"Observability: {'on' if observability is not None else 'off'} ({getattr(runtime.config, 'observability_db_path', 'n/a')})",
+        f"Persona style: {runtime.config.persona_style}",
+        f"Config warnings: {warning_count}",
+        f"Tool policy: allow={len(runtime.config.tool_allowlist)} deny={len(runtime.config.tool_denylist)}",
+        f"Error taxonomy: total={len(tool_service_error_codes)} service={len(telemetry_service_error_details)} storage={len(telemetry_storage_error_details)}",
+    ]

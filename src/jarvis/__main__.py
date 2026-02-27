@@ -120,6 +120,7 @@ from jarvis.runtime_state import (
 from jarvis.runtime_startup import (
     operator_control_schema as _runtime_operator_control_schema,
     startup_blockers as _runtime_startup_blockers,
+    startup_summary_lines as _runtime_startup_summary_lines,
 )
 from jarvis.runtime_conversation import (
     listen_loop as _runtime_listen_loop,
@@ -449,45 +450,15 @@ class Jarvis:
         )
 
     def _startup_summary_lines(self) -> list[str]:
-        tts_enabled = bool(self.tts is not None)
-        tts_reason = "enabled" if tts_enabled else "disabled (no ELEVENLABS_API_KEY or --no-tts)"
-        memory_state = "enabled" if self.config.memory_enabled else "disabled"
-        warning_count = len(getattr(self.config, "startup_warnings", []))
-        voice = getattr(self, "_voice_attention", None)
-        wake_mode = getattr(voice, "mode", "always_listening")
-        timeout_profile = getattr(voice, "timeout_profile", "normal")
-        skills = getattr(self, "_skills", None)
-        skills_enabled = bool(skills.enabled) if skills is not None else False
-        observability = getattr(self, "_observability", None)
-        operator_auth_mode = _runtime_normalize_operator_auth_mode(
-            getattr(self.config, "operator_auth_mode", "token"),
-            valid_modes=VALID_OPERATOR_AUTH_MODES,
+        return _runtime_startup_summary_lines(
+            self,
+            normalize_operator_auth_mode_fn=_runtime_normalize_operator_auth_mode,
+            operator_auth_risk_fn=_runtime_operator_auth_risk,
+            valid_operator_auth_modes=VALID_OPERATOR_AUTH_MODES,
+            tool_service_error_codes=TOOL_SERVICE_ERROR_CODES,
+            telemetry_service_error_details=TELEMETRY_SERVICE_ERROR_DETAILS,
+            telemetry_storage_error_details=TELEMETRY_STORAGE_ERROR_DETAILS,
         )
-        operator_token_set = bool(str(getattr(self.config, "operator_auth_token", "")).strip())
-        operator_auth_risk = _runtime_operator_auth_risk(
-            auth_mode=operator_auth_mode,
-            token_configured=operator_token_set,
-        )
-        operator_auth = f"mode={operator_auth_mode} risk={operator_auth_risk}"
-        if operator_auth_mode in {"token", "session"}:
-            operator_auth = f"{operator_auth} token={'set' if operator_token_set else 'missing'}"
-        return [
-            f"Mode: {'simulation' if self.robot.sim else 'hardware'}",
-            f"Motion: {'on' if self.config.motion_enabled else 'off'} | Vision: {'on' if not self.args.no_vision and not self.robot.sim else 'off'} | Hands: {'on' if self.config.hand_track_enabled else 'off'}",
-            f"Home tools: {'on' if self.config.home_enabled else 'off'}",
-            f"Safe mode: {'on' if bool(getattr(self.config, 'safe_mode_enabled', False)) else 'off'}",
-            f"Home conversation: {'on' if self.config.home_conversation_enabled else 'off'}",
-            f"Wake mode: {wake_mode} | calibration: {getattr(self.config, 'wake_calibration_profile', 'default')} | timeout profile: {timeout_profile}",
-            f"TTS: {tts_reason}",
-            f"Memory: {memory_state} ({self.config.memory_path})",
-            f"Skills: {'on' if skills_enabled else 'off'} ({getattr(self.config, 'skills_dir', 'n/a')})",
-            f"Operator server: {'on' if getattr(self.config, 'operator_server_enabled', False) else 'off'} ({getattr(self.config, 'operator_server_host', '127.0.0.1')}:{getattr(self.config, 'operator_server_port', 0)}; {operator_auth})",
-            f"Observability: {'on' if observability is not None else 'off'} ({getattr(self.config, 'observability_db_path', 'n/a')})",
-            f"Persona style: {self.config.persona_style}",
-            f"Config warnings: {warning_count}",
-            f"Tool policy: allow={len(self.config.tool_allowlist)} deny={len(self.config.tool_denylist)}",
-            f"Error taxonomy: total={len(TOOL_SERVICE_ERROR_CODES)} service={len(TELEMETRY_SERVICE_ERROR_DETAILS)} storage={len(TELEMETRY_STORAGE_ERROR_DETAILS)}",
-        ]
 
     def _publish_voice_status(self) -> None:
         self._check_runtime_invariants(auto_heal=True)
