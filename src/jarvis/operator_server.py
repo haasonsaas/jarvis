@@ -234,6 +234,10 @@ def _dashboard_html() -> str:
       <pre id=\"actions\">loading...</pre>
     </section>
     <section class=\"card\">
+      <h2>Conversation Trace</h2>
+      <pre id=\"trace\">loading...</pre>
+    </section>
+    <section class=\"card\">
       <h2>Control Schema</h2>
       <pre id=\"control-schema\">loading...</pre>
     </section>
@@ -269,12 +273,13 @@ def _dashboard_html() -> str:
     }
     async function refresh() {
       try {
-        const [status, tools, startup, audit, actions] = await Promise.all([
+        const [status, tools, startup, audit, actions, trace] = await Promise.all([
           json('/api/status'),
           json('/api/tools/recent?limit=20'),
           json('/api/startup-diagnostics'),
           json('/api/audit?limit=20'),
           json('/api/operator-actions?limit=20'),
+          json('/api/conversation-trace?limit=20'),
         ]);
         const controlSchema = await json('/api/control-schema');
         document.getElementById('status').textContent = JSON.stringify(status, null, 2);
@@ -282,6 +287,7 @@ def _dashboard_html() -> str:
         document.getElementById('startup').textContent = JSON.stringify(startup, null, 2);
         document.getElementById('audit').textContent = JSON.stringify(audit, null, 2);
         document.getElementById('actions').textContent = JSON.stringify(actions, null, 2);
+        document.getElementById('trace').textContent = JSON.stringify(trace, null, 2);
         document.getElementById('control-schema').textContent = JSON.stringify(controlSchema, null, 2);
       } catch (err) {
         document.getElementById('status').textContent = String(err);
@@ -325,6 +331,7 @@ class OperatorServer:
         inbound_enabled: bool,
         inbound_token: str,
         operator_auth_token: str,
+        conversation_trace_provider: Callable[[int], list[dict[str, Any]]] | None = None,
     ) -> None:
         self._host = host
         self._port = int(port)
@@ -334,6 +341,7 @@ class OperatorServer:
         self._control_schema_provider = control_schema_provider
         self._metrics_provider = metrics_provider
         self._events_provider = events_provider
+        self._conversation_trace_provider = conversation_trace_provider or (lambda limit=20: [])
         self._inbound_callback = inbound_callback
         self._inbound_enabled = bool(inbound_enabled)
         self._inbound_token = str(inbound_token).strip()
@@ -352,6 +360,7 @@ class OperatorServer:
         app.router.add_get("/api/audit", self._handle_audit)
         app.router.add_get("/api/startup-diagnostics", self._handle_startup_diagnostics)
         app.router.add_get("/api/operator-actions", self._handle_operator_actions)
+        app.router.add_get("/api/conversation-trace", self._handle_conversation_trace)
         app.router.add_get("/api/control-schema", self._handle_control_schema)
         app.router.add_post("/api/control", self._handle_control)
         app.router.add_get("/metrics", self._handle_metrics)
@@ -428,6 +437,18 @@ class OperatorServer:
             limit = 20
         limit = max(1, min(200, limit))
         return web.json_response(list(reversed(self._actions))[:limit])
+
+    async def _handle_conversation_trace(self, request: web.Request) -> web.Response:
+        self._require_operator_auth(request)
+        try:
+            limit = int(request.query.get("limit", "20"))
+        except ValueError:
+            limit = 20
+        limit = max(1, min(200, limit))
+        rows = self._conversation_trace_provider(limit)
+        if not isinstance(rows, list):
+            rows = []
+        return web.json_response(rows[:limit])
 
     async def _handle_control_schema(self, request: web.Request) -> web.Response:
         self._require_operator_auth(request)

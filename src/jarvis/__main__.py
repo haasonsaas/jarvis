@@ -86,6 +86,7 @@ TELEMETRY_LOG_EVERY_TURNS = 5
 TELEMETRY_STORAGE_ERROR_DETAILS = TOOL_STORAGE_ERROR_DETAILS
 TELEMETRY_SERVICE_ERROR_DETAILS = TOOL_SERVICE_ERROR_CODES - TELEMETRY_STORAGE_ERROR_DETAILS
 WATCHDOG_POLL_SEC = 0.05
+CONVERSATION_TRACE_MAXLEN = 200
 VALID_PERSONA_STYLES = {"terse", "composed", "friendly"}
 VALID_BACKCHANNEL_STYLES = {"quiet", "balanced", "expressive"}
 MEMORY_FORGET_RE = re.compile(
@@ -348,6 +349,8 @@ class Jarvis:
             "intent_corrections": 0.0,
         }
         self._telemetry_error_counts: dict[str, float] = {}
+        self._conversation_traces: deque[dict[str, Any]] = deque(maxlen=CONVERSATION_TRACE_MAXLEN)
+        self._turn_trace_seq = 0
         self._load_runtime_state()
         self._publish_voice_status()
         self._publish_skills_status()
@@ -897,11 +900,17 @@ class Jarvis:
                 status = {}
         except Exception as exc:
             status = {"error": str(exc)}
+        latest = self._operator_conversation_trace_provider(limit=1)
+        latest_turn_id = int(latest[0].get("turn_id", 0)) if latest and isinstance(latest[0], dict) else 0
         status["operator"] = {
             "enabled": bool(self.config.operator_server_enabled),
             "host": self.config.operator_server_host,
             "port": int(self.config.operator_server_port),
             "auth_required": bool(str(getattr(self.config, "operator_auth_token", "")).strip()),
+        }
+        status["conversation_trace"] = {
+            "recent_count": len(self._conversation_traces),
+            "latest_turn_id": latest_turn_id,
         }
         return status
 
@@ -1027,6 +1036,138 @@ class Jarvis:
         if has_failure:
             return False
         return None
+
+    @staticmethod
+    def _tool_call_trace_items(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        calls: list[dict[str, Any]] = []
+        for item in summaries:
+            if not isinstance(item, dict):
+                continue
+            try:
+                duration = float(item.get("duration_ms", 0.0))
+            except (TypeError, ValueError):
+                duration = 0.0
+            if not math.isfinite(duration) or duration < 0.0:
+                duration = 0.0
+            calls.append(
+                {
+                    "name": str(item.get("name", "tool")),
+                    "status": str(item.get("status", "unknown")),
+                    "duration_ms": duration,
+                    "detail": str(item.get("detail", "")),
+                    "effect": str(item.get("effect", "")),
+                    "risk": str(item.get("risk", "")),
+                }
+            )
+        return calls
+
+    @staticmethod
+    def _policy_decisions_from_summaries(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        decisions: list[dict[str, Any]] = []
+        for item in summaries:
+            if not isinstance(item, dict):
+                continue
+            status = str(item.get("status", "")).strip().lower()
+            detail = str(item.get("detail", "")).strip().lower()
+            if not status and not detail:
+                continue
+            if (
+                status in {"denied", "dry_run", "cooldown"}
+                or detail in {"policy", "circuit_open"}
+                or "policy" in detail
+                or "preview" in detail
+            ):
+                decisions.append(
+                    {
+                        "tool": str(item.get("name", "tool")),
+                        "status": status,
+                        "detail": detail,
+                    }
+                )
+        return decisions
+
+    def _record_conversation_trace(
+        self,
+        *,
+        user_text: str,
+        intent_class: str,
+        turn_started_at: float,
+        stt_latency_ms: float | None,
+        llm_first_sentence_ms: float | None,
+        tts_first_audio_ms: float | None,
+        response_success: bool | None,
+        tool_summaries: list[dict[str, Any]],
+        lifecycle: str,
+        used_brain_response: bool,
+    ) -> None:
+        self._turn_trace_seq += 1
+        now = time.time()
+        total_ms = max(0.0, (now - turn_started_at) * 1000.0)
+        stt_ms = max(0.0, float(stt_latency_ms or 0.0))
+        llm_ms = max(0.0, float(llm_first_sentence_ms or 0.0))
+        tts_ms = max(0.0, float(tts_first_audio_ms or 0.0))
+        tool_calls = self._tool_call_trace_items(tool_summaries)
+        completion_success = self._completion_success_from_summaries(tool_summaries)
+        policy_decisions = self._policy_decisions_from_summaries(tool_summaries)
+        if response_success is None:
+            speak_status = "skipped"
+        elif response_success:
+            speak_status = "ok"
+        else:
+            speak_status = "interrupted"
+        if completion_success is True:
+            act_status = "ok"
+        elif completion_success is False:
+            act_status = "failed"
+        else:
+            act_status = "none"
+        trace_item = {
+            "turn_id": int(self._turn_trace_seq),
+            "timestamp": now,
+            "lifecycle": str(lifecycle),
+            "intent": str(intent_class),
+            "transcript": str(user_text).strip()[:400],
+            "latencies_ms": {
+                "stt": stt_ms,
+                "llm_first_sentence": llm_ms,
+                "tts_first_audio": tts_ms,
+                "total": total_ms,
+            },
+            "turn_flow": [
+                {"phase": "listen", "status": "ok", "latency_ms": stt_ms},
+                {
+                    "phase": "think",
+                    "status": "ok" if used_brain_response else "skipped",
+                    "latency_ms": llm_ms,
+                },
+                {"phase": "speak", "status": speak_status, "latency_ms": tts_ms},
+                {"phase": "act", "status": act_status, "tool_count": len(tool_calls)},
+            ],
+            "tool_calls": tool_calls,
+            "policy_decisions": policy_decisions,
+            "completion_success": completion_success,
+            "response_success": response_success,
+            "attention_source": self.presence.attention_source(),
+            "turn_choreography": self._turn_choreography_snapshot(),
+        }
+        self._conversation_traces.appendleft(trace_item)
+        observability = getattr(self, "_observability", None)
+        if observability is not None:
+            with suppress(Exception):
+                observability.record_event(
+                    "conversation_trace",
+                    {
+                        "turn_id": int(self._turn_trace_seq),
+                        "lifecycle": str(lifecycle),
+                        "intent": str(intent_class),
+                        "tool_count": len(tool_calls),
+                        "policy_decision_count": len(policy_decisions),
+                    },
+                )
+
+    def _operator_conversation_trace_provider(self, limit: int = 20) -> list[dict[str, Any]]:
+        size = max(1, min(200, int(limit)))
+        return list(self._conversation_traces)[:size]
 
     def _persist_runtime_state_safe(self) -> None:
         with suppress(Exception):
@@ -1198,6 +1339,7 @@ class Jarvis:
             control_schema_provider=self._operator_control_schema,
             metrics_provider=self._operator_metrics_provider,
             events_provider=self._operator_events_provider,
+            conversation_trace_provider=self._operator_conversation_trace_provider,
             inbound_callback=lambda payload, headers, path, source: service_tools.record_inbound_webhook_event(
                 payload=payload,
                 headers=headers,
@@ -1302,6 +1444,7 @@ class Jarvis:
                     None, self._transcribe_with_fallback, utterance
                 )
                 stt_elapsed = time.monotonic() - self._last_doa_update if self._last_doa_update else None
+                stt_latency_ms = (stt_elapsed * 1000.0) if stt_elapsed is not None else None
                 if stt_elapsed is not None:
                     log.info("STT latency: %.0fms", stt_elapsed * 1000.0)
                     self._telemetry["stt_latency_total_ms"] += stt_elapsed * 1000.0
@@ -1390,9 +1533,8 @@ class Jarvis:
                         result = await service_tools.memory_update(payload)
                     if not looks_like_correction:
                         self._telemetry["intent_corrections"] += 1.0
-                    completion_outcome = self._completion_success_from_summaries(
-                        self._turn_tool_summaries_since(turn_started_at)
-                    )
+                    turn_tool_summaries = self._turn_tool_summaries_since(turn_started_at)
+                    completion_outcome = self._completion_success_from_summaries(turn_tool_summaries)
                     if completion_outcome is not None:
                         self._telemetry["intent_completion_total"] += 1.0
                         if completion_outcome:
@@ -1404,6 +1546,18 @@ class Jarvis:
                         print(f"  JARVIS: {reply}")
                     self.presence.signals.state = State.IDLE
                     self._publish_voice_status()
+                    self._record_conversation_trace(
+                        user_text=text,
+                        intent_class=intent_class,
+                        turn_started_at=turn_started_at,
+                        stt_latency_ms=stt_latency_ms,
+                        llm_first_sentence_ms=0.0,
+                        tts_first_audio_ms=0.0,
+                        response_success=True,
+                        tool_summaries=turn_tool_summaries,
+                        lifecycle="memory_correction",
+                        used_brain_response=False,
+                    )
                     continue
 
                 if self._requires_confirmation(time.monotonic()):
@@ -1416,24 +1570,57 @@ class Jarvis:
                         print(f"  JARVIS: {CONFIRMATION_PHRASE}")
                     self.presence.signals.state = State.LISTENING
                     self._publish_voice_status()
+                    self._record_conversation_trace(
+                        user_text=text,
+                        intent_class=intent_class,
+                        turn_started_at=turn_started_at,
+                        stt_latency_ms=stt_latency_ms,
+                        llm_first_sentence_ms=0.0,
+                        tts_first_audio_ms=0.0,
+                        response_success=None,
+                        tool_summaries=[],
+                        lifecycle="confirmation_requested",
+                        used_brain_response=False,
+                    )
                     continue
 
                 # Get response from Claude and play it
                 self._telemetry["turns"] += 1.0
                 await self._respond_and_speak(text)
                 response_success = bool(self._response_started and not self._barge_in.is_set())
+                llm_first_sentence_ms = (
+                    (self._first_sentence_at - self._response_start_at) * 1000.0
+                    if self._first_sentence_at is not None and self._response_start_at is not None
+                    else 0.0
+                )
+                tts_first_audio_ms = (
+                    (self._first_audio_at - self._response_start_at) * 1000.0
+                    if self._first_audio_at is not None and self._response_start_at is not None
+                    else 0.0
+                )
+                turn_tool_summaries = self._turn_tool_summaries_since(turn_started_at)
                 if intent_class in {"answer", "hybrid"}:
                     self._telemetry["intent_answer_total"] += 1.0
                     if response_success:
                         self._telemetry["intent_answer_success"] += 1.0
                 if intent_class in {"action", "hybrid"}:
-                    completion_outcome = self._completion_success_from_summaries(
-                        self._turn_tool_summaries_since(turn_started_at)
-                    )
+                    completion_outcome = self._completion_success_from_summaries(turn_tool_summaries)
                     if completion_outcome is not None:
                         self._telemetry["intent_completion_total"] += 1.0
                         if completion_outcome:
                             self._telemetry["intent_completion_success"] += 1.0
+                self._record_conversation_trace(
+                    user_text=text,
+                    intent_class=intent_class,
+                    turn_started_at=turn_started_at,
+                    stt_latency_ms=stt_latency_ms,
+                    llm_first_sentence_ms=llm_first_sentence_ms,
+                    tts_first_audio_ms=tts_first_audio_ms,
+                    response_success=response_success,
+                    tool_summaries=turn_tool_summaries,
+                    lifecycle="completed",
+                    used_brain_response=True,
+                )
                 if int(self._telemetry["turns"]) % TELEMETRY_LOG_EVERY_TURNS == 0:
                     self._refresh_tool_error_counters()
                     snapshot = self._telemetry_snapshot()
