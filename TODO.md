@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 40 (Home Domain Decomposition)
+# Jarvis TODO — Wave 41 (Home Control Subdomain Split)
 
 Last updated: 2026-02-27
 
@@ -8,71 +8,69 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 26
-- Completed: 26
+- Total items: 22
+- Completed: 22
 - Remaining: 0
 
 ---
 
-## A) Scope and baseline
+## A) Scope and rationale
 
-- [x] `W40-A01` Identify next largest post-W39 hotspot by line count.
-- [x] `W40-A02` Select `services_domains/home.py` for decomposition.
-- [x] `W40-A03` Define split boundaries that preserve existing tool entrypoints.
+- [x] `W41-A01` Re-evaluate Wave 40 output and identify largest remaining home-domain file.
+- [x] `W41-A02` Select `services_domains/home_control.py` for second-level split.
+- [x] `W41-A03` Define split boundary: mutating control vs HA utility tools.
 
-## B) Home domain split
+## B) Subdomain extraction
 
-- [x] `W40-B01` Create `services_domains/home_state.py` for state/capabilities handlers.
-- [x] `W40-B02` Move `smart_home_state` into `home_state.py`.
-- [x] `W40-B03` Move `home_assistant_capabilities` into `home_state.py`.
-- [x] `W40-B04` Create `services_domains/home_orchestrator.py` for orchestration handler.
-- [x] `W40-B05` Move `home_orchestrator` into `home_orchestrator.py`.
-- [x] `W40-B06` Create `services_domains/home_control.py` for smart-home control and HA tool handlers.
-- [x] `W40-B07` Move `smart_home` into `home_control.py`.
-- [x] `W40-B08` Move `home_assistant_conversation` into `home_control.py`.
-- [x] `W40-B09` Move `home_assistant_todo` into `home_control.py`.
-- [x] `W40-B10` Move `home_assistant_timer` into `home_control.py`.
-- [x] `W40-B11` Move `home_assistant_area_entities` into `home_control.py`.
-- [x] `W40-B12` Move `media_control` into `home_control.py`.
+- [x] `W41-B01` Create `services_domains/home_mutation.py`.
+- [x] `W41-B02` Move `smart_home` into `home_mutation.py`.
+- [x] `W41-B03` Create `services_domains/home_ha_tools.py`.
+- [x] `W41-B04` Move `home_assistant_conversation` into `home_ha_tools.py`.
+- [x] `W41-B05` Move `home_assistant_todo` into `home_ha_tools.py`.
+- [x] `W41-B06` Move `home_assistant_timer` into `home_ha_tools.py`.
+- [x] `W41-B07` Move `home_assistant_area_entities` into `home_ha_tools.py`.
+- [x] `W41-B08` Move `media_control` into `home_ha_tools.py`.
 
-## C) Compatibility and API stability
+## C) Compatibility surface
 
-- [x] `W40-C01` Replace `services_domains/home.py` with compatibility re-exports.
-- [x] `W40-C02` Preserve existing import sites in `services.py` and `services_server.py` without API break.
-- [x] `W40-C03` Add explicit `__all__` in compatibility module for stable export surface.
+- [x] `W41-C01` Convert `services_domains/home_control.py` into compatibility re-exports.
+- [x] `W41-C02` Preserve existing import path behavior for upstream modules/tests.
+- [x] `W41-C03` Add explicit `__all__` export contract for home-control compatibility module.
 
-## D) Safety boundaries and tests
+## D) Safety and test boundaries
 
-- [x] `W40-D01` Extend import-boundary tests for `home_state`.
-- [x] `W40-D02` Extend import-boundary tests for `home_orchestrator`.
-- [x] `W40-D03` Extend import-boundary tests for `home_control`.
-- [x] `W40-D04` Run targeted home-domain pytest scenarios across all moved handlers.
+- [x] `W41-D01` Add import-boundary test for `home_mutation` module.
+- [x] `W41-D02` Add import-boundary test for `home_ha_tools` module.
+- [x] `W41-D03` Re-run targeted home tool tests for moved handlers.
 
 ## E) Quality gates
 
-- [x] `W40-E01` Run focused lint on new/changed home domain modules.
-- [x] `W40-E02` Run `make check` full suite.
-- [x] `W40-E03` Run `make security-gate`.
-- [x] `W40-E04` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W41-E01` Run focused lint for changed files.
+- [x] `W41-E02` Run `make check` full suite.
+- [x] `W41-E03` Run `make security-gate`.
+- [x] `W41-E04` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W40-F01` Update TODO completion snapshot with measured size changes.
-- [x] `W40-F02` Commit and push Wave 40.
+- [x] `W41-F01` Capture resulting line-count deltas.
+- [x] `W41-F02` Commit and push Wave 41.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Home domain decomposition completed:
-  - `services_domains/home.py`: `1801 -> 29` lines (compatibility exports only)
-  - New `services_domains/home_state.py`: `186` lines
-  - New `services_domains/home_orchestrator.py`: `398` lines
-  - New `services_domains/home_control.py`: `1243` lines
-- Behavior continuity:
-  - Existing tool API/registration surface preserved through compatibility exports.
-  - Targeted tool tests for moved handlers remained green.
+- Additional decomposition completed:
+  - `services_domains/home_control.py`: `1242 -> 21` lines (compatibility exports)
+  - New `services_domains/home_mutation.py`: `373` lines
+  - New `services_domains/home_ha_tools.py`: `882` lines
+- Combined home domain structure after Wave 41:
+  - `home.py` (compat): `29` lines
+  - `home_state.py`: `186` lines
+  - `home_orchestrator.py`: `398` lines
+  - `home_control.py` (compat): `21` lines
+  - `home_mutation.py`: `373` lines
+  - `home_ha_tools.py`: `882` lines
 - Validation status:
-  - `make check`: `606 passed`
-  - `make security-gate`: `606 passed`; fault subset `3 passed`
+  - `make check`: `608 passed`
+  - `make security-gate`: `608 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`

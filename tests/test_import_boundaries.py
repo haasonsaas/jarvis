@@ -26,6 +26,8 @@ import pytest
         ("jarvis.tools.services_domains.home_state", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_orchestrator", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_control", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.home_mutation", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.home_ha_tools", "jarvis.tools.services"),
     ],
 )
 def test_runtime_module_import_boundary(module_name: str, blocked_module: str) -> None:
