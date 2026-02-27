@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 52 (Home Orchestrator Decomposition)
+# Jarvis TODO — Wave 53 (Integrations Hub Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,69 +8,70 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 29
-- Completed: 29
+- Total items: 27
+- Completed: 27
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W52-A01` Confirm Wave 51 merged and baseline clean.
-- [x] `W52-A02` Re-profile remaining large service-domain modules.
-- [x] `W52-A03` Select `services_domains/home_orchestrator.py` for decomposition.
-- [x] `W52-A04` Preserve `home_orchestrator` API/action behavior.
+- [x] `W53-A01` Confirm baseline state and identify next large service-domain target.
+- [x] `W53-A02` Re-profile `services_domains/*` file sizes after Wave 52.
+- [x] `W53-A03` Select `services_domains/integrations_hub.py` for decomposition.
+- [x] `W53-A04` Preserve existing `integration_hub` API/action behavior.
 
 ## B) Decomposition design
 
-- [x] `W52-B01` Define `home_orch_plan_exec.py` for planning/execution/area policies.
-- [x] `W52-B02` Define `home_orch_automation.py` for automation lifecycle actions.
-- [x] `W52-B03` Define `home_orch_tasks.py` for task start/update/list.
-- [x] `W52-B04` Keep `home_orchestrator.py` as dispatcher with policy gate.
+- [x] `W53-B01` Keep `integrations_hub.py` as policy gate + action dispatcher.
+- [x] `W53-B02` Use `integrations_hub_calendar_notes.py` for calendar + notes actions.
+- [x] `W53-B03` Use `integrations_hub_messaging.py` for messaging/commute/shopping/research.
+- [x] `W53-B04` Add `integrations_hub_release_channels.py` for release-channel actions.
 
 ## C) Extraction implementation
 
-- [x] `W52-C01` Create `services_domains/home_orch_plan_exec.py`.
-- [x] `W52-C02` Move `plan` and `execute` action logic.
-- [x] `W52-C03` Move `area_policy_set` and `area_policy_list` action logic.
-- [x] `W52-C04` Create `services_domains/home_orch_automation.py`.
-- [x] `W52-C05` Move `automation_suggest` and `automation_create`.
-- [x] `W52-C06` Move `automation_apply`, `automation_rollback`, and `automation_status`.
-- [x] `W52-C07` Create `services_domains/home_orch_tasks.py`.
-- [x] `W52-C08` Move `task_start`, `task_update`, and `task_list`.
-- [x] `W52-C09` Rewrite `home_orchestrator.py` as thin dispatcher.
+- [x] `W53-C01` Finalize `integrations_hub_calendar_notes.py` extraction.
+- [x] `W53-C02` Finalize `integrations_hub_messaging.py` extraction.
+- [x] `W53-C03` Create `integrations_hub_release_channels.py`.
+- [x] `W53-C04` Move `release_channel_get` action logic.
+- [x] `W53-C05` Move `release_channel_set` action logic.
+- [x] `W53-C06` Move `release_channel_check` action logic.
+- [x] `W53-C07` Rewrite `integrations_hub.py` as thin dispatcher.
 
-## D) Boundaries
+## D) Boundaries and quality
 
-- [x] `W52-D01` Add import-boundary check for `home_orch_plan_exec`.
-- [x] `W52-D02` Add import-boundary check for `home_orch_automation`.
-- [x] `W52-D03` Add import-boundary check for `home_orch_tasks`.
+- [x] `W53-D01` Add import-boundary test for `integrations_hub_calendar_notes`.
+- [x] `W53-D02` Add import-boundary test for `integrations_hub_messaging`.
+- [x] `W53-D03` Add import-boundary test for `integrations_hub_release_channels`.
+- [x] `W53-D04` Keep naming, typing, and helper-loading patterns consistent.
 
 ## E) Validation
 
-- [x] `W52-E01` Run focused lint on home orchestrator modules + boundary tests.
-- [x] `W52-E02` Run targeted pytest for home orchestrator action groups + boundaries.
-- [x] `W52-E03` Run full `make check`.
-- [x] `W52-E04` Run full `make security-gate`.
-- [x] `W52-E05` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W53-E01` Run focused lint for changed integration-hub modules + boundaries.
+- [x] `W53-E02` Run targeted pytest for integration-hub actions + boundaries.
+- [x] `W53-E03` Run full `make check`.
+- [x] `W53-E04` Run full `make security-gate`.
+- [x] `W53-E05` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W52-F01` Capture post-split line-count outcomes.
-- [x] `W52-F02` Commit and push Wave 52.
+- [x] `W53-F01` Capture post-split line-count outcomes.
+- [x] `W53-F02` Commit Wave 53 changes.
+- [x] `W53-F03` Push Wave 53 to remote.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Home orchestrator decomposition:
-  - `services_domains/home_orchestrator.py`: `398 -> 72` lines (dispatcher)
-  - New `services_domains/home_orch_plan_exec.py`: `118` lines
-  - New `services_domains/home_orch_automation.py`: `288` lines
-  - New `services_domains/home_orch_tasks.py`: `77` lines
+- Integrations hub decomposition:
+  - `services_domains/integrations_hub.py`: reduced to action dispatcher.
+  - `services_domains/integrations_hub_calendar_notes.py`: calendar + notes handlers.
+  - `services_domains/integrations_hub_messaging.py`: messaging/commute/shopping/research handlers.
+  - `services_domains/integrations_hub_release_channels.py`: release-channel handlers.
 - Boundary enforcement:
-  - Added import-boundary coverage for all new home-orchestrator modules.
+  - Added import-boundary coverage for all three extracted integration-hub helper modules.
 - Validation status:
-  - `make check`: `645 passed`
-  - `make security-gate`: `645 passed`; fault subset `3 passed`
-  - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
+  - Focused lint/pytest: pass.
+  - `make check`: pass.
+  - `make security-gate`: pass.
+  - `./scripts/jarvis_readiness.sh fast`: pass.
