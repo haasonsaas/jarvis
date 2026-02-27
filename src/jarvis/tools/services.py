@@ -102,9 +102,13 @@ from jarvis.tools.services_ha_facade_runtime import (
     ha_render_template as _facade_ha_render_template,
     ha_request_json as _facade_ha_request_json,
 )
-from jarvis.tools.services_email_runtime import (
-    record_email_history as _runtime_record_email_history,
-    send_email_sync as _runtime_send_email_sync,
+from jarvis.tools.services_comms_facade_runtime import (
+    collect_json_lists_by_key as _facade_collect_json_lists_by_key,
+    parse_calendar_event_timestamp as _facade_parse_calendar_event_timestamp,
+    record_email_history as _facade_record_email_history,
+    record_inbound_webhook_event as _facade_record_inbound_webhook_event,
+    send_email_sync as _facade_send_email_sync,
+    webhook_host_allowed as _facade_webhook_host_allowed,
 )
 from jarvis.tools.services_recovery_runtime import (
     RecoveryOperation as _runtime_RecoveryOperation,
@@ -237,12 +241,6 @@ from jarvis.tools.services_home_policy_runtime import (
     extract_area_from_entity as _runtime_extract_area_from_entity,
     home_action_is_loud as _runtime_home_action_is_loud,
     home_area_policy_violation as _runtime_home_area_policy_violation,
-)
-from jarvis.tools.services_webhook_runtime import (
-    collect_json_lists_by_key as _runtime_collect_json_lists_by_key,
-    parse_calendar_event_timestamp as _runtime_parse_calendar_event_timestamp,
-    record_inbound_webhook_event as _runtime_record_inbound_webhook_event,
-    webhook_host_allowed as _runtime_webhook_host_allowed,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -909,32 +907,10 @@ _ha_request_json = _facade_ha_request_json
 _ha_render_template = _facade_ha_render_template
 
 
-def _collect_json_lists_by_key(value: Any, key: str) -> list[Any]:
-    return _runtime_collect_json_lists_by_key(value, key)
-
-
-def _parse_calendar_event_timestamp(value: Any) -> float | None:
-    return _runtime_parse_calendar_event_timestamp(_services_module(), value)
-
-
-def _webhook_host_allowed(url: str) -> bool:
-    return _runtime_webhook_host_allowed(_services_module(), url)
-
-
-def record_inbound_webhook_event(
-    *,
-    payload: Any,
-    headers: dict[str, Any] | None = None,
-    source: str = "unknown",
-    path: str = "/",
-) -> int:
-    return _runtime_record_inbound_webhook_event(
-        _services_module(),
-        payload=payload,
-        headers=headers,
-        source=source,
-        path=path,
-    )
+_collect_json_lists_by_key = _facade_collect_json_lists_by_key
+_parse_calendar_event_timestamp = _facade_parse_calendar_event_timestamp
+_webhook_host_allowed = _facade_webhook_host_allowed
+record_inbound_webhook_event = _facade_record_inbound_webhook_event
 
 
 _integration_health_snapshot = _facade_integration_health_snapshot
@@ -959,17 +935,8 @@ _jarvis_scorecard_snapshot = _facade_jarvis_scorecard_snapshot
 _ha_conversation_speech = _facade_ha_conversation_speech
 
 
-def _record_email_history(recipient: str, subject: str) -> None:
-    _runtime_record_email_history(_services_module(), recipient=recipient, subject=subject)
-
-
-def _send_email_sync(*, recipient: str, subject: str, body: str) -> None:
-    _runtime_send_email_sync(
-        _services_module(),
-        recipient=recipient,
-        subject=subject,
-        body=body,
-    )
+_record_email_history = _facade_record_email_history
+_send_email_sync = _facade_send_email_sync
 
 
 
