@@ -55,6 +55,9 @@ async def test_operator_server_routes_and_control_log(tmp_path):
             metrics_text = await (await session.get(f"{base}/metrics")).text()
             assert "jarvis_uptime_seconds" in metrics_text
 
+            events_text = await (await session.get(f"{base}/events?timeout_sec=0.6")).text()
+            assert "event: runtime" in events_text
+
             control = await (
                 await session.post(
                     f"{base}/api/control",

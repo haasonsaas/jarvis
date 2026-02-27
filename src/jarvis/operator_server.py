@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -306,6 +307,11 @@ class OperatorServer:
         return web.Response(text=self._metrics_provider(), content_type="text/plain")
 
     async def _handle_events(self, request: web.Request) -> web.StreamResponse:
+        try:
+            timeout_sec = float(request.query.get("timeout_sec", "10"))
+        except ValueError:
+            timeout_sec = 10.0
+        timeout_sec = max(0.5, min(30.0, timeout_sec))
         response = web.StreamResponse(
             headers={
                 "Content-Type": "text/event-stream",
@@ -314,9 +320,18 @@ class OperatorServer:
             }
         )
         await response.prepare(request)
-        for item in self._events_provider()[-100:]:
-            payload = json.dumps(item, default=str)
-            await response.write(f"event: runtime\ndata: {payload}\n\n".encode("utf-8"))
+        start = time.monotonic()
+        sent = 0
+        while (time.monotonic() - start) < timeout_sec:
+            events = self._events_provider()
+            if sent < len(events):
+                for item in events[sent:]:
+                    payload = json.dumps(item, default=str)
+                    await response.write(f"event: runtime\ndata: {payload}\n\n".encode("utf-8"))
+                sent = len(events)
+            else:
+                await response.write(b": keepalive\n\n")
+            await asyncio.sleep(0.5)
         await response.write_eof()
         return response
 

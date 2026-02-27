@@ -3297,6 +3297,22 @@ class TestServicesTools:
         assert json.loads(version["content"][0]["text"]) == {"name": "weather_plus", "version": "1.0.1"}
 
     @pytest.mark.asyncio
+    async def test_skills_list_allowed_when_registry_disabled(self, tmp_path):
+        from jarvis.skills import SkillRegistry
+        from jarvis.tools import services
+
+        skills_dir = tmp_path / "skills"
+        registry = SkillRegistry(skills_dir=str(skills_dir), enabled=False)
+        services.set_skill_registry(registry)
+
+        listed = await services.skills_list({})
+        payload = json.loads(listed["content"][0]["text"])
+        assert payload["enabled"] is False
+
+        denied_enable = await services.skills_enable({"name": "any"})
+        assert "tool not permitted" in denied_enable["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
     async def test_audit_decode_handles_encrypted_without_key(self):
         from jarvis.tools import services
 

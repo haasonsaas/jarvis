@@ -17,6 +17,7 @@ import random
 import re
 import smtplib
 import time
+from contextlib import suppress
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -811,7 +812,12 @@ def _tool_permitted(name: str) -> bool:
         return False
     if _notification_permission_profile == "off" and name in {"pushover_notify", "slack_notify", "discord_notify"}:
         return False
-    if name.startswith("skills_") and _skill_registry is not None and not _skill_registry.enabled:
+    if (
+        name.startswith("skills_")
+        and name != "skills_list"
+        and _skill_registry is not None
+        and not _skill_registry.enabled
+    ):
         return False
     if _config is not None and not _config.home_enabled:
         if name in {
@@ -4446,6 +4452,9 @@ async def skills_list(args: dict[str, Any]) -> dict[str, Any]:
     if _skill_registry is None:
         _record_service_error("skills_list", start_time, "missing_store")
         return {"content": [{"type": "text", "text": "Skill registry is not available."}]}
+    with suppress(Exception):
+        _skill_registry.discover()
+        set_runtime_skills_state(_skill_registry.status_snapshot())
     record_summary("skills_list", "ok", start_time)
     return {"content": [{"type": "text", "text": json.dumps(_skill_registry.status_snapshot(), default=str)}]}
 
