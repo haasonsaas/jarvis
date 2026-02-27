@@ -63,7 +63,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `IX03` Add step-up verification path for high-risk requests (spoken code or operator approval). `P0`
 - [ ] `IX04` Add "guest mode" with constrained capabilities and automatic expiry. `P1`
 - [ ] `IX05` Add household profile management in operator UI (users, roles, trust, exceptions). `P1`
-- [ ] `IX06` Add audit explainability: record why an action was allowed/blocked in user-readable terms. `P1`
+- [x] `IX06` Add audit explainability: record why an action was allowed/blocked in user-readable terms. `P1`
 
 ## 6) Home Intelligence and Automation (6 items)
 
@@ -167,6 +167,6 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q15` Implement `RX02` recovery journal and resume.
 - [x] `Q16` Implement `OX03` conversation trace panel.
 - [x] `Q17` Implement `MX02` memory confidence/source trail.
-- [ ] `Q18` Implement `IX06` readable audit explainability.
+- [x] `Q18` Implement `IX06` readable audit explainability.
 - [ ] `Q19` Implement `DX03` backup/restore CLI.
 - [ ] `Q20` Implement `EX06` unified Jarvis scorecard.

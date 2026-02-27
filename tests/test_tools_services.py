@@ -3373,6 +3373,58 @@ class TestServicesTools:
         assert "turn_on" in content
 
     @pytest.mark.asyncio
+    async def test_audit_log_includes_readable_allow_explanation(self, tmp_path):
+        from jarvis.tools import services
+
+        services.AUDIT_LOG = tmp_path / "audit.jsonl"
+
+        await services.smart_home(
+            {
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": "light.explain_allow",
+                "dry_run": True,
+            }
+        )
+
+        lines = services.AUDIT_LOG.read_text().splitlines()
+        assert lines
+        entry = services.decode_audit_entry_line(lines[-1])
+        assert entry is not None
+        assert entry["decision_outcome"] == "dry_run"
+        assert entry["decision_reason"] == "dry_run"
+        assert "dry run" in entry["decision_explanation"].lower()
+
+    @pytest.mark.asyncio
+    async def test_audit_log_includes_readable_block_explanation(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_user_profiles = {"alice": "deny"}
+        cfg.webhook_allowlist = ["example.com"]
+        services.bind(cfg)
+        services.AUDIT_LOG = tmp_path / "audit.jsonl"
+
+        await services.webhook_trigger(
+            {
+                "url": "https://api.example.com/hook",
+                "method": "POST",
+                "requester_id": "alice",
+            }
+        )
+
+        lines = services.AUDIT_LOG.read_text().splitlines()
+        assert lines
+        entry = services.decode_audit_entry_line(lines[-1])
+        assert entry is not None
+        assert entry["decision_outcome"] == "blocked"
+        assert entry["decision_reason"] == "identity_policy"
+        assert "blocked" in entry["decision_explanation"].lower()
+        assert "identity" in entry["decision_explanation"].lower()
+
+    @pytest.mark.asyncio
     async def test_smart_home_dry_run_handles_non_serializable_data(self):
         from jarvis.tools.services import smart_home
 

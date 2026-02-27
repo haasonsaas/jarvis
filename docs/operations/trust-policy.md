@@ -62,6 +62,9 @@ Audit entries include identity metadata:
 - `speaker_verified`
 - `identity_source`
 - `decision_chain`
+- `decision_outcome`
+- `decision_reason`
+- `decision_explanation`
 
 This supports post-incident reason tracing for authorization decisions.
 

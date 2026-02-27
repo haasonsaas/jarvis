@@ -140,6 +140,9 @@ Smart home safety defaults:
 - Memory retrieval now includes confidence/provenance details:
   - `memory_search` and `memory_recent` lines expose `confidence=...`, `source=...`, and `trail=id/source/created_at`.
   - `memory_status` includes `confidence_model` metadata for scoring transparency.
+- Audit logs now include readable authorization outcomes:
+  - audit entries include `decision_outcome`, `decision_reason`, and `decision_explanation`.
+  - this makes allow/deny/failure rationale machine-filterable and human-readable in `/api/audit`.
 - Operator console/API security:
   - Set `OPERATOR_AUTH_TOKEN` when binding `OPERATOR_SERVER_HOST` to a non-loopback interface.
   - When token is set, `/api/*`, `/metrics`, and `/events` require `X-Operator-Token` or `Authorization: Bearer <token>`.

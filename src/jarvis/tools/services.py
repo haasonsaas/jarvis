@@ -286,6 +286,33 @@ AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
     "reminder_list": {"text"},
     "reminder_notify_due": {"text", "message", "title"},
 }
+AUDIT_REASON_MESSAGES: dict[str, str] = {
+    "policy": "blocked by global tool policy configuration",
+    "identity_policy": "blocked by identity and trust policy",
+    "strict_confirm_required": "blocked because strict confirmation is required before execution",
+    "sensitive_confirm_required": "blocked because sensitive actions require explicit confirm=true",
+    "confirm_required": "blocked because explicit confirmation is required",
+    "ambiguous_target": "blocked because the target is ambiguous for a high-risk action",
+    "ambiguous_high_risk_text": "blocked because the request text is ambiguous for a high-risk action",
+    "conversation_disabled": "blocked because Home Assistant conversation mode is disabled",
+    "conversation_readonly_profile": "blocked because conversation integration is configured as read-only",
+    "readonly_profile": "blocked because requester profile is read-only for mutating actions",
+    "https_required": "blocked because webhook targets must use HTTPS",
+    "allowlist": "blocked because webhook host is outside WEBHOOK_ALLOWLIST",
+    "pushover_policy": "blocked because notification policy disables Pushover delivery",
+    "safe_mode": "blocked because safe mode disables mutating actions",
+    "network_client_error": "failed due to network connectivity error",
+    "timeout": "failed because the upstream integration timed out",
+    "cancelled": "failed because the request was cancelled before completion",
+    "http_error": "failed because the upstream returned an HTTP error",
+    "api_error": "failed because the upstream returned an API-level error",
+    "auth": "failed because upstream authentication was rejected",
+    "unexpected": "failed because an unexpected runtime error occurred",
+    "missing_config": "failed because required integration configuration is missing",
+    "missing_fields": "failed because required request fields are missing",
+    "invalid_data": "failed because provided request data is invalid",
+    "invalid_json": "failed because upstream returned invalid JSON",
+}
 
 SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "smart_home": {
@@ -1073,6 +1100,97 @@ def decode_audit_entry_line(line: str) -> dict[str, Any] | None:
     return _decode_audit_line(line)
 
 
+def _audit_outcome(details: dict[str, Any]) -> str:
+    policy_decision = str(details.get("policy_decision", "")).strip().lower()
+    result = str(details.get("result", "")).strip().lower()
+    if policy_decision in {"denied", "blocked"}:
+        return "blocked"
+    if policy_decision in {"allowed", "execute"}:
+        return "allowed"
+    if policy_decision == "dry_run":
+        return "dry_run"
+    if policy_decision == "preview_required":
+        return "preview_required"
+    if result in {"denied", "blocked"}:
+        return "blocked"
+    if result in {"ok", "success", "delivered"}:
+        return "allowed"
+    if result in {"timeout", "cancelled", "network_client_error", "http_error", "api_error", "auth", "unexpected"}:
+        return "failed"
+    if result in {"missing_config", "missing_fields", "invalid_data", "invalid_json"}:
+        return "failed"
+    if result:
+        return "observed"
+    return "unknown"
+
+
+def _audit_reason_code(details: dict[str, Any]) -> str:
+    reason = str(details.get("reason", "")).strip().lower()
+    if reason:
+        return reason
+    policy_decision = str(details.get("policy_decision", "")).strip().lower()
+    if policy_decision:
+        return policy_decision
+    result = str(details.get("result", "")).strip().lower()
+    return result
+
+
+def _humanize_chain_token(token: str) -> str:
+    text = str(token).strip()
+    if not text:
+        return ""
+    if text.startswith("deny:"):
+        reason = text.split(":", 1)[1].replace("_", " ")
+        return f"deny ({reason})"
+    if text.startswith("decision:"):
+        reason = text.split(":", 1)[1].replace("_", " ")
+        return f"decision ({reason})"
+    if text.startswith("tool="):
+        return f"tool {text.split('=', 1)[1]}"
+    if text.startswith("requester="):
+        return f"requester {text.split('=', 1)[1]}"
+    if text.startswith("profile="):
+        return f"profile {text.split('=', 1)[1]}"
+    return text.replace("_", " ")
+
+
+def _audit_decision_explanation(action: str, details: dict[str, Any]) -> str:
+    outcome = _audit_outcome(details)
+    reason_code = _audit_reason_code(details)
+    if outcome == "blocked":
+        intro = "Blocked"
+    elif outcome == "allowed":
+        intro = "Allowed"
+    elif outcome == "dry_run":
+        intro = "Dry run"
+    elif outcome == "preview_required":
+        intro = "Preview required"
+    elif outcome == "failed":
+        intro = "Failed"
+    elif outcome == "observed":
+        intro = "Recorded"
+    else:
+        intro = "Logged"
+
+    reason_msg = AUDIT_REASON_MESSAGES.get(reason_code, "")
+    if not reason_msg and reason_code:
+        reason_msg = reason_code.replace("_", " ")
+
+    chain = details.get("decision_chain")
+    chain_tokens = chain if isinstance(chain, list) else []
+    chain_hint = ""
+    if chain_tokens:
+        tail = [_humanize_chain_token(item) for item in chain_tokens[-2:]]
+        tail = [item for item in tail if item]
+        if tail:
+            chain_hint = f" Decision path: {' -> '.join(tail)}."
+
+    action_label = str(action).replace("_", " ").strip() or "action"
+    if reason_msg:
+        return f"{intro}: {action_label} was {reason_msg}.{chain_hint}".strip()
+    return f"{intro}: {action_label} was processed.{chain_hint}".strip()
+
+
 def _audit(action: str, details: dict) -> None:
     """Append to local audit log: what was heard, what was done, why."""
     enriched = {str(key): value for key, value in details.items()}
@@ -1094,6 +1212,12 @@ def _audit(action: str, details: dict) -> None:
         enriched["identity_source"] = "default"
     if "decision_chain" not in enriched:
         enriched["decision_chain"] = ["identity_default_context"]
+    if "decision_outcome" not in enriched:
+        enriched["decision_outcome"] = _audit_outcome(enriched)
+    if "decision_reason" not in enriched:
+        enriched["decision_reason"] = _audit_reason_code(enriched)
+    if "decision_explanation" not in enriched:
+        enriched["decision_explanation"] = _audit_decision_explanation(action, enriched)
 
     metadata_only = _metadata_only_audit_details(action, enriched)
     redacted = _redact_sensitive_for_audit(metadata_only)
