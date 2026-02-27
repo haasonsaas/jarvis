@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 7 (Further Service Decomposition)
+# Jarvis TODO — Wave 8 (Trust/Proactive Domain Extraction)
 
 Last updated: 2026-02-27
 
@@ -8,31 +8,31 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 10
-- Completed: 10
+- Total items: 9
+- Completed: 9
 - Remaining: 0
 
 ---
 
-## A) Domain extraction continuation
+## A) Service decomposition continuation
 
-- [x] `W7-S01` Extract `skills_governance` out of `services.py`.
-- [x] `W7-S02` Extract `quality_evaluator` out of `services.py`.
-- [x] `W7-S03` Extract `embodiment_presence` out of `services.py`.
-- [x] `W7-S04` Extract helper `_skills_snapshot_rows` alongside governance handlers.
-- [x] `W7-S05` Add new domain module `src/jarvis/tools/services_domains/governance.py`.
-- [x] `W7-S06` Rewire `services.py` imports to load governance handlers from domain module.
+- [x] `W8-S01` Extract `proactive_assistant` from `services.py`.
+- [x] `W8-S02` Extract `_memory_quality_audit` helper from `services.py`.
+- [x] `W8-S03` Extract `memory_governance` from `services.py`.
+- [x] `W8-S04` Extract `identity_trust` from `services.py`.
+- [x] `W8-S05` Add new domain module `src/jarvis/tools/services_domains/trust.py`.
+- [x] `W8-S06` Rewire `services.py` to import trust/proactive handlers from domain module.
 
-## B) Integrity and verification
+## B) Quality and docs
 
-- [x] `W7-V01` Keep MCP tool registrations and schema mappings unchanged after extraction.
-- [x] `W7-V02` Re-run targeted service/runtime regression tests.
-- [x] `W7-V03` Re-run full lint/tests/security/readiness gates.
-- [x] `W7-V04` Update docs tree to reflect additional domain module.
+- [x] `W8-Q01` Re-run targeted regression tests for expanded tool surface.
+- [x] `W8-Q02` Re-run full quality/security/readiness gates.
+- [x] `W8-Q03` Update README tree to reflect trust domain module.
 
 ---
 
 ## Outcome
 
-- `services.py` reduced further from `9,660` lines to `9,341` lines in this wave.
-- All local quality and readiness gates are passing.
+- `services.py` reduced from `9,341` lines to `8,890` lines in this wave.
+- Strict eval contract remains green at `91/91` cases.
+- All local gates pass after extraction.

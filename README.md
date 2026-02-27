@@ -405,7 +405,8 @@ jarvis/
 │       │       ├── planner.py      # planner_engine domain handler
 │       │       ├── integrations.py # integration_hub domain handler
 │       │       ├── comms.py        # channel/email/todoist/pushover handlers
-│       │       └── governance.py   # skills_governance + quality_evaluator + embodiment_presence
+│       │       ├── governance.py   # skills_governance + quality_evaluator + embodiment_presence
+│       │       └── trust.py        # proactive_assistant + memory_governance + identity_trust
 │       ├── audio/
 │       │   ├── vad.py         # Silero voice activity detection
 │       │   ├── stt.py         # faster-whisper transcription
