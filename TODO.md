@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 69 (Runtime State + Audit Runtime Decomposition)
+# Jarvis TODO — Wave 70 (HA + Integrations + Schedule Runtime Decomposition)
 
 Last updated: 2026-02-27
 
@@ -16,73 +16,75 @@ Last updated: 2026-02-27
 
 ## A) Scope and baseline
 
-- [x] `W69-A01` Profile remaining large runtime modules after Wave 68.
-- [x] `W69-A02` Select `services_runtime_state.py` for decomposition.
-- [x] `W69-A03` Select `services_audit_runtime.py` for decomposition.
-- [x] `W69-A04` Preserve `services.py` import contracts and helper names.
-- [x] `W69-A05` Keep behavior parity for bind/bootstrap, persistence, and audit flows.
+- [x] `W70-A01` Profile next runtime hotspots after Wave 69.
+- [x] `W70-A02` Select `services_ha_runtime.py` for split.
+- [x] `W70-A03` Select `services_integrations_runtime.py` for split.
+- [x] `W70-A04` Select `services_schedule_runtime.py` for split.
+- [x] `W70-A05` Preserve all imports consumed by `services.py`.
 
-## B) Runtime state split
+## B) Home Assistant runtime split
 
-- [x] `W69-B01` Create `services_runtime_state_bind.py`.
-- [x] `W69-B02` Move `bind_runtime_state` implementation.
-- [x] `W69-B03` Move `_reset_runtime_state` implementation into bind module scope.
-- [x] `W69-B04` Create `services_runtime_state_reports.py`.
-- [x] `W69-B05` Move `quality_reports_snapshot` implementation.
-- [x] `W69-B06` Move `append_quality_report` implementation.
-- [x] `W69-B07` Create `services_runtime_state_persistence.py`.
-- [x] `W69-B08` Move `json_safe_clone`/`replace_state_dict` helpers.
-- [x] `W69-B09` Move expansion payload/persist/load helpers.
-- [x] `W69-B10` Reduce `services_runtime_state.py` to compatibility wrapper.
+- [x] `W70-B01` Create `services_ha_http_runtime.py`.
+- [x] `W70-B02` Move HA request/state/service/template helpers.
+- [x] `W70-B03` Create `services_ha_response_runtime.py`.
+- [x] `W70-B04` Move `ha_conversation_speech` response extraction helper.
+- [x] `W70-B05` Reduce `services_ha_runtime.py` to compatibility wrapper.
 
-## C) Audit runtime split
+## C) Integrations runtime split
 
-- [x] `W69-C01` Create `services_audit_crypto_runtime.py`.
-- [x] `W69-C02` Move audit encryption/decryption helpers.
-- [x] `W69-C03` Create `services_audit_event_runtime.py`.
-- [x] `W69-C04` Move audit outcome/reason/humanization helpers.
-- [x] `W69-C05` Move decision explanation + audit write/rotate helpers.
-- [x] `W69-C06` Create `services_audit_sanitize_runtime.py`.
-- [x] `W69-C07` Move redaction + metadata-only + inbound sanitizer helpers.
-- [x] `W69-C08` Create `services_audit_retention_runtime.py`.
-- [x] `W69-C09` Move audit status/prune/retention helpers.
-- [x] `W69-C10` Reduce `services_audit_runtime.py` to compatibility wrapper.
+- [x] `W70-C01` Create `services_integrations_release_runtime.py`.
+- [x] `W70-C02` Move release-channel config/check evaluation helpers.
+- [x] `W70-C03` Move quality-report artifact writer helper.
+- [x] `W70-C04` Create `services_integrations_notes_runtime.py`.
+- [x] `W70-C05` Move local/obsidian note capture helper.
+- [x] `W70-C06` Move Notion capability/config + async bridge helper.
+- [x] `W70-C07` Reduce `services_integrations_runtime.py` to compatibility wrapper.
 
-## D) Boundary and quality verification
+## D) Schedule runtime split
 
-- [x] `W69-D01` Extend import-boundary coverage for runtime-state split modules.
-- [x] `W69-D02` Extend import-boundary coverage for audit split modules.
-- [x] `W69-D03` Run focused lint on all changed runtime modules.
-- [x] `W69-D04` Run `uv run pytest -q tests/test_import_boundaries.py`.
-- [x] `W69-D05` Run targeted tools tests for audit + expansion/state status paths.
-- [x] `W69-D06` Run full `make check`.
-- [x] `W69-D07` Run full `make security-gate`.
-- [x] `W69-D08` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W70-D01` Create `services_schedule_parse_runtime.py`.
+- [x] `W70-D02` Move duration/datetime parsing and formatting helpers.
+- [x] `W70-D03` Create `services_schedule_state_runtime.py`.
+- [x] `W70-D04` Move timer/reminder ID allocation and status helpers.
+- [x] `W70-D05` Move persisted timer/reminder load helpers.
+- [x] `W70-D06` Reduce `services_schedule_runtime.py` to compatibility wrapper.
 
-## E) Release loop
+## E) Boundaries and validation
 
-- [x] `W69-E01` Record wrapper reduction deltas and new module inventory.
-- [x] `W69-E02` Commit Wave 69 tranche.
-- [x] `W69-E03` Push Wave 69 tranche to `origin/main`.
+- [x] `W70-E01` Extend import-boundary coverage for HA split modules.
+- [x] `W70-E02` Extend import-boundary coverage for integrations split modules.
+- [x] `W70-E03` Extend import-boundary coverage for schedule split modules.
+- [x] `W70-E04` Run focused lint on changed runtime files.
+- [x] `W70-E05` Run `uv run pytest -q tests/test_import_boundaries.py`.
+- [x] `W70-E06` Run targeted tools tests covering HA/integrations/schedule paths.
+- [x] `W70-E07` Run full `make check`.
+- [x] `W70-E08` Run full `make security-gate`.
+- [x] `W70-E09` Run `./scripts/jarvis_readiness.sh fast`.
+
+## F) Release loop
+
+- [x] `W70-F01` Record wrapper reduction deltas and extracted module counts.
+- [x] `W70-F02` Commit Wave 70 tranche.
+- [x] `W70-F03` Push Wave 70 tranche to `origin/main`.
 
 ---
 
 ## Outcome snapshot (completed)
 
 - Wrapper concentration reductions:
-  - `services_runtime_state.py`: `491 -> 27`
-  - `services_audit_runtime.py`: `416 -> 49`
+  - `services_ha_runtime.py`: `289 -> 23`
+  - `services_integrations_runtime.py`: `252 -> 25`
+  - `services_schedule_runtime.py`: `273 -> 37`
 - New extracted modules:
-  - `services_runtime_state_bind.py`
-  - `services_runtime_state_reports.py`
-  - `services_runtime_state_persistence.py`
-  - `services_audit_crypto_runtime.py`
-  - `services_audit_event_runtime.py`
-  - `services_audit_sanitize_runtime.py`
-  - `services_audit_retention_runtime.py`
+  - `services_ha_http_runtime.py`
+  - `services_ha_response_runtime.py`
+  - `services_integrations_release_runtime.py`
+  - `services_integrations_notes_runtime.py`
+  - `services_schedule_parse_runtime.py`
+  - `services_schedule_state_runtime.py`
 - Validation status:
-  - `uv run pytest -q tests/test_import_boundaries.py`: `144 passed`.
-  - `uv run pytest -q tests/test_tools_services.py -k "audit_log or prune_audit_file or inbound_webhook_event or expansion_state_persists_across_bind or integration_hub_release_channel_actions or system_status"`: `18 passed`.
-  - `make check`: `733 passed`.
-  - `make security-gate`: `733 passed`; fault subset `3 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py`: `153 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "home_assistant or media_control or integration_hub_release_channel_actions or expansion_state_persists_across_bind or timer_ or reminder_ or calendar_ or webhook_"`: `49 passed`.
+  - `make check`: `742 passed`.
+  - `make security-gate`: `742 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
