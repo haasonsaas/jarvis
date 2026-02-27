@@ -13,12 +13,11 @@ import json  # noqa: F401  # accessed by domain modules via services module alia
 import logging
 import math
 import re
-import smtplib
+import smtplib  # noqa: F401  # accessed by domain modules via services module alias
 import sys
 import time
 from contextlib import suppress  # noqa: F401  # accessed by domain modules via services module alias
 from datetime import datetime
-from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse  # noqa: F401  # accessed by domain modules via services module alias
@@ -92,11 +91,16 @@ from jarvis.tools.services_status_runtime import (
 )
 from jarvis.tools.services_ha_runtime import (
     ha_call_service as _runtime_ha_call_service,
+    ha_conversation_speech as _runtime_ha_conversation_speech,
     ha_get_domain_services as _runtime_ha_get_domain_services,
     ha_get_json as _runtime_ha_get_json,
     ha_get_state as _runtime_ha_get_state,
     ha_render_template as _runtime_ha_render_template,
     ha_request_json as _runtime_ha_request_json,
+)
+from jarvis.tools.services_email_runtime import (
+    record_email_history as _runtime_record_email_history,
+    send_email_sync as _runtime_send_email_sync,
 )
 from jarvis.tools.services_recovery_runtime import (
     RecoveryOperation as _runtime_RecoveryOperation,
@@ -1401,63 +1405,20 @@ def _jarvis_scorecard_snapshot(
 # ── Home Assistant ────────────────────────────────────────────
 
 def _ha_conversation_speech(payload: dict[str, Any]) -> str:
-    response = payload.get("response")
-    if not isinstance(response, dict):
-        return ""
-    speech = response.get("speech")
-    if not isinstance(speech, dict):
-        return ""
-    plain = speech.get("plain")
-    if isinstance(plain, dict):
-        text = str(plain.get("speech", "")).strip()
-        if text:
-            return text
-    text = str(speech.get("speech", "")).strip()
-    if text:
-        return text
-    return ""
+    return _runtime_ha_conversation_speech(payload)
 
 
 def _record_email_history(recipient: str, subject: str) -> None:
-    item = {
-        "timestamp": time.time(),
-        "to": recipient,
-        "subject": subject,
-    }
-    _email_history.append(item)
-    if len(_email_history) > 200:
-        del _email_history[:-200]
-    if _memory is not None:
-        try:
-            _memory.add_memory(
-                f"Email sent to {recipient}: {subject}",
-                kind="email_sent",
-                tags=["integration", "email"],
-                sensitivity=0.4,
-                source="integration.email",
-            )
-        except Exception:
-            log.warning("Failed to persist email send metadata", exc_info=True)
+    _runtime_record_email_history(_services_module(), recipient=recipient, subject=subject)
 
 
 def _send_email_sync(*, recipient: str, subject: str, body: str) -> None:
-    msg = EmailMessage()
-    msg["From"] = _email_from
-    msg["To"] = recipient
-    msg["Subject"] = subject
-    msg.set_content(body)
-    with smtplib.SMTP(
-        _email_smtp_host,
-        _email_smtp_port,
-        timeout=_effective_act_timeout(_email_timeout_sec),
-    ) as smtp:
-        smtp.ehlo()
-        if _email_use_tls:
-            smtp.starttls()
-            smtp.ehlo()
-        if _email_smtp_username:
-            smtp.login(_email_smtp_username, _email_smtp_password)
-        smtp.send_message(msg)
+    _runtime_send_email_sync(
+        _services_module(),
+        recipient=recipient,
+        subject=subject,
+        body=body,
+    )
 
 
 

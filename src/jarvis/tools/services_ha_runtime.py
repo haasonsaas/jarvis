@@ -269,3 +269,21 @@ async def ha_render_template(
         return None, "network_client_error"
     except Exception:
         return None, "unexpected"
+
+
+def ha_conversation_speech(payload: dict[str, Any]) -> str:
+    response = payload.get("response")
+    if not isinstance(response, dict):
+        return ""
+    speech = response.get("speech")
+    if not isinstance(speech, dict):
+        return ""
+    plain = speech.get("plain")
+    if isinstance(plain, dict):
+        text = str(plain.get("speech", "")).strip()
+        if text:
+            return text
+    text = str(speech.get("speech", "")).strip()
+    if text:
+        return text
+    return ""
