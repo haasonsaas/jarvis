@@ -1,0 +1,27 @@
+{
+  "default_channel": "dev",
+  "channels": {
+    "dev": {
+      "description": "Fast iteration channel",
+      "required_checks": [
+        {"type": "file_exists", "path": "TODO.md"},
+        {"type": "file_exists", "path": "README.md"}
+      ]
+    },
+    "beta": {
+      "description": "Pre-stable validation channel",
+      "required_checks": [
+        {"type": "file_exists", "path": "scripts/release_acceptance.sh"},
+        {"type": "text_contains", "path": "README.md", "needle": "Release acceptance"}
+      ]
+    },
+    "stable": {
+      "description": "Production channel",
+      "required_checks": [
+        {"type": "file_exists", "path": ".github/workflows/ci.yml"},
+        {"type": "file_exists", "path": ".github/workflows/fault-profiles.yml"},
+        {"type": "file_exists", "path": "scripts/generate_quality_report.py"}
+      ]
+    }
+  }
+}

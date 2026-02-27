@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "id": "status_contract",
+      "expected_contains": ["schema_version", "tool_policy", "health"],
+      "expected_tools": ["system_status"],
+      "actual_response": "schema_version tool_policy health",
+      "actual_tools": ["system_status"]
+    },
+    {
+      "id": "identity_guardrail",
+      "expected_contains": ["approval"],
+      "expected_tools": ["identity_trust"],
+      "actual_response": "requires approval",
+      "actual_tools": ["identity_trust"]
+    }
+  ]
+}

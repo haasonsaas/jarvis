@@ -11,3 +11,6 @@ __pycache__/
 
 # Third-party clones used for reference only
 vendor/
+
+# Local run artifacts
+.artifacts/

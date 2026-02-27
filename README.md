@@ -163,6 +163,7 @@ Smart home safety defaults:
   - `system_status.integrations.*.circuit_breaker` (open/remaining/failure state per integration)
   - `system_status.recovery_journal` (interrupted-action reconciliation summary)
   - `system_status.dead_letter_queue` (failed outbound delivery queue with replay status)
+  - `system_status.expansion` (proactive, trust, orchestration, planner, quality, embodiment, integration roadmap feature snapshot)
   - `jarvis_scorecard` (standalone scorecard payload for dashboards and alerts)
   - `system_status_contract` (stable required-field contract)
 - Memory retrieval now includes confidence/provenance details:
@@ -203,6 +204,13 @@ Smart home safety defaults:
 - Skills developer guide: [`docs/operations/skills-development.md`](docs/operations/skills-development.md).
 - Provenance verification: [`docs/operations/provenance-verification.md`](docs/operations/provenance-verification.md).
 - Incident response: [`docs/operations/incident-response.md`](docs/operations/incident-response.md).
+- Release acceptance: run `./scripts/release_acceptance.sh fast|full`.
+- Release channel checks: run `./scripts/check_release_channel.py --channel dev|beta|stable`.
+- Weekly quality artifact: run `./scripts/generate_quality_report.py --output-dir .artifacts/quality --markdown`.
+- Deterministic eval dataset runner: run `./scripts/run_eval_dataset.py docs/evals/assistant-contract.json --strict`.
+- One-command host bootstrap: run `./scripts/bootstrap.sh`.
+- Container profile: `docker compose up --build` (simulation/no-vision default).
+- Home Assistant add-on starter path: [`deploy/home-assistant-addon`](deploy/home-assistant-addon).
 - Todoist integration:
   - `TODOIST_PERMISSION_PROFILE=readonly|control`
   - `readonly` allows `todoist_list_tasks` and denies `todoist_add_task`
@@ -235,6 +243,24 @@ Smart home safety defaults:
   - failed outbound webhook/channel/email/push attempts are queued for operator replay:
     - `dead_letter_list` to inspect queue state
     - `dead_letter_replay` to retry specific or filtered entries
+- Proactive assistant workflows (`proactive_assistant`):
+  - `briefing`, `anomaly_scan`, `routine_suggestions`, `follow_through`, `event_digest`
+- Memory governance (`memory_governance`):
+  - per-user partition overlays + duplication/contradiction/staleness audits + cleanup
+- Identity and trust controls (`identity_trust`):
+  - session confidence scoring, domain trust-policy management, guest-mode sessions, household profile admin
+- Home orchestration (`home_orchestrator`):
+  - intent-to-plan decomposition, preflighted multi-entity execution with partial failure reporting, area policy constraints, automation suggestions, long-running task tracking
+- Skills governance (`skills_governance`):
+  - capability negotiation, dependency health, quotas, harness runs, bundle signing metadata, sandbox templates
+- Planning and autonomy (`planner_engine`):
+  - planner/executor split output, task graphs with checkpoint/resume, deferred scheduling, self-critique
+- Quality and evaluation (`quality_evaluator`):
+  - weekly report generation + deterministic dataset-runner summary
+- Embodiment roadmap controls (`embodiment_presence`):
+  - micro-expression library, user gaze calibration, adaptive gesture envelopes, privacy posture, motion safety envelope
+- Integration workflows (`integration_hub`):
+  - calendar CRUD policy flow, notes capture backends, messaging draft/review/send flow, commute briefs, shopping orchestration, policy-gated research workflow
 
 ### First-Time Operator Checklist
 

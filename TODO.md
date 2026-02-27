@@ -40,12 +40,12 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 ## 3) Proactive Assistant Behavior (6 items)
 
-- [ ] `PX01` Add proactive briefing engine (morning/evening) built from calendar, reminders, weather, and home state. `P0`
-- [ ] `PX02` Add proactive anomaly notifications (device offline, unusual temp, missed reminder). `P0`
+- [x] `PX01` Add proactive briefing engine (morning/evening) built from calendar, reminders, weather, and home state. `P0`
+- [x] `PX02` Add proactive anomaly notifications (device offline, unusual temp, missed reminder). `P0`
 - [x] `PX03` Add "nudge policy" (when to interrupt vs defer) with user-configurable quiet windows. `P0`
-- [ ] `PX04` Add routine suggestions based on repeated behavior patterns (opt-in only). `P1`
-- [ ] `PX05` Add proactive follow-through ("I can do that now" for pending tasks after confirmations). `P1`
-- [ ] `PX06` Add proactive event summarization with digest and snooze controls. `P1`
+- [x] `PX04` Add routine suggestions based on repeated behavior patterns (opt-in only). `P1`
+- [x] `PX05` Add proactive follow-through ("I can do that now" for pending tasks after confirmations). `P1`
+- [x] `PX06` Add proactive event summarization with digest and snooze controls. `P1`
 
 ## 4) Memory and Personalization (6 items)
 
@@ -53,25 +53,25 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `MX02` Add "memory confidence" and "source trail" to prevent stale or hallucinated recall. `P0`
 - [x] `MX03` Add memory correction flow ("forget this", "update that") as first-class voice commands. `P0`
 - [x] `MX04` Add episodic timeline snapshots for recent important conversations/actions. `P1`
-- [ ] `MX05` Add per-user memory partitions with shared/common memory overlays. `P1`
-- [ ] `MX06` Add memory quality audits (duplication, contradiction, stale data) with cleanup tools. `P1`
+- [x] `MX05` Add per-user memory partitions with shared/common memory overlays. `P1`
+- [x] `MX06` Add memory quality audits (duplication, contradiction, stale data) with cleanup tools. `P1`
 
 ## 5) Multi-User Identity and Trust (6 items)
 
-- [ ] `IX01` Add session-level identity confidence score from voice context + operator hints. `P0`
-- [ ] `IX02` Add per-user trust policies for high-risk domains (locks, alarms, purchases, external messages). `P0`
+- [x] `IX01` Add session-level identity confidence score from voice context + operator hints. `P0`
+- [x] `IX02` Add per-user trust policies for high-risk domains (locks, alarms, purchases, external messages). `P0`
 - [x] `IX03` Add step-up verification path for high-risk requests (spoken code or operator approval). `P0`
-- [ ] `IX04` Add "guest mode" with constrained capabilities and automatic expiry. `P1`
-- [ ] `IX05` Add household profile management in operator UI (users, roles, trust, exceptions). `P1`
+- [x] `IX04` Add "guest mode" with constrained capabilities and automatic expiry. `P1`
+- [x] `IX05` Add household profile management in operator UI (users, roles, trust, exceptions). `P1`
 - [x] `IX06` Add audit explainability: record why an action was allowed/blocked in user-readable terms. `P1`
 
 ## 6) Home Intelligence and Automation (6 items)
 
-- [ ] `HX01` Add intent-to-plan decomposition for complex home requests ("movie mode", "bedtime routine"). `P0`
-- [ ] `HX02` Add safe multi-entity execution with preflight checks and partial-failure reporting. `P0`
-- [ ] `HX03` Add area-level policy constraints (e.g., no loud actions in bedroom after quiet hours). `P0`
-- [ ] `HX04` Add Home Assistant automation suggestion mode with review before creation. `P1`
-- [ ] `HX05` Add long-running home task tracking (start, in-progress, completed) in status and operator UI. `P1`
+- [x] `HX01` Add intent-to-plan decomposition for complex home requests ("movie mode", "bedtime routine"). `P0`
+- [x] `HX02` Add safe multi-entity execution with preflight checks and partial-failure reporting. `P0`
+- [x] `HX03` Add area-level policy constraints (e.g., no loud actions in bedroom after quiet hours). `P0`
+- [x] `HX04` Add Home Assistant automation suggestion mode with review before creation. `P1`
+- [x] `HX05` Add long-running home task tracking (start, in-progress, completed) in status and operator UI. `P1`
 - [x] `HX06` Add idempotent action guardrails to avoid repeated toggles during ambiguous dialogue. `P1`
 
 ## 7) Operator Surfaces and Control (6 items)
@@ -85,21 +85,21 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 ## 8) Skills Ecosystem and Extensibility (6 items)
 
-- [ ] `SX01` Add skill capability negotiation so planner can reason about tool quality and reliability. `P1`
-- [ ] `SX02` Add skill dependency graph and health reporting (missing deps, version conflicts). `P1`
-- [ ] `SX03` Add per-skill runtime quotas (rate, CPU time, outbound calls). `P1`
-- [ ] `SX04` Add skill test harness CLI and fixture-based contract validation. `P1`
-- [ ] `SX05` Add signed skill distribution bundle format with integrity metadata. `P2`
-- [ ] `SX06` Add skill sandbox policy templates (`read-only`, `network-limited`, `local-only`). `P1`
+- [x] `SX01` Add skill capability negotiation so planner can reason about tool quality and reliability. `P1`
+- [x] `SX02` Add skill dependency graph and health reporting (missing deps, version conflicts). `P1`
+- [x] `SX03` Add per-skill runtime quotas (rate, CPU time, outbound calls). `P1`
+- [x] `SX04` Add skill test harness CLI and fixture-based contract validation. `P1`
+- [x] `SX05` Add signed skill distribution bundle format with integrity metadata. `P2`
+- [x] `SX06` Add skill sandbox policy templates (`read-only`, `network-limited`, `local-only`). `P1`
 
 ## 9) Planning and Autonomy (6 items)
 
-- [ ] `AX01` Add explicit planner/executor split with retry policy and rollback hints. `P0`
-- [ ] `AX02` Add task graph execution for multi-step goals with checkpointing and resume. `P1`
-- [ ] `AX03` Add dependency-aware scheduling for deferred actions and reminders. `P1`
+- [x] `AX01` Add explicit planner/executor split with retry policy and rollback hints. `P0`
+- [x] `AX02` Add task graph execution for multi-step goals with checkpointing and resume. `P1`
+- [x] `AX03` Add dependency-aware scheduling for deferred actions and reminders. `P1`
 - [x] `AX04` Add ambiguity detector to request clarifications before risky plan execution. `P0`
 - [x] `AX05` Add human-readable plan preview before execution for medium/high-risk actions. `P0`
-- [ ] `AX06` Add planner self-critique pass for expensive/complex plans before commit. `P2`
+- [x] `AX06` Add planner self-critique pass for expensive/complex plans before commit. `P2`
 
 ## 10) Reliability and Runtime Safety (6 items)
 
@@ -115,36 +115,36 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `EX01` Add intent-level success metrics (answer quality, completion success, correction frequency). `P0`
 - [x] `EX02` Add percentile dashboards for end-to-end turn latency by mode and tool mix. `P1`
 - [x] `EX03` Add policy-decision analytics (allow/deny reason distribution by user and tool). `P1`
-- [ ] `EX04` Add weekly automated "assistant quality report" artifact (errors, regressions, wins). `P1`
-- [ ] `EX05` Add evaluation dataset runner for deterministic prompt/tool contract tests. `P1`
+- [x] `EX04` Add weekly automated "assistant quality report" artifact (errors, regressions, wins). `P1`
+- [x] `EX05` Add evaluation dataset runner for deterministic prompt/tool contract tests. `P1`
 - [x] `EX06` Add "Jarvis scorecard" combining latency, reliability, initiative, and trust metrics. `P1`
 
 ## 12) Embodiment and Presence (6 items)
 
-- [ ] `BX01` Add richer stateful micro-expression library mapped to dialogue intent and certainty. `P1`
+- [x] `BX01` Add richer stateful micro-expression library mapped to dialogue intent and certainty. `P1`
 - [x] `BX02` Add conversational turn choreography (listen lean-in, think glance-away, answer lock-on). `P0`
-- [ ] `BX03` Add user-specific gaze behavior calibration for desk distance and seating position. `P1`
-- [ ] `BX04` Add adaptive speaking gesture envelopes based on response emotion/importance. `P1`
-- [ ] `BX05` Add explicit "privacy posture" transitions on mute/sensitive operations. `P0`
-- [ ] `BX06` Add motion safety envelopes linked to runtime context (proximity, hardware state). `P0`
+- [x] `BX03` Add user-specific gaze behavior calibration for desk distance and seating position. `P1`
+- [x] `BX04` Add adaptive speaking gesture envelopes based on response emotion/importance. `P1`
+- [x] `BX05` Add explicit "privacy posture" transitions on mute/sensitive operations. `P0`
+- [x] `BX06` Add motion safety envelopes linked to runtime context (proximity, hardware state). `P0`
 
 ## 13) Integrations and Productivity Surface (6 items)
 
-- [ ] `GX01` Add richer calendar actions (create/update/delete with confirmation policy). `P1`
-- [ ] `GX02` Add notes/knowledge capture integration (Obsidian/Notion/local markdown) with trust controls. `P1`
-- [ ] `GX03` Add messaging assistant workflows (draft/review/send) for Slack/Discord/email. `P1`
-- [ ] `GX04` Add commute/travel briefing integration (traffic/transit APIs). `P2`
-- [ ] `GX05` Add shopping/task orchestration across Todoist + Home Assistant + notifications. `P1`
-- [ ] `GX06` Add contextual web research workflow with citation capture and policy gating. `P2`
+- [x] `GX01` Add richer calendar actions (create/update/delete with confirmation policy). `P1`
+- [x] `GX02` Add notes/knowledge capture integration (Obsidian/Notion/local markdown) with trust controls. `P1`
+- [x] `GX03` Add messaging assistant workflows (draft/review/send) for Slack/Discord/email. `P1`
+- [x] `GX04` Add commute/travel briefing integration (traffic/transit APIs). `P2`
+- [x] `GX05` Add shopping/task orchestration across Todoist + Home Assistant + notifications. `P1`
+- [x] `GX06` Add contextual web research workflow with citation capture and policy gating. `P2`
 
 ## 14) Packaging, Deployment, and Ecosystem Fit (6 items)
 
-- [ ] `DX01` Add one-command local install/bootstrap script for clean hosts. `P1`
-- [ ] `DX02` Add containerized deployment profile for always-on home-server runtime. `P1`
+- [x] `DX01` Add one-command local install/bootstrap script for clean hosts. `P1`
+- [x] `DX02` Add containerized deployment profile for always-on home-server runtime. `P1`
 - [x] `DX03` Add backup/restore CLI for memory, audit, runtime state, and operator settings. `P1`
-- [ ] `DX04` Add staged release channels (`dev`, `beta`, `stable`) with migration checks. `P2`
-- [ ] `DX05` Add Home Assistant add-on packaging path and setup guide. `P2`
-- [ ] `DX06` Add release acceptance suite focused on "Jarvis feel" scenarios before ship. `P1`
+- [x] `DX04` Add staged release channels (`dev`, `beta`, `stable`) with migration checks. `P2`
+- [x] `DX05` Add Home Assistant add-on packaging path and setup guide. `P2`
+- [x] `DX06` Add release acceptance suite focused on "Jarvis feel" scenarios before ship. `P1`
 
 ---
 

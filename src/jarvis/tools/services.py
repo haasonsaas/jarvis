@@ -76,7 +76,7 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
-SYSTEM_STATUS_CONTRACT_VERSION = "1.8"
+SYSTEM_STATUS_CONTRACT_VERSION = "2.0"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
@@ -85,6 +85,35 @@ CALENDAR_DEFAULT_WINDOW_HOURS = 24.0
 CALENDAR_MAX_WINDOW_HOURS = 24.0 * 31.0
 PLAN_PREVIEW_TTL_SEC = 300.0
 PLAN_PREVIEW_MAX_PENDING = 1000
+CACHED_QUALITY_REPORT_MAX = 32
+GUEST_SESSION_DEFAULT_TTL_SEC = 3600.0
+GUEST_SESSION_MAX_TTL_SEC = 24.0 * 3600.0
+HOME_TASK_MAX_TRACKED = 400
+PLANNER_TASK_GRAPH_MAX = 300
+DEFERRED_ACTION_MAX = 500
+QUALITY_REPORT_DIR_DEFAULT = Path.home() / ".jarvis" / "quality-reports"
+NOTES_CAPTURE_DIR_DEFAULT = Path.home() / ".jarvis" / "notes"
+RELEASE_CHANNELS = {"dev", "beta", "stable"}
+SKILL_SANDBOX_TEMPLATES: dict[str, dict[str, Any]] = {
+    "read-only": {
+        "filesystem": "read_only",
+        "network": "allow",
+        "writes": [],
+        "description": "Read-only filesystem with normal outbound access.",
+    },
+    "network-limited": {
+        "filesystem": "read_write",
+        "network": "allowlist",
+        "writes": ["workspace"],
+        "description": "Write-capable workspace with explicit outbound allowlist.",
+    },
+    "local-only": {
+        "filesystem": "read_write",
+        "network": "deny",
+        "writes": ["workspace"],
+        "description": "No outbound networking; local operations only.",
+    },
+}
 CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3
 CIRCUIT_BREAKER_BASE_COOLDOWN_SEC = 15.0
 CIRCUIT_BREAKER_MAX_COOLDOWN_SEC = 300.0
@@ -211,6 +240,47 @@ _pending_plan_previews: dict[str, dict[str, Any]] = {}
 _integration_circuit_breakers: dict[str, dict[str, Any]] = {}
 _recovery_journal_path: Path = DEFAULT_RECOVERY_JOURNAL
 _dead_letter_queue_path: Path = DEFAULT_DEAD_LETTER_QUEUE
+_proactive_state: dict[str, Any] = {
+    "pending_follow_through": [],
+    "digest_snoozed_until": 0.0,
+    "last_briefing_at": 0.0,
+    "last_digest_at": 0.0,
+}
+_memory_partition_overlays: dict[str, dict[str, Any]] = {}
+_memory_quality_last: dict[str, Any] = {}
+_identity_trust_policies: dict[str, dict[str, Any]] = {}
+_guest_sessions: dict[str, dict[str, Any]] = {}
+_household_profiles: dict[str, dict[str, Any]] = {}
+_home_area_policies: dict[str, dict[str, Any]] = {}
+_home_task_runs: dict[str, dict[str, Any]] = {}
+_home_task_seq: int = 1
+_skill_quotas: dict[str, dict[str, Any]] = {}
+_planner_task_graphs: dict[str, dict[str, Any]] = {}
+_planner_task_seq: int = 1
+_deferred_actions: dict[str, dict[str, Any]] = {}
+_deferred_action_seq: int = 1
+_quality_reports: list[dict[str, Any]] = []
+_micro_expression_library: dict[str, dict[str, Any]] = {}
+_gaze_calibrations: dict[str, dict[str, Any]] = {}
+_gesture_envelopes: dict[str, dict[str, Any]] = {}
+_privacy_posture: dict[str, Any] = {
+    "state": "normal",
+    "reason": "startup",
+    "updated_at": 0.0,
+}
+_motion_safety_envelope: dict[str, Any] = {
+    "proximity_limit_cm": 35.0,
+    "max_yaw_deg": 45.0,
+    "max_pitch_deg": 20.0,
+    "max_roll_deg": 15.0,
+    "hardware_state": "normal",
+    "updated_at": 0.0,
+}
+_release_channel_state: dict[str, Any] = {
+    "active_channel": "dev",
+    "last_check_at": 0.0,
+    "migration_checks": [],
+}
 SENSITIVE_AUDIT_KEY_TOKENS = {
     "code",
     "pin",
@@ -303,6 +373,7 @@ AUDIT_REASON_MESSAGES: dict[str, str] = {
     "confirm_required": "blocked because explicit confirmation is required",
     "ambiguous_target": "blocked because the target is ambiguous for a high-risk action",
     "ambiguous_high_risk_text": "blocked because the request text is ambiguous for a high-risk action",
+    "area_policy": "blocked by area-level policy constraints",
     "conversation_disabled": "blocked because Home Assistant conversation mode is disabled",
     "conversation_readonly_profile": "blocked because conversation integration is configured as read-only",
     "readonly_profile": "blocked because requester profile is read-only for mutating actions",
@@ -817,6 +888,164 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "required": ["name"],
     },
+    "proactive_assistant": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "briefing | anomaly_scan | routine_suggestions | follow_through | event_digest"},
+            "mode": {"type": "string", "description": "morning or evening (for briefing)."},
+            "calendar": {"type": "array", "items": {"type": "object"}},
+            "reminders": {"type": "array", "items": {"type": "object"}},
+            "weather": {"type": "object"},
+            "home_state": {"type": "object"},
+            "devices": {"type": "array", "items": {"type": "object"}},
+            "history": {"type": "array", "items": {"type": "object"}},
+            "opt_in": {"type": "boolean"},
+            "pending_actions": {"type": "array", "items": {"type": "object"}},
+            "confirm": {"type": "boolean"},
+            "digest_items": {"type": "array", "items": {"type": "object"}},
+            "snooze_minutes": {"type": "integer"},
+        },
+        "required": ["action"],
+    },
+    "memory_governance": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "partition | quality_audit | cleanup"},
+            "user": {"type": "string"},
+            "shared_scopes": {"type": "array", "items": {"type": "string"}},
+            "private_scopes": {"type": "array", "items": {"type": "string"}},
+            "stale_days": {"type": "number"},
+            "apply": {"type": "boolean"},
+            "limit": {"type": "integer"},
+        },
+        "required": ["action"],
+    },
+    "identity_trust": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "session_confidence | policy_set | policy_get | guest_start | guest_validate | guest_end | household_upsert | household_list | household_remove"},
+            "voice_confidence": {"type": "number"},
+            "operator_hint": {"type": "string"},
+            "domain": {"type": "string"},
+            "required_profile": {"type": "string"},
+            "requires_step_up": {"type": "boolean"},
+            "guest_id": {"type": "string"},
+            "guest_session_token": {"type": "string"},
+            "ttl_sec": {"type": "number"},
+            "capabilities": {"type": "array", "items": {"type": "string"}},
+            "user": {"type": "string"},
+            "role": {"type": "string"},
+            "trust_level": {"type": "string"},
+            "exceptions": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["action"],
+    },
+    "home_orchestrator": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "plan | execute | area_policy_set | area_policy_list | automation_suggest | task_start | task_update | task_list"},
+            "request_text": {"type": "string"},
+            "plan": {"type": "object"},
+            "actions": {"type": "array", "items": {"type": "object"}},
+            "area": {"type": "string"},
+            "policy": {"type": "object"},
+            "history": {"type": "array", "items": {"type": "object"}},
+            "task_id": {"type": "string"},
+            "status": {"type": "string"},
+            "progress": {"type": "number"},
+            "notes": {"type": "string"},
+        },
+        "required": ["action"],
+    },
+    "skills_governance": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "negotiate | dependency_health | quota_set | quota_get | quota_check | harness_run | bundle_sign | sandbox_template"},
+            "requested_capabilities": {"type": "array", "items": {"type": "string"}},
+            "name": {"type": "string"},
+            "rate_per_min": {"type": "integer"},
+            "cpu_sec": {"type": "number"},
+            "outbound_calls": {"type": "integer"},
+            "usage": {"type": "object"},
+            "fixtures": {"type": "array", "items": {"type": "object"}},
+            "bundle": {"type": "object"},
+            "template": {"type": "string"},
+        },
+        "required": ["action"],
+    },
+    "planner_engine": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "plan | task_graph_create | task_graph_update | task_graph_resume | deferred_schedule | deferred_list | self_critique"},
+            "goal": {"type": "string"},
+            "steps": {"type": "array", "items": {"type": "object"}},
+            "graph_id": {"type": "string"},
+            "node_id": {"type": "string"},
+            "status": {"type": "string"},
+            "title": {"type": "string"},
+            "execute_at": {"type": "number"},
+            "payload": {"type": "object"},
+            "plan": {"type": "object"},
+            "limit": {"type": "integer"},
+        },
+        "required": ["action"],
+    },
+    "quality_evaluator": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "weekly_report | dataset_run | reports_list"},
+            "wins": {"type": "array", "items": {"type": "string"}},
+            "regressions": {"type": "array", "items": {"type": "string"}},
+            "report_path": {"type": "string"},
+            "dataset": {"type": "array", "items": {"type": "object"}},
+            "strict": {"type": "boolean"},
+            "limit": {"type": "integer"},
+        },
+        "required": ["action"],
+    },
+    "embodiment_presence": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "expression_library | gaze_calibrate | gesture_profile | privacy_posture | safety_envelope | status"},
+            "intent": {"type": "string"},
+            "certainty_band": {"type": "string"},
+            "micro_expression": {"type": "string"},
+            "user": {"type": "string"},
+            "distance_cm": {"type": "number"},
+            "seat_offset_deg": {"type": "number"},
+            "emotion": {"type": "string"},
+            "importance": {"type": "string"},
+            "amplitude": {"type": "number"},
+            "state": {"type": "string"},
+            "reason": {"type": "string"},
+            "proximity_limit_cm": {"type": "number"},
+            "hardware_state": {"type": "string"},
+        },
+        "required": ["action"],
+    },
+    "integration_hub": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "description": "calendar_upsert | calendar_delete | notes_capture | messaging_flow | commute_brief | shopping_orchestrate | research_workflow"},
+            "confirm": {"type": "boolean"},
+            "event_id": {"type": "string"},
+            "event": {"type": "object"},
+            "backend": {"type": "string"},
+            "path": {"type": "string"},
+            "title": {"type": "string"},
+            "content": {"type": "string"},
+            "channel": {"type": "string"},
+            "phase": {"type": "string"},
+            "message": {"type": "string"},
+            "traffic": {"type": "object"},
+            "transit": {"type": "object"},
+            "items": {"type": "array", "items": {"type": "string"}},
+            "allow_web": {"type": "boolean"},
+            "query": {"type": "string"},
+            "citations": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["action"],
+    },
 }
 
 SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
@@ -873,6 +1102,15 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "skills_enable": {"name"},
     "skills_disable": {"name"},
     "skills_version": {"name"},
+    "proactive_assistant": {"action"},
+    "memory_governance": {"action"},
+    "identity_trust": {"action"},
+    "home_orchestrator": {"action"},
+    "skills_governance": {"action"},
+    "planner_engine": {"action"},
+    "quality_evaluator": {"action"},
+    "embodiment_presence": {"action"},
+    "integration_hub": {"action"},
 }
 
 # Backward compatibility for existing imports/tests.
@@ -931,6 +1169,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _memory_retention_days, _audit_retention_days
     global _memory_pii_guardrails_enabled, _audit_encryption_enabled, _data_encryption_key
     global _timer_id_seq, _reminder_id_seq, _integration_circuit_breakers, _recovery_journal_path, _dead_letter_queue_path
+    global _home_task_seq, _planner_task_seq, _deferred_action_seq
     _config = config
     _memory = memory_store
     _audit_log_max_bytes = int(config.audit_log_max_bytes)
@@ -1031,6 +1270,34 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _runtime_observability_state.clear()
     _runtime_skills_state.clear()
     _integration_circuit_breakers.clear()
+    _proactive_state["pending_follow_through"] = []
+    _proactive_state["digest_snoozed_until"] = 0.0
+    _proactive_state["last_briefing_at"] = 0.0
+    _proactive_state["last_digest_at"] = 0.0
+    _memory_partition_overlays.clear()
+    _memory_quality_last.clear()
+    _identity_trust_policies.clear()
+    _guest_sessions.clear()
+    _household_profiles.clear()
+    _home_area_policies.clear()
+    _home_task_runs.clear()
+    _skill_quotas.clear()
+    _planner_task_graphs.clear()
+    _deferred_actions.clear()
+    _quality_reports.clear()
+    _micro_expression_library.clear()
+    _gaze_calibrations.clear()
+    _gesture_envelopes.clear()
+    _privacy_posture["state"] = "normal"
+    _privacy_posture["reason"] = "startup"
+    _privacy_posture["updated_at"] = 0.0
+    _motion_safety_envelope["updated_at"] = 0.0
+    _release_channel_state["active_channel"] = "dev"
+    _release_channel_state["last_check_at"] = 0.0
+    _release_channel_state["migration_checks"] = []
+    _home_task_seq = 1
+    _planner_task_seq = 1
+    _deferred_action_seq = 1
     for integration in sorted(set(INTEGRATION_TOOL_MAP.values())):
         _ensure_circuit_breaker_state(integration)
     _recovery_reconcile_interrupted()
@@ -1378,6 +1645,28 @@ def _identity_context(args: dict[str, Any] | None) -> dict[str, Any]:
     payload = args if isinstance(args, dict) else {}
     request_context = payload.get("request_context")
     context_payload = request_context if isinstance(request_context, dict) else {}
+    guest_token = str(
+        payload.get("guest_session_token")
+        or context_payload.get("guest_session_token")
+        or ""
+    ).strip()
+    guest_session = _resolve_guest_session(guest_token) if guest_token else None
+
+    if guest_session is not None:
+        speaker_verified = _as_bool(
+            payload.get("speaker_verified", context_payload.get("speaker_verified")),
+            default=False,
+        )
+        return {
+            "requester_id": str(guest_session.get("guest_id", "guest")),
+            "profile": "guest",
+            "trusted": False,
+            "speaker_verified": speaker_verified,
+            "source": "guest_session",
+            "guest_session_token": str(guest_session.get("token", "")),
+            "guest_capabilities": _as_str_list(guest_session.get("capabilities"), lower=True),
+            "guest_expires_at": float(guest_session.get("expires_at", 0.0) or 0.0),
+        }
 
     requester_id = str(payload.get("requester_id", "")).strip().lower()
     source = "requester_id"
@@ -1396,10 +1685,13 @@ def _identity_context(args: dict[str, Any] | None) -> dict[str, Any]:
     trusted = requester_id in _identity_trusted_users or profile == "trusted" or speaker_verified
     return {
         "requester_id": requester_id,
-        "profile": profile,
+        "profile": _identity_profile_level(profile),
         "trusted": trusted,
         "speaker_verified": speaker_verified,
         "source": source,
+        "guest_session_token": "",
+        "guest_capabilities": [],
+        "guest_expires_at": 0.0,
     }
 
 
@@ -1409,12 +1701,32 @@ def _identity_audit_fields(context: dict[str, Any], decision_chain: list[str] | 
         chain = ["identity_context_applied"]
     return {
         "requester_id": str(context.get("requester_id", "")),
-        "requester_profile": str(context.get("profile", "control")),
+        "requester_profile": _identity_profile_level(str(context.get("profile", "control"))),
         "requester_trusted": bool(context.get("trusted", False)),
         "speaker_verified": bool(context.get("speaker_verified", False)),
         "identity_source": str(context.get("source", "default")),
+        "guest_session_token": str(context.get("guest_session_token", "")),
+        "guest_expires_at": float(context.get("guest_expires_at", 0.0) or 0.0),
         "decision_chain": chain,
     }
+
+
+def _identity_trust_domain(tool_name: str, args: dict[str, Any] | None) -> str:
+    payload = args if isinstance(args, dict) else {}
+    domain = str(payload.get("domain", "")).strip().lower()
+    if domain:
+        return domain
+    mapped = {
+        "email_send": "email",
+        "webhook_trigger": "webhook",
+        "slack_notify": "messaging",
+        "discord_notify": "messaging",
+        "home_assistant_conversation": "home_assistant",
+        "smart_home": "home_assistant",
+        "media_control": "home_assistant",
+        "todoist_add_task": "todoist",
+    }
+    return mapped.get(str(tool_name or "").strip().lower(), "general")
 
 
 def _identity_authorize(
@@ -1425,6 +1737,7 @@ def _identity_authorize(
     high_risk: bool,
 ) -> tuple[bool, str | None, dict[str, Any], list[str]]:
     context = _identity_context(args)
+    payload = args if isinstance(args, dict) else {}
     chain = [
         f"tool={tool_name}",
         f"requester={context['requester_id']}",
@@ -1438,11 +1751,28 @@ def _identity_authorize(
             context,
             chain,
         )
+    if _identity_profile_level(str(context.get("profile", "control"))) == "guest":
+        guest_caps = {
+            item
+            for item in _as_str_list(context.get("guest_capabilities"), lower=True)
+            if item
+        }
+        tool_cap = str(tool_name or "").strip().lower()
+        if tool_cap not in guest_caps and "*" not in guest_caps:
+            chain.append("deny:guest_capability")
+            return (
+                False,
+                f"Guest session does not allow '{tool_name}'. Allowed capabilities: {sorted(guest_caps)}",
+                context,
+                chain,
+            )
+        chain.append("guest_session_capability")
+
     if not _identity_enforcement_enabled:
         chain.append("identity_enforcement_disabled")
         return True, None, context, chain
 
-    profile = str(context.get("profile", "control"))
+    profile = _identity_profile_level(str(context.get("profile", "control")))
     if profile == "deny":
         chain.append("deny:user_profile")
         return (
@@ -1465,8 +1795,31 @@ def _identity_authorize(
             context,
             chain,
         )
+    domain = _identity_trust_domain(tool_name, payload)
+    policy = _identity_trust_policies.get(domain, {})
+    required_profile = _identity_profile_level(str(policy.get("required_profile", "control")))
+    if _profile_rank(profile) < _profile_rank(required_profile):
+        chain.append("deny:trust_policy")
+        return (
+            False,
+            (
+                f"Trust policy for domain '{domain}' requires profile>={required_profile}; "
+                f"requester profile is {profile}."
+            ),
+            context,
+            chain,
+        )
+    if _as_bool(policy.get("requires_step_up"), default=False):
+        if not (_as_bool(payload.get("approved"), default=False) or bool(payload.get("approval_code"))):
+            chain.append("deny:step_up_required")
+            return (
+                False,
+                f"Trust policy for domain '{domain}' requires step-up approval.",
+                context,
+                chain,
+            )
+        chain.append("trust_policy_step_up")
     if high_risk and _identity_require_approval:
-        payload = args if isinstance(args, dict) else {}
         approved = _as_bool(payload.get("approved"), default=False)
         approval_code = str(payload.get("approval_code", "")).strip()
         code_valid = bool(_identity_approval_code) and bool(approval_code) and hmac.compare_digest(
@@ -1868,6 +2221,199 @@ def _quiet_window_active(*, now_ts: float | None = None) -> bool:
     return minute >= start or minute < end
 
 
+def _identity_profile_level(profile: str) -> str:
+    normalized = str(profile or "control").strip().lower()
+    if normalized in {"deny", "guest", "readonly", "control", "trusted"}:
+        return normalized
+    return "control"
+
+
+def _profile_rank(profile: str) -> int:
+    order = {
+        "deny": 0,
+        "guest": 1,
+        "readonly": 2,
+        "control": 3,
+        "trusted": 4,
+    }
+    return order.get(_identity_profile_level(profile), 3)
+
+
+def _prune_guest_sessions(*, now_ts: float | None = None) -> None:
+    if not _guest_sessions:
+        return
+    now = time.time() if now_ts is None else float(now_ts)
+    expired = [
+        token
+        for token, row in _guest_sessions.items()
+        if float(row.get("expires_at", 0.0) or 0.0) <= now
+    ]
+    for token in expired:
+        _guest_sessions.pop(token, None)
+
+
+def _resolve_guest_session(token: str, *, now_ts: float | None = None) -> dict[str, Any] | None:
+    text = str(token or "").strip()
+    if not text:
+        return None
+    _prune_guest_sessions(now_ts=now_ts)
+    row = _guest_sessions.get(text)
+    if not isinstance(row, dict):
+        return None
+    expires_at = float(row.get("expires_at", 0.0) or 0.0)
+    now = time.time() if now_ts is None else float(now_ts)
+    if expires_at <= now:
+        _guest_sessions.pop(text, None)
+        return None
+    return row
+
+
+def _register_guest_session(
+    *,
+    guest_id: str,
+    capabilities: list[str],
+    ttl_sec: float,
+    now_ts: float | None = None,
+) -> dict[str, Any]:
+    now = time.time() if now_ts is None else float(now_ts)
+    ttl = _as_float(ttl_sec, GUEST_SESSION_DEFAULT_TTL_SEC, minimum=60.0, maximum=GUEST_SESSION_MAX_TTL_SEC)
+    token = secrets.token_urlsafe(12)
+    row = {
+        "token": token,
+        "guest_id": str(guest_id or "guest").strip().lower() or "guest",
+        "capabilities": sorted(set(_as_str_list(capabilities, lower=True))),
+        "issued_at": now,
+        "expires_at": now + ttl,
+    }
+    _guest_sessions[token] = row
+    _prune_guest_sessions(now_ts=now)
+    return row
+
+
+def _extract_area_from_entity(entity_id: str) -> str:
+    text = str(entity_id or "").strip().lower()
+    if "." not in text:
+        return ""
+    _, name = text.split(".", 1)
+    cleaned = re.sub(r"[^a-z0-9_]", "_", name)
+    parts = [part for part in cleaned.split("_") if part]
+    if not parts:
+        return ""
+    if parts[0] in {"light", "switch", "media", "player", "climate", "lock", "cover"} and len(parts) > 1:
+        return parts[1]
+    return parts[0]
+
+
+def _home_action_is_loud(*, domain: str, action: str, data: dict[str, Any] | None = None) -> bool:
+    domain_text = str(domain or "").strip().lower()
+    action_text = str(action or "").strip().lower()
+    payload = data if isinstance(data, dict) else {}
+    if domain_text == "media_player" and action_text in {"media_play", "play_media", "turn_on", "volume_set"}:
+        return True
+    if domain_text in {"light", "switch"} and action_text in {"turn_on", "toggle"}:
+        brightness = payload.get("brightness")
+        if brightness is None:
+            return True
+        try:
+            level = float(brightness)
+        except (TypeError, ValueError):
+            return True
+        return level >= 120.0
+    return False
+
+
+def _home_area_policy_violation(
+    *,
+    domain: str,
+    action: str,
+    entity_id: str,
+    data: dict[str, Any] | None = None,
+    now_ts: float | None = None,
+) -> tuple[bool, str]:
+    area = _extract_area_from_entity(entity_id)
+    if not area:
+        return False, ""
+    policy = _home_area_policies.get(area)
+    if not isinstance(policy, dict):
+        return False, ""
+    blocked_pairs = {
+        item
+        for item in _as_str_list(policy.get("blocked_actions"), lower=True)
+        if ":" in item
+    }
+    pair = f"{str(domain).strip().lower()}:{str(action).strip().lower()}"
+    if pair in blocked_pairs:
+        return True, f"Area policy for '{area}' blocks action {pair}."
+    quiet_start = str(policy.get("quiet_hours_start", "")).strip()
+    quiet_end = str(policy.get("quiet_hours_end", "")).strip()
+    if quiet_start and quiet_end:
+        start = _hhmm_to_minutes(quiet_start)
+        end = _hhmm_to_minutes(quiet_end)
+        if start is not None and end is not None and start != end:
+            local = time.localtime(time.time() if now_ts is None else float(now_ts))
+            minute = (local.tm_hour * 60) + local.tm_min
+            in_quiet = (start <= minute < end) if start < end else (minute >= start or minute < end)
+            if in_quiet and _home_action_is_loud(domain=domain, action=action, data=data):
+                return True, f"Area policy quiet hours are active for '{area}' and loud actions are blocked."
+    return False, ""
+
+
+def _quality_reports_snapshot(*, limit: int = 10) -> list[dict[str, Any]]:
+    if not _quality_reports:
+        return []
+    capped = _as_int(limit, 10, minimum=1, maximum=50)
+    return [dict(item) for item in _quality_reports[-capped:]][::-1]
+
+
+def _append_quality_report(report: dict[str, Any]) -> None:
+    _quality_reports.append({str(key): value for key, value in report.items()})
+    if len(_quality_reports) > CACHED_QUALITY_REPORT_MAX:
+        del _quality_reports[: len(_quality_reports) - CACHED_QUALITY_REPORT_MAX]
+
+
+def _write_quality_report_artifact(payload: dict[str, Any], *, report_path: str | None = None) -> str:
+    if report_path:
+        path = Path(report_path).expanduser()
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = QUALITY_REPORT_DIR_DEFAULT / f"quality-report-{timestamp}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, default=str))
+    return str(path)
+
+
+def _capture_note(*, backend: str, title: str, content: str, path_hint: str = "") -> dict[str, Any]:
+    normalized_backend = str(backend or "local_markdown").strip().lower()
+    clean_title = str(title or "jarvis-note").strip() or "jarvis-note"
+    clean_content = str(content or "").strip()
+    slug = re.sub(r"[^a-z0-9_-]+", "-", clean_title.lower()).strip("-") or "jarvis-note"
+    if normalized_backend in {"obsidian", "local_markdown"}:
+        base = Path(path_hint).expanduser() if path_hint else NOTES_CAPTURE_DIR_DEFAULT
+        base.mkdir(parents=True, exist_ok=True)
+        file_path = base / f"{slug}.md"
+        body = f"# {clean_title}\n\n{clean_content}\n"
+        file_path.write_text(body)
+        return {
+            "backend": normalized_backend,
+            "stored": True,
+            "path": str(file_path),
+        }
+    if normalized_backend == "notion":
+        return {
+            "backend": normalized_backend,
+            "stored": False,
+            "status": "draft_only",
+            "detail": "Notion API bridge is not configured; returning structured draft payload.",
+            "title": clean_title,
+            "content": clean_content,
+        }
+    return {
+        "backend": normalized_backend,
+        "stored": False,
+        "status": "unsupported_backend",
+    }
+
+
 def _duration_seconds(value: Any) -> float | None:
     if isinstance(value, bool) or value is None:
         return None
@@ -2024,14 +2570,29 @@ def _retry_backoff_delay(
     return max(0.0, base_delay + jitter)
 
 
-def _as_str_list(value: Any) -> list[str] | None:
+def _as_str_list(value: Any, *, lower: bool = False, allow_none: bool = False) -> list[str] | None:
     if value is None:
-        return None
+        return None if allow_none else []
     if isinstance(value, list):
         cleaned = [str(item).strip() for item in value if str(item).strip()]
-        return cleaned or None
+        if lower:
+            cleaned = [item.lower() for item in cleaned]
+        if cleaned:
+            return cleaned
+        return None if allow_none else []
+    if isinstance(value, tuple):
+        cleaned = [str(item).strip() for item in value if str(item).strip()]
+        if lower:
+            cleaned = [item.lower() for item in cleaned]
+        if cleaned:
+            return cleaned
+        return None if allow_none else []
     text = str(value).strip()
-    return [text] if text else None
+    if not text:
+        return None if allow_none else []
+    if lower:
+        text = text.lower()
+    return [text]
 
 
 def _action_key(domain: str, action: str, entity_id: str) -> str:
@@ -2992,6 +3553,7 @@ def _integration_health_snapshot() -> dict[str, Any]:
 
 
 def _identity_status_snapshot() -> dict[str, Any]:
+    _prune_guest_sessions()
     return {
         "enabled": _identity_enforcement_enabled,
         "default_user": _identity_default_user,
@@ -3002,6 +3564,19 @@ def _identity_status_snapshot() -> dict[str, Any]:
         "trusted_users": sorted(_identity_trusted_users),
         "profile_count": len(_identity_user_profiles),
         "user_profiles": {user: _identity_user_profiles[user] for user in sorted(_identity_user_profiles)},
+        "trust_policy_count": len(_identity_trust_policies),
+        "trust_policies": {domain: dict(policy) for domain, policy in sorted(_identity_trust_policies.items())},
+        "guest_sessions_active": len(_guest_sessions),
+        "guest_sessions": [
+            {
+                "guest_id": str(item.get("guest_id", "")),
+                "expires_at": float(item.get("expires_at", 0.0) or 0.0),
+                "capabilities": _as_str_list(item.get("capabilities"), lower=True),
+            }
+            for _, item in sorted(_guest_sessions.items(), key=lambda pair: str(pair[0]))
+        ],
+        "household_profile_count": len(_household_profiles),
+        "household_profiles": {user: dict(row) for user, row in sorted(_household_profiles.items())},
     }
 
 
@@ -3142,6 +3717,56 @@ def _skills_status_snapshot() -> dict[str, Any]:
             "skills": [],
         }
     return {str(key): value for key, value in _runtime_skills_state.items()}
+
+
+def _expansion_snapshot() -> dict[str, Any]:
+    _prune_guest_sessions()
+    return {
+        "proactive": {
+            "pending_follow_through_count": len(_proactive_state.get("pending_follow_through", [])),
+            "digest_snoozed_until": float(_proactive_state.get("digest_snoozed_until", 0.0) or 0.0),
+            "last_briefing_at": float(_proactive_state.get("last_briefing_at", 0.0) or 0.0),
+            "last_digest_at": float(_proactive_state.get("last_digest_at", 0.0) or 0.0),
+        },
+        "memory_governance": {
+            "partition_overlay_count": len(_memory_partition_overlays),
+            "last_quality_audit": dict(_memory_quality_last) if isinstance(_memory_quality_last, dict) else {},
+        },
+        "identity_trust": {
+            "trust_policy_count": len(_identity_trust_policies),
+            "guest_session_count": len(_guest_sessions),
+            "household_profile_count": len(_household_profiles),
+        },
+        "home_orchestration": {
+            "area_policy_count": len(_home_area_policies),
+            "tracked_task_count": len(_home_task_runs),
+        },
+        "skills_governance": {
+            "quota_count": len(_skill_quotas),
+            "sandbox_templates": sorted(SKILL_SANDBOX_TEMPLATES),
+        },
+        "planner_engine": {
+            "task_graph_count": len(_planner_task_graphs),
+            "deferred_action_count": len(_deferred_actions),
+        },
+        "quality_evaluator": {
+            "cached_report_count": len(_quality_reports),
+            "recent_reports": _quality_reports_snapshot(limit=5),
+        },
+        "embodiment_presence": {
+            "micro_expression_count": len(_micro_expression_library),
+            "gaze_calibration_count": len(_gaze_calibrations),
+            "gesture_profile_count": len(_gesture_envelopes),
+            "privacy_posture": dict(_privacy_posture),
+            "motion_safety_envelope": dict(_motion_safety_envelope),
+        },
+        "integration_hub": {
+            "notes_backend_default": "local_markdown",
+            "notes_dir": str(NOTES_CAPTURE_DIR_DEFAULT),
+            "release_channels": sorted(RELEASE_CHANNELS),
+            "active_release_channel": str(_release_channel_state.get("active_channel", "dev")),
+        },
+    }
 
 
 def _health_rollup(
@@ -3486,6 +4111,31 @@ async def smart_home(args: dict[str, Any]) -> dict[str, Any]:
                 }
             ]
         }
+    if not dry_run:
+        area_blocked, area_reason = _home_area_policy_violation(
+            domain=domain,
+            action=action,
+            entity_id=entity_id,
+            data=data,
+        )
+        if area_blocked:
+            _record_service_error("smart_home", start_time, "policy")
+            _audit(
+                "smart_home",
+                _identity_enriched_audit(
+                    {
+                        "domain": domain,
+                        "action": action,
+                        "entity_id": entity_id,
+                        "policy_decision": "denied",
+                        "reason": "area_policy",
+                        "detail": area_reason,
+                    },
+                    identity_context,
+                    [*identity_chain, "deny:area_policy"],
+                ),
+            )
+            return {"content": [{"type": "text", "text": area_reason}]}
     if not dry_run:
         preview_risk = "high" if domain in SENSITIVE_DOMAINS else "medium"
         preview = _preview_gate(
@@ -4500,6 +5150,30 @@ async def media_control(args: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         return {"content": [{"type": "text", "text": identity_message or "Tool not permitted."}]}
+    if not dry_run:
+        area_blocked, area_reason = _home_area_policy_violation(
+            domain="media_player",
+            action=service,
+            entity_id=entity_id,
+            data=payload_data,
+        )
+        if area_blocked:
+            _record_service_error("media_control", start_time, "policy")
+            _audit(
+                "media_control",
+                _identity_enriched_audit(
+                    {
+                        "result": "denied",
+                        "reason": "area_policy",
+                        "entity_id": entity_id,
+                        "action": action,
+                        "detail": area_reason,
+                    },
+                    identity_context,
+                    [*identity_chain, "deny:area_policy"],
+                ),
+            )
+            return {"content": [{"type": "text", "text": area_reason}]}
     if not dry_run:
         preview = _preview_gate(
             tool_name="media_control",
@@ -6486,6 +7160,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         recent_tools = {"error": str(e)}
     identity_status = _identity_status_snapshot()
+    expansion_status = _expansion_snapshot()
     tool_policy_status = {
         "allow_count": len(_tool_allowlist),
         "deny_count": len(_tool_denylist),
@@ -6569,6 +7244,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         },
         "recovery_journal": _recovery_journal_status(limit=20),
         "dead_letter_queue": _dead_letter_queue_status(limit=20, status_filter="all"),
+        "expansion": expansion_status,
         "memory": memory_status,
         "audit": audit_status,
         "recent_tools": recent_tools,
@@ -6611,6 +7287,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "retention_policy",
             "recovery_journal",
             "dead_letter_queue",
+            "expansion",
             "memory",
             "audit",
             "recent_tools",
@@ -6725,6 +7402,12 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "trusted_users",
             "profile_count",
             "user_profiles",
+            "trust_policy_count",
+            "trust_policies",
+            "guest_sessions_active",
+            "guest_sessions",
+            "household_profile_count",
+            "household_profiles",
         ],
         "skills_required": [
             "enabled",
@@ -6819,6 +7502,61 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "failed_count",
             "replayed_count",
             "recent",
+        ],
+        "expansion_required": [
+            "proactive",
+            "memory_governance",
+            "identity_trust",
+            "home_orchestration",
+            "skills_governance",
+            "planner_engine",
+            "quality_evaluator",
+            "embodiment_presence",
+            "integration_hub",
+        ],
+        "expansion_proactive_required": [
+            "pending_follow_through_count",
+            "digest_snoozed_until",
+            "last_briefing_at",
+            "last_digest_at",
+        ],
+        "expansion_memory_governance_required": [
+            "partition_overlay_count",
+            "last_quality_audit",
+        ],
+        "expansion_identity_trust_required": [
+            "trust_policy_count",
+            "guest_session_count",
+            "household_profile_count",
+        ],
+        "expansion_home_orchestration_required": [
+            "area_policy_count",
+            "tracked_task_count",
+        ],
+        "expansion_skills_governance_required": [
+            "quota_count",
+            "sandbox_templates",
+        ],
+        "expansion_planner_engine_required": [
+            "task_graph_count",
+            "deferred_action_count",
+        ],
+        "expansion_quality_evaluator_required": [
+            "cached_report_count",
+            "recent_reports",
+        ],
+        "expansion_embodiment_presence_required": [
+            "micro_expression_count",
+            "gaze_calibration_count",
+            "gesture_profile_count",
+            "privacy_posture",
+            "motion_safety_envelope",
+        ],
+        "expansion_integration_hub_required": [
+            "notes_backend_default",
+            "notes_dir",
+            "release_channels",
+            "active_release_channel",
         ],
         "health_required": [
             "health_level",
@@ -7685,6 +8423,1329 @@ async def tool_summary_text(args: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": text}]}
 
 
+def _json_payload_response(payload: dict[str, Any]) -> dict[str, Any]:
+    return {"content": [{"type": "text", "text": json.dumps(payload, default=str)}]}
+
+
+async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("proactive_assistant"):
+        record_summary("proactive_assistant", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+
+    action = str(args.get("action", "")).strip().lower()
+    now = time.time()
+    if action == "briefing":
+        mode = str(args.get("mode", "morning")).strip().lower() or "morning"
+        calendar = args.get("calendar") if isinstance(args.get("calendar"), list) else []
+        reminders = args.get("reminders") if isinstance(args.get("reminders"), list) else []
+        weather = args.get("weather") if isinstance(args.get("weather"), dict) else {}
+        home_state = args.get("home_state") if isinstance(args.get("home_state"), dict) else {}
+        due_reminders = 0
+        for row in reminders:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("status", "pending")).strip().lower() == "completed":
+                continue
+            due_at = _as_float(row.get("due_at", row.get("due", now + 1_000_000)), now + 1_000_000)
+            if due_at <= now:
+                due_reminders += 1
+        next_event = ""
+        for row in calendar:
+            if isinstance(row, dict):
+                next_event = str(row.get("summary") or row.get("title") or "").strip()
+                if next_event:
+                    break
+        weather_text = str(weather.get("summary") or weather.get("condition") or "No weather update").strip()
+        home_alerts = int(home_state.get("alerts", 0) or 0) if isinstance(home_state, dict) else 0
+        _proactive_state["last_briefing_at"] = now
+        payload = {
+            "action": action,
+            "mode": mode,
+            "next_event": next_event,
+            "calendar_items": len(calendar),
+            "due_reminders": due_reminders,
+            "weather": weather_text,
+            "home_alerts": home_alerts,
+            "briefing": (
+                f"{mode.title()} briefing: {len(calendar)} calendar items, {due_reminders} due reminders, "
+                f"weather '{weather_text}', home alerts={home_alerts}."
+            ),
+        }
+        record_summary("proactive_assistant", "ok", start_time, effect=f"briefing:{mode}", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "anomaly_scan":
+        devices = args.get("devices") if isinstance(args.get("devices"), list) else []
+        reminders = args.get("reminders") if isinstance(args.get("reminders"), list) else []
+        anomalies: list[dict[str, Any]] = []
+        for row in devices:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name") or row.get("entity_id") or "device").strip()
+            status = str(row.get("status") or row.get("state") or "").strip().lower()
+            if status in {"offline", "unavailable", "disconnected"}:
+                anomalies.append({"type": "device_offline", "entity": name, "severity": "high"})
+            temp = row.get("temperature")
+            expected_min = row.get("expected_min")
+            expected_max = row.get("expected_max")
+            if temp is not None and expected_min is not None and expected_max is not None:
+                current_temp = _as_float(temp, 0.0)
+                low = _as_float(expected_min, 0.0)
+                high = _as_float(expected_max, 100.0)
+                if current_temp < low or current_temp > high:
+                    anomalies.append(
+                        {
+                            "type": "temperature_outlier",
+                            "entity": name,
+                            "severity": "medium",
+                            "temperature": current_temp,
+                            "expected_min": low,
+                            "expected_max": high,
+                        }
+                    )
+        for row in reminders:
+            if not isinstance(row, dict):
+                continue
+            status = str(row.get("status", "pending")).strip().lower()
+            if status == "completed":
+                continue
+            due_at = _as_float(row.get("due_at", row.get("due", now + 1_000_000)), now + 1_000_000)
+            if due_at < now:
+                anomalies.append(
+                    {
+                        "type": "missed_reminder",
+                        "text": str(row.get("text", "reminder")).strip(),
+                        "severity": "medium",
+                    }
+                )
+        payload = {
+            "action": action,
+            "anomaly_count": len(anomalies),
+            "notify": len(anomalies) > 0,
+            "anomalies": anomalies,
+        }
+        effect = "anomalies_detected" if anomalies else "no_anomalies"
+        record_summary("proactive_assistant", "ok", start_time, effect=effect, risk="medium" if anomalies else "low")
+        return _json_payload_response(payload)
+
+    if action == "routine_suggestions":
+        if not _as_bool(args.get("opt_in"), default=False):
+            _record_service_error("proactive_assistant", start_time, "policy")
+            return {"content": [{"type": "text", "text": "Routine suggestions require opt_in=true."}]}
+        history = args.get("history") if isinstance(args.get("history"), list) else []
+        counts: dict[str, int] = {}
+        for row in history:
+            if isinstance(row, dict):
+                key = str(row.get("action") or row.get("name") or "").strip().lower()
+            else:
+                key = str(row).strip().lower()
+            if not key:
+                continue
+            counts[key] = counts.get(key, 0) + 1
+        suggestions = [
+            {
+                "suggestion": f"Automate '{name}' as a routine trigger.",
+                "occurrences": count,
+            }
+            for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            if count >= 3
+        ][:10]
+        payload = {
+            "action": action,
+            "opt_in": True,
+            "suggestion_count": len(suggestions),
+            "suggestions": suggestions,
+        }
+        record_summary("proactive_assistant", "ok", start_time, effect=f"suggestions={len(suggestions)}", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "follow_through":
+        pending = args.get("pending_actions") if isinstance(args.get("pending_actions"), list) else []
+        for row in pending:
+            if not isinstance(row, dict):
+                continue
+            _proactive_state["pending_follow_through"].append(
+                {
+                    "created_at": now,
+                    "task": str(row.get("task") or row.get("action") or "").strip(),
+                    "payload": {str(k): v for k, v in row.items()},
+                }
+            )
+        executed: dict[str, Any] | None = None
+        if _as_bool(args.get("confirm"), default=False) and _proactive_state["pending_follow_through"]:
+            executed = _proactive_state["pending_follow_through"].pop(0)
+            executed["executed_at"] = now
+        payload = {
+            "action": action,
+            "queue_size": len(_proactive_state["pending_follow_through"]),
+            "executed": executed,
+        }
+        record_summary("proactive_assistant", "ok", start_time, effect="follow_through", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "event_digest":
+        snooze_minutes = _as_int(args.get("snooze_minutes", 0), 0, minimum=0, maximum=24 * 60)
+        if snooze_minutes > 0:
+            _proactive_state["digest_snoozed_until"] = now + (snooze_minutes * 60.0)
+        snoozed_until = float(_proactive_state.get("digest_snoozed_until", 0.0) or 0.0)
+        digest_items = args.get("digest_items") if isinstance(args.get("digest_items"), list) else []
+        _proactive_state["last_digest_at"] = now
+        if snoozed_until > now:
+            payload = {
+                "action": action,
+                "status": "snoozed",
+                "snoozed_until": snoozed_until,
+                "remaining_sec": max(0.0, snoozed_until - now),
+            }
+            record_summary("proactive_assistant", "ok", start_time, effect="digest_snoozed", risk="low")
+            return _json_payload_response(payload)
+        payload = {
+            "action": action,
+            "status": "ready",
+            "digest_count": len(digest_items),
+            "digest_items": digest_items[:20],
+            "snoozed_until": snoozed_until,
+        }
+        record_summary("proactive_assistant", "ok", start_time, effect="digest_ready", risk="low")
+        return _json_payload_response(payload)
+
+    _record_service_error("proactive_assistant", start_time, "invalid_data")
+    return {"content": [{"type": "text", "text": "Unknown proactive_assistant action."}]}
+
+
+def _memory_quality_audit(*, stale_days: float, limit: int) -> dict[str, Any]:
+    if _memory is None:
+        return {"error": "missing_store"}
+    entries = _memory.recent(limit=limit)
+    duplicates: list[dict[str, Any]] = []
+    duplicate_ids: list[int] = []
+    seen_by_text: dict[str, int] = {}
+    stale_ids: list[int] = []
+    contradictions: list[dict[str, Any]] = []
+    assertions: dict[str, str] = {}
+    now = time.time()
+    stale_cutoff = now - (max(1.0, stale_days) * 86400.0)
+    is_not_re = re.compile(r"^\s*(?P<subject>[a-z0-9 _-]{2,})\s+is\s+not\s+(?P<value>[a-z0-9 _-]{1,80})\s*$", re.IGNORECASE)
+    is_re = re.compile(r"^\s*(?P<subject>[a-z0-9 _-]{2,})\s+is\s+(?P<value>[a-z0-9 _-]{1,80})\s*$", re.IGNORECASE)
+    for entry in entries:
+        text_key = " ".join(str(entry.text).strip().lower().split())
+        if text_key:
+            prior_id = seen_by_text.get(text_key)
+            if prior_id is None:
+                seen_by_text[text_key] = int(entry.id)
+            else:
+                duplicate_ids.append(int(entry.id))
+                duplicates.append({"memory_id": int(entry.id), "duplicate_of": int(prior_id)})
+        if float(entry.created_at) < stale_cutoff:
+            stale_ids.append(int(entry.id))
+        text = str(entry.text).strip().lower()
+        neg = is_not_re.match(text)
+        pos = is_re.match(text)
+        if neg:
+            key = neg.group("subject").strip()
+            value = f"not:{neg.group('value').strip()}"
+        elif pos:
+            key = pos.group("subject").strip()
+            value = f"yes:{pos.group('value').strip()}"
+        else:
+            key = ""
+            value = ""
+        if key:
+            previous = assertions.get(key)
+            if previous is not None and previous != value:
+                contradictions.append({"subject": key, "previous": previous, "current": value, "memory_id": int(entry.id)})
+            assertions[key] = value
+    return {
+        "scanned": len(entries),
+        "duplicate_count": len(duplicates),
+        "duplicates": duplicates[:100],
+        "duplicate_ids": duplicate_ids,
+        "stale_count": len(stale_ids),
+        "stale_ids": stale_ids[:200],
+        "contradiction_count": len(contradictions),
+        "contradictions": contradictions[:50],
+        "stale_days": stale_days,
+    }
+
+
+async def memory_governance(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("memory_governance"):
+        record_summary("memory_governance", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    action = str(args.get("action", "")).strip().lower()
+
+    if action == "partition":
+        user = str(args.get("user", _identity_default_user)).strip().lower() or _identity_default_user
+        shared_scopes = [scope for scope in _as_str_list(args.get("shared_scopes"), lower=True) if scope in MEMORY_SCOPES]
+        private_scopes = [scope for scope in _as_str_list(args.get("private_scopes"), lower=True) if scope in MEMORY_SCOPES]
+        if not private_scopes:
+            private_scopes = sorted(MEMORY_SCOPES)
+        _memory_partition_overlays[user] = {
+            "user": user,
+            "shared_scopes": sorted(set(shared_scopes)),
+            "private_scopes": sorted(set(private_scopes)),
+            "updated_at": time.time(),
+        }
+        payload = {
+            "action": action,
+            "overlay": dict(_memory_partition_overlays[user]),
+            "overlay_count": len(_memory_partition_overlays),
+        }
+        record_summary("memory_governance", "ok", start_time, effect="partition_updated", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "quality_audit":
+        if _memory is None:
+            _record_service_error("memory_governance", start_time, "missing_store")
+            return {"content": [{"type": "text", "text": "Memory store not available."}]}
+        stale_days = _as_float(args.get("stale_days", 90.0), 90.0, minimum=1.0, maximum=3650.0)
+        limit = _as_int(args.get("limit", 300), 300, minimum=10, maximum=1000)
+        try:
+            report = _memory_quality_audit(stale_days=stale_days, limit=limit)
+        except Exception as exc:
+            _record_service_error("memory_governance", start_time, "storage_error")
+            return {"content": [{"type": "text", "text": f"Memory quality audit failed: {exc}"}]}
+        report["action"] = action
+        report["generated_at"] = time.time()
+        _memory_quality_last.clear()
+        _memory_quality_last.update(report)
+        record_summary("memory_governance", "ok", start_time, effect="quality_audit", risk="low")
+        return _json_payload_response(report)
+
+    if action == "cleanup":
+        if _memory is None:
+            _record_service_error("memory_governance", start_time, "missing_store")
+            return {"content": [{"type": "text", "text": "Memory store not available."}]}
+        apply = _as_bool(args.get("apply"), default=False)
+        duplicate_ids = [int(item) for item in _memory_quality_last.get("duplicate_ids", []) if isinstance(item, int)]
+        stale_ids = [int(item) for item in _memory_quality_last.get("stale_ids", []) if isinstance(item, int)]
+        candidate_ids = sorted(set(duplicate_ids + stale_ids))
+        removed = 0
+        if apply:
+            for memory_id in candidate_ids:
+                with suppress(Exception):
+                    if _memory.delete_memory(memory_id):
+                        removed += 1
+        payload = {
+            "action": action,
+            "apply": apply,
+            "candidate_count": len(candidate_ids),
+            "removed_count": removed,
+            "candidate_ids": candidate_ids[:200],
+        }
+        record_summary("memory_governance", "ok", start_time, effect="cleanup_applied" if apply else "cleanup_preview", risk="low")
+        return _json_payload_response(payload)
+
+    _record_service_error("memory_governance", start_time, "invalid_data")
+    return {"content": [{"type": "text", "text": "Unknown memory_governance action."}]}
+
+
+async def identity_trust(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("identity_trust"):
+        record_summary("identity_trust", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    action = str(args.get("action", "")).strip().lower()
+
+    if action == "session_confidence":
+        voice_conf = _as_float(args.get("voice_confidence", 0.5), 0.5, minimum=0.0, maximum=1.0)
+        operator_hint = str(args.get("operator_hint", "unknown")).strip().lower()
+        stt_conf = _as_float(
+            (_runtime_voice_state.get("stt_diagnostics", {}) if isinstance(_runtime_voice_state.get("stt_diagnostics"), dict) else {}).get("confidence_score", 0.5),
+            0.5,
+            minimum=0.0,
+            maximum=1.0,
+        )
+        hint_adjust = {
+            "trusted": 0.2,
+            "owner": 0.15,
+            "known": 0.1,
+            "unknown": 0.0,
+            "guest": -0.25,
+            "untrusted": -0.3,
+        }.get(operator_hint, 0.0)
+        score = max(0.0, min(1.0, (voice_conf * 0.7) + (stt_conf * 0.2) + hint_adjust))
+        band = "high" if score >= 0.8 else "medium" if score >= 0.55 else "low"
+        payload = {
+            "action": action,
+            "identity_confidence": score,
+            "band": band,
+            "voice_confidence": voice_conf,
+            "stt_confidence": stt_conf,
+            "operator_hint": operator_hint,
+        }
+        record_summary("identity_trust", "ok", start_time, effect=f"confidence:{band}", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "policy_set":
+        domain = str(args.get("domain", "")).strip().lower()
+        if not domain:
+            _record_service_error("identity_trust", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "domain is required for policy_set."}]}
+        required_profile = _identity_profile_level(str(args.get("required_profile", "control")))
+        requires_step_up = _as_bool(args.get("requires_step_up"), default=False)
+        _identity_trust_policies[domain] = {
+            "required_profile": required_profile,
+            "requires_step_up": requires_step_up,
+            "updated_at": time.time(),
+        }
+        payload = {
+            "action": action,
+            "domain": domain,
+            "policy": dict(_identity_trust_policies[domain]),
+            "policy_count": len(_identity_trust_policies),
+        }
+        record_summary("identity_trust", "ok", start_time, effect=f"policy_set:{domain}", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "policy_get":
+        domain = str(args.get("domain", "")).strip().lower()
+        if domain:
+            payload = {"action": action, "domain": domain, "policy": dict(_identity_trust_policies.get(domain, {}))}
+        else:
+            payload = {
+                "action": action,
+                "policy_count": len(_identity_trust_policies),
+                "policies": {name: dict(row) for name, row in sorted(_identity_trust_policies.items())},
+            }
+        record_summary("identity_trust", "ok", start_time, effect="policy_get", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "guest_start":
+        guest_id = str(args.get("guest_id", "guest")).strip().lower() or "guest"
+        ttl_sec = _as_float(args.get("ttl_sec", GUEST_SESSION_DEFAULT_TTL_SEC), GUEST_SESSION_DEFAULT_TTL_SEC)
+        capabilities = _as_str_list(args.get("capabilities"), lower=True) or [
+            "system_status",
+            "get_time",
+            "proactive_assistant",
+            "integration_hub",
+        ]
+        row = _register_guest_session(
+            guest_id=guest_id,
+            capabilities=capabilities,
+            ttl_sec=ttl_sec,
+        )
+        payload = {"action": action, **row, "session_count": len(_guest_sessions)}
+        record_summary("identity_trust", "ok", start_time, effect="guest_session_created", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "guest_validate":
+        token = str(args.get("guest_session_token", "")).strip()
+        row = _resolve_guest_session(token)
+        if row is None:
+            _record_service_error("identity_trust", start_time, "not_found")
+            return _json_payload_response({"action": action, "valid": False})
+        payload = {"action": action, "valid": True, **row}
+        record_summary("identity_trust", "ok", start_time, effect="guest_session_valid", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "guest_end":
+        token = str(args.get("guest_session_token", "")).strip()
+        removed = _guest_sessions.pop(token, None)
+        payload = {"action": action, "removed": removed is not None, "session_count": len(_guest_sessions)}
+        record_summary("identity_trust", "ok", start_time, effect="guest_session_removed", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "household_upsert":
+        user = str(args.get("user", "")).strip().lower()
+        if not user:
+            _record_service_error("identity_trust", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "user is required for household_upsert."}]}
+        role = str(args.get("role", "member")).strip().lower() or "member"
+        trust_level = _identity_profile_level(str(args.get("trust_level", "readonly")))
+        exceptions = sorted(set(_as_str_list(args.get("exceptions"), lower=True)))
+        _household_profiles[user] = {
+            "user": user,
+            "role": role,
+            "trust_level": trust_level,
+            "exceptions": exceptions,
+            "updated_at": time.time(),
+        }
+        payload = {
+            "action": action,
+            "profile": dict(_household_profiles[user]),
+            "profile_count": len(_household_profiles),
+        }
+        record_summary("identity_trust", "ok", start_time, effect="household_upsert", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "household_list":
+        payload = {
+            "action": action,
+            "profile_count": len(_household_profiles),
+            "profiles": {user: dict(row) for user, row in sorted(_household_profiles.items())},
+        }
+        record_summary("identity_trust", "ok", start_time, effect="household_list", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "household_remove":
+        user = str(args.get("user", "")).strip().lower()
+        removed = _household_profiles.pop(user, None) is not None
+        payload = {"action": action, "removed": removed, "profile_count": len(_household_profiles)}
+        record_summary("identity_trust", "ok", start_time, effect="household_remove", risk="low")
+        return _json_payload_response(payload)
+
+    _record_service_error("identity_trust", start_time, "invalid_data")
+    return {"content": [{"type": "text", "text": "Unknown identity_trust action."}]}
+
+
+def _home_plan_from_request(request_text: str) -> dict[str, Any]:
+    text = str(request_text or "").strip().lower()
+    if "movie" in text:
+        return {
+            "label": "movie_mode",
+            "steps": [
+                {"domain": "light", "action": "turn_off", "entity_id": "light.main_room"},
+                {"domain": "light", "action": "turn_on", "entity_id": "light.bias_backlight", "data": {"brightness": 80}},
+                {"domain": "media_player", "action": "media_play", "entity_id": "media_player.living_room_tv"},
+            ],
+        }
+    if "bedtime" in text:
+        return {
+            "label": "bedtime_routine",
+            "steps": [
+                {"domain": "lock", "action": "lock", "entity_id": "lock.front_door"},
+                {"domain": "light", "action": "turn_off", "entity_id": "light.downstairs"},
+                {"domain": "climate", "action": "set_temperature", "entity_id": "climate.main", "data": {"temperature": 68}},
+            ],
+        }
+    return {
+        "label": "custom",
+        "steps": [],
+    }
+
+
+async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("home_orchestrator"):
+        record_summary("home_orchestrator", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    action = str(args.get("action", "")).strip().lower()
+
+    if action == "plan":
+        request_text = str(args.get("request_text", "")).strip()
+        plan = _home_plan_from_request(request_text)
+        payload = {
+            "action": action,
+            "request_text": request_text,
+            "plan_label": plan["label"],
+            "step_count": len(plan["steps"]),
+            "steps": plan["steps"],
+        }
+        record_summary("home_orchestrator", "ok", start_time, effect=f"plan:{plan['label']}", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "execute":
+        actions = args.get("actions") if isinstance(args.get("actions"), list) else []
+        results: list[dict[str, Any]] = []
+        seen_keys: set[str] = set()
+        for row in actions:
+            if not isinstance(row, dict):
+                results.append({"status": "failed", "reason": "invalid_action_entry"})
+                continue
+            domain = str(row.get("domain", "")).strip().lower()
+            tool_action = str(row.get("action", "")).strip().lower()
+            entity_id = str(row.get("entity_id", "")).strip().lower()
+            data = row.get("data") if isinstance(row.get("data"), dict) else {}
+            if not domain or not tool_action or not entity_id:
+                results.append({"status": "failed", "reason": "missing_fields", "entry": row})
+                continue
+            pair = f"{domain}:{tool_action}:{entity_id}"
+            if pair in seen_keys:
+                results.append({"status": "failed", "reason": "duplicate_action", "entry": row})
+                continue
+            seen_keys.add(pair)
+            blocked, reason = _home_area_policy_violation(
+                domain=domain,
+                action=tool_action,
+                entity_id=entity_id,
+                data=data,
+            )
+            if blocked:
+                results.append({"status": "failed", "reason": "area_policy", "detail": reason, "entry": row})
+                continue
+            results.append({"status": "ok", "entry": row, "preflight": "passed"})
+        ok_count = sum(1 for item in results if item.get("status") == "ok")
+        fail_count = len(results) - ok_count
+        payload = {
+            "action": action,
+            "executed_count": ok_count,
+            "failed_count": fail_count,
+            "partial_failure": ok_count > 0 and fail_count > 0,
+            "results": results,
+        }
+        record_summary("home_orchestrator", "ok", start_time, effect=f"execute_ok={ok_count}_fail={fail_count}", risk="medium" if fail_count else "low")
+        return _json_payload_response(payload)
+
+    if action == "area_policy_set":
+        area = str(args.get("area", "")).strip().lower()
+        policy = args.get("policy") if isinstance(args.get("policy"), dict) else {}
+        if not area:
+            _record_service_error("home_orchestrator", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "area is required for area_policy_set."}]}
+        _home_area_policies[area] = {
+            "blocked_actions": sorted(set(_as_str_list(policy.get("blocked_actions"), lower=True))),
+            "quiet_hours_start": str(policy.get("quiet_hours_start", "")).strip(),
+            "quiet_hours_end": str(policy.get("quiet_hours_end", "")).strip(),
+            "updated_at": time.time(),
+        }
+        payload = {"action": action, "area": area, "policy": dict(_home_area_policies[area]), "policy_count": len(_home_area_policies)}
+        record_summary("home_orchestrator", "ok", start_time, effect="area_policy_set", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "area_policy_list":
+        area = str(args.get("area", "")).strip().lower()
+        if area:
+            payload = {"action": action, "area": area, "policy": dict(_home_area_policies.get(area, {}))}
+        else:
+            payload = {"action": action, "policy_count": len(_home_area_policies), "policies": {name: dict(row) for name, row in sorted(_home_area_policies.items())}}
+        record_summary("home_orchestrator", "ok", start_time, effect="area_policy_list", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "automation_suggest":
+        history = args.get("history") if isinstance(args.get("history"), list) else []
+        counts: dict[str, int] = {}
+        for row in history:
+            if not isinstance(row, dict):
+                continue
+            domain = str(row.get("domain", "")).strip().lower()
+            tool_action = str(row.get("action", "")).strip().lower()
+            entity = str(row.get("entity_id", "")).strip().lower()
+            if not domain or not tool_action or not entity:
+                continue
+            key = f"{domain}:{tool_action}:{entity}"
+            counts[key] = counts.get(key, 0) + 1
+        suggestions = [
+            {
+                "trigger": "time",
+                "description": f"Frequent action {key} ({count}x)",
+                "ha_automation_yaml": (
+                    "alias: Jarvis Suggested Routine\n"
+                    "trigger:\n  - platform: time\n    at: '21:00:00'\n"
+                    "action:\n"
+                    f"  - service: {key.split(':', 1)[0]}.{key.split(':', 2)[1]}\n"
+                    f"    target:\n      entity_id: {key.split(':', 2)[2]}"
+                ),
+            }
+            for key, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            if count >= 3
+        ][:5]
+        payload = {"action": action, "suggestion_count": len(suggestions), "suggestions": suggestions}
+        record_summary("home_orchestrator", "ok", start_time, effect=f"automation_suggestions={len(suggestions)}", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "task_start":
+        global _home_task_seq
+        task_id = f"home-task-{_home_task_seq}"
+        _home_task_seq += 1
+        row = {
+            "task_id": task_id,
+            "status": "in_progress",
+            "progress": _as_float(args.get("progress", 0.0), 0.0, minimum=0.0, maximum=1.0),
+            "notes": str(args.get("notes", "")).strip(),
+            "started_at": time.time(),
+            "updated_at": time.time(),
+        }
+        _home_task_runs[task_id] = row
+        if len(_home_task_runs) > HOME_TASK_MAX_TRACKED:
+            oldest = sorted(_home_task_runs.items(), key=lambda pair: float(pair[1].get("updated_at", 0.0)))[: len(_home_task_runs) - HOME_TASK_MAX_TRACKED]
+            for key, _ in oldest:
+                _home_task_runs.pop(key, None)
+        record_summary("home_orchestrator", "ok", start_time, effect="task_start", risk="low")
+        return _json_payload_response({"action": action, "task": row, "task_count": len(_home_task_runs)})
+
+    if action == "task_update":
+        task_id = str(args.get("task_id", "")).strip()
+        row = _home_task_runs.get(task_id)
+        if row is None:
+            _record_service_error("home_orchestrator", start_time, "not_found")
+            return {"content": [{"type": "text", "text": "task_id not found."}]}
+        status = str(args.get("status", row.get("status", "in_progress"))).strip().lower() or "in_progress"
+        if status not in {"queued", "in_progress", "completed", "failed", "cancelled"}:
+            _record_service_error("home_orchestrator", start_time, "invalid_data")
+            return {"content": [{"type": "text", "text": "status must be queued|in_progress|completed|failed|cancelled."}]}
+        row["status"] = status
+        row["progress"] = _as_float(args.get("progress", row.get("progress", 0.0)), float(row.get("progress", 0.0)), minimum=0.0, maximum=1.0)
+        row["notes"] = str(args.get("notes", row.get("notes", ""))).strip()
+        row["updated_at"] = time.time()
+        record_summary("home_orchestrator", "ok", start_time, effect="task_update", risk="low")
+        return _json_payload_response({"action": action, "task": dict(row)})
+
+    if action == "task_list":
+        limit = _as_int(args.get("limit", 50), 50, minimum=1, maximum=200)
+        tasks = sorted(_home_task_runs.values(), key=lambda row: float(row.get("updated_at", 0.0)), reverse=True)[:limit]
+        record_summary("home_orchestrator", "ok", start_time, effect="task_list", risk="low")
+        return _json_payload_response({"action": action, "task_count": len(_home_task_runs), "tasks": tasks})
+
+    _record_service_error("home_orchestrator", start_time, "invalid_data")
+    return {"content": [{"type": "text", "text": "Unknown home_orchestrator action."}]}
+
+
+def _skills_snapshot_rows() -> list[dict[str, Any]]:
+    snapshot = _skills_status_snapshot()
+    rows = snapshot.get("skills") if isinstance(snapshot, dict) else None
+    if isinstance(rows, list):
+        return [dict(row) for row in rows if isinstance(row, dict)]
+    return []
+
+
+async def skills_governance(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("skills_governance"):
+        record_summary("skills_governance", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    action = str(args.get("action", "")).strip().lower()
+
+    if action == "negotiate":
+        requested = sorted(set(_as_str_list(args.get("requested_capabilities"), lower=True)))
+        candidates: list[dict[str, Any]] = []
+        for row in _skills_snapshot_rows():
+            if not bool(row.get("enabled")):
+                continue
+            capabilities = {item.strip().lower() for item in _as_str_list(row.get("capabilities"), lower=True)}
+            if requested and not set(requested).issubset(capabilities):
+                continue
+            score = (len(capabilities.intersection(requested)) * 10) + len(capabilities)
+            candidates.append(
+                {
+                    "name": str(row.get("name", "")),
+                    "namespace": str(row.get("namespace", "")),
+                    "capabilities": sorted(capabilities),
+                    "score": score,
+                }
+            )
+        candidates.sort(key=lambda item: (-int(item["score"]), str(item["name"])))
+        payload = {
+            "action": action,
+            "requested_capabilities": requested,
+            "candidate_count": len(candidates),
+            "selected": candidates[0] if candidates else None,
+            "candidates": candidates[:10],
+        }
+        record_summary("skills_governance", "ok", start_time, effect="negotiate", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "dependency_health":
+        rows = _skills_snapshot_rows()
+        loaded_names = {str(row.get("name", "")).strip().lower() for row in rows}
+        health_rows: list[dict[str, Any]] = []
+        for row in rows:
+            source_path = str(row.get("source_path", "")).strip()
+            dependencies: list[str] = []
+            if source_path:
+                with suppress(Exception):
+                    manifest = json.loads(Path(source_path).read_text())
+                    dependencies = _as_str_list((manifest if isinstance(manifest, dict) else {}).get("dependencies"), lower=True)
+            missing = [dep for dep in dependencies if dep not in loaded_names]
+            health_rows.append(
+                {
+                    "name": str(row.get("name", "")),
+                    "dependencies": dependencies,
+                    "missing_dependencies": missing,
+                    "status": "degraded" if missing else "healthy",
+                }
+            )
+        payload = {"action": action, "skills": health_rows, "degraded_count": sum(1 for row in health_rows if row["status"] != "healthy")}
+        record_summary("skills_governance", "ok", start_time, effect="dependency_health", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "quota_set":
+        name = str(args.get("name", "")).strip().lower()
+        if not name:
+            _record_service_error("skills_governance", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "name is required for quota_set."}]}
+        _skill_quotas[name] = {
+            "rate_per_min": _as_int(args.get("rate_per_min", 60), 60, minimum=1, maximum=10_000),
+            "cpu_sec": _as_float(args.get("cpu_sec", 15.0), 15.0, minimum=0.1, maximum=3600.0),
+            "outbound_calls": _as_int(args.get("outbound_calls", 100), 100, minimum=0, maximum=100_000),
+            "updated_at": time.time(),
+        }
+        payload = {"action": action, "name": name, "quota": dict(_skill_quotas[name]), "quota_count": len(_skill_quotas)}
+        record_summary("skills_governance", "ok", start_time, effect="quota_set", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "quota_get":
+        name = str(args.get("name", "")).strip().lower()
+        if name:
+            payload = {"action": action, "name": name, "quota": dict(_skill_quotas.get(name, {}))}
+        else:
+            payload = {"action": action, "quota_count": len(_skill_quotas), "quotas": {k: dict(v) for k, v in sorted(_skill_quotas.items())}}
+        record_summary("skills_governance", "ok", start_time, effect="quota_get", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "quota_check":
+        name = str(args.get("name", "")).strip().lower()
+        usage = args.get("usage") if isinstance(args.get("usage"), dict) else {}
+        quota = _skill_quotas.get(name, {})
+        violations: list[str] = []
+        if quota:
+            if _as_int(usage.get("rate_per_min", 0), 0) > int(quota.get("rate_per_min", 0)):
+                violations.append("rate_per_min")
+            if _as_float(usage.get("cpu_sec", 0.0), 0.0) > float(quota.get("cpu_sec", 0.0)):
+                violations.append("cpu_sec")
+            if _as_int(usage.get("outbound_calls", 0), 0) > int(quota.get("outbound_calls", 0)):
+                violations.append("outbound_calls")
+        payload = {
+            "action": action,
+            "name": name,
+            "quota_found": bool(quota),
+            "allowed": not violations,
+            "violations": violations,
+            "usage": usage,
+            "quota": dict(quota),
+        }
+        record_summary("skills_governance", "ok", start_time, effect="quota_check", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "harness_run":
+        fixtures = args.get("fixtures") if isinstance(args.get("fixtures"), list) else []
+        passed = 0
+        failed = 0
+        results: list[dict[str, Any]] = []
+        for idx, row in enumerate(fixtures):
+            if not isinstance(row, dict):
+                failed += 1
+                results.append({"index": idx, "status": "failed", "reason": "invalid_fixture"})
+                continue
+            expected = str(row.get("expected", "")).strip()
+            actual = str(row.get("actual", "")).strip()
+            name = str(row.get("name", f"fixture-{idx}")).strip()
+            if expected and expected in actual:
+                passed += 1
+                results.append({"name": name, "status": "passed"})
+            else:
+                failed += 1
+                results.append({"name": name, "status": "failed", "expected": expected})
+        payload = {"action": action, "fixture_count": len(fixtures), "passed": passed, "failed": failed, "results": results[:200]}
+        record_summary("skills_governance", "ok", start_time, effect=f"harness_passed={passed}", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "bundle_sign":
+        bundle = args.get("bundle") if isinstance(args.get("bundle"), dict) else {}
+        normalized = json.dumps(bundle, sort_keys=True, separators=(",", ":"), default=str)
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        signature = ""
+        signed = False
+        if _config is not None and str(_config.skills_signature_key).strip():
+            signature = hmac.new(str(_config.skills_signature_key).encode("utf-8"), normalized.encode("utf-8"), hashlib.sha256).hexdigest()
+            signed = True
+        payload = {
+            "action": action,
+            "signed": signed,
+            "digest": digest,
+            "signature": signature,
+            "integrity": "hmac-sha256" if signed else "sha256-only",
+        }
+        record_summary("skills_governance", "ok", start_time, effect="bundle_sign", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "sandbox_template":
+        template = str(args.get("template", "")).strip().lower()
+        if template:
+            payload = {"action": action, "template": template, "config": dict(SKILL_SANDBOX_TEMPLATES.get(template, {}))}
+        else:
+            payload = {"action": action, "templates": {name: dict(cfg) for name, cfg in SKILL_SANDBOX_TEMPLATES.items()}}
+        record_summary("skills_governance", "ok", start_time, effect="sandbox_template", risk="low")
+        return _json_payload_response(payload)
+
+    _record_service_error("skills_governance", start_time, "invalid_data")
+    return {"content": [{"type": "text", "text": "Unknown skills_governance action."}]}
+
+
+def _planner_ready_nodes(graph: dict[str, Any]) -> list[dict[str, Any]]:
+    nodes = graph.get("nodes") if isinstance(graph, dict) else None
+    if not isinstance(nodes, list):
+        return []
+    status_by_id = {
+        str(node.get("id", "")): str(node.get("status", "pending")).strip().lower()
+        for node in nodes
+        if isinstance(node, dict)
+    }
+    ready: list[dict[str, Any]] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("status", "pending")).strip().lower() != "pending":
+            continue
+        deps = _as_str_list(node.get("depends_on"), lower=False)
+        if all(status_by_id.get(dep, "done") == "done" for dep in deps):
+            ready.append(dict(node))
+    return ready
+
+
+async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("planner_engine"):
+        record_summary("planner_engine", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    action = str(args.get("action", "")).strip().lower()
+
+    if action == "plan":
+        goal = str(args.get("goal", "")).strip()
+        if not goal:
+            _record_service_error("planner_engine", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "goal is required."}]}
+        steps = _as_str_list(args.get("steps"))
+        if not steps:
+            steps = ["Clarify constraints", "Execute tool actions", "Verify outcomes", "Report completion"]
+        payload = {
+            "action": action,
+            "goal": goal,
+            "planner": {
+                "steps": steps,
+                "retry_policy": "retry_failed_steps_once_then_escalate",
+                "rollback_hints": [
+                    "Store pre-change state when possible.",
+                    "Use dry-run for medium/high-risk actions first.",
+                ],
+            },
+            "executor": {
+                "mode": "deterministic",
+                "checkpointing": True,
+                "max_retries_per_step": 1,
+            },
+        }
+        record_summary("planner_engine", "ok", start_time, effect="plan_generated", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "task_graph_create":
+        global _planner_task_seq
+        title = str(args.get("title", "Task Graph")).strip() or "Task Graph"
+        steps = args.get("steps") if isinstance(args.get("steps"), list) else []
+        nodes: list[dict[str, Any]] = []
+        for idx, row in enumerate(steps):
+            if isinstance(row, dict):
+                node_id = str(row.get("id", f"n{idx+1}")).strip() or f"n{idx+1}"
+                text = str(row.get("text", f"Step {idx+1}")).strip() or f"Step {idx+1}"
+                deps = _as_str_list(row.get("depends_on"), lower=False)
+            else:
+                node_id = f"n{idx+1}"
+                text = str(row).strip() or f"Step {idx+1}"
+                deps = []
+            nodes.append({"id": node_id, "text": text, "depends_on": deps, "status": "pending"})
+        if not nodes:
+            nodes = [{"id": "n1", "text": "Execute goal", "depends_on": [], "status": "pending"}]
+        graph_id = f"graph-{_planner_task_seq}"
+        _planner_task_seq += 1
+        graph = {
+            "graph_id": graph_id,
+            "title": title,
+            "nodes": nodes,
+            "created_at": time.time(),
+            "updated_at": time.time(),
+        }
+        _planner_task_graphs[graph_id] = graph
+        if len(_planner_task_graphs) > PLANNER_TASK_GRAPH_MAX:
+            oldest = sorted(
+                _planner_task_graphs.items(),
+                key=lambda pair: float(pair[1].get("updated_at", 0.0)),
+            )[: len(_planner_task_graphs) - PLANNER_TASK_GRAPH_MAX]
+            for key, _ in oldest:
+                _planner_task_graphs.pop(key, None)
+        payload = {
+            "action": action,
+            "graph_id": graph_id,
+            "node_count": len(nodes),
+            "ready_nodes": _planner_ready_nodes(graph),
+        }
+        record_summary("planner_engine", "ok", start_time, effect="graph_created", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "task_graph_update":
+        graph_id = str(args.get("graph_id", "")).strip()
+        node_id = str(args.get("node_id", "")).strip()
+        status = str(args.get("status", "pending")).strip().lower()
+        if status not in {"pending", "in_progress", "blocked", "done"}:
+            _record_service_error("planner_engine", start_time, "invalid_data")
+            return {"content": [{"type": "text", "text": "status must be pending|in_progress|blocked|done."}]}
+        graph = _planner_task_graphs.get(graph_id)
+        if not isinstance(graph, dict):
+            _record_service_error("planner_engine", start_time, "not_found")
+            return {"content": [{"type": "text", "text": "graph_id not found."}]}
+        updated = False
+        for node in graph.get("nodes", []):
+            if isinstance(node, dict) and str(node.get("id", "")) == node_id:
+                node["status"] = status
+                updated = True
+                break
+        if not updated:
+            _record_service_error("planner_engine", start_time, "not_found")
+            return {"content": [{"type": "text", "text": "node_id not found."}]}
+        graph["updated_at"] = time.time()
+        payload = {
+            "action": action,
+            "graph_id": graph_id,
+            "updated": True,
+            "ready_nodes": _planner_ready_nodes(graph),
+        }
+        record_summary("planner_engine", "ok", start_time, effect="graph_updated", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "task_graph_resume":
+        graph_id = str(args.get("graph_id", "")).strip()
+        if graph_id:
+            graph = _planner_task_graphs.get(graph_id)
+            if not isinstance(graph, dict):
+                _record_service_error("planner_engine", start_time, "not_found")
+                return {"content": [{"type": "text", "text": "graph_id not found."}]}
+            payload = {
+                "action": action,
+                "graph_id": graph_id,
+                "ready_nodes": _planner_ready_nodes(graph),
+            }
+        else:
+            payload = {
+                "action": action,
+                "graphs": [
+                    {
+                        "graph_id": key,
+                        "ready_nodes": _planner_ready_nodes(row),
+                    }
+                    for key, row in sorted(_planner_task_graphs.items())
+                ],
+            }
+        record_summary("planner_engine", "ok", start_time, effect="graph_resume", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "deferred_schedule":
+        global _deferred_action_seq
+        title = str(args.get("title", "deferred-action")).strip() or "deferred-action"
+        execute_at = _as_float(args.get("execute_at", time.time() + 60.0), time.time() + 60.0, minimum=0.0)
+        action_id = f"deferred-{_deferred_action_seq}"
+        _deferred_action_seq += 1
+        _deferred_actions[action_id] = {
+            "id": action_id,
+            "title": title,
+            "execute_at": execute_at,
+            "payload": args.get("payload") if isinstance(args.get("payload"), dict) else {},
+            "status": "scheduled",
+            "created_at": time.time(),
+        }
+        if len(_deferred_actions) > DEFERRED_ACTION_MAX:
+            oldest = sorted(_deferred_actions.items(), key=lambda pair: float(pair[1].get("created_at", 0.0)))[: len(_deferred_actions) - DEFERRED_ACTION_MAX]
+            for key, _ in oldest:
+                _deferred_actions.pop(key, None)
+        payload = {"action": action, "scheduled": dict(_deferred_actions[action_id]), "deferred_count": len(_deferred_actions)}
+        record_summary("planner_engine", "ok", start_time, effect="deferred_schedule", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "deferred_list":
+        limit = _as_int(args.get("limit", 50), 50, minimum=1, maximum=200)
+        rows = sorted(_deferred_actions.values(), key=lambda item: float(item.get("execute_at", 0.0)))[:limit]
+        payload = {"action": action, "deferred_count": len(_deferred_actions), "items": rows}
+        record_summary("planner_engine", "ok", start_time, effect="deferred_list", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "self_critique":
+        plan = args.get("plan") if isinstance(args.get("plan"), dict) else {}
+        steps = plan.get("steps")
+        step_count = len(steps) if isinstance(steps, list) else 0
+        complexity = "high" if step_count >= 8 else "medium" if step_count >= 4 else "low"
+        warnings: list[str] = []
+        if step_count >= 8:
+            warnings.append("Plan has many steps; consider decomposition.")
+        if any("delete" in str(step).lower() for step in (steps or [])):
+            warnings.append("Contains destructive operations; require confirmation checkpoints.")
+        payload = {
+            "action": action,
+            "complexity": complexity,
+            "step_count": step_count,
+            "warnings": warnings,
+            "recommendation": "approve" if not warnings else "revise",
+        }
+        record_summary("planner_engine", "ok", start_time, effect=f"critique:{payload['recommendation']}", risk="low")
+        return _json_payload_response(payload)
+
+    _record_service_error("planner_engine", start_time, "invalid_data")
+    return {"content": [{"type": "text", "text": "Unknown planner_engine action."}]}
+
+
+async def quality_evaluator(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("quality_evaluator"):
+        record_summary("quality_evaluator", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    action = str(args.get("action", "")).strip().lower()
+
+    if action == "weekly_report":
+        wins = _as_str_list(args.get("wins"))
+        regressions = _as_str_list(args.get("regressions"))
+        summaries: list[dict[str, Any]] = []
+        with suppress(Exception):
+            loaded = list_summaries(300)
+            if isinstance(loaded, list):
+                summaries = [dict(row) for row in loaded if isinstance(row, dict)]
+        error_rows = [row for row in summaries if isinstance(row, dict) and str(row.get("status", "")).strip().lower() in {"error", "failed"}]
+        success_rows = [row for row in summaries if isinstance(row, dict) and str(row.get("status", "")).strip().lower() in {"ok", "success"}]
+        report = {
+            "generated_at": time.time(),
+            "errors": len(error_rows),
+            "successes": len(success_rows),
+            "wins": wins,
+            "regressions": regressions,
+            "top_failures": [str(row.get("name", "unknown")) for row in error_rows[:10]],
+            "notes": "Weekly assistant quality report artifact.",
+        }
+        artifact_path = _write_quality_report_artifact(report, report_path=str(args.get("report_path", "")).strip() or None)
+        report["artifact_path"] = artifact_path
+        _append_quality_report(report)
+        record_summary("quality_evaluator", "ok", start_time, effect="weekly_report", risk="low")
+        return _json_payload_response({"action": action, **report})
+
+    if action == "dataset_run":
+        dataset = args.get("dataset") if isinstance(args.get("dataset"), list) else []
+        strict = _as_bool(args.get("strict"), default=False)
+        passed = 0
+        failed = 0
+        rows: list[dict[str, Any]] = []
+        for idx, row in enumerate(dataset):
+            if not isinstance(row, dict):
+                failed += 1
+                rows.append({"index": idx, "status": "failed", "reason": "invalid_case"})
+                continue
+            name = str(row.get("name", f"case-{idx}")).strip() or f"case-{idx}"
+            expected = _as_str_list(row.get("expected_contains"))
+            actual = str(row.get("actual", "")).strip()
+            ok = all(item in actual for item in expected) if expected else bool(actual)
+            if ok:
+                passed += 1
+            else:
+                failed += 1
+            rows.append({"name": name, "status": "passed" if ok else "failed", "expected_contains": expected})
+        payload = {
+            "action": action,
+            "strict": strict,
+            "case_count": len(dataset),
+            "passed": passed,
+            "failed": failed,
+            "pass_rate": (passed / len(dataset)) if dataset else 0.0,
+            "accepted": (failed == 0) if strict else (passed >= failed),
+            "results": rows[:300],
+        }
+        record_summary("quality_evaluator", "ok", start_time, effect=f"dataset_passed={passed}", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "reports_list":
+        limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=50)
+        payload = {"action": action, "count": len(_quality_reports), "reports": _quality_reports_snapshot(limit=limit)}
+        record_summary("quality_evaluator", "ok", start_time, effect="reports_list", risk="low")
+        return _json_payload_response(payload)
+
+    _record_service_error("quality_evaluator", start_time, "invalid_data")
+    return {"content": [{"type": "text", "text": "Unknown quality_evaluator action."}]}
+
+
+async def embodiment_presence(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("embodiment_presence"):
+        record_summary("embodiment_presence", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    action = str(args.get("action", "")).strip().lower()
+
+    if action == "expression_library":
+        intent = str(args.get("intent", "")).strip().lower()
+        micro_expression = str(args.get("micro_expression", "")).strip().lower()
+        certainty_band = str(args.get("certainty_band", "medium")).strip().lower() or "medium"
+        if intent and micro_expression:
+            _micro_expression_library[intent] = {
+                "intent": intent,
+                "micro_expression": micro_expression,
+                "certainty_band": certainty_band,
+                "updated_at": time.time(),
+            }
+        payload = {
+            "action": action,
+            "library_count": len(_micro_expression_library),
+            "library": {key: dict(value) for key, value in sorted(_micro_expression_library.items())},
+        }
+        record_summary("embodiment_presence", "ok", start_time, effect="expression_library", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "gaze_calibrate":
+        user = str(args.get("user", "")).strip().lower()
+        if not user:
+            _record_service_error("embodiment_presence", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "user is required for gaze_calibrate."}]}
+        _gaze_calibrations[user] = {
+            "user": user,
+            "distance_cm": _as_float(args.get("distance_cm", 60.0), 60.0, minimum=20.0, maximum=300.0),
+            "seat_offset_deg": _as_float(args.get("seat_offset_deg", 0.0), 0.0, minimum=-45.0, maximum=45.0),
+            "updated_at": time.time(),
+        }
+        payload = {"action": action, "calibration": dict(_gaze_calibrations[user]), "calibration_count": len(_gaze_calibrations)}
+        record_summary("embodiment_presence", "ok", start_time, effect="gaze_calibrate", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "gesture_profile":
+        emotion = str(args.get("emotion", "neutral")).strip().lower() or "neutral"
+        importance = str(args.get("importance", "normal")).strip().lower() or "normal"
+        key = f"{emotion}:{importance}"
+        _gesture_envelopes[key] = {
+            "emotion": emotion,
+            "importance": importance,
+            "amplitude": _as_float(args.get("amplitude", 0.5), 0.5, minimum=0.0, maximum=1.0),
+            "updated_at": time.time(),
+        }
+        payload = {"action": action, "profile_key": key, "profile": dict(_gesture_envelopes[key]), "profile_count": len(_gesture_envelopes)}
+        record_summary("embodiment_presence", "ok", start_time, effect="gesture_profile", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "privacy_posture":
+        _privacy_posture["state"] = str(args.get("state", "normal")).strip().lower() or "normal"
+        _privacy_posture["reason"] = str(args.get("reason", "manual")).strip() or "manual"
+        _privacy_posture["updated_at"] = time.time()
+        payload = {"action": action, "privacy_posture": dict(_privacy_posture)}
+        record_summary("embodiment_presence", "ok", start_time, effect=f"privacy:{_privacy_posture['state']}", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "safety_envelope":
+        _motion_safety_envelope["proximity_limit_cm"] = _as_float(
+            args.get("proximity_limit_cm", _motion_safety_envelope.get("proximity_limit_cm", 35.0)),
+            _as_float(_motion_safety_envelope.get("proximity_limit_cm", 35.0), 35.0),
+            minimum=5.0,
+            maximum=300.0,
+        )
+        _motion_safety_envelope["hardware_state"] = str(args.get("hardware_state", _motion_safety_envelope.get("hardware_state", "normal"))).strip().lower() or "normal"
+        _motion_safety_envelope["updated_at"] = time.time()
+        payload = {"action": action, "motion_safety_envelope": dict(_motion_safety_envelope)}
+        record_summary("embodiment_presence", "ok", start_time, effect="safety_envelope", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "status":
+        payload = _expansion_snapshot()["embodiment_presence"]
+        payload["action"] = action
+        record_summary("embodiment_presence", "ok", start_time, effect="status", risk="low")
+        return _json_payload_response(payload)
+
+    _record_service_error("embodiment_presence", start_time, "invalid_data")
+    return {"content": [{"type": "text", "text": "Unknown embodiment_presence action."}]}
+
+
+async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("integration_hub"):
+        record_summary("integration_hub", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    action = str(args.get("action", "")).strip().lower()
+
+    if action == "calendar_upsert":
+        if not _as_bool(args.get("confirm"), default=False):
+            _record_service_error("integration_hub", start_time, "confirm_required")
+            return {"content": [{"type": "text", "text": "calendar_upsert requires confirm=true."}]}
+        event = args.get("event") if isinstance(args.get("event"), dict) else {}
+        payload = {
+            "action": action,
+            "status": "drafted",
+            "event_id": str(args.get("event_id", "")).strip() or f"evt-{int(time.time())}",
+            "event": event,
+            "confirmation_policy": "explicit_confirm_required",
+        }
+        record_summary("integration_hub", "ok", start_time, effect="calendar_upsert", risk="medium")
+        return _json_payload_response(payload)
+
+    if action == "calendar_delete":
+        if not _as_bool(args.get("confirm"), default=False):
+            _record_service_error("integration_hub", start_time, "confirm_required")
+            return {"content": [{"type": "text", "text": "calendar_delete requires confirm=true."}]}
+        payload = {
+            "action": action,
+            "status": "drafted",
+            "event_id": str(args.get("event_id", "")).strip(),
+            "confirmation_policy": "explicit_confirm_required",
+        }
+        record_summary("integration_hub", "ok", start_time, effect="calendar_delete", risk="high")
+        return _json_payload_response(payload)
+
+    if action == "notes_capture":
+        backend = str(args.get("backend", "local_markdown")).strip().lower() or "local_markdown"
+        title = str(args.get("title", "Jarvis Note")).strip() or "Jarvis Note"
+        content = str(args.get("content", "")).strip()
+        if not content:
+            _record_service_error("integration_hub", start_time, "missing_fields")
+            return {"content": [{"type": "text", "text": "content is required for notes_capture."}]}
+        captured = _capture_note(
+            backend=backend,
+            title=title,
+            content=content,
+            path_hint=str(args.get("path", "")).strip(),
+        )
+        payload = {"action": action, **captured}
+        record_summary("integration_hub", "ok", start_time, effect=f"notes:{backend}", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "messaging_flow":
+        phase = str(args.get("phase", "draft")).strip().lower() or "draft"
+        channel = str(args.get("channel", "slack")).strip().lower() or "slack"
+        message = str(args.get("message", "")).strip()
+        if phase not in {"draft", "review", "send"}:
+            _record_service_error("integration_hub", start_time, "invalid_data")
+            return {"content": [{"type": "text", "text": "phase must be draft|review|send."}]}
+        if phase == "send" and not _as_bool(args.get("confirm"), default=False):
+            _record_service_error("integration_hub", start_time, "confirm_required")
+            return {"content": [{"type": "text", "text": "messaging send requires confirm=true."}]}
+        payload = {
+            "action": action,
+            "phase": phase,
+            "channel": channel,
+            "message_preview": message[:200],
+            "status": "queued_for_delivery" if phase == "send" else "draft_only",
+        }
+        record_summary("integration_hub", "ok", start_time, effect=f"messaging:{phase}", risk="medium" if phase == "send" else "low")
+        return _json_payload_response(payload)
+
+    if action == "commute_brief":
+        traffic = args.get("traffic") if isinstance(args.get("traffic"), dict) else {}
+        transit = args.get("transit") if isinstance(args.get("transit"), dict) else {}
+        traffic_delay = _as_float(traffic.get("delay_min", 0.0), 0.0, minimum=0.0)
+        transit_delay = _as_float(transit.get("delay_min", 0.0), 0.0, minimum=0.0)
+        best_mode = "transit" if transit_delay < traffic_delay else "driving"
+        payload = {
+            "action": action,
+            "traffic_delay_min": traffic_delay,
+            "transit_delay_min": transit_delay,
+            "recommended_mode": best_mode,
+            "briefing": (
+                f"Commute update: driving delay {traffic_delay:.0f}m, transit delay {transit_delay:.0f}m; "
+                f"recommended mode is {best_mode}."
+            ),
+        }
+        record_summary("integration_hub", "ok", start_time, effect="commute_brief", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "shopping_orchestrate":
+        items = _as_str_list(args.get("items"))
+        steps = [
+            {"tool": "todoist_add_task", "detail": f"Add {len(items)} shopping items"},
+            {"tool": "home_assistant_todo", "detail": "Mirror list to Home Assistant household list"},
+            {"tool": "pushover_notify", "detail": "Send completion/update summary"},
+        ]
+        payload = {"action": action, "item_count": len(items), "items": items, "orchestration_steps": steps}
+        record_summary("integration_hub", "ok", start_time, effect="shopping_orchestrate", risk="low")
+        return _json_payload_response(payload)
+
+    if action == "research_workflow":
+        if not _as_bool(args.get("allow_web"), default=False):
+            _record_service_error("integration_hub", start_time, "policy")
+            return {"content": [{"type": "text", "text": "research_workflow requires allow_web=true due to policy gating."}]}
+        query = str(args.get("query", "")).strip()
+        citations = _as_str_list(args.get("citations"))
+        payload = {
+            "action": action,
+            "query": query,
+            "status": "ready",
+            "citation_count": len(citations),
+            "citations": citations,
+            "policy_gate": "allow_web",
+        }
+        record_summary("integration_hub", "ok", start_time, effect="research_workflow", risk="low")
+        return _json_payload_response(payload)
+
+    _record_service_error("integration_hub", start_time, "invalid_data")
+    return {"content": [{"type": "text", "text": "Unknown integration_hub action."}]}
+
+
 # ── Build MCP server ──────────────────────────────────────────
 
 smart_home_tool = tool(
@@ -8009,6 +10070,60 @@ skills_version_tool = tool(
     SERVICE_TOOL_SCHEMAS["skills_version"],
 )(skills_version)
 
+proactive_assistant_tool = tool(
+    "proactive_assistant",
+    "Run proactive briefing/anomaly/digest workflows and follow-through queueing.",
+    SERVICE_TOOL_SCHEMAS["proactive_assistant"],
+)(proactive_assistant)
+
+memory_governance_tool = tool(
+    "memory_governance",
+    "Manage per-user memory overlays and run memory quality audits/cleanup.",
+    SERVICE_TOOL_SCHEMAS["memory_governance"],
+)(memory_governance)
+
+identity_trust_tool = tool(
+    "identity_trust",
+    "Manage identity confidence, trust policies, guest mode sessions, and household profiles.",
+    SERVICE_TOOL_SCHEMAS["identity_trust"],
+)(identity_trust)
+
+home_orchestrator_tool = tool(
+    "home_orchestrator",
+    "Create and execute multi-entity home plans with area policy checks and task tracking.",
+    SERVICE_TOOL_SCHEMAS["home_orchestrator"],
+)(home_orchestrator)
+
+skills_governance_tool = tool(
+    "skills_governance",
+    "Negotiate skills, inspect dependency health, enforce quotas, and run skill harness checks.",
+    SERVICE_TOOL_SCHEMAS["skills_governance"],
+)(skills_governance)
+
+planner_engine_tool = tool(
+    "planner_engine",
+    "Planner/executor split with task graphs, checkpoint/resume, deferred scheduling, and self-critique.",
+    SERVICE_TOOL_SCHEMAS["planner_engine"],
+)(planner_engine)
+
+quality_evaluator_tool = tool(
+    "quality_evaluator",
+    "Generate weekly quality artifacts and run deterministic evaluation datasets.",
+    SERVICE_TOOL_SCHEMAS["quality_evaluator"],
+)(quality_evaluator)
+
+embodiment_presence_tool = tool(
+    "embodiment_presence",
+    "Manage micro-expressions, gaze calibration, gesture envelopes, privacy posture, and motion safety envelopes.",
+    SERVICE_TOOL_SCHEMAS["embodiment_presence"],
+)(embodiment_presence)
+
+integration_hub_tool = tool(
+    "integration_hub",
+    "Run calendar/notes/messaging/commute/shopping/research orchestration workflows with policy gates.",
+    SERVICE_TOOL_SCHEMAS["integration_hub"],
+)(integration_hub)
+
 def create_services_server():
     return create_sdk_mcp_server(
         name="jarvis-services",
@@ -8067,5 +10182,14 @@ def create_services_server():
             reminder_notify_due_tool,
             calendar_events_tool,
             calendar_next_event_tool,
+            proactive_assistant_tool,
+            memory_governance_tool,
+            identity_trust_tool,
+            home_orchestrator_tool,
+            skills_governance_tool,
+            planner_engine_tool,
+            quality_evaluator_tool,
+            embodiment_presence_tool,
+            integration_hub_tool,
         ],
     )

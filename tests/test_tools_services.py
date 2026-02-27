@@ -3149,7 +3149,7 @@ class TestServicesTools:
 
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.8"
+        assert payload["schema_version"] == "2.0"
         assert "local_time" in payload
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
@@ -3249,6 +3249,10 @@ class TestServicesTools:
         assert "failed_count" in payload["dead_letter_queue"]
         assert "replayed_count" in payload["dead_letter_queue"]
         assert isinstance(payload["dead_letter_queue"]["recent"], list)
+        assert "expansion" in payload
+        assert "proactive" in payload["expansion"]
+        assert "planner_engine" in payload["expansion"]
+        assert "integration_hub" in payload["expansion"]
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
 
     @pytest.mark.asyncio
@@ -3257,7 +3261,7 @@ class TestServicesTools:
 
         result = await services.system_status_contract({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.8"
+        assert payload["schema_version"] == "2.0"
         assert "top_level_required" in payload
         assert "tool_policy" in payload["top_level_required"]
         assert "identity" in payload["top_level_required"]
@@ -3336,6 +3340,9 @@ class TestServicesTools:
         assert "dead_letter_queue" in payload["top_level_required"]
         assert "dead_letter_queue_required" in payload
         assert "pending_count" in payload["dead_letter_queue_required"]
+        assert "expansion" in payload["top_level_required"]
+        assert "expansion_required" in payload
+        assert "proactive" in payload["expansion_required"]
 
     @pytest.mark.asyncio
     async def test_jarvis_scorecard_reports_unified_dimensions(self, tmp_path):
@@ -3753,6 +3760,11 @@ class TestServicesTools:
         assert schemas["webhook_inbound_list"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary_text"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["proactive_assistant"]["properties"]["snooze_minutes"]["type"] == "integer"
+        assert schemas["memory_governance"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["skills_governance"]["properties"]["rate_per_min"]["type"] == "integer"
+        assert schemas["planner_engine"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["quality_evaluator"]["properties"]["limit"]["type"] == "integer"
 
     def test_service_schema_identity_fields_present_for_mutating_tools(self):
         from jarvis.tools import services
@@ -3958,3 +3970,122 @@ class TestServicesTools:
         assert payload["nested"]["api_key"] == "***REDACTED***"
         assert payload["nested"]["safe"].endswith("...<truncated>")
         assert payload["items"][-1].startswith("<truncated_items:")
+
+    @pytest.mark.asyncio
+    async def test_expansion_tools_basic_actions(self, tmp_path):
+        from jarvis.tools import services
+
+        proactive = await services.proactive_assistant({"action": "briefing", "mode": "morning"})
+        proactive_payload = json.loads(proactive["content"][0]["text"])
+        assert proactive_payload["action"] == "briefing"
+
+        memory_partition = await services.memory_governance(
+            {"action": "partition", "user": "owner", "shared_scopes": ["preferences"]}
+        )
+        memory_payload = json.loads(memory_partition["content"][0]["text"])
+        assert memory_payload["action"] == "partition"
+        assert memory_payload["overlay"]["user"] == "owner"
+
+        trust_policy = await services.identity_trust(
+            {"action": "policy_set", "domain": "locks", "required_profile": "trusted", "requires_step_up": True}
+        )
+        trust_payload = json.loads(trust_policy["content"][0]["text"])
+        assert trust_payload["policy"]["required_profile"] == "trusted"
+
+        home_plan = await services.home_orchestrator({"action": "plan", "request_text": "activate movie mode"})
+        home_payload = json.loads(home_plan["content"][0]["text"])
+        assert home_payload["plan_label"] == "movie_mode"
+        assert home_payload["step_count"] >= 1
+
+        skills_negotiation = await services.skills_governance(
+            {"action": "negotiate", "requested_capabilities": ["forecast"]}
+        )
+        skills_payload = json.loads(skills_negotiation["content"][0]["text"])
+        assert skills_payload["action"] == "negotiate"
+
+        planner = await services.planner_engine({"action": "plan", "goal": "prepare evening routine"})
+        planner_payload = json.loads(planner["content"][0]["text"])
+        assert planner_payload["action"] == "plan"
+        assert "planner" in planner_payload
+
+        report_path = tmp_path / "quality.json"
+        quality = await services.quality_evaluator({"action": "weekly_report", "report_path": str(report_path)})
+        quality_payload = json.loads(quality["content"][0]["text"])
+        assert quality_payload["action"] == "weekly_report"
+        assert Path(quality_payload["artifact_path"]).exists()
+
+        embodiment = await services.embodiment_presence(
+            {"action": "privacy_posture", "state": "muted", "reason": "sensitive_operation"}
+        )
+        embodiment_payload = json.loads(embodiment["content"][0]["text"])
+        assert embodiment_payload["privacy_posture"]["state"] == "muted"
+
+        integration = await services.integration_hub(
+            {"action": "notes_capture", "backend": "local_markdown", "title": "Test", "content": "hello"}
+        )
+        integration_payload = json.loads(integration["content"][0]["text"])
+        assert integration_payload["stored"] is True
+        assert Path(integration_payload["path"]).exists()
+
+    @pytest.mark.asyncio
+    async def test_identity_guest_session_capability_enforced(self):
+        from jarvis.tools import services
+
+        guest = await services.identity_trust(
+            {"action": "guest_start", "guest_id": "visitor", "capabilities": ["system_status"]}
+        )
+        guest_payload = json.loads(guest["content"][0]["text"])
+        token = guest_payload["token"]
+
+        denied = await services.smart_home(
+            {
+                "domain": "light",
+                "action": "turn_on",
+                "entity_id": "light.living_room",
+                "dry_run": True,
+                "guest_session_token": token,
+            }
+        )
+        assert "guest session does not allow" in denied["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_area_policy_surfaces_partial_failures(self):
+        from jarvis.tools import services
+
+        await services.home_orchestrator(
+            {
+                "action": "area_policy_set",
+                "area": "bedroom",
+                "policy": {
+                    "quiet_hours_start": "22:00",
+                    "quiet_hours_end": "07:00",
+                    "blocked_actions": ["media_player:media_play"],
+                },
+            }
+        )
+        result = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "actions": [
+                    {"domain": "media_player", "action": "media_play", "entity_id": "media_player.bedroom_speaker"},
+                    {"domain": "light", "action": "turn_on", "entity_id": "light.kitchen"},
+                ],
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["partial_failure"] is True
+        assert payload["failed_count"] == 1
+
+    def test_release_scripts_and_workflows_exist(self):
+        project_root = Path(__file__).resolve().parents[1]
+        assert (project_root / "scripts" / "bootstrap.sh").exists()
+        assert (project_root / "scripts" / "generate_quality_report.py").exists()
+        assert (project_root / "scripts" / "run_eval_dataset.py").exists()
+        assert (project_root / "scripts" / "release_acceptance.sh").exists()
+        assert (project_root / "scripts" / "check_release_channel.py").exists()
+        assert (project_root / ".github" / "workflows" / "assistant-quality-report.yml").exists()
+        assert (project_root / ".github" / "workflows" / "release-acceptance.yml").exists()
+        makefile_text = (project_root / "Makefile").read_text()
+        assert "quality-report" in makefile_text
+        assert "eval-dataset" in makefile_text
+        assert "release-acceptance" in makefile_text

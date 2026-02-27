@@ -1,0 +1,25 @@
+name: Jarvis Assistant
+version: "0.1.0"
+slug: jarvis_assistant
+description: Jarvis AI assistant runtime for Home Assistant hosts
+startup: services
+boot: auto
+arch:
+  - amd64
+  - aarch64
+  - armv7
+map:
+  - config:rw
+  - addon_config:rw
+options:
+  wake_mode: wake_word
+  no_vision: true
+schema:
+  wake_mode: str
+  no_vision: bool
+  anthropic_api_key: password
+  elevenlabs_api_key: password
+ingress: false
+homeassistant_api: true
+hassio_api: true
+host_network: false

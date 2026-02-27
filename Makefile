@@ -1,4 +1,5 @@
-.PHONY: check test-fast test-faults test-fault-profiles test-soak security-gate
+.PHONY: check test-fast test-faults test-fault-profiles test-soak security-gate \
+	bootstrap quality-report eval-dataset release-channel-check release-acceptance
 
 check:
 	uv run ruff check src tests
@@ -18,3 +19,18 @@ test-soak:
 
 security-gate:
 	./scripts/security_gate.sh
+
+bootstrap:
+	./scripts/bootstrap.sh
+
+quality-report:
+	./scripts/generate_quality_report.py --output-dir .artifacts/quality --markdown
+
+eval-dataset:
+	./scripts/run_eval_dataset.py docs/evals/assistant-contract.json --output .artifacts/quality/eval.json --strict
+
+release-channel-check:
+	./scripts/check_release_channel.py --channel stable
+
+release-acceptance:
+	./scripts/release_acceptance.sh fast
