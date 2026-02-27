@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 61 (Five Hotspot Decomposition Sweep)
+# Jarvis TODO — Wave 62 (Hotspot Decomposition Sweep II)
 
 Last updated: 2026-02-27
 
@@ -8,114 +8,103 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 40
-- Completed: 40
+- Total items: 47
+- Completed: 47
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W61-A01` Confirm baseline and identify remaining highest-concentration service-domain modules.
-- [x] `W61-A02` Select 5-module hotspot sweep:
-- [x] `W61-A03` `home_orch_automation.py`
-- [x] `W61-A04` `home_ha_conversation.py`
-- [x] `W61-A05` `comms_notify_webhooks.py`
-- [x] `W61-A06` `planner_engine_autonomy.py`
-- [x] `W61-A07` `trust_memory_query.py`
-- [x] `W61-A08` Preserve public function contracts and existing behavior/messages.
+- [x] `W62-A01` Confirm post-Wave-61 baseline and capture next highest concentration service-domain modules.
+- [x] `W62-A02` Select targeted split scope for next tranche.
+- [x] `W62-A03` Include `home_mutation_preflight.py` in scope.
+- [x] `W62-A04` Include `integrations_calendar.py` in scope.
+- [x] `W62-A05` Include `integrations_webhook_trigger.py` in scope.
+- [x] `W62-A06` Include `governance_skills_governance.py` in scope.
+- [x] `W62-A07` Preserve public behavior and response text contracts.
+- [x] `W62-A08` Preserve monkeypatch/test seam compatibility for service-level helpers.
 
-## B) Home automation split
+## B) Home mutation preflight split
 
-- [x] `W61-B01` Create `home_orch_automation_suggest_create.py`.
-- [x] `W61-B02` Move `home_orch_automation_suggest`.
-- [x] `W61-B03` Move `home_orch_automation_create`.
-- [x] `W61-B04` Create `home_orch_automation_apply_status.py`.
-- [x] `W61-B05` Move `home_orch_automation_apply`.
-- [x] `W61-B06` Move `home_orch_automation_rollback`.
-- [x] `W61-B07` Move `home_orch_automation_status`.
-- [x] `W61-B08` Reduce `home_orch_automation.py` to exports.
+- [x] `W62-B01` Create `home_mutation_policy.py`.
+- [x] `W62-B02` Move identity/policy/safety checks into policy module.
+- [x] `W62-B03` Move area-policy and preview-gate checks into policy module.
+- [x] `W62-B04` Create `home_mutation_state_checks.py`.
+- [x] `W62-B05` Move cooldown and HA state preflight checks into state module.
+- [x] `W62-B06` Keep no-op short-circuit logic unchanged.
+- [x] `W62-B07` Reduce `home_mutation_preflight.py` to orchestrator wrapper.
 
-## C) Conversation split
+## C) Calendar split
 
-- [x] `W61-C01` Create `home_ha_conversation_preflight.py`.
-- [x] `W61-C02` Move policy/guard/preview checks.
-- [x] `W61-C03` Create `home_ha_conversation_execute.py`.
-- [x] `W61-C04` Move HA conversation request/response handling.
-- [x] `W61-C05` Reduce `home_ha_conversation.py` to orchestrator wrapper.
+- [x] `W62-C01` Create `integrations_calendar_common.py`.
+- [x] `W62-C02` Move calendar event fetch utility.
+- [x] `W62-C03` Move calendar window parsing utility.
+- [x] `W62-C04` Centralize calendar error-code to response mapping.
+- [x] `W62-C05` Create `integrations_calendar_events_list.py`.
+- [x] `W62-C06` Move `calendar_events` flow.
+- [x] `W62-C07` Create `integrations_calendar_next.py`.
+- [x] `W62-C08` Move `calendar_next_event` flow.
+- [x] `W62-C09` Reduce `integrations_calendar.py` to compat exports.
+- [x] `W62-C10` Restore service-level monkeypatch seam for `_calendar_fetch_events` in split handlers.
 
-## D) Notifications split
+## D) Webhook trigger split
 
-- [x] `W61-D01` Create `comms_notify_slack.py`.
-- [x] `W61-D02` Move `slack_notify`.
-- [x] `W61-D03` Create `comms_notify_discord.py`.
-- [x] `W61-D04` Move `discord_notify`.
-- [x] `W61-D05` Reduce `comms_notify_webhooks.py` to exports.
+- [x] `W62-D01` Create `integrations_webhook_trigger_preflight.py`.
+- [x] `W62-D02` Move webhook policy/allowlist/identity/preview checks.
+- [x] `W62-D03` Move timeout/header/request setup into preflight context.
+- [x] `W62-D04` Create `integrations_webhook_trigger_execute.py`.
+- [x] `W62-D05` Move webhook execution/recovery/dead-letter paths.
+- [x] `W62-D06` Keep response semantics and audit behavior unchanged.
+- [x] `W62-D07` Reduce `integrations_webhook_trigger.py` to thin orchestrator.
 
-## E) Planner autonomy split
+## E) Skills governance split
 
-- [x] `W61-E01` Create `planner_engine_autonomy_schedule_checkpoint.py`.
-- [x] `W61-E02` Move `planner_autonomy_schedule`.
-- [x] `W61-E03` Move `planner_autonomy_checkpoint`.
-- [x] `W61-E04` Create `planner_engine_autonomy_cycle.py`.
-- [x] `W61-E05` Move `planner_autonomy_cycle`.
-- [x] `W61-E06` Create `planner_engine_autonomy_status.py`.
-- [x] `W61-E07` Move `planner_autonomy_status`.
-- [x] `W61-E08` Reduce `planner_engine_autonomy.py` to exports.
+- [x] `W62-E01` Create `governance_skills_actions_a.py`.
+- [x] `W62-E02` Move negotiation and dependency health actions.
+- [x] `W62-E03` Create `governance_skills_actions_b.py`.
+- [x] `W62-E04` Move quota set/get/check actions.
+- [x] `W62-E05` Create `governance_skills_actions_c.py`.
+- [x] `W62-E06` Move harness/bundle_sign/sandbox_template actions.
+- [x] `W62-E07` Reduce `governance_skills_governance.py` to dispatcher.
 
-## F) Trust memory query split
+## F) Import boundaries and quality gates
 
-- [x] `W61-F01` Create `trust_memory_search.py`.
-- [x] `W61-F02` Move `memory_search`.
-- [x] `W61-F03` Create `trust_memory_recent.py`.
-- [x] `W61-F04` Move `memory_recent`.
-- [x] `W61-F05` Create `trust_memory_status_view.py`.
-- [x] `W61-F06` Move `memory_status`.
-- [x] `W61-F07` Reduce `trust_memory_query.py` to exports.
+- [x] `W62-F01` Add import-boundary coverage for new home mutation split modules.
+- [x] `W62-F02` Add import-boundary coverage for new calendar split modules.
+- [x] `W62-F03` Add import-boundary coverage for new webhook split modules.
+- [x] `W62-F04` Add import-boundary coverage for new skills governance split modules.
+- [x] `W62-F05` Run focused lint across all changed modules.
+- [x] `W62-F06` Run targeted pytest coverage for calendar/webhook/skills paths.
+- [x] `W62-F07` Run `tests/test_import_boundaries.py`.
+- [x] `W62-F08` Run full `make check`.
+- [x] `W62-F09` Run full `make security-gate`.
 
-## G) Boundaries and validation
+## G) Release loop
 
-- [x] `W61-G01` Extend import-boundary coverage for all newly extracted modules.
-- [x] `W61-G02` Run focused lint for all changed modules.
-- [x] `W61-G03` Run targeted pytest for affected behavior clusters.
-- [x] `W61-G04` Run `tests/test_import_boundaries.py`.
-- [x] `W61-G05` Run full `make check`.
-- [x] `W61-G06` Run full `make security-gate`.
-- [x] `W61-G07` Run `./scripts/jarvis_readiness.sh fast`.
-
-## H) Release loop
-
-- [x] `W61-H01` Record post-split line-count outcomes.
-- [x] `W61-H02` Commit Wave 61.
-- [x] `W61-H03` Push Wave 61.
+- [x] `W62-G01` Record line-count deltas for split wrapper modules.
+- [x] `W62-G02` Commit Wave 62 tranche.
+- [x] `W62-G03` Push Wave 62 to origin/main.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Five hotspot modules decomposed to facades/wrappers:
-  - `home_orch_automation.py`: `288 -> 21`
-  - `home_ha_conversation.py`: `268 -> 30`
-  - `comms_notify_webhooks.py`: `257 -> 8`
-  - `planner_engine_autonomy.py`: `254 -> 17`
-  - `trust_memory_query.py`: `243 -> 9`
-- New extracted modules (selected):
-  - `home_orch_automation_suggest_create.py` (`99`)
-  - `home_orch_automation_apply_status.py` (`204`)
-  - `home_ha_conversation_preflight.py` (`172`)
-  - `home_ha_conversation_execute.py` (`140`)
-  - `comms_notify_slack.py` (`133`)
-  - `comms_notify_discord.py` (`138`)
-  - `planner_engine_autonomy_schedule_checkpoint.py` (`121`)
-  - `planner_engine_autonomy_cycle.py` (`115`)
-  - `planner_engine_autonomy_status.py` (`46`)
-  - `trust_memory_search.py` (`134`)
-  - `trust_memory_recent.py` (`72`)
-  - `trust_memory_status_view.py` (`59`)
-- Validation status:
-  - Focused lint: pass.
-  - Focused pytest clusters: pass.
-  - `tests/test_import_boundaries.py`: `85 passed`.
-  - `make check`: `674 passed`.
-  - `make security-gate`: `674 passed`; fault subset `3 passed`.
-  - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
+- Wrapper concentration reductions:
+  - `home_mutation_preflight.py`: `263 -> 18`
+  - `integrations_calendar.py`: `240 -> 17`
+  - `integrations_webhook_trigger.py`: `232 -> 30`
+  - `governance_skills_governance.py`: `217 -> 60`
+- New extracted modules:
+  - `home_mutation_policy.py`
+  - `home_mutation_state_checks.py`
+  - `integrations_calendar_common.py`
+  - `integrations_calendar_events_list.py`
+  - `integrations_calendar_next.py`
+  - `integrations_webhook_trigger_preflight.py`
+  - `integrations_webhook_trigger_execute.py`
+  - `governance_skills_actions_a.py`
+  - `governance_skills_actions_b.py`
+  - `governance_skills_actions_c.py`
+- Behavioral compatibility note:
+  - Calendar split handlers continue to resolve `_calendar_fetch_events` via `jarvis.tools.services` to preserve existing test and monkeypatch seam behavior.
