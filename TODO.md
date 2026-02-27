@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/93 Runtime Decomposition
+# Jarvis TODO — Wave 74/94 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 175
-- Completed: 175
+- Total items: 183
+- Completed: 183
 - Remaining: 0
 
 ---
@@ -259,6 +259,17 @@ Last updated: 2026-02-27
 - [x] `W93-W07` Run `make security-gate`.
 - [x] `W93-W08` Run `./scripts/jarvis_readiness.sh fast`.
 
+## X) Wave 94 (completed): __main__ STT fallback extraction
+
+- [x] `W94-X01` Profile `Jarvis._transcribe_with_fallback` extraction boundary.
+- [x] `W94-X02` Extract STT fallback orchestration into `runtime_telemetry.py`.
+- [x] `W94-X03` Keep `Jarvis._transcribe_with_fallback` method contract unchanged.
+- [x] `W94-X04` Preserve telemetry + observability side-effects (`fallback_responses`, `stt_fallback` event).
+- [x] `W94-X05` Run focused audio/lifecycle/runtime-state regression tests.
+- [x] `W94-X06` Run `make check`.
+- [x] `W94-X07` Run `make security-gate`.
+- [x] `W94-X08` Run `./scripts/jarvis_readiness.sh fast`.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -307,6 +318,7 @@ Last updated: 2026-02-27
   - Integrations/release wrapper family moved behind `services_integrations_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - `Jarvis` pass-through wrappers for control/intent/telemetry helpers now use direct `staticmethod` aliases where behavior is identical.
   - Memory correction parsing logic moved from `Jarvis._parse_memory_correction_command` body into `runtime_memory_correction.py`.
+  - STT fallback orchestration moved from `Jarvis._transcribe_with_fallback` body into `runtime_telemetry.transcribe_with_fallback`.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -329,6 +341,7 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py -k "non_finite or bool_sensitivity or include_sensitive or memory_search_non_finite_include_sensitive_uses_default_false"`: `5 passed`.
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py -k "release_channel or quality_report_artifact or capture_note or note_capture"`: `2 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_voice_profile.py tests/test_runtime_state.py -k "parse_memory_correction_command or classify_user_intent or looks_like_user_correction or parse_control_bool or parse_control_choice or followup_carryover"`: `12 passed`.
+  - `uv run pytest -q tests/test_main_audio.py tests/test_main_lifecycle.py tests/test_runtime_voice_profile.py tests/test_runtime_state.py -k "transcribe_with_fallback or parse_memory_correction_command or parse_control_bool or parse_control_choice or followup_carryover"`: `11 passed`.
   - `make check`: `784 passed`.
   - `make security-gate`: `784 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

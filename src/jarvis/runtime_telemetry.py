@@ -299,6 +299,35 @@ def update_stt_diagnostics(
     return payload
 
 
+def transcribe_with_fallback(runtime: Any, audio: np.ndarray) -> str:
+    text, primary_diag = runtime._transcribe_with_optional_diagnostics(runtime.stt, audio)
+    runtime._update_stt_diagnostics(
+        text=text,
+        source="primary",
+        fallback_used=False,
+        diagnostics=primary_diag,
+    )
+    if text.strip():
+        return text
+    fallback = getattr(runtime, "_stt_secondary", None)
+    if fallback is None:
+        return text
+    recovered, fallback_diag = runtime._transcribe_with_optional_diagnostics(fallback, audio)
+    runtime._update_stt_diagnostics(
+        text=recovered,
+        source="secondary",
+        fallback_used=bool(recovered.strip()),
+        diagnostics=fallback_diag,
+    )
+    if recovered.strip():
+        runtime._telemetry["fallback_responses"] += 1.0
+        observability = getattr(runtime, "_observability", None)
+        if observability is not None:
+            with suppress(Exception):
+                observability.record_event("stt_fallback", {"reason": "primary_empty"})
+    return recovered
+
+
 def normalize_tts_chunk(
     chunk: np.ndarray,
     *,

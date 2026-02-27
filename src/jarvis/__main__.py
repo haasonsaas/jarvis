@@ -88,6 +88,7 @@ from jarvis.runtime_telemetry import (
     stt_diagnostics_snapshot as _runtime_stt_diagnostics_snapshot,
     summarize_tool_error_counters as _runtime_summarize_tool_error_counters,
     telemetry_snapshot as _runtime_telemetry_snapshot,
+    transcribe_with_fallback as _runtime_transcribe_with_fallback,
     transcribe_with_optional_diagnostics as _runtime_transcribe_with_optional_diagnostics,
     update_stt_diagnostics as _runtime_update_stt_diagnostics,
 )
@@ -875,32 +876,7 @@ class Jarvis:
         )
 
     def _transcribe_with_fallback(self, audio: np.ndarray) -> str:
-        text, primary_diag = self._transcribe_with_optional_diagnostics(self.stt, audio)
-        self._update_stt_diagnostics(
-            text=text,
-            source="primary",
-            fallback_used=False,
-            diagnostics=primary_diag,
-        )
-        if text.strip():
-            return text
-        fallback = getattr(self, "_stt_secondary", None)
-        if fallback is None:
-            return text
-        recovered, fallback_diag = self._transcribe_with_optional_diagnostics(fallback, audio)
-        self._update_stt_diagnostics(
-            text=recovered,
-            source="secondary",
-            fallback_used=bool(recovered.strip()),
-            diagnostics=fallback_diag,
-        )
-        if recovered.strip():
-            self._telemetry["fallback_responses"] += 1.0
-            observability = getattr(self, "_observability", None)
-            if observability is not None:
-                with suppress(Exception):
-                    observability.record_event("stt_fallback", {"reason": "primary_empty"})
-        return recovered
+        return _runtime_transcribe_with_fallback(self, audio)
 
     def _publish_observability_snapshot(self, *, force: bool = False) -> None:
         observability = getattr(self, "_observability", None)
