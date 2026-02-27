@@ -3200,6 +3200,11 @@ class TestServicesTools:
         assert "pace" in payload["voice_attention"]["voice_profile"]
         assert "tone" in payload["voice_attention"]["voice_profile"]
         assert "voice_profile_count" in payload["voice_attention"]
+        assert "acoustic_scene" in payload["voice_attention"]
+        assert "last_doa_age_sec" in payload["voice_attention"]["acoustic_scene"]
+        assert "attention_confidence" in payload["voice_attention"]["acoustic_scene"]
+        assert "preference_learning" in payload["voice_attention"]
+        assert "updates" in payload["voice_attention"]["preference_learning"]
         assert "phase" in payload["voice_attention"]["turn_choreography"]
         assert "turn_timeouts" in payload
         assert isinstance(payload["turn_timeouts"]["watchdog_enabled"], bool)
@@ -3229,6 +3234,8 @@ class TestServicesTools:
         assert "observability" in payload
         assert "intent_metrics" in payload["observability"]
         assert "correction_frequency" in payload["observability"]["intent_metrics"]
+        assert "preference_update_turns" in payload["observability"]["intent_metrics"]
+        assert "preference_update_fields" in payload["observability"]["intent_metrics"]
         assert "latency_dashboards" in payload["observability"]
         assert "overall_total_ms" in payload["observability"]["latency_dashboards"]
         assert "policy_decision_analytics" in payload["observability"]
@@ -3258,6 +3265,8 @@ class TestServicesTools:
         assert isinstance(payload["dead_letter_queue"]["recent"], list)
         assert "expansion" in payload
         assert "proactive" in payload["expansion"]
+        assert "nudge_decisions_total" in payload["expansion"]["proactive"]
+        assert "last_nudge_decision_at" in payload["expansion"]["proactive"]
         assert "planner_engine" in payload["expansion"]
         assert "integration_hub" in payload["expansion"]
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
@@ -3302,6 +3311,12 @@ class TestServicesTools:
         assert "voice_profile_user" in payload["voice_attention_required"]
         assert "voice_profile" in payload["voice_attention_required"]
         assert "voice_profile_count" in payload["voice_attention_required"]
+        assert "acoustic_scene" in payload["voice_attention_required"]
+        assert "preference_learning" in payload["voice_attention_required"]
+        assert "voice_attention_acoustic_scene_required" in payload
+        assert "attention_confidence" in payload["voice_attention_acoustic_scene_required"]
+        assert "voice_attention_preference_learning_required" in payload
+        assert "updates" in payload["voice_attention_preference_learning_required"]
         assert "voice_attention_turn_choreography_required" in payload
         assert "turn_glance_yaw" in payload["voice_attention_turn_choreography_required"]
         assert "voice_attention_stt_diagnostics_required" in payload
@@ -3327,6 +3342,8 @@ class TestServicesTools:
         assert "policy_decision_analytics" in payload["observability_required"]
         assert "observability_intent_metrics_required" in payload
         assert "completion_success_rate" in payload["observability_intent_metrics_required"]
+        assert "preference_update_turns" in payload["observability_intent_metrics_required"]
+        assert "preference_update_fields" in payload["observability_intent_metrics_required"]
         assert "observability_latency_dashboards_required" in payload
         assert "by_tool_mix" in payload["observability_latency_dashboards_required"]
         assert "observability_latency_bucket_required" in payload
@@ -3351,6 +3368,8 @@ class TestServicesTools:
         assert "expansion" in payload["top_level_required"]
         assert "expansion_required" in payload
         assert "proactive" in payload["expansion_required"]
+        assert "expansion_proactive_required" in payload
+        assert "nudge_decisions_total" in payload["expansion_proactive_required"]
         assert "expansion_integration_hub_required" in payload
         assert "release_channel_config_path" in payload["expansion_integration_hub_required"]
         assert "last_release_channel_check_at" in payload["expansion_integration_hub_required"]
@@ -3775,6 +3794,7 @@ class TestServicesTools:
         assert schemas["tool_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary_text"]["properties"]["limit"]["type"] == "integer"
         assert schemas["proactive_assistant"]["properties"]["snooze_minutes"]["type"] == "integer"
+        assert schemas["proactive_assistant"]["properties"]["max_dispatch"]["type"] == "integer"
         assert schemas["memory_governance"]["properties"]["limit"]["type"] == "integer"
         assert schemas["skills_governance"]["properties"]["rate_per_min"]["type"] == "integer"
         assert schemas["planner_engine"]["properties"]["limit"]["type"] == "integer"
@@ -3992,6 +4012,22 @@ class TestServicesTools:
         proactive = await services.proactive_assistant({"action": "briefing", "mode": "morning"})
         proactive_payload = json.loads(proactive["content"][0]["text"])
         assert proactive_payload["action"] == "briefing"
+        nudge = await services.proactive_assistant(
+            {
+                "action": "nudge_decision",
+                "policy": "adaptive",
+                "quiet_window_active": True,
+                "candidates": [
+                    {"id": "a", "title": "Basement leak", "severity": "critical", "source": "sensor"},
+                    {"id": "b", "title": "Water plants", "severity": "low", "source": "routine"},
+                ],
+            }
+        )
+        nudge_payload = json.loads(nudge["content"][0]["text"])
+        assert nudge_payload["action"] == "nudge_decision"
+        assert nudge_payload["interrupt_count"] >= 1
+        assert nudge_payload["defer_count"] >= 1
+        assert nudge_payload["counters"]["nudge_decisions_total"] >= 1
 
         memory_partition = await services.memory_governance(
             {"action": "partition", "user": "owner", "shared_scopes": ["preferences"]}
@@ -4042,6 +4078,48 @@ class TestServicesTools:
         assert Path(integration_payload["path"]).exists()
 
     @pytest.mark.asyncio
+    async def test_proactive_nudge_decision_adaptive_quiet_window(self):
+        from jarvis.tools import services
+
+        result = await services.proactive_assistant(
+            {
+                "action": "nudge_decision",
+                "policy": "adaptive",
+                "quiet_window_active": True,
+                "candidates": [
+                    {"id": "critical", "title": "Leak detected", "severity": "critical"},
+                    {"id": "low", "title": "Water plants", "severity": "low"},
+                ],
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        interrupt_ids = {row["id"] for row in payload["interrupt"]}
+        defer_ids = {row["id"] for row in payload["defer"]}
+        assert "critical" in interrupt_ids
+        assert "low" in defer_ids
+
+    @pytest.mark.asyncio
+    async def test_proactive_nudge_decision_interrupt_policy_honors_capacity(self):
+        from jarvis.tools import services
+
+        result = await services.proactive_assistant(
+            {
+                "action": "nudge_decision",
+                "policy": "interrupt",
+                "quiet_window_active": False,
+                "max_dispatch": 1,
+                "candidates": [
+                    {"id": "a", "title": "Window open", "severity": "high"},
+                    {"id": "b", "title": "Package delivered", "severity": "medium"},
+                ],
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["dispatch_count"] == 1
+        assert payload["defer_count"] >= 1
+        assert any(row["reason"] == "dispatch_capacity" for row in payload["defer"])
+
+    @pytest.mark.asyncio
     async def test_integration_hub_release_channel_actions(self):
         from jarvis.tools import services
 
@@ -4083,6 +4161,14 @@ class TestServicesTools:
                 "pending_actions": [{"task": "close the office blinds", "priority": "normal"}],
             }
         )
+        await services.proactive_assistant(
+            {
+                "action": "nudge_decision",
+                "policy": "defer",
+                "quiet_window_active": True,
+                "candidates": [{"id": "n1", "title": "Night digest", "severity": "low"}],
+            }
+        )
         await services.identity_trust(
             {
                 "action": "policy_set",
@@ -4100,6 +4186,7 @@ class TestServicesTools:
         payload = json.loads(status["content"][0]["text"])
         expansion = payload["expansion"]
         assert expansion["proactive"]["pending_follow_through_count"] == 1
+        assert expansion["proactive"]["nudge_decisions_total"] >= 1
         assert expansion["identity_trust"]["trust_policy_count"] >= 1
         assert expansion["integration_hub"]["active_release_channel"] == "beta"
         assert expansion["embodiment_presence"]["privacy_posture"]["state"] == "muted"

@@ -153,6 +153,11 @@ def _reset_runtime_state(services_module: Any) -> None:
     s._proactive_state["digest_snoozed_until"] = 0.0
     s._proactive_state["last_briefing_at"] = 0.0
     s._proactive_state["last_digest_at"] = 0.0
+    s._proactive_state["nudge_decisions_total"] = 0
+    s._proactive_state["nudge_interrupt_total"] = 0
+    s._proactive_state["nudge_notify_total"] = 0
+    s._proactive_state["nudge_defer_total"] = 0
+    s._proactive_state["last_nudge_decision_at"] = 0.0
     s._memory_partition_overlays.clear()
     s._memory_quality_last.clear()
     s._identity_trust_policies.clear()
@@ -300,6 +305,31 @@ def load_expansion_state(services_module: Any) -> None:
         )
         s._proactive_state["last_digest_at"] = s._as_float(
             proactive.get("last_digest_at", 0.0),
+            0.0,
+            minimum=0.0,
+        )
+        s._proactive_state["nudge_decisions_total"] = s._as_int(
+            proactive.get("nudge_decisions_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["nudge_interrupt_total"] = s._as_int(
+            proactive.get("nudge_interrupt_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["nudge_notify_total"] = s._as_int(
+            proactive.get("nudge_notify_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["nudge_defer_total"] = s._as_int(
+            proactive.get("nudge_defer_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["last_nudge_decision_at"] = s._as_float(
+            proactive.get("last_nudge_decision_at", 0.0),
             0.0,
             minimum=0.0,
         )

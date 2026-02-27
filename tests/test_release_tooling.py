@@ -70,3 +70,29 @@ def test_generate_quality_report_trend():
     assert trend["total_events_delta"] == 1
     assert trend["failure_count_delta"] == 0
     assert isinstance(trend["failure_rate_delta"], float)
+
+
+def test_run_soak_profile_live_has_extended_phases_and_artifact_checks():
+    project_root = Path(__file__).resolve().parents[1]
+    module = _load_script_module("run_soak_profile_script", project_root / "scripts" / "run_soak_profile.py")
+
+    live_phases = module._phase_commands("live")
+    phase_names = [name for name, _ in live_phases]
+    assert "sim_baseline" in phase_names
+    assert "fault_network" in phase_names
+    assert "operator_status_contract" in phase_names
+    assert "eval_contract_strict" in phase_names
+
+    checks = module._artifact_checks(
+        [
+            {
+                "phase": "sim_baseline",
+                "status": "passed",
+                "started_at": 1.0,
+                "finished_at": 2.0,
+            }
+        ]
+    )
+    assert checks["all_status_valid"] is True
+    assert checks["all_timestamps_present"] is True
+    assert checks["phase_names"] == ["sim_baseline"]

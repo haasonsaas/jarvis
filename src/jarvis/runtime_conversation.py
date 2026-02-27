@@ -180,6 +180,15 @@ async def run(runtime: Any) -> None:
                 runtime._telemetry["intent_corrections"] += 1.0
 
             turn_started_at = time.time()
+            learned_preferences: dict[str, str] = {}
+            if hasattr(runtime, "_learn_voice_preferences"):
+                try:
+                    learned_preferences = runtime._learn_voice_preferences(
+                        text,
+                        now_ts=turn_started_at,
+                    )
+                except Exception:
+                    learned_preferences = {}
             if (
                 not repair_resolved_this_turn
                 and runtime._requires_stt_repair(text, intent_class)
@@ -355,11 +364,12 @@ async def run(runtime: Any) -> None:
                 llm_first_sentence_ms=llm_first_sentence_ms,
                 tts_first_audio_ms=tts_first_audio_ms,
                 response_success=response_success,
-                tool_summaries=turn_tool_summaries,
-                lifecycle="completed",
-                used_brain_response=True,
-                followup_carryover_applied=followup_carryover_applied,
-            )
+                    tool_summaries=turn_tool_summaries,
+                    lifecycle="completed",
+                    used_brain_response=True,
+                    followup_carryover_applied=followup_carryover_applied,
+                    preference_updates=learned_preferences,
+                )
             if int(runtime._telemetry["turns"]) % TELEMETRY_LOG_EVERY_TURNS == 0:
                 runtime._refresh_tool_error_counters()
                 snapshot = runtime._telemetry_snapshot()

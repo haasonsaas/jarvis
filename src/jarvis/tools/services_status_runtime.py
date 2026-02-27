@@ -112,6 +112,19 @@ def voice_attention_snapshot(services_module: Any) -> dict[str, Any]:
         "updated_at": 0.0,
         "error": "",
     }
+    default_acoustic_scene = {
+        "last_doa_angle": None,
+        "last_doa_speech": None,
+        "last_doa_age_sec": 0.0,
+        "attention_confidence": 0.0,
+        "attention_source": "unknown",
+    }
+    default_preference_learning = {
+        "user": "",
+        "updates": {},
+        "applied_at": 0.0,
+        "source_text": "",
+    }
     if not s._runtime_voice_state:
         return {
             "mode": "unknown",
@@ -127,6 +140,8 @@ def voice_attention_snapshot(services_module: Any) -> dict[str, Any]:
             "voice_profile_user": "unknown",
             "voice_profile": {"verbosity": "normal", "confirmations": "standard", "pace": "normal", "tone": "auto"},
             "voice_profile_count": 0,
+            "acoustic_scene": default_acoustic_scene,
+            "preference_learning": default_preference_learning,
         }
     snapshot = {str(key): value for key, value in s._runtime_voice_state.items()}
     snapshot.setdefault("silence_timeout_sec", 0.0)
@@ -158,6 +173,27 @@ def voice_attention_snapshot(services_module: Any) -> dict[str, Any]:
         profile.setdefault("tone", "auto")
         snapshot["voice_profile"] = profile
     snapshot.setdefault("voice_profile_count", 0)
+    if not isinstance(snapshot.get("acoustic_scene"), dict):
+        snapshot["acoustic_scene"] = default_acoustic_scene
+    else:
+        acoustic_scene = {
+            str(key): value for key, value in snapshot["acoustic_scene"].items()
+        }
+        for key, value in default_acoustic_scene.items():
+            acoustic_scene.setdefault(key, value)
+        snapshot["acoustic_scene"] = acoustic_scene
+    if not isinstance(snapshot.get("preference_learning"), dict):
+        snapshot["preference_learning"] = default_preference_learning
+    else:
+        preference_learning = {
+            str(key): value
+            for key, value in snapshot["preference_learning"].items()
+        }
+        for key, value in default_preference_learning.items():
+            preference_learning.setdefault(key, value)
+        if not isinstance(preference_learning.get("updates"), dict):
+            preference_learning["updates"] = {}
+        snapshot["preference_learning"] = preference_learning
     return snapshot
 
 
@@ -174,6 +210,8 @@ def observability_snapshot(services_module: Any) -> dict[str, Any]:
         "completion_success_rate": 0.0,
         "correction_count": 0.0,
         "correction_frequency": 0.0,
+        "preference_update_turns": 0.0,
+        "preference_update_fields": 0.0,
     }
     if not s._runtime_observability_state:
         return {
@@ -201,6 +239,13 @@ def observability_snapshot(services_module: Any) -> dict[str, Any]:
     snapshot = {str(key): value for key, value in s._runtime_observability_state.items()}
     if not isinstance(snapshot.get("intent_metrics"), dict):
         snapshot["intent_metrics"] = default_intent_metrics
+    else:
+        intent_metrics = {
+            str(key): value for key, value in snapshot["intent_metrics"].items()
+        }
+        for key, value in default_intent_metrics.items():
+            intent_metrics.setdefault(key, value)
+        snapshot["intent_metrics"] = intent_metrics
     if not isinstance(snapshot.get("latency_dashboards"), dict):
         snapshot["latency_dashboards"] = {
             "sample_count": 0,
@@ -244,6 +289,11 @@ def expansion_snapshot(services_module: Any) -> dict[str, Any]:
             "digest_snoozed_until": float(s._proactive_state.get("digest_snoozed_until", 0.0) or 0.0),
             "last_briefing_at": float(s._proactive_state.get("last_briefing_at", 0.0) or 0.0),
             "last_digest_at": float(s._proactive_state.get("last_digest_at", 0.0) or 0.0),
+            "nudge_decisions_total": int(s._proactive_state.get("nudge_decisions_total", 0) or 0),
+            "nudge_interrupt_total": int(s._proactive_state.get("nudge_interrupt_total", 0) or 0),
+            "nudge_notify_total": int(s._proactive_state.get("nudge_notify_total", 0) or 0),
+            "nudge_defer_total": int(s._proactive_state.get("nudge_defer_total", 0) or 0),
+            "last_nudge_decision_at": float(s._proactive_state.get("last_nudge_decision_at", 0.0) or 0.0),
         },
         "memory_governance": {
             "partition_overlay_count": len(s._memory_partition_overlays),

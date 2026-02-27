@@ -107,6 +107,10 @@ from jarvis.runtime_voice_profile import (
     parse_control_choice as _runtime_parse_control_choice,
     with_voice_profile_guidance as _runtime_with_voice_profile_guidance,
 )
+from jarvis.runtime_preferences import (
+    detect_voice_profile_updates as _runtime_detect_voice_profile_updates,
+    voice_profile_summary as _runtime_voice_profile_summary,
+)
 from jarvis.runtime_constants import (
     ATTENTION_RECENCY_SEC,
     CONVERSATION_TRACE_MAXLEN,
@@ -350,6 +354,8 @@ class Jarvis:
             "intent_completion_total": 0.0,
             "intent_completion_success": 0.0,
             "intent_corrections": 0.0,
+            "preference_update_turns": 0.0,
+            "preference_update_fields": 0.0,
         }
         self._telemetry_error_counts: dict[str, float] = {}
         self._conversation_traces: deque[dict[str, Any]] = deque(maxlen=CONVERSATION_TRACE_MAXLEN)
@@ -357,6 +363,7 @@ class Jarvis:
         self._episodic_timeline: deque[dict[str, Any]] = deque(maxlen=EPISODIC_TIMELINE_MAXLEN)
         self._episode_seq = 0
         self._voice_user_profiles: dict[str, dict[str, str]] = {}
+        self._last_learned_preferences: dict[str, Any] = {}
         self._active_control_preset = "custom"
         self._personality_preview_snapshot: dict[str, str] | None = None
         self._stt_diagnostics: dict[str, Any] = self._default_stt_diagnostics()
@@ -503,6 +510,27 @@ class Jarvis:
         status["voice_profile"] = self._active_voice_profile()
         status["voice_profile_count"] = len(getattr(self, "_voice_user_profiles", {}))
         status["control_preset"] = str(getattr(self, "_active_control_preset", "custom"))
+        last_doa_update = float(getattr(self, "_last_doa_update", 0.0) or 0.0)
+        now_mono = time.monotonic()
+        doa_age_sec = 0.0
+        if last_doa_update:
+            doa_age_sec = max(0.0, now_mono - last_doa_update)
+        attention_source = "unknown"
+        with suppress(Exception):
+            attention_source = str(self.presence.attention_source())
+        status["acoustic_scene"] = {
+            "last_doa_angle": getattr(self, "_last_doa_angle", None),
+            "last_doa_speech": getattr(self, "_last_doa_speech", None),
+            "last_doa_age_sec": doa_age_sec,
+            "attention_confidence": self._attention_confidence(now_mono),
+            "attention_source": attention_source,
+        }
+        last_learned_preferences = getattr(self, "_last_learned_preferences", {})
+        status["preference_learning"] = (
+            dict(last_learned_preferences)
+            if isinstance(last_learned_preferences, dict)
+            else {}
+        )
         set_runtime_voice_state(status)
         observability = getattr(self, "_observability", None)
         if observability is not None:
@@ -729,6 +757,76 @@ class Jarvis:
             valid_voice_profile_pace=VALID_VOICE_PROFILE_PACE,
             valid_voice_profile_tone=VALID_VOICE_PROFILE_TONE,
         )
+
+    def _learn_voice_preferences(
+        self,
+        text: str,
+        *,
+        now_ts: float | None = None,
+    ) -> dict[str, str]:
+        updates = _runtime_detect_voice_profile_updates(text)
+        if not updates:
+            return {}
+
+        normalized: dict[str, str] = {}
+        verbosity = self._parse_control_choice(
+            updates.get("verbosity"),
+            VALID_VOICE_PROFILE_VERBOSITY,
+        )
+        if verbosity is not None:
+            normalized["verbosity"] = verbosity
+        confirmations = self._parse_control_choice(
+            updates.get("confirmations"),
+            VALID_VOICE_PROFILE_CONFIRMATIONS,
+        )
+        if confirmations is not None:
+            normalized["confirmations"] = confirmations
+        pace = self._parse_control_choice(
+            updates.get("pace"),
+            VALID_VOICE_PROFILE_PACE,
+        )
+        if pace is not None:
+            normalized["pace"] = pace
+        tone = self._parse_control_choice(
+            updates.get("tone"),
+            VALID_VOICE_PROFILE_TONE,
+        )
+        if tone is not None:
+            normalized["tone"] = tone
+        if not normalized:
+            return {}
+
+        user = self._active_voice_user()
+        profile = self._active_voice_profile(user=user)
+        profile.update(normalized)
+        self._voice_user_profiles[user] = profile
+
+        applied_at = time.time() if now_ts is None else float(now_ts)
+        self._telemetry["preference_update_turns"] = (
+            float(self._telemetry.get("preference_update_turns", 0.0) or 0.0) + 1.0
+        )
+        self._telemetry["preference_update_fields"] = (
+            float(self._telemetry.get("preference_update_fields", 0.0) or 0.0)
+            + float(len(normalized))
+        )
+        self._last_learned_preferences = {
+            "user": user,
+            "updates": dict(normalized),
+            "applied_at": applied_at,
+            "source_text": str(text).strip()[:160],
+        }
+
+        memory = getattr(self.brain, "_memory", None)
+        if memory is not None:
+            with suppress(Exception):
+                memory.upsert_summary(
+                    f"voice_profile:{user}",
+                    _runtime_voice_profile_summary(profile),
+                )
+
+        self._persist_runtime_state_safe()
+        self._publish_voice_status()
+        return normalized
 
     def _runtime_invariant_snapshot(self) -> dict[str, Any]:
         return _runtime_runtime_invariant_snapshot(self)
@@ -1054,6 +1152,7 @@ class Jarvis:
         lifecycle: str,
         used_brain_response: bool,
         followup_carryover_applied: bool = False,
+        preference_updates: dict[str, str] | None = None,
     ) -> None:
         self._turn_trace_seq += 1
         now = time.time()
@@ -1083,6 +1182,11 @@ class Jarvis:
             "intent": str(intent_class),
             "transcript": str(user_text).strip()[:400],
             "followup_carryover_applied": bool(followup_carryover_applied),
+            "preference_updates": (
+                {str(key): str(value) for key, value in preference_updates.items()}
+                if isinstance(preference_updates, dict)
+                else {}
+            ),
             "latencies_ms": {
                 "stt": stt_ms,
                 "llm_first_sentence": llm_ms,
@@ -1471,11 +1575,17 @@ class Jarvis:
         return score >= threshold
 
     def _attention_confidence(self, now: float) -> float:
-        if self.presence.signals.face_last_seen and (now - self.presence.signals.face_last_seen) <= ATTENTION_RECENCY_SEC:
+        signals = getattr(self.presence, "signals", None)
+        if signals is None:
+            return 0.0
+        face_last_seen = getattr(signals, "face_last_seen", None)
+        hand_last_seen = getattr(signals, "hand_last_seen", None)
+        doa_last_seen = getattr(signals, "doa_last_seen", None)
+        if face_last_seen and (now - face_last_seen) <= ATTENTION_RECENCY_SEC:
             return 1.0
-        if self.presence.signals.hand_last_seen and (now - self.presence.signals.hand_last_seen) <= ATTENTION_RECENCY_SEC:
+        if hand_last_seen and (now - hand_last_seen) <= ATTENTION_RECENCY_SEC:
             return 0.8
-        if self.presence.signals.doa_last_seen and (now - self.presence.signals.doa_last_seen) <= ATTENTION_RECENCY_SEC:
+        if doa_last_seen and (now - doa_last_seen) <= ATTENTION_RECENCY_SEC:
             return 0.5
         return 0.0
 

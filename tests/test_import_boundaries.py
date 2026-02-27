@@ -17,6 +17,7 @@ import pytest
         ("jarvis.runtime_voice_profile", "jarvis.__main__"),
         ("jarvis.runtime_operator_status", "jarvis.__main__"),
         ("jarvis.runtime_conversation", "jarvis.__main__"),
+        ("jarvis.runtime_preferences", "jarvis.__main__"),
     ],
 )
 def test_runtime_module_import_boundary(module_name: str, blocked_module: str) -> None:

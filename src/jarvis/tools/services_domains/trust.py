@@ -11,6 +11,58 @@ def _services():
     return s
 
 
+def _nudge_severity(value: Any) -> tuple[str, int]:
+    text = str(value or "").strip().lower()
+    if text == "critical":
+        return "critical", 4
+    if text == "high":
+        return "high", 3
+    if text == "medium":
+        return "medium", 2
+    return "low", 1
+
+
+def _nudge_row_score(*, severity_rank: int, overdue_sec: float, due_soon_sec: float) -> float:
+    overdue_weight = min(7200.0, max(0.0, overdue_sec)) * 0.02
+    due_weight = 0.0
+    if due_soon_sec > 0.0:
+        due_weight = max(0.0, 900.0 - min(900.0, due_soon_sec)) * 0.01
+    return float(severity_rank * 100.0) + overdue_weight + due_weight
+
+
+def _nudge_bucket(
+    *,
+    policy: str,
+    quiet_active: bool,
+    severity_rank: int,
+    overdue_sec: float,
+    due_soon_sec: float,
+) -> tuple[str, str]:
+    if policy == "defer":
+        if severity_rank >= 4 or overdue_sec >= 3600.0:
+            return "interrupt", "critical_or_overdue"
+        return "defer", "policy_defer"
+    if policy == "interrupt":
+        if quiet_active and severity_rank <= 2 and overdue_sec < 600.0:
+            return "notify", "quiet_window_softened"
+        if severity_rank >= 2 or overdue_sec >= 300.0:
+            return "interrupt", "policy_interrupt"
+        return "notify", "policy_interrupt_soft"
+
+    # adaptive
+    if quiet_active:
+        if severity_rank >= 4 or overdue_sec >= 1800.0:
+            return "interrupt", "quiet_escalation"
+        if severity_rank >= 3 or overdue_sec >= 600.0:
+            return "notify", "quiet_notify"
+        return "defer", "quiet_defer"
+    if severity_rank >= 3 or overdue_sec >= 300.0:
+        return "interrupt", "adaptive_interrupt"
+    if severity_rank >= 2 or due_soon_sec <= 900.0:
+        return "notify", "adaptive_notify"
+    return "defer", "adaptive_defer"
+
+
 async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
     s = _services()
     record_summary = s.record_summary
@@ -22,6 +74,9 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
     _expansion_payload_response = s._expansion_payload_response
     _as_int = s._as_int
     _as_bool = s._as_bool
+    _normalize_nudge_policy = s._normalize_nudge_policy
+    _nudge_policy = s._nudge_policy
+    _quiet_window_active = s._quiet_window_active
 
     start_time = time.monotonic()
     if not _tool_permitted("proactive_assistant"):
@@ -122,6 +177,115 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
         }
         effect = "anomalies_detected" if anomalies else "no_anomalies"
         record_summary("proactive_assistant", "ok", start_time, effect=effect, risk="medium" if anomalies else "low")
+        return _expansion_payload_response(payload)
+
+    if action == "nudge_decision":
+        candidates = args.get("candidates") if isinstance(args.get("candidates"), list) else []
+        max_dispatch = _as_int(args.get("max_dispatch", 5), 5, minimum=1, maximum=50)
+        now = _as_float(args.get("now", time.time()), time.time(), minimum=0.0)
+        policy = _normalize_nudge_policy(args.get("policy", _nudge_policy))
+        quiet_override = args.get("quiet_window_active")
+        if isinstance(quiet_override, bool):
+            quiet_active = quiet_override
+        else:
+            quiet_active = _quiet_window_active(now_ts=now)
+
+        interrupt_rows: list[dict[str, Any]] = []
+        notify_rows: list[dict[str, Any]] = []
+        defer_rows: list[dict[str, Any]] = []
+        for index, row in enumerate(candidates):
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title") or row.get("text") or row.get("task") or f"candidate-{index}").strip()
+            if not title:
+                title = f"candidate-{index}"
+            severity, severity_rank = _nudge_severity(row.get("severity"))
+            due_at = _as_float(row.get("due_at", 0.0), 0.0, minimum=0.0)
+            expires_at = _as_float(row.get("expires_at", 0.0), 0.0, minimum=0.0)
+            overdue_sec = max(0.0, now - due_at) if due_at > 0.0 else 0.0
+            due_soon_sec = max(0.0, due_at - now) if due_at > 0.0 else 0.0
+            bucket, reason = _nudge_bucket(
+                policy=policy,
+                quiet_active=quiet_active,
+                severity_rank=severity_rank,
+                overdue_sec=overdue_sec,
+                due_soon_sec=due_soon_sec,
+            )
+            if expires_at > 0.0 and expires_at < now:
+                bucket = "defer"
+                reason = "expired"
+            if bucket == "interrupt" and not _as_bool(row.get("interrupt_allowed"), default=True):
+                bucket = "notify" if not quiet_active else "defer"
+                reason = "interrupt_not_allowed"
+            item = {
+                "id": str(row.get("id", f"nudge-{index}")).strip() or f"nudge-{index}",
+                "title": title,
+                "severity": severity,
+                "source": str(row.get("source", "unknown")).strip() or "unknown",
+                "overdue_sec": overdue_sec,
+                "due_soon_sec": due_soon_sec,
+                "score": _nudge_row_score(
+                    severity_rank=severity_rank,
+                    overdue_sec=overdue_sec,
+                    due_soon_sec=due_soon_sec,
+                ),
+                "reason": reason,
+            }
+            if bucket == "interrupt":
+                interrupt_rows.append(item)
+            elif bucket == "notify":
+                notify_rows.append(item)
+            else:
+                defer_rows.append(item)
+
+        interrupt_rows.sort(key=lambda row: float(row.get("score", 0.0)), reverse=True)
+        notify_rows.sort(key=lambda row: float(row.get("score", 0.0)), reverse=True)
+        defer_rows.sort(key=lambda row: float(row.get("score", 0.0)), reverse=True)
+        dispatch_rows = interrupt_rows + notify_rows
+        overflow = dispatch_rows[max_dispatch:]
+        dispatch_rows = dispatch_rows[:max_dispatch]
+        if overflow:
+            for row in overflow:
+                row["reason"] = "dispatch_capacity"
+            defer_rows.extend(overflow)
+        interrupt_ids = {str(row.get("id", "")) for row in dispatch_rows[: len(interrupt_rows)]}
+        interrupt = [row for row in dispatch_rows if str(row.get("id", "")) in interrupt_ids]
+        notify = [row for row in dispatch_rows if str(row.get("id", "")) not in interrupt_ids]
+
+        _proactive_state["nudge_decisions_total"] = int(_proactive_state.get("nudge_decisions_total", 0) or 0) + 1
+        _proactive_state["nudge_interrupt_total"] = int(_proactive_state.get("nudge_interrupt_total", 0) or 0) + len(interrupt)
+        _proactive_state["nudge_notify_total"] = int(_proactive_state.get("nudge_notify_total", 0) or 0) + len(notify)
+        _proactive_state["nudge_defer_total"] = int(_proactive_state.get("nudge_defer_total", 0) or 0) + len(defer_rows)
+        _proactive_state["last_nudge_decision_at"] = now
+
+        payload = {
+            "action": action,
+            "policy": policy,
+            "quiet_window_active": quiet_active,
+            "candidate_count": len(candidates),
+            "dispatch_count": len(dispatch_rows),
+            "interrupt_count": len(interrupt),
+            "notify_count": len(notify),
+            "defer_count": len(defer_rows),
+            "interrupt": interrupt,
+            "notify": notify,
+            "defer": defer_rows,
+            "counters": {
+                "nudge_decisions_total": int(_proactive_state.get("nudge_decisions_total", 0) or 0),
+                "nudge_interrupt_total": int(_proactive_state.get("nudge_interrupt_total", 0) or 0),
+                "nudge_notify_total": int(_proactive_state.get("nudge_notify_total", 0) or 0),
+                "nudge_defer_total": int(_proactive_state.get("nudge_defer_total", 0) or 0),
+                "last_nudge_decision_at": float(_proactive_state.get("last_nudge_decision_at", 0.0) or 0.0),
+            },
+        }
+        risk = "medium" if interrupt else ("low" if not notify else "medium")
+        record_summary(
+            "proactive_assistant",
+            "ok",
+            start_time,
+            effect=f"nudge_dispatch={len(dispatch_rows)}",
+            risk=risk,
+        )
         return _expansion_payload_response(payload)
 
     if action == "routine_suggestions":

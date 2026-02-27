@@ -444,5 +444,7 @@ def telemetry_snapshot(
             "completion_success_rate": completion_success_rate,
             "correction_count": metric("intent_corrections"),
             "correction_frequency": correction_frequency,
+            "preference_update_turns": metric("preference_update_turns"),
+            "preference_update_fields": metric("preference_update_fields"),
         },
     }

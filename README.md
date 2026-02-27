@@ -207,6 +207,7 @@ Smart home safety defaults:
 - Error taxonomy: [`docs/operations/error-taxonomy.md`](docs/operations/error-taxonomy.md).
 - Observability runbook: [`docs/operations/observability-runbook.md`](docs/operations/observability-runbook.md).
 - Personality research and tuning notes: [`docs/operations/personality-research.md`](docs/operations/personality-research.md).
+- Proactive triage + preference loop: [`docs/operations/proactive-preference-loop.md`](docs/operations/proactive-preference-loop.md).
 - Fault resilience profiles:
   - local: `make test-fault-profiles` (runs `quick`, `network`, `storage`, `contract`)
   - CI: scheduled `Fault Profiles` workflow runs weekly with per-profile artifacts

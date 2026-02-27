@@ -554,37 +554,79 @@ async def skills_version(args: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": json.dumps({"name": name, "version": version})}]}
 
 
+def _tool_policy_status_snapshot(services_module: Any) -> dict[str, Any]:
+    s = services_module
+    return {
+        "allow_count": len(s._tool_allowlist),
+        "deny_count": len(s._tool_denylist),
+        "home_permission_profile": s._home_permission_profile,
+        "safe_mode_enabled": s._safe_mode_enabled,
+        "home_require_confirm_execute": bool(s._home_require_confirm_execute),
+        "home_conversation_enabled": bool(s._home_conversation_enabled),
+        "home_conversation_permission_profile": s._home_conversation_permission_profile,
+        "todoist_permission_profile": s._todoist_permission_profile,
+        "notification_permission_profile": s._notification_permission_profile,
+        "nudge_policy": s._nudge_policy,
+        "nudge_quiet_hours_start": s._nudge_quiet_hours_start,
+        "nudge_quiet_hours_end": s._nudge_quiet_hours_end,
+        "nudge_quiet_window_active": s._quiet_window_active(),
+        "email_permission_profile": s._email_permission_profile,
+        "memory_pii_guardrails_enabled": s._memory_pii_guardrails_enabled,
+        "identity_enforcement_enabled": s._identity_enforcement_enabled,
+        "identity_default_profile": s._identity_default_profile,
+        "identity_require_approval": s._identity_require_approval,
+        "plan_preview_require_ack": s._plan_preview_require_ack,
+    }
+
+
+def _scorecard_context(
+    services_module: Any,
+    *,
+    recent_tool_limit: int,
+) -> dict[str, Any]:
+    s = services_module
+    memory_status: dict[str, Any] | None = None
+    if s._memory is not None:
+        try:
+            memory_status = s._memory.memory_status()
+        except Exception as exc:
+            memory_status = {"error": str(exc)}
+
+    try:
+        recent_tools = s.list_summaries(limit=recent_tool_limit)
+    except Exception as exc:
+        recent_tools = {"error": str(exc)}
+    identity_status = s._identity_status_snapshot()
+    tool_policy_status = _tool_policy_status_snapshot(s)
+    observability_status = s._observability_snapshot()
+    integrations_status = s._integration_health_snapshot()
+    audit_status = s._audit_status()
+    health = s._health_rollup(
+        config_present=(s._config is not None),
+        memory_state=memory_status if isinstance(memory_status, dict) else None,
+        recent_tools=recent_tools,
+        identity_status=identity_status,
+    )
+    return {
+        "memory_status": memory_status,
+        "recent_tools": recent_tools,
+        "identity_status": identity_status,
+        "tool_policy_status": tool_policy_status,
+        "observability_status": observability_status,
+        "integrations_status": integrations_status,
+        "audit_status": audit_status,
+        "health": health,
+    }
+
+
 async def system_status(args: dict[str, Any]) -> dict[str, Any]:
     s = _services()
     record_summary = s.record_summary
     time = s.time
     _tool_permitted = s._tool_permitted
-    _memory = s._memory
-    _identity_status_snapshot = s._identity_status_snapshot
     _expansion_snapshot = s._expansion_snapshot
-    _tool_allowlist = s._tool_allowlist
-    _tool_denylist = s._tool_denylist
-    _home_permission_profile = s._home_permission_profile
-    _safe_mode_enabled = s._safe_mode_enabled
-    _home_require_confirm_execute = s._home_require_confirm_execute
     _home_conversation_enabled = s._home_conversation_enabled
-    _home_conversation_permission_profile = s._home_conversation_permission_profile
-    _todoist_permission_profile = s._todoist_permission_profile
-    _notification_permission_profile = s._notification_permission_profile
-    _nudge_policy = s._nudge_policy
-    _nudge_quiet_hours_start = s._nudge_quiet_hours_start
-    _nudge_quiet_hours_end = s._nudge_quiet_hours_end
-    _quiet_window_active = s._quiet_window_active
-    _email_permission_profile = s._email_permission_profile
-    _memory_pii_guardrails_enabled = s._memory_pii_guardrails_enabled
-    _identity_enforcement_enabled = s._identity_enforcement_enabled
-    _identity_default_profile = s._identity_default_profile
-    _identity_require_approval = s._identity_require_approval
     _plan_preview_require_ack = s._plan_preview_require_ack
-    _observability_snapshot = s._observability_snapshot
-    _integration_health_snapshot = s._integration_health_snapshot
-    _audit_status = s._audit_status
-    _health_rollup = s._health_rollup
     _config = s._config
     _jarvis_scorecard_snapshot = s._jarvis_scorecard_snapshot
     SYSTEM_STATUS_CONTRACT_VERSION = s.SYSTEM_STATUS_CONTRACT_VERSION
@@ -603,7 +645,6 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
     _audit_retention_days = s._audit_retention_days
     _recovery_journal_status = s._recovery_journal_status
     _dead_letter_queue_status = s._dead_letter_queue_status
-    list_summaries = s.list_summaries
     json = s.json
 
     start_time = time.monotonic()
@@ -611,50 +652,16 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("system_status", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
 
-    memory_status = None
-    if _memory is not None:
-        try:
-            memory_status = _memory.memory_status()
-        except Exception as e:
-            memory_status = {"error": str(e)}
-
-    recent_tools: list[dict[str, object]] | dict[str, str]
-    try:
-        recent_tools = list_summaries(limit=5)
-    except Exception as e:
-        recent_tools = {"error": str(e)}
-    identity_status = _identity_status_snapshot()
     expansion_status = _expansion_snapshot()
-    tool_policy_status = {
-        "allow_count": len(_tool_allowlist),
-        "deny_count": len(_tool_denylist),
-        "home_permission_profile": _home_permission_profile,
-        "safe_mode_enabled": _safe_mode_enabled,
-        "home_require_confirm_execute": bool(_home_require_confirm_execute),
-        "home_conversation_enabled": bool(_home_conversation_enabled),
-        "home_conversation_permission_profile": _home_conversation_permission_profile,
-        "todoist_permission_profile": _todoist_permission_profile,
-        "notification_permission_profile": _notification_permission_profile,
-        "nudge_policy": _nudge_policy,
-        "nudge_quiet_hours_start": _nudge_quiet_hours_start,
-        "nudge_quiet_hours_end": _nudge_quiet_hours_end,
-        "nudge_quiet_window_active": _quiet_window_active(),
-        "email_permission_profile": _email_permission_profile,
-        "memory_pii_guardrails_enabled": _memory_pii_guardrails_enabled,
-        "identity_enforcement_enabled": _identity_enforcement_enabled,
-        "identity_default_profile": _identity_default_profile,
-        "identity_require_approval": _identity_require_approval,
-        "plan_preview_require_ack": _plan_preview_require_ack,
-    }
-    observability_status = _observability_snapshot()
-    integrations_status = _integration_health_snapshot()
-    audit_status = _audit_status()
-    health = _health_rollup(
-        config_present=(_config is not None),
-        memory_state=memory_status if isinstance(memory_status, dict) else None,
-        recent_tools=recent_tools,
-        identity_status=identity_status,
-    )
+    context = _scorecard_context(s, recent_tool_limit=5)
+    memory_status = context["memory_status"]
+    recent_tools = context["recent_tools"]
+    identity_status = context["identity_status"]
+    tool_policy_status = context["tool_policy_status"]
+    observability_status = context["observability_status"]
+    integrations_status = context["integrations_status"]
+    audit_status = context["audit_status"]
+    health = context["health"]
     scorecard = _jarvis_scorecard_snapshot(
         recent_tools=recent_tools,
         health=health,
@@ -808,6 +815,21 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "voice_profile_user",
             "voice_profile",
             "voice_profile_count",
+            "acoustic_scene",
+            "preference_learning",
+        ],
+        "voice_attention_acoustic_scene_required": [
+            "last_doa_angle",
+            "last_doa_speech",
+            "last_doa_age_sec",
+            "attention_confidence",
+            "attention_source",
+        ],
+        "voice_attention_preference_learning_required": [
+            "user",
+            "updates",
+            "applied_at",
+            "source_text",
         ],
         "voice_attention_turn_choreography_required": [
             "phase",
@@ -907,6 +929,8 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "completion_success_rate",
             "correction_count",
             "correction_frequency",
+            "preference_update_turns",
+            "preference_update_fields",
         ],
         "observability_latency_dashboards_required": [
             "sample_count",
@@ -991,6 +1015,11 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "digest_snoozed_until",
             "last_briefing_at",
             "last_digest_at",
+            "nudge_decisions_total",
+            "nudge_interrupt_total",
+            "nudge_notify_total",
+            "nudge_defer_total",
+            "last_nudge_decision_at",
         ],
         "expansion_memory_governance_required": [
             "partition_overlay_count",
@@ -1054,33 +1083,6 @@ async def jarvis_scorecard(args: dict[str, Any]) -> dict[str, Any]:
     record_summary = s.record_summary
     time = s.time
     _tool_permitted = s._tool_permitted
-    _memory = s._memory
-    list_summaries = s.list_summaries
-    _identity_status_snapshot = s._identity_status_snapshot
-    _tool_allowlist = s._tool_allowlist
-    _tool_denylist = s._tool_denylist
-    _home_permission_profile = s._home_permission_profile
-    _safe_mode_enabled = s._safe_mode_enabled
-    _home_require_confirm_execute = s._home_require_confirm_execute
-    _home_conversation_enabled = s._home_conversation_enabled
-    _home_conversation_permission_profile = s._home_conversation_permission_profile
-    _todoist_permission_profile = s._todoist_permission_profile
-    _notification_permission_profile = s._notification_permission_profile
-    _nudge_policy = s._nudge_policy
-    _nudge_quiet_hours_start = s._nudge_quiet_hours_start
-    _nudge_quiet_hours_end = s._nudge_quiet_hours_end
-    _quiet_window_active = s._quiet_window_active
-    _email_permission_profile = s._email_permission_profile
-    _memory_pii_guardrails_enabled = s._memory_pii_guardrails_enabled
-    _identity_enforcement_enabled = s._identity_enforcement_enabled
-    _identity_default_profile = s._identity_default_profile
-    _identity_require_approval = s._identity_require_approval
-    _plan_preview_require_ack = s._plan_preview_require_ack
-    _observability_snapshot = s._observability_snapshot
-    _integration_health_snapshot = s._integration_health_snapshot
-    _audit_status = s._audit_status
-    _health_rollup = s._health_rollup
-    _config = s._config
     _jarvis_scorecard_snapshot = s._jarvis_scorecard_snapshot
     json = s.json
 
@@ -1089,48 +1091,14 @@ async def jarvis_scorecard(args: dict[str, Any]) -> dict[str, Any]:
         record_summary("jarvis_scorecard", "denied", start_time, "policy")
         return {"content": [{"type": "text", "text": "Tool not permitted."}]}
 
-    memory_status: dict[str, Any] | None = None
-    if _memory is not None:
-        try:
-            memory_status = _memory.memory_status()
-        except Exception as exc:
-            memory_status = {"error": str(exc)}
-
-    try:
-        recent_tools = list_summaries(limit=200)
-    except Exception as exc:
-        recent_tools = {"error": str(exc)}
-    identity_status = _identity_status_snapshot()
-    tool_policy_status = {
-        "allow_count": len(_tool_allowlist),
-        "deny_count": len(_tool_denylist),
-        "home_permission_profile": _home_permission_profile,
-        "safe_mode_enabled": _safe_mode_enabled,
-        "home_require_confirm_execute": bool(_home_require_confirm_execute),
-        "home_conversation_enabled": bool(_home_conversation_enabled),
-        "home_conversation_permission_profile": _home_conversation_permission_profile,
-        "todoist_permission_profile": _todoist_permission_profile,
-        "notification_permission_profile": _notification_permission_profile,
-        "nudge_policy": _nudge_policy,
-        "nudge_quiet_hours_start": _nudge_quiet_hours_start,
-        "nudge_quiet_hours_end": _nudge_quiet_hours_end,
-        "nudge_quiet_window_active": _quiet_window_active(),
-        "email_permission_profile": _email_permission_profile,
-        "memory_pii_guardrails_enabled": _memory_pii_guardrails_enabled,
-        "identity_enforcement_enabled": _identity_enforcement_enabled,
-        "identity_default_profile": _identity_default_profile,
-        "identity_require_approval": _identity_require_approval,
-        "plan_preview_require_ack": _plan_preview_require_ack,
-    }
-    observability_status = _observability_snapshot()
-    integrations_status = _integration_health_snapshot()
-    audit_status = _audit_status()
-    health = _health_rollup(
-        config_present=(_config is not None),
-        memory_state=memory_status if isinstance(memory_status, dict) else None,
-        recent_tools=recent_tools,
-        identity_status=identity_status,
-    )
+    context = _scorecard_context(s, recent_tool_limit=200)
+    recent_tools = context["recent_tools"]
+    identity_status = context["identity_status"]
+    tool_policy_status = context["tool_policy_status"]
+    observability_status = context["observability_status"]
+    integrations_status = context["integrations_status"]
+    audit_status = context["audit_status"]
+    health = context["health"]
     scorecard = _jarvis_scorecard_snapshot(
         recent_tools=recent_tools,
         health=health,

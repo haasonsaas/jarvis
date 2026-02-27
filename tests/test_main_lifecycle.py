@@ -228,6 +228,34 @@ def test_with_voice_profile_guidance_applies_tone_preference():
     assert "formal, composed phrasing" in guided
 
 
+def test_learn_voice_preferences_updates_profile_and_telemetry():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis.config = SimpleNamespace(identity_default_user="operator")
+    jarvis._voice_user_profiles = {}
+    jarvis._telemetry = {
+        "preference_update_turns": 0.0,
+        "preference_update_fields": 0.0,
+    }
+    jarvis._last_learned_preferences = {}
+    jarvis._persist_runtime_state_safe = MagicMock()
+    jarvis._publish_voice_status = MagicMock()
+    jarvis.brain = SimpleNamespace(_memory=None)
+
+    updates = Jarvis._learn_voice_preferences(
+        jarvis,
+        "Please be brief and speak slower.",
+        now_ts=10.0,
+    )
+    assert updates["verbosity"] == "brief"
+    assert updates["pace"] == "slow"
+    assert jarvis._voice_user_profiles["operator"]["verbosity"] == "brief"
+    assert jarvis._telemetry["preference_update_turns"] == 1.0
+    assert jarvis._telemetry["preference_update_fields"] == 2.0
+    assert jarvis._last_learned_preferences["user"] == "operator"
+    jarvis._persist_runtime_state_safe.assert_called_once()
+    jarvis._publish_voice_status.assert_called_once()
+
+
 def test_requires_confirmation_respects_voice_profile_confirmation_mode():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis.config = SimpleNamespace(identity_default_user="operator")
@@ -342,10 +370,22 @@ def test_apply_turn_choreography_sets_presence_bias_fields():
 def test_publish_voice_status_includes_turn_choreography():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis._voice_attention = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))
-    jarvis.presence = SimpleNamespace(signals=SimpleNamespace(state=State.LISTENING))
+    jarvis.presence = SimpleNamespace(
+        signals=SimpleNamespace(state=State.LISTENING),
+        attention_source=lambda: "face",
+    )
     jarvis._turn_choreography = {}
     jarvis.config = SimpleNamespace(identity_default_user="operator")
     jarvis._voice_user_profiles = {}
+    jarvis._last_learned_preferences = {
+        "user": "operator",
+        "updates": {"verbosity": "brief"},
+        "applied_at": 1.0,
+        "source_text": "be brief",
+    }
+    jarvis._last_doa_angle = 15.0
+    jarvis._last_doa_speech = True
+    jarvis._last_doa_update = 0.0
     jarvis._active_control_preset = "custom"
     jarvis._observability = None
 
@@ -361,6 +401,10 @@ def test_publish_voice_status_includes_turn_choreography():
     assert payload["voice_profile_user"] == "operator"
     assert payload["voice_profile"]["verbosity"] == "normal"
     assert payload["control_preset"] == "custom"
+    assert "acoustic_scene" in payload
+    assert "attention_confidence" in payload["acoustic_scene"]
+    assert payload["acoustic_scene"]["attention_source"] == "face"
+    assert payload["preference_learning"]["user"] == "operator"
 
 
 def test_runtime_invariant_checker_auto_heals_mode_and_preset_mismatches():

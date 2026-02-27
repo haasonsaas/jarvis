@@ -483,6 +483,11 @@ _proactive_state: dict[str, Any] = {
     "digest_snoozed_until": 0.0,
     "last_briefing_at": 0.0,
     "last_digest_at": 0.0,
+    "nudge_decisions_total": 0,
+    "nudge_interrupt_total": 0,
+    "nudge_notify_total": 0,
+    "nudge_defer_total": 0,
+    "last_nudge_decision_at": 0.0,
 }
 _memory_partition_overlays: dict[str, dict[str, Any]] = {}
 _memory_quality_last: dict[str, Any] = {}

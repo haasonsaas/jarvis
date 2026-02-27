@@ -501,7 +501,13 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "proactive_assistant": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "description": "briefing | anomaly_scan | routine_suggestions | follow_through | event_digest"},
+            "action": {
+                "type": "string",
+                "description": (
+                    "briefing | anomaly_scan | routine_suggestions | "
+                    "follow_through | event_digest | nudge_decision"
+                ),
+            },
             "mode": {"type": "string", "description": "morning or evening (for briefing)."},
             "calendar": {"type": "array", "items": {"type": "object"}},
             "reminders": {"type": "array", "items": {"type": "object"}},
@@ -514,6 +520,11 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "confirm": {"type": "boolean"},
             "digest_items": {"type": "array", "items": {"type": "object"}},
             "snooze_minutes": {"type": "integer"},
+            "policy": {"type": "string"},
+            "quiet_window_active": {"type": "boolean"},
+            "now": {"type": "number"},
+            "max_dispatch": {"type": "integer"},
+            "candidates": {"type": "array", "items": {"type": "object"}},
         },
         "required": ["action"],
     },
@@ -768,4 +779,3 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "embodiment_presence": {"action"},
     "integration_hub": {"action"},
 }
-

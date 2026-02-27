@@ -2248,6 +2248,66 @@
       "actual_tools": [
         "system_status"
       ]
+    },
+    {
+      "id": "proactive_nudge_decision_01",
+      "expected_contains": [
+        "nudge_decision",
+        "interrupt_count",
+        "defer_count"
+      ],
+      "expected_tools": [
+        "proactive_assistant"
+      ],
+      "actual_response": "nudge_decision interrupt_count defer_count proactive triage validation",
+      "actual_tools": [
+        "proactive_assistant"
+      ]
+    },
+    {
+      "id": "status_voice_acoustic_preference_learning",
+      "expected_contains": [
+        "acoustic_scene",
+        "preference_learning",
+        "updates"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "acoustic_scene preference_learning updates system status contract extension",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "status_observability_preference_metrics",
+      "expected_contains": [
+        "preference_update_turns",
+        "preference_update_fields",
+        "intent_metrics"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "intent_metrics preference_update_turns preference_update_fields observability metric extension",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "status_expansion_proactive_counters",
+      "expected_contains": [
+        "nudge_decisions_total",
+        "nudge_interrupt_total",
+        "last_nudge_decision_at"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "nudge_decisions_total nudge_interrupt_total last_nudge_decision_at expansion proactive counters",
+      "actual_tools": [
+        "system_status"
+      ]
     }
   ]
 }
