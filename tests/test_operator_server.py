@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import aiohttp
 import pytest
 
@@ -28,6 +30,7 @@ async def test_operator_server_routes_and_control_log(tmp_path):
         inbound_callback=lambda payload, headers, path, source: 7,
         inbound_enabled=False,
         inbound_token="",
+        operator_auth_token="",
     )
     await server.start()
 
@@ -104,6 +107,7 @@ async def test_operator_server_inbound_webhook_token_enforcement():
         inbound_callback=callback,
         inbound_enabled=True,
         inbound_token="secret-token",
+        operator_auth_token="",
     )
     await server.start()
 
@@ -117,6 +121,13 @@ async def test_operator_server_inbound_webhook_token_enforcement():
             forbidden = await session.post(f"{base}/api/webhook/inbound", json={"x": 1})
             assert forbidden.status == 403
 
+            ok_bearer = await session.post(
+                f"{base}/api/webhook/inbound",
+                headers={"Authorization": "Bearer secret-token"},
+                json={"event": "bearer"},
+            )
+            assert ok_bearer.status == 200
+
             ok_resp = await session.post(
                 f"{base}/api/webhook/inbound",
                 headers={"X-Webhook-Token": "secret-token"},
@@ -126,9 +137,11 @@ async def test_operator_server_inbound_webhook_token_enforcement():
             payload = await ok_resp.json()
             assert payload == {"ok": True, "event_id": 42}
 
-        assert len(captured) == 1
-        assert captured[0]["payload"] == {"event": "done"}
+        assert len(captured) == 2
+        assert captured[0]["payload"] == {"event": "bearer"}
         assert captured[0]["path"] == "/api/webhook/inbound"
+        assert captured[1]["payload"] == {"event": "done"}
+        assert captured[1]["path"] == "/api/webhook/inbound"
     finally:
         await server.stop()
 
@@ -146,6 +159,7 @@ async def test_operator_server_inbound_requires_configured_token():
         inbound_callback=lambda payload, headers, path, source: 1,
         inbound_enabled=True,
         inbound_token="",
+        operator_auth_token="",
     )
     await server.start()
 
@@ -157,6 +171,128 @@ async def test_operator_server_inbound_requires_configured_token():
         async with aiohttp.ClientSession() as session:
             resp = await session.post(f"{base}/api/webhook/inbound", json={"x": 1})
             assert resp.status == 503
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_operator_server_auth_protects_api_endpoints():
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=lambda a, p: _awaitable({"ok": True}),
+        metrics_provider=lambda: "jarvis_uptime_seconds 1\n",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="op-secret",
+    )
+    await server.start()
+
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+
+        async with aiohttp.ClientSession() as session:
+            dashboard = await session.get(f"{base}/")
+            assert dashboard.status == 200
+
+            unauth = await session.get(f"{base}/api/status")
+            assert unauth.status == 401
+
+            denied = await session.get(f"{base}/api/status", headers={"X-Operator-Token": "wrong"})
+            assert denied.status == 403
+
+            allowed = await session.get(f"{base}/api/status", headers={"X-Operator-Token": "op-secret"})
+            assert allowed.status == 200
+            payload = await allowed.json()
+            assert payload["ok"] is True
+
+            allowed_bearer = await session.get(
+                f"{base}/api/status",
+                headers={"Authorization": "Bearer op-secret"},
+            )
+            assert allowed_bearer.status == 200
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_operator_server_control_maps_invalid_action_to_400():
+    async def control_handler(action: str, payload: dict):
+        return {"ok": False, "error": "invalid_action", "message": "unknown action"}
+
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=control_handler,
+        metrics_provider=lambda: "",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="",
+    )
+    await server.start()
+
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+        async with aiohttp.ClientSession() as session:
+            resp = await session.post(f"{base}/api/control", json={"action": "nope", "payload": {}})
+            assert resp.status == 400
+            payload = await resp.json()
+            assert payload["error"] == "invalid_action"
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_operator_server_audit_uses_tail_semantics(monkeypatch, tmp_path):
+    log_path = tmp_path / "audit.jsonl"
+    rows = [
+        {"timestamp": idx, "tool": "x", "args": {"n": idx}}
+        for idx in range(1, 241)
+    ]
+    log_path.write_text("".join(f"{json.dumps(row)}\n" for row in rows), encoding="utf-8")
+    monkeypatch.setattr("jarvis.operator_server.AUDIT_LOG", log_path)
+
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=lambda a, p: _awaitable({"ok": True}),
+        metrics_provider=lambda: "",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="",
+    )
+    await server.start()
+
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+        async with aiohttp.ClientSession() as session:
+            resp = await session.get(f"{base}/api/audit?limit=5")
+            assert resp.status == 200
+            payload = await resp.json()
+            assert len(payload) == 5
+            timestamps = [int(item["timestamp"]) for item in payload]
+            assert timestamps == [240, 239, 238, 237, 236]
     finally:
         await server.stop()
 

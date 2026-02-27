@@ -1,11 +1,13 @@
 """Lifecycle robustness tests for jarvis.__main__.Jarvis."""
 
+import json
 import pytest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from jarvis.__main__ import Jarvis, TELEMETRY_SERVICE_ERROR_DETAILS, TELEMETRY_STORAGE_ERROR_DETAILS
+from jarvis.voice_attention import VoiceAttentionConfig, VoiceAttentionController
 
 
 def test_stop_is_noop_when_not_started():
@@ -276,3 +278,134 @@ def test_telemetry_error_taxonomy_matches_service_error_codes():
     assert TELEMETRY_STORAGE_ERROR_DETAILS == TOOL_STORAGE_ERROR_DETAILS
     assert TELEMETRY_STORAGE_ERROR_DETAILS.issubset(SERVICE_ERROR_CODES)
     assert TELEMETRY_SERVICE_ERROR_DETAILS == (SERVICE_ERROR_CODES - TELEMETRY_STORAGE_ERROR_DETAILS)
+
+
+@pytest.mark.asyncio
+async def test_operator_control_handler_validates_and_applies_runtime_controls():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._voice_attention = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))
+    jarvis._publish_voice_status = MagicMock()
+    jarvis._publish_skills_status = MagicMock()
+    jarvis._save_runtime_state = MagicMock()
+    jarvis._tts_output_enabled = True
+    jarvis.config = SimpleNamespace(
+        motion_enabled=True,
+        home_enabled=True,
+        persona_style="composed",
+        backchannel_style="balanced",
+    )
+    jarvis.presence = SimpleNamespace(
+        start=MagicMock(),
+        stop=MagicMock(),
+        set_backchannel_style=MagicMock(),
+    )
+    jarvis.brain = SimpleNamespace(_memory=None)
+    jarvis._skills = SimpleNamespace(
+        discover=MagicMock(),
+        status_snapshot=lambda: {"enabled": True},
+        enable_skill=lambda name: (True, f"enabled:{name}"),
+        disable_skill=lambda name: (True, f"disabled:{name}"),
+    )
+
+    invalid_mode = await Jarvis._operator_control_handler(
+        jarvis,
+        "set_wake_mode",
+        {"mode": "invalid"},
+    )
+    assert invalid_mode["ok"] is False
+    assert invalid_mode["error"] == "invalid_payload"
+
+    tts_result = await Jarvis._operator_control_handler(
+        jarvis,
+        "set_tts_enabled",
+        {"enabled": "false"},
+    )
+    assert tts_result == {"ok": True, "tts_enabled": False}
+    assert jarvis._tts_output_enabled is False
+
+    invalid_bool = await Jarvis._operator_control_handler(
+        jarvis,
+        "set_home_enabled",
+        {"enabled": "maybe"},
+    )
+    assert invalid_bool["ok"] is False
+    assert invalid_bool["error"] == "invalid_payload"
+
+    persona_result = await Jarvis._operator_control_handler(
+        jarvis,
+        "set_persona_style",
+        {"style": "friendly"},
+    )
+    assert persona_result == {"ok": True, "persona_style": "friendly"}
+    assert jarvis.config.persona_style == "friendly"
+
+    backchannel_result = await Jarvis._operator_control_handler(
+        jarvis,
+        "set_backchannel_style",
+        {"style": "quiet"},
+    )
+    assert backchannel_result == {"ok": True, "backchannel_style": "quiet"}
+    assert jarvis.config.backchannel_style == "quiet"
+    jarvis.presence.set_backchannel_style.assert_called_with("quiet")
+
+    unknown = await Jarvis._operator_control_handler(jarvis, "nope", {})
+    assert unknown["ok"] is False
+    assert unknown["error"] == "invalid_action"
+
+
+def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
+    state_path = tmp_path / "runtime-state.json"
+
+    save_target = Jarvis.__new__(Jarvis)
+    save_target._runtime_state_path = state_path
+    save_target._voice_attention = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))
+    save_target._voice_attention.set_mode("wake_word")
+    save_target._voice_attention.set_timeout_profile("long")
+    save_target._voice_attention.set_push_to_talk_active(True)
+    save_target._voice_attention.sleeping = True
+    save_target.config = SimpleNamespace(
+        motion_enabled=False,
+        home_enabled=False,
+        persona_style="friendly",
+        backchannel_style="expressive",
+    )
+    save_target._tts_output_enabled = False
+    save_target._awaiting_confirmation = True
+    save_target._pending_text = "arm the system"
+    Jarvis._save_runtime_state(save_target)
+
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert payload["runtime"]["motion_enabled"] is False
+    assert payload["runtime"]["home_enabled"] is False
+    assert payload["runtime"]["tts_enabled"] is False
+    assert payload["runtime"]["persona_style"] == "friendly"
+    assert payload["runtime"]["backchannel_style"] == "expressive"
+
+    load_target = Jarvis.__new__(Jarvis)
+    load_target._runtime_state_path = state_path
+    load_target._voice_attention = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))
+    load_target.config = SimpleNamespace(
+        motion_enabled=True,
+        home_enabled=True,
+        persona_style="composed",
+        backchannel_style="balanced",
+    )
+    load_target.brain = SimpleNamespace(_memory=None)
+    load_target.presence = SimpleNamespace(set_backchannel_style=MagicMock())
+    load_target._tts_output_enabled = True
+    load_target._awaiting_confirmation = False
+    load_target._pending_text = None
+    Jarvis._load_runtime_state(load_target)
+
+    assert load_target._voice_attention.mode == "wake_word"
+    assert load_target._voice_attention.timeout_profile == "long"
+    assert load_target._voice_attention.push_to_talk_active is True
+    assert load_target._voice_attention.sleeping is True
+    assert load_target.config.motion_enabled is False
+    assert load_target.config.home_enabled is False
+    assert load_target._tts_output_enabled is False
+    assert load_target.config.persona_style == "friendly"
+    assert load_target.config.backchannel_style == "expressive"
+    assert load_target._awaiting_confirmation is True
+    assert load_target._pending_text == "arm the system"
+    load_target.presence.set_backchannel_style.assert_called_with("expressive")

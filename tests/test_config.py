@@ -455,11 +455,22 @@ class TestConfig:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         monkeypatch.setenv("OPERATOR_SERVER_ENABLED", "true")
         monkeypatch.setenv("OPERATOR_SERVER_HOST", "0.0.0.0")
+        monkeypatch.delenv("OPERATOR_AUTH_TOKEN", raising=False)
         from jarvis.config import Config
 
         c = Config()
         text = "\n".join(c.startup_warnings)
         assert "OPERATOR_SERVER_HOST is non-loopback" in text
+        assert "OPERATOR_AUTH_TOKEN should be set when OPERATOR_SERVER_HOST is non-loopback." in text
+
+    def test_startup_warning_for_short_operator_auth_token(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("OPERATOR_AUTH_TOKEN", "short")
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "OPERATOR_AUTH_TOKEN appears unusually short" in text
 
     def test_startup_warning_when_inbound_enabled_but_operator_disabled(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

@@ -4,6 +4,35 @@ Last updated: 2026-02-26
 
 This backlog replaces the completed hardening backlog and focuses on feature gaps found by comparing Jarvis against modern local assistant ecosystems (Home Assistant Assist/Conversation APIs, OVOS/Rhasspy-style voice stacks, and multi-surface assistants).
 
+## 2026-02-27 Execution Tranche: Operator Security + Runtime Experience
+
+This tranche targets remaining practical gaps that affect day-to-day reliability and "Jarvis feel" in local operation: stronger operator-plane security, stricter control input handling, runtime persona tuning, and better log-read scalability.
+
+### Status legend
+- `[ ]` Not started
+- `[-]` In progress
+- `[x]` Implemented
+
+### Tranche items
+- [x] `OP01` Add optional operator API auth token (`OPERATOR_AUTH_TOKEN`) and enforce it on API endpoints.
+- [x] `OP02` Use constant-time token comparison for operator and inbound webhook token checks.
+- [x] `OP03` Keep dashboard route open by default but gate mutating/operator API routes when auth is configured.
+- [x] `OP04` Add control payload validation errors with HTTP `400` for bad actions/invalid payloads.
+- [x] `OP05` Normalize boolean payload parsing for operator controls to avoid `"false"` string coercion bugs.
+- [x] `OP06` Add runtime control actions for `persona_style` (`terse|composed|friendly`).
+- [x] `OP07` Add runtime control actions for `backchannel_style` (`quiet|balanced|expressive`).
+- [x] `OP08` Persist runtime persona/backchannel toggles to runtime state and restore on startup.
+- [x] `OP09` Persist runtime motion/home/TTS toggles to runtime state and restore on startup.
+- [x] `OP10` Improve `/api/audit` to tail recent lines without loading full files into memory.
+- [x] `OP11` Add operator auth startup warning when host is non-loopback and auth token is missing.
+- [x] `OP12` Add tests for operator auth enforcement + invalid token behavior.
+- [x] `OP13` Add tests for inbound webhook bearer token parsing and constant-time compare path.
+- [x] `OP14` Add tests for operator control validation (`invalid_action`, invalid booleans/enums).
+- [x] `OP15` Add tests for runtime state save/load of new style and toggle fields.
+- [x] `OP16` Update `.env.example` + `README.md` docs for new operator auth and control capabilities.
+
+---
+
 ## Status legend
 - `[ ]` Not started
 - `[-]` In progress

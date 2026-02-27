@@ -157,6 +157,7 @@ class Config:
     operator_server_enabled: bool = field(default_factory=lambda: _env_bool("OPERATOR_SERVER_ENABLED") is not False)
     operator_server_host: str = field(default_factory=lambda: os.environ.get("OPERATOR_SERVER_HOST", "127.0.0.1"))
     operator_server_port: int = field(default_factory=lambda: _env_int("OPERATOR_SERVER_PORT", 8765))
+    operator_auth_token: str = field(default_factory=lambda: os.environ.get("OPERATOR_AUTH_TOKEN", ""))
     webhook_inbound_enabled: bool = field(default_factory=lambda: _env_bool("WEBHOOK_INBOUND_ENABLED") or False)
     webhook_inbound_token: str = field(default_factory=lambda: os.environ.get("WEBHOOK_INBOUND_TOKEN", ""))
     observability_enabled: bool = field(default_factory=lambda: _env_bool("OBSERVABILITY_ENABLED") is not False)
@@ -599,6 +600,17 @@ class Config:
             warnings.append(
                 "OPERATOR_SERVER_HOST is non-loopback; operator endpoints may be remotely reachable."
             )
+        if (
+            self.operator_server_enabled
+            and operator_host
+            and operator_host not in {"127.0.0.1", "localhost", "::1"}
+            and not self.operator_auth_token.strip()
+        ):
+            warnings.append(
+                "OPERATOR_AUTH_TOKEN should be set when OPERATOR_SERVER_HOST is non-loopback."
+            )
+        if self.operator_auth_token.strip() and len(self.operator_auth_token.strip()) < 8:
+            warnings.append("OPERATOR_AUTH_TOKEN appears unusually short; use at least 8 characters.")
         if self.slack_webhook_url.strip() and not self.slack_webhook_url.strip().lower().startswith("https://"):
             warnings.append("SLACK_WEBHOOK_URL should use https.")
         if self.discord_webhook_url.strip() and not self.discord_webhook_url.strip().lower().startswith("https://"):

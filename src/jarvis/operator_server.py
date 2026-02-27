@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -20,6 +22,44 @@ _ACTION_REDACT_TOKENS = {
     "code",
 }
 _ACTION_MAX_STRING_CHARS = 512
+_AUDIT_TAIL_SCAN_MULTIPLIER = 6
+
+
+def _extract_bearer_token(header_value: str | None) -> str:
+    if not header_value:
+        return ""
+    value = str(header_value).strip()
+    if not value:
+        return ""
+    prefix = "bearer "
+    if value.lower().startswith(prefix):
+        return value[len(prefix):].strip()
+    return ""
+
+
+def _secure_token_match(expected: str, provided: str) -> bool:
+    if not expected:
+        return False
+    if not provided:
+        return False
+    return hmac.compare_digest(expected, provided)
+
+
+def _read_tail_lines(path: Path, *, limit: int) -> list[str]:
+    if limit <= 0:
+        return []
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            recent = deque(maxlen=max(limit * _AUDIT_TAIL_SCAN_MULTIPLIER, limit))
+            for line in handle:
+                text = line.strip()
+                if text:
+                    recent.append(text)
+    except OSError:
+        return []
+    return list(recent)
 
 
 def _sanitize_action_value(value: Any, *, key_hint: str | None = None, depth: int = 0) -> Any:
@@ -151,10 +191,25 @@ def _dashboard_html() -> str:
         <button onclick=\"control('set_tts_enabled',{enabled:false})\">TTS Off</button>
       </div>
       <div>
+        <button onclick=\"control('set_persona_style',{style:'terse'})\">Persona Terse</button>
+        <button onclick=\"control('set_persona_style',{style:'composed'})\">Persona Composed</button>
+        <button onclick=\"control('set_persona_style',{style:'friendly'})\">Persona Friendly</button>
+      </div>
+      <div>
+        <button onclick=\"control('set_backchannel_style',{style:'quiet'})\">Backchannel Quiet</button>
+        <button onclick=\"control('set_backchannel_style',{style:'balanced'})\">Backchannel Balanced</button>
+        <button onclick=\"control('set_backchannel_style',{style:'expressive'})\">Backchannel Expressive</button>
+      </div>
+      <div>
         <button onclick=\"control('skills_reload',{})\">Reload Skills</button>
       </div>
       <div>
         <button data-danger=\"true\" onclick=\"control('clear_inbound_webhooks',{})\">Clear Inbound Webhooks</button>
+      </div>
+      <div>
+        <input id=\"operator-token\" type=\"password\" placeholder=\"Operator token (optional)\" />
+        <button onclick=\"saveToken()\">Save Token</button>
+        <button data-danger=\"true\" onclick=\"clearToken()\">Clear Token</button>
       </div>
       <pre id=\"control-result\">ready</pre>
     </section>
@@ -176,8 +231,31 @@ def _dashboard_html() -> str:
     </section>
   </div>
   <script>
+    let operatorToken = localStorage.getItem('jarvisOperatorToken') || '';
+    function authHeaders(extra) {
+      const headers = Object.assign({}, extra || {});
+      if (operatorToken) headers['x-operator-token'] = operatorToken;
+      return headers;
+    }
+    function saveToken() {
+      const input = document.getElementById('operator-token');
+      operatorToken = (input.value || '').trim();
+      if (operatorToken) {
+        localStorage.setItem('jarvisOperatorToken', operatorToken);
+      } else {
+        localStorage.removeItem('jarvisOperatorToken');
+      }
+    }
+    function clearToken() {
+      operatorToken = '';
+      localStorage.removeItem('jarvisOperatorToken');
+      const input = document.getElementById('operator-token');
+      input.value = '';
+    }
     async function json(url, opts) {
-      const res = await fetch(url, opts || {});
+      const options = Object.assign({}, opts || {});
+      options.headers = authHeaders(options.headers || {});
+      const res = await fetch(url, options);
       if (!res.ok) throw new Error(`${url}: ${res.status}`);
       return await res.json();
     }
@@ -212,6 +290,7 @@ def _dashboard_html() -> str:
         document.getElementById('control-result').textContent = String(err);
       }
     }
+    document.getElementById('operator-token').value = operatorToken;
     refresh();
     setInterval(refresh, 4000);
   </script>
@@ -234,6 +313,7 @@ class OperatorServer:
         inbound_callback: Callable[[Any, dict[str, Any], str, str], int],
         inbound_enabled: bool,
         inbound_token: str,
+        operator_auth_token: str,
     ) -> None:
         self._host = host
         self._port = int(port)
@@ -245,6 +325,7 @@ class OperatorServer:
         self._inbound_callback = inbound_callback
         self._inbound_enabled = bool(inbound_enabled)
         self._inbound_token = str(inbound_token).strip()
+        self._operator_auth_token = str(operator_auth_token).strip()
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
         self._actions: list[dict[str, Any]] = []
@@ -279,10 +360,23 @@ class OperatorServer:
     async def _handle_dashboard(self, request: web.Request) -> web.Response:
         return web.Response(text=_dashboard_html(), content_type="text/html")
 
+    def _require_operator_auth(self, request: web.Request) -> None:
+        if not self._operator_auth_token:
+            return
+        provided = request.headers.get("X-Operator-Token", "").strip()
+        if not provided:
+            provided = _extract_bearer_token(request.headers.get("Authorization"))
+        if not provided:
+            raise web.HTTPUnauthorized(text="operator token required")
+        if not _secure_token_match(self._operator_auth_token, provided):
+            raise web.HTTPForbidden(text="invalid operator token")
+
     async def _handle_status(self, request: web.Request) -> web.Response:
+        self._require_operator_auth(request)
         return web.json_response(await self._status_provider())
 
     async def _handle_recent_tools(self, request: web.Request) -> web.Response:
+        self._require_operator_auth(request)
         try:
             limit = int(request.query.get("limit", "20"))
         except ValueError:
@@ -291,6 +385,7 @@ class OperatorServer:
         return web.json_response(list_summaries(limit=limit))
 
     async def _handle_audit(self, request: web.Request) -> web.Response:
+        self._require_operator_auth(request)
         try:
             limit = int(request.query.get("limit", "20"))
         except ValueError:
@@ -298,26 +393,22 @@ class OperatorServer:
         limit = max(1, min(200, limit))
         entries: list[dict[str, Any]] = []
         path = Path(AUDIT_LOG)
-        if path.exists():
-            try:
-                lines = path.read_text().splitlines()
-            except OSError:
-                lines = []
-            for line in reversed(lines):
-                if not line.strip():
-                    continue
-                payload = decode_audit_entry_line(line)
-                if payload is None:
-                    continue
-                entries.append(payload)
-                if len(entries) >= limit:
-                    break
+        lines = _read_tail_lines(path, limit=limit)
+        for line in reversed(lines):
+            payload = decode_audit_entry_line(line)
+            if payload is None:
+                continue
+            entries.append(payload)
+            if len(entries) >= limit:
+                break
         return web.json_response(entries)
 
     async def _handle_startup_diagnostics(self, request: web.Request) -> web.Response:
+        self._require_operator_auth(request)
         return web.json_response({"warnings": self._diagnostics_provider()})
 
     async def _handle_operator_actions(self, request: web.Request) -> web.Response:
+        self._require_operator_auth(request)
         try:
             limit = int(request.query.get("limit", "20"))
         except ValueError:
@@ -326,6 +417,7 @@ class OperatorServer:
         return web.json_response(list(reversed(self._actions))[:limit])
 
     async def _handle_control(self, request: web.Request) -> web.Response:
+        self._require_operator_auth(request)
         try:
             body = await request.json()
         except Exception:
@@ -334,7 +426,15 @@ class OperatorServer:
         payload = body.get("payload")
         if not isinstance(payload, dict):
             payload = {}
-        result = await self._control_handler(action, payload)
+        try:
+            result = await self._control_handler(action, payload)
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": "invalid_payload", "message": str(exc)}, status=400)
+        status = 200
+        if isinstance(result, dict) and result.get("ok") is False:
+            error = str(result.get("error", "")).strip().lower()
+            if error in {"invalid_action", "unknown_action", "invalid_payload"}:
+                status = 400
         log_item = {
             "timestamp": time.time(),
             "action": action,
@@ -345,12 +445,14 @@ class OperatorServer:
         self._actions.append(log_item)
         if len(self._actions) > 500:
             del self._actions[:-500]
-        return web.json_response(result)
+        return web.json_response(result, status=status)
 
     async def _handle_metrics(self, request: web.Request) -> web.Response:
+        self._require_operator_auth(request)
         return web.Response(text=self._metrics_provider(), content_type="text/plain")
 
     async def _handle_events(self, request: web.Request) -> web.StreamResponse:
+        self._require_operator_auth(request)
         try:
             timeout_sec = float(request.query.get("timeout_sec", "10"))
         except ValueError:
@@ -396,9 +498,9 @@ class OperatorServer:
         provided_token = (
             request.headers.get("X-Webhook-Token", "").strip()
             or request.query.get("token", "").strip()
-            or request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+            or _extract_bearer_token(request.headers.get("Authorization"))
         )
-        if self._inbound_token and provided_token != self._inbound_token:
+        if self._inbound_token and not _secure_token_match(self._inbound_token, provided_token):
             raise web.HTTPForbidden(text="invalid token")
         try:
             payload = await request.json()

@@ -48,7 +48,12 @@ from jarvis.tools.services import (
     set_runtime_voice_state,
 )
 from jarvis.tool_summary import list_summaries
-from jarvis.voice_attention import VoiceAttentionConfig, VoiceAttentionController
+from jarvis.voice_attention import (
+    VALID_TIMEOUT_PROFILES,
+    VALID_WAKE_MODES,
+    VoiceAttentionConfig,
+    VoiceAttentionController,
+)
 
 _SOUNDDEVICE_IMPORT_ERROR: str | None = None
 try:
@@ -80,6 +85,8 @@ TELEMETRY_LOG_EVERY_TURNS = 5
 TELEMETRY_STORAGE_ERROR_DETAILS = TOOL_STORAGE_ERROR_DETAILS
 TELEMETRY_SERVICE_ERROR_DETAILS = TOOL_SERVICE_ERROR_CODES - TELEMETRY_STORAGE_ERROR_DETAILS
 WATCHDOG_POLL_SEC = 0.05
+VALID_PERSONA_STYLES = {"terse", "composed", "friendly"}
+VALID_BACKCHANNEL_STYLES = {"quiet", "balanced", "expressive"}
 
 
 def _require_sounddevice(feature: str) -> None:
@@ -364,6 +371,8 @@ class Jarvis:
         skills = getattr(self, "_skills", None)
         skills_enabled = bool(skills.enabled) if skills is not None else False
         observability = getattr(self, "_observability", None)
+        operator_auth_enabled = bool(str(getattr(self.config, "operator_auth_token", "")).strip())
+        operator_auth = "auth-required" if operator_auth_enabled else "no-auth"
         return [
             f"Mode: {'simulation' if self.robot.sim else 'hardware'}",
             f"Motion: {'on' if self.config.motion_enabled else 'off'} | Vision: {'on' if not self.args.no_vision and not self.robot.sim else 'off'} | Hands: {'on' if self.config.hand_track_enabled else 'off'}",
@@ -373,7 +382,7 @@ class Jarvis:
             f"TTS: {tts_reason}",
             f"Memory: {memory_state} ({self.config.memory_path})",
             f"Skills: {'on' if skills_enabled else 'off'} ({getattr(self.config, 'skills_dir', 'n/a')})",
-            f"Operator server: {'on' if getattr(self.config, 'operator_server_enabled', False) else 'off'} ({getattr(self.config, 'operator_server_host', '127.0.0.1')}:{getattr(self.config, 'operator_server_port', 0)})",
+            f"Operator server: {'on' if getattr(self.config, 'operator_server_enabled', False) else 'off'} ({getattr(self.config, 'operator_server_host', '127.0.0.1')}:{getattr(self.config, 'operator_server_port', 0)}; {operator_auth})",
             f"Observability: {'on' if observability is not None else 'off'} ({getattr(self.config, 'observability_db_path', 'n/a')})",
             f"Persona style: {self.config.persona_style}",
             f"Config warnings: {warning_count}",
@@ -422,6 +431,13 @@ class Jarvis:
             getattr(self.config, "operator_server_host", "")
         ).strip():
             blockers.append("STARTUP_STRICT: OPERATOR_SERVER_HOST cannot be empty.")
+        operator_host = str(getattr(self.config, "operator_server_host", "")).strip().lower()
+        if (
+            bool(getattr(self.config, "operator_server_enabled", False))
+            and operator_host not in {"127.0.0.1", "localhost", "::1"}
+            and not str(getattr(self.config, "operator_auth_token", "")).strip()
+        ):
+            blockers.append("STARTUP_STRICT: non-loopback OPERATOR_SERVER_HOST requires OPERATOR_AUTH_TOKEN.")
         if bool(getattr(self.config, "skills_require_signature", False)) and not str(
             getattr(self.config, "skills_signature_key", "")
         ).strip():
@@ -458,6 +474,26 @@ class Jarvis:
                 voice.set_timeout_profile(str(voice_state.get("timeout_profile", voice.timeout_profile)))
             voice.set_push_to_talk_active(bool(voice_state.get("push_to_talk_active", False)))
             voice.sleeping = bool(voice_state.get("sleeping", False))
+        runtime_state = payload.get("runtime")
+        if isinstance(runtime_state, dict):
+            motion_enabled = self._parse_control_bool(runtime_state.get("motion_enabled"))
+            if motion_enabled is not None:
+                self.config.motion_enabled = motion_enabled
+            home_enabled = self._parse_control_bool(runtime_state.get("home_enabled"))
+            if home_enabled is not None:
+                self.config.home_enabled = home_enabled
+            tts_enabled = self._parse_control_bool(runtime_state.get("tts_enabled"))
+            if tts_enabled is not None:
+                self._tts_output_enabled = tts_enabled
+            persona_style = self._parse_control_choice(runtime_state.get("persona_style"), VALID_PERSONA_STYLES)
+            if persona_style is not None:
+                self._set_persona_style(persona_style)
+            backchannel_style = self._parse_control_choice(
+                runtime_state.get("backchannel_style"), VALID_BACKCHANNEL_STYLES
+            )
+            if backchannel_style is not None:
+                self.config.backchannel_style = backchannel_style
+                self.presence.set_backchannel_style(backchannel_style)
         self._awaiting_confirmation = bool(payload.get("awaiting_confirmation", False))
         pending = payload.get("pending_text")
         self._pending_text = str(pending) if isinstance(pending, str) else None
@@ -475,6 +511,13 @@ class Jarvis:
                 "timeout_profile": voice.timeout_profile,
                 "push_to_talk_active": voice.push_to_talk_active,
                 "sleeping": voice.sleeping,
+            },
+            "runtime": {
+                "motion_enabled": bool(self.config.motion_enabled),
+                "home_enabled": bool(self.config.home_enabled),
+                "tts_enabled": bool(getattr(self, "_tts_output_enabled", True)),
+                "persona_style": str(self.config.persona_style),
+                "backchannel_style": str(self.config.backchannel_style),
             },
             "awaiting_confirmation": bool(getattr(self, "_awaiting_confirmation", False)),
             "pending_text": getattr(self, "_pending_text", None),
@@ -639,6 +682,7 @@ class Jarvis:
             "enabled": bool(self.config.operator_server_enabled),
             "host": self.config.operator_server_host,
             "port": int(self.config.operator_server_port),
+            "auth_required": bool(str(getattr(self.config, "operator_auth_token", "")).strip()),
         }
         return status
 
@@ -663,25 +707,85 @@ class Jarvis:
             return observability.recent_events(limit=100)
         return []
 
+    @staticmethod
+    def _parse_control_bool(value: Any) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in {0, 1}:
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "y", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "n", "off"}:
+                return False
+        return None
+
+    @staticmethod
+    def _parse_control_choice(value: Any, allowed: set[str]) -> str | None:
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip().lower()
+        if normalized in allowed:
+            return normalized
+        return None
+
+    def _persist_runtime_state_safe(self) -> None:
+        with suppress(Exception):
+            self._save_runtime_state()
+
+    def _set_persona_style(self, style: str) -> None:
+        self.config.persona_style = style
+        brain = getattr(self, "brain", None)
+        memory = getattr(brain, "_memory", None)
+        if memory is not None:
+            with suppress(Exception):
+                memory.upsert_summary("persona_style", style)
+
     async def _operator_control_handler(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         voice = self._voice_controller()
         command = str(action or "").strip().lower()
         data = payload if isinstance(payload, dict) else {}
+        if not command:
+            return {"ok": False, "error": "invalid_action", "message": "action is required"}
         if command == "set_wake_mode":
-            mode = voice.set_mode(str(data.get("mode", "")))
+            mode = self._parse_control_choice(data.get("mode"), VALID_WAKE_MODES)
+            if mode is None:
+                return {
+                    "ok": False,
+                    "error": "invalid_payload",
+                    "field": "mode",
+                    "expected": sorted(VALID_WAKE_MODES),
+                }
+            mode = voice.set_mode(mode)
             self._publish_voice_status()
+            self._persist_runtime_state_safe()
             return {"ok": True, "mode": mode}
         if command == "set_timeout_profile":
-            profile = voice.set_timeout_profile(str(data.get("profile", "")))
+            profile = self._parse_control_choice(data.get("profile"), VALID_TIMEOUT_PROFILES)
+            if profile is None:
+                return {
+                    "ok": False,
+                    "error": "invalid_payload",
+                    "field": "profile",
+                    "expected": sorted(VALID_TIMEOUT_PROFILES),
+                }
+            profile = voice.set_timeout_profile(profile)
             self._publish_voice_status()
+            self._persist_runtime_state_safe()
             return {"ok": True, "timeout_profile": profile}
         if command == "set_push_to_talk":
-            active = bool(data.get("active"))
+            active = self._parse_control_bool(data.get("active"))
+            if active is None:
+                return {"ok": False, "error": "invalid_payload", "field": "active", "expected": "boolean"}
             voice.set_push_to_talk_active(active)
             self._publish_voice_status()
+            self._persist_runtime_state_safe()
             return {"ok": True, "push_to_talk_active": active}
         if command == "set_motion_enabled":
-            enabled = bool(data.get("enabled"))
+            enabled = self._parse_control_bool(data.get("enabled"))
+            if enabled is None:
+                return {"ok": False, "error": "invalid_payload", "field": "enabled", "expected": "boolean"}
             self.config.motion_enabled = enabled
             if enabled:
                 with suppress(Exception):
@@ -689,15 +793,47 @@ class Jarvis:
             else:
                 with suppress(Exception):
                     self.presence.stop()
+            self._persist_runtime_state_safe()
             return {"ok": True, "motion_enabled": enabled}
         if command == "set_home_enabled":
-            enabled = bool(data.get("enabled"))
+            enabled = self._parse_control_bool(data.get("enabled"))
+            if enabled is None:
+                return {"ok": False, "error": "invalid_payload", "field": "enabled", "expected": "boolean"}
             self.config.home_enabled = enabled
+            self._persist_runtime_state_safe()
             return {"ok": True, "home_enabled": enabled}
         if command == "set_tts_enabled":
-            enabled = bool(data.get("enabled"))
+            enabled = self._parse_control_bool(data.get("enabled"))
+            if enabled is None:
+                return {"ok": False, "error": "invalid_payload", "field": "enabled", "expected": "boolean"}
             self._tts_output_enabled = enabled
+            self._persist_runtime_state_safe()
             return {"ok": True, "tts_enabled": enabled}
+        if command == "set_persona_style":
+            style = self._parse_control_choice(data.get("style"), VALID_PERSONA_STYLES)
+            if style is None:
+                return {
+                    "ok": False,
+                    "error": "invalid_payload",
+                    "field": "style",
+                    "expected": sorted(VALID_PERSONA_STYLES),
+                }
+            self._set_persona_style(style)
+            self._persist_runtime_state_safe()
+            return {"ok": True, "persona_style": style}
+        if command == "set_backchannel_style":
+            style = self._parse_control_choice(data.get("style"), VALID_BACKCHANNEL_STYLES)
+            if style is None:
+                return {
+                    "ok": False,
+                    "error": "invalid_payload",
+                    "field": "style",
+                    "expected": sorted(VALID_BACKCHANNEL_STYLES),
+                }
+            self.config.backchannel_style = style
+            self.presence.set_backchannel_style(style)
+            self._persist_runtime_state_safe()
+            return {"ok": True, "backchannel_style": style}
         if command == "clear_inbound_webhooks":
             result = await service_tools.webhook_inbound_clear({})
             text = result.get("content", [{}])[0].get("text", "")
@@ -708,15 +844,19 @@ class Jarvis:
             return {"ok": True, "skills": self._skills.status_snapshot()}
         if command == "skills_enable":
             name = str(data.get("name", "")).strip().lower()
+            if not name:
+                return {"ok": False, "error": "invalid_payload", "field": "name", "expected": "non-empty string"}
             ok, detail = self._skills.enable_skill(name)
             self._publish_skills_status()
             return {"ok": ok, "detail": detail, "name": name}
         if command == "skills_disable":
             name = str(data.get("name", "")).strip().lower()
+            if not name:
+                return {"ok": False, "error": "invalid_payload", "field": "name", "expected": "non-empty string"}
             ok, detail = self._skills.disable_skill(name)
             self._publish_skills_status()
             return {"ok": ok, "detail": detail, "name": name}
-        return {"ok": False, "error": "unknown_action"}
+        return {"ok": False, "error": "invalid_action", "message": "unknown action"}
 
     async def _start_operator_server(self) -> None:
         if not self.config.operator_server_enabled:
@@ -739,6 +879,7 @@ class Jarvis:
             ),
             inbound_enabled=self.config.webhook_inbound_enabled,
             inbound_token=self.config.webhook_inbound_token or self.config.webhook_auth_token,
+            operator_auth_token=self.config.operator_auth_token,
         )
         try:
             await server.start()
