@@ -9,8 +9,8 @@ Last updated: 2026-02-27
 
 ## Completion summary
 - Total items: 18
-- Completed: 16
-- Remaining: 2
+- Completed: 18
+- Remaining: 0
 
 ---
 
@@ -40,8 +40,8 @@ Last updated: 2026-02-27
 ## D) Hygiene and release loop
 
 - [x] `W34-D01` Refresh TODO metrics/outcome snapshot with current counts and gate outputs.
-- [ ] `W34-D02` Commit Wave 34 checkpoint.
-- [ ] `W34-D03` Push Wave 34 checkpoint to `origin/main`.
+- [x] `W34-D02` Commit Wave 34 checkpoint.
+- [x] `W34-D03` Push Wave 34 checkpoint to `origin/main`.
 
 ---
 
