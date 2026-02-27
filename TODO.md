@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 63 (Runtime Decomposition Sweep III)
+# Jarvis TODO — Wave 64 (Home Assistant Tool Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,112 +8,90 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 52
-- Completed: 52
+- Total items: 44
+- Completed: 44
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W63-A01` Capture next hotspot set after Wave 62.
-- [x] `W63-A02` Select decomposition targets focused on runtime concentration and maintainability.
-- [x] `W63-A03` Include `trust_proactive_nudge_decision.py` in scope.
-- [x] `W63-A04` Include `planner_timers.py` in scope.
-- [x] `W63-A05` Include `planner_reminders_crud.py` in scope.
-- [x] `W63-A06` Include `governance_quality.py` in scope.
-- [x] `W63-A07` Preserve action contracts and response shape compatibility.
-- [x] `W63-A08` Preserve state/counter semantics for proactive decisioning.
+- [x] `W64-A01` Profile post-Wave-63 hotspots and choose next low-risk high-value split targets.
+- [x] `W64-A02` Select Home Assistant tool handlers with multi-branch concentration.
+- [x] `W64-A03` Include `home_ha_todo.py` in scope.
+- [x] `W64-A04` Include `home_ha_timer.py` in scope.
+- [x] `W64-A05` Include `home_media_control_tool.py` in scope.
+- [x] `W64-A06` Preserve behavior/audit/policy semantics and existing response text contracts.
 
-## B) Proactive nudge decision split
+## B) Home Assistant to-do split
 
-- [x] `W63-B01` Create `trust_proactive_nudge_decision_classify.py`.
-- [x] `W63-B02` Move candidate/context parsing and classification into classifier module.
-- [x] `W63-B03` Keep dedupe bucket fallback and context downgrade behavior unchanged.
-- [x] `W63-B04` Create `trust_proactive_nudge_decision_finalize.py`.
-- [x] `W63-B05` Move dispatch-capacity trimming and overflow handling into finalizer.
-- [x] `W63-B06` Move recent-dispatch writeback and pruning into finalizer.
-- [x] `W63-B07` Move payload/counters emission into finalizer.
-- [x] `W63-B08` Reduce `trust_proactive_nudge_decision.py` to orchestration wrapper.
+- [x] `W64-B01` Create `home_ha_todo_preflight.py`.
+- [x] `W64-B02` Move policy/config/action/entity/identity/readonly preflight checks.
+- [x] `W64-B03` Create `home_ha_todo_list_action.py`.
+- [x] `W64-B04` Move list/get-items retrieval and list rendering flow.
+- [x] `W64-B05` Create `home_ha_todo_mutate_action.py`.
+- [x] `W64-B06` Move add/remove service dispatch + recovery path.
+- [x] `W64-B07` Reduce `home_ha_todo.py` to orchestrator wrapper.
 
-## C) Timer split
+## C) Home Assistant timer split
 
-- [x] `W63-C01` Create `planner_timers_create.py`.
-- [x] `W63-C02` Move `timer_create` into create module.
-- [x] `W63-C03` Create `planner_timers_list_cancel.py`.
-- [x] `W63-C04` Move `timer_list` into list/cancel module.
-- [x] `W63-C05` Move `timer_cancel` into list/cancel module.
-- [x] `W63-C06` Reduce `planner_timers.py` to export wrapper.
+- [x] `W64-C01` Create `home_ha_timer_preflight.py`.
+- [x] `W64-C02` Move tool/config/action/entity/identity/readonly checks.
+- [x] `W64-C03` Create `home_ha_timer_state_action.py`.
+- [x] `W64-C04` Move timer state retrieval and response shaping.
+- [x] `W64-C05` Create `home_ha_timer_mutate_action.py`.
+- [x] `W64-C06` Move start/pause/cancel/finish duration/service dispatch flow.
+- [x] `W64-C07` Reduce `home_ha_timer.py` to orchestrator wrapper.
 
-## D) Reminder CRUD split
+## D) Home media control split
 
-- [x] `W63-D01` Create `planner_reminders_create.py`.
-- [x] `W63-D02` Move `reminder_create` into create module.
-- [x] `W63-D03` Create `planner_reminders_list_complete.py`.
-- [x] `W63-D04` Move reminder list payload helper into list/complete module.
-- [x] `W63-D05` Move `reminder_list` into list/complete module.
-- [x] `W63-D06` Move `reminder_complete` into list/complete module.
-- [x] `W63-D07` Reduce `planner_reminders_crud.py` to export wrapper.
+- [x] `W64-D01` Create `home_media_control_preflight.py`.
+- [x] `W64-D02` Move action/entity validation and volume validation.
+- [x] `W64-D03` Move identity authorization, area policy, preview checks.
+- [x] `W64-D04` Create `home_media_control_execute.py`.
+- [x] `W64-D05` Move dry-run response/audit behavior.
+- [x] `W64-D06` Move execution/recovery/error mapping behavior.
+- [x] `W64-D07` Reduce `home_media_control_tool.py` to orchestrator wrapper.
 
-## E) Governance quality split
+## E) Import boundaries and verification
 
-- [x] `W63-E01` Create `governance_quality_evaluator_actions.py`.
-- [x] `W63-E02` Move `weekly_report` action logic.
-- [x] `W63-E03` Move `dataset_run` action logic.
-- [x] `W63-E04` Move `reports_list` action logic.
-- [x] `W63-E05` Create `governance_quality_embodiment_actions.py`.
-- [x] `W63-E06` Move `expression_library` action logic.
-- [x] `W63-E07` Move `gaze_calibrate` action logic.
-- [x] `W63-E08` Move `gesture_profile` action logic.
-- [x] `W63-E09` Move `privacy_posture` action logic.
-- [x] `W63-E10` Move `safety_envelope` action logic.
-- [x] `W63-E11` Move `status` action logic.
-- [x] `W63-E12` Reduce `governance_quality.py` to dispatch wrapper.
+- [x] `W64-E01` Extend import-boundary coverage for new to-do split modules.
+- [x] `W64-E02` Extend import-boundary coverage for new timer split modules.
+- [x] `W64-E03` Extend import-boundary coverage for new media split modules.
+- [x] `W64-E04` Run focused lint on all changed modules.
+- [x] `W64-E05` Run targeted pytest for `smart_home` + HA todo/timer/media paths.
+- [x] `W64-E06` Run `tests/test_import_boundaries.py`.
+- [x] `W64-E07` Run full `make check`.
+- [x] `W64-E08` Run full `make security-gate`.
+- [x] `W64-E09` Run `./scripts/jarvis_readiness.sh fast`.
 
-## F) Boundaries and compatibility
+## F) Release loop
 
-- [x] `W63-F01` Extend import-boundary coverage for proactive classifier/finalizer modules.
-- [x] `W63-F02` Extend import-boundary coverage for timer split modules.
-- [x] `W63-F03` Extend import-boundary coverage for reminder split modules.
-- [x] `W63-F04` Extend import-boundary coverage for quality/embodiment action modules.
-- [x] `W63-F05` Run focused lint for all changed modules.
-- [x] `W63-F06` Run targeted pytest for proactive/timer/reminder/quality behaviors.
-- [x] `W63-F07` Run `tests/test_import_boundaries.py`.
-
-## G) Full verification gates
-
-- [x] `W63-G01` Run full `make check`.
-- [x] `W63-G02` Run full `make security-gate`.
-- [x] `W63-G03` Run `./scripts/jarvis_readiness.sh fast`.
-
-## H) Release loop
-
-- [x] `W63-H01` Record line-count reductions and extracted modules.
-- [x] `W63-H02` Commit Wave 63 tranche.
-- [x] `W63-H03` Push Wave 63 to origin/main.
+- [x] `W64-F01` Record line-count reductions and extracted module set.
+- [x] `W64-F02` Commit Wave 64 tranche.
+- [x] `W64-F03` Push Wave 64 to origin/main.
 
 ---
 
 ## Outcome snapshot (completed)
 
 - Wrapper concentration reductions:
-  - `trust_proactive_nudge_decision.py`: `234 -> 72`
-  - `planner_timers.py`: `201 -> 11`
-  - `planner_reminders_crud.py`: `197 -> 11`
-  - `governance_quality.py`: `201 -> 79`
+  - `home_ha_todo.py`: `189 -> 24`
+  - `home_ha_timer.py`: `171 -> 24`
+  - `home_media_control_tool.py`: `197 -> 19`
 - New extracted modules:
-  - `trust_proactive_nudge_decision_classify.py`
-  - `trust_proactive_nudge_decision_finalize.py`
-  - `planner_timers_create.py`
-  - `planner_timers_list_cancel.py`
-  - `planner_reminders_create.py`
-  - `planner_reminders_list_complete.py`
-  - `governance_quality_evaluator_actions.py`
-  - `governance_quality_embodiment_actions.py`
+  - `home_ha_todo_preflight.py`
+  - `home_ha_todo_list_action.py`
+  - `home_ha_todo_mutate_action.py`
+  - `home_ha_timer_preflight.py`
+  - `home_ha_timer_state_action.py`
+  - `home_ha_timer_mutate_action.py`
+  - `home_media_control_preflight.py`
+  - `home_media_control_execute.py`
 - Validation status:
   - Focused lint: pass.
-  - Focused pytest: `11 passed` (targeted selection).
+  - Targeted pytest (`home_assistant_todo/home_assistant_timer/media_control/smart_home`): `46 passed`.
   - `tests/test_import_boundaries.py`: pass.
-  - `make check`: `692 passed`.
-  - `make security-gate`: `692 passed`; fault subset `3 passed`.
+  - `make check`: `700 passed`.
+  - `make security-gate`: `700 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
