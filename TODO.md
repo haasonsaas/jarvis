@@ -9,8 +9,8 @@ Last updated: 2026-02-27
 
 ## Completion summary
 - Total items: 32
-- Completed: 30
-- Remaining: 2
+- Completed: 32
+- Remaining: 0
 
 ---
 
@@ -62,12 +62,12 @@ Last updated: 2026-02-27
 - [x] `W35-F03` Run `./scripts/jarvis_readiness.sh fast`.
 - [x] `W35-F04` Verify strict eval dataset acceptance remains `151/151`.
 - [x] `W35-F05` Update TODO completion summary and outcome snapshot with final metrics.
-- [ ] `W35-F06` Commit extraction checkpoint(s) with clear messages.
-- [ ] `W35-F07` Push all Wave 35 commits to `origin/main`.
+- [x] `W35-F06` Commit extraction checkpoint(s) with clear messages.
+- [x] `W35-F07` Push all Wave 35 commits to `origin/main`.
 
 ---
 
-## Outcome snapshot (pending)
+## Outcome snapshot (completed)
 
 - `src/jarvis/__main__.py`: `2,170` -> `1,604` lines.
 - New runtime modules added:
