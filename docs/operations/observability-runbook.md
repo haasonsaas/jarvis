@@ -13,6 +13,7 @@ Jarvis observability covers:
 
 - Latency percentiles: STT / LLM-first-sentence / TTS-first-audio (`p50`, `p95`, `p99`)
 - Tool rolling rates: per-tool `success_rate` / `error_rate` windows
+- Intent success signals: `answer_quality_success_rate`, `completion_success_rate`, `correction_frequency`
 - Failure burst alerts: generated when recent tool errors exceed `OBSERVABILITY_FAILURE_BURST_THRESHOLD`
 - Process lifecycle: `runtime_start`, `runtime_stop`, `restart_count`, `uptime_sec`
 

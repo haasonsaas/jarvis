@@ -74,7 +74,7 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
-SYSTEM_STATUS_CONTRACT_VERSION = "1.2"
+SYSTEM_STATUS_CONTRACT_VERSION = "1.3"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
@@ -2335,14 +2335,30 @@ def _voice_attention_snapshot() -> dict[str, Any]:
 
 
 def _observability_snapshot() -> dict[str, Any]:
+    default_intent_metrics = {
+        "turn_count": 0.0,
+        "answer_intent_count": 0.0,
+        "action_intent_count": 0.0,
+        "hybrid_intent_count": 0.0,
+        "answer_sample_count": 0.0,
+        "completion_sample_count": 0.0,
+        "answer_quality_success_rate": 0.0,
+        "completion_success_rate": 0.0,
+        "correction_count": 0.0,
+        "correction_frequency": 0.0,
+    }
     if not _runtime_observability_state:
         return {
             "enabled": False,
             "uptime_sec": 0.0,
             "restart_count": 0,
             "alerts": [],
+            "intent_metrics": default_intent_metrics,
         }
-    return {str(key): value for key, value in _runtime_observability_state.items()}
+    snapshot = {str(key): value for key, value in _runtime_observability_state.items()}
+    if not isinstance(snapshot.get("intent_metrics"), dict):
+        snapshot["intent_metrics"] = default_intent_metrics
+    return snapshot
 
 
 def _skills_status_snapshot() -> dict[str, Any]:
@@ -5312,7 +5328,20 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "enabled",
             "uptime_sec",
             "restart_count",
+            "intent_metrics",
             "alerts",
+        ],
+        "observability_intent_metrics_required": [
+            "turn_count",
+            "answer_intent_count",
+            "action_intent_count",
+            "hybrid_intent_count",
+            "answer_sample_count",
+            "completion_sample_count",
+            "answer_quality_success_rate",
+            "completion_success_rate",
+            "correction_count",
+            "correction_frequency",
         ],
         "plan_preview_required": [
             "pending_count",

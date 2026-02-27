@@ -112,7 +112,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 ## 11) Observability and Evaluation (6 items)
 
-- [ ] `EX01` Add intent-level success metrics (answer quality, completion success, correction frequency). `P0`
+- [x] `EX01` Add intent-level success metrics (answer quality, completion success, correction frequency). `P0`
 - [ ] `EX02` Add percentile dashboards for end-to-end turn latency by mode and tool mix. `P1`
 - [ ] `EX03` Add policy-decision analytics (allow/deny reason distribution by user and tool). `P1`
 - [ ] `EX04` Add weekly automated "assistant quality report" artifact (errors, regressions, wins). `P1`
@@ -159,7 +159,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q07` Implement `IX03` step-up verification flow.
 - [x] `Q08` Implement `HX06` idempotent home-action guardrail.
 - [x] `Q09` Implement `OX04` global safe-mode toggle.
-- [ ] `Q10` Implement `EX01` intent-level success metrics.
+- [x] `Q10` Implement `EX01` intent-level success metrics.
 - [ ] `Q11` Implement `BX02` turn choreography pass.
 - [ ] `Q12` Implement `VX02` adaptive end-of-turn timing.
 - [ ] `Q13` Implement `JX06` style consistency regression tests.

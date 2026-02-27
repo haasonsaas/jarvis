@@ -96,6 +96,39 @@ MEMORY_UPDATE_RE = re.compile(
     r"^(?:please\s+)?(?:update|change|edit)\s+(?:memory\s*)?(?:id\s*)?(?P<memory_id>\d+)\s+(?:to|with)\s+(?P<text>.+)$",
     re.IGNORECASE,
 )
+ACTION_INTENT_TERMS = {
+    "turn",
+    "set",
+    "open",
+    "close",
+    "lock",
+    "unlock",
+    "arm",
+    "disarm",
+    "play",
+    "pause",
+    "send",
+    "notify",
+    "remind",
+    "create",
+    "update",
+    "delete",
+    "forget",
+    "add",
+    "trigger",
+}
+QUESTION_START_TERMS = {"what", "when", "where", "who", "why", "how", "is", "are", "can", "could", "would", "should"}
+CORRECTION_TERMS = {
+    "actually",
+    "i meant",
+    "correction",
+    "that's wrong",
+    "that is wrong",
+    "not that",
+    "instead",
+    "rather",
+    "change that",
+}
 
 
 def _require_sounddevice(feature: str) -> None:
@@ -289,6 +322,15 @@ class Jarvis:
             "storage_errors": 0.0,
             "unknown_summary_details": 0.0,
             "fallback_responses": 0.0,
+            "intent_turns_total": 0.0,
+            "intent_answer_turns": 0.0,
+            "intent_action_turns": 0.0,
+            "intent_hybrid_turns": 0.0,
+            "intent_answer_total": 0.0,
+            "intent_answer_success": 0.0,
+            "intent_completion_total": 0.0,
+            "intent_completion_success": 0.0,
+            "intent_corrections": 0.0,
         }
         self._telemetry_error_counts: dict[str, float] = {}
         self._load_runtime_state()
@@ -423,12 +465,48 @@ class Jarvis:
     def _publish_observability_status(self) -> None:
         observability = getattr(self, "_observability", None)
         if observability is None:
-            set_runtime_observability_state({"enabled": False, "uptime_sec": 0.0, "restart_count": 0, "alerts": []})
+            set_runtime_observability_state(
+                {
+                    "enabled": False,
+                    "uptime_sec": 0.0,
+                    "restart_count": 0,
+                    "alerts": [],
+                    "intent_metrics": {
+                        "turn_count": 0.0,
+                        "answer_intent_count": 0.0,
+                        "action_intent_count": 0.0,
+                        "hybrid_intent_count": 0.0,
+                        "answer_sample_count": 0.0,
+                        "completion_sample_count": 0.0,
+                        "answer_quality_success_rate": 0.0,
+                        "completion_success_rate": 0.0,
+                        "correction_count": 0.0,
+                        "correction_frequency": 0.0,
+                    },
+                }
+            )
             return
         try:
             snapshot = observability.status_snapshot()
         except Exception:
-            snapshot = {"enabled": False, "uptime_sec": 0.0, "restart_count": 0, "alerts": []}
+            snapshot = {
+                "enabled": False,
+                "uptime_sec": 0.0,
+                "restart_count": 0,
+                "alerts": [],
+                "intent_metrics": {
+                    "turn_count": 0.0,
+                    "answer_intent_count": 0.0,
+                    "action_intent_count": 0.0,
+                    "hybrid_intent_count": 0.0,
+                    "answer_sample_count": 0.0,
+                    "completion_sample_count": 0.0,
+                    "answer_quality_success_rate": 0.0,
+                    "completion_success_rate": 0.0,
+                    "correction_count": 0.0,
+                    "correction_frequency": 0.0,
+                },
+            }
         set_runtime_observability_state(snapshot)
 
     def _operator_control_schema(self) -> dict[str, Any]:
@@ -612,7 +690,7 @@ class Jarvis:
         self._telemetry["unknown_summary_details"] = float(unknown_summary_details)
         self._telemetry_error_counts = {name: per_code[name] for name in sorted(per_code)}
 
-    def _telemetry_snapshot(self) -> dict[str, float | dict[str, float]]:
+    def _telemetry_snapshot(self) -> dict[str, Any]:
         def metric(key: str) -> float:
             value = self._telemetry.get(key, 0.0)
             if not math.isfinite(value):
@@ -634,6 +712,14 @@ class Jarvis:
             for name, value in getattr(self, "_telemetry_error_counts", {}).items()
             if math.isfinite(value)
         }
+        intent_turns = metric("intent_turns_total")
+        answer_total = metric("intent_answer_total")
+        completion_total = metric("intent_completion_total")
+        answer_success_rate = (metric("intent_answer_success") / answer_total) if answer_total > 0.0 else 0.0
+        completion_success_rate = (
+            (metric("intent_completion_success") / completion_total) if completion_total > 0.0 else 0.0
+        )
+        correction_frequency = (metric("intent_corrections") / intent_turns) if intent_turns > 0.0 else 0.0
         return {
             "turns": metric("turns"),
             "barge_ins": metric("barge_ins"),
@@ -645,6 +731,18 @@ class Jarvis:
             "unknown_summary_details": metric("unknown_summary_details"),
             "service_error_counts": counts,
             "fallback_responses": metric("fallback_responses"),
+            "intent_metrics": {
+                "turn_count": intent_turns,
+                "answer_intent_count": metric("intent_answer_turns"),
+                "action_intent_count": metric("intent_action_turns"),
+                "hybrid_intent_count": metric("intent_hybrid_turns"),
+                "answer_sample_count": answer_total,
+                "completion_sample_count": completion_total,
+                "answer_quality_success_rate": answer_success_rate,
+                "completion_success_rate": completion_success_rate,
+                "correction_count": metric("intent_corrections"),
+                "correction_frequency": correction_frequency,
+            },
         }
 
     def _transcribe_with_fallback(self, audio: np.ndarray) -> str:
@@ -795,6 +893,67 @@ class Jarvis:
             if not updated_text:
                 return None
             return "memory_update", {"memory_id": memory_id, "text": updated_text}
+        return None
+
+    @staticmethod
+    def _classify_user_intent(text: str) -> str:
+        phrase = str(text or "").strip().lower()
+        if not phrase:
+            return "answer"
+        tokens = set(re.findall(r"[a-z']+", phrase))
+        has_action = bool(tokens & ACTION_INTENT_TERMS)
+        starts_with_question = any(phrase.startswith(f"{term} ") for term in QUESTION_START_TERMS)
+        has_question = phrase.endswith("?") or starts_with_question
+        if has_action and has_question:
+            return "hybrid"
+        if has_action:
+            return "action"
+        return "answer"
+
+    @staticmethod
+    def _looks_like_user_correction(text: str) -> bool:
+        phrase = str(text or "").strip().lower()
+        if not phrase:
+            return False
+        if any(term in phrase for term in CORRECTION_TERMS):
+            return True
+        return bool(re.search(r"\b(?:no|nope|nah)\b.+\b(?:meant|wanted|said)\b", phrase))
+
+    @staticmethod
+    def _turn_tool_summaries_since(started_at: float) -> list[dict[str, Any]]:
+        with suppress(Exception):
+            summaries = list_summaries(limit=200)
+            if isinstance(summaries, list):
+                matched: list[dict[str, Any]] = []
+                for item in summaries:
+                    if not isinstance(item, dict):
+                        continue
+                    timestamp_raw = item.get("timestamp")
+                    try:
+                        timestamp = float(timestamp_raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if not math.isfinite(timestamp) or timestamp < started_at:
+                        continue
+                    name = str(item.get("name", "")).strip().lower()
+                    if name in {"system_status", "system_status_contract", "tool_summary", "tool_summary_text"}:
+                        continue
+                    matched.append(item)
+                return matched
+        return []
+
+    @staticmethod
+    def _completion_success_from_summaries(summaries: list[dict[str, Any]]) -> bool | None:
+        if not summaries:
+            return None
+        success_statuses = {"ok", "dry_run", "noop", "cooldown"}
+        failure_statuses = {"error", "denied"}
+        has_success = any(str(item.get("status", "")).strip().lower() in success_statuses for item in summaries)
+        has_failure = any(str(item.get("status", "")).strip().lower() in failure_statuses for item in summaries)
+        if has_success:
+            return True
+        if has_failure:
+            return False
         return None
 
     def _persist_runtime_state_safe(self) -> None:
@@ -1129,6 +1288,19 @@ class Jarvis:
                         self._awaiting_confirmation = False
                         self._pending_text = None
 
+                intent_class = self._classify_user_intent(text)
+                self._telemetry["intent_turns_total"] += 1.0
+                if intent_class == "action":
+                    self._telemetry["intent_action_turns"] += 1.0
+                elif intent_class == "hybrid":
+                    self._telemetry["intent_hybrid_turns"] += 1.0
+                else:
+                    self._telemetry["intent_answer_turns"] += 1.0
+                looks_like_correction = self._looks_like_user_correction(text)
+                if looks_like_correction:
+                    self._telemetry["intent_corrections"] += 1.0
+
+                turn_started_at = time.time()
                 memory_correction = self._parse_memory_correction_command(text)
                 if memory_correction is not None:
                     tool_name, payload = memory_correction
@@ -1136,6 +1308,15 @@ class Jarvis:
                         result = await service_tools.memory_forget(payload)
                     else:
                         result = await service_tools.memory_update(payload)
+                    if not looks_like_correction:
+                        self._telemetry["intent_corrections"] += 1.0
+                    completion_outcome = self._completion_success_from_summaries(
+                        self._turn_tool_summaries_since(turn_started_at)
+                    )
+                    if completion_outcome is not None:
+                        self._telemetry["intent_completion_total"] += 1.0
+                        if completion_outcome:
+                            self._telemetry["intent_completion_success"] += 1.0
                     reply = str(result.get("content", [{}])[0].get("text", "")).strip() or "Done."
                     if self.tts:
                         await self._tts_queue.put((self._active_response_id, reply, True, 0.0))
@@ -1160,6 +1341,19 @@ class Jarvis:
                 # Get response from Claude and play it
                 self._telemetry["turns"] += 1.0
                 await self._respond_and_speak(text)
+                response_success = bool(self._response_started and not self._barge_in.is_set())
+                if intent_class in {"answer", "hybrid"}:
+                    self._telemetry["intent_answer_total"] += 1.0
+                    if response_success:
+                        self._telemetry["intent_answer_success"] += 1.0
+                if intent_class in {"action", "hybrid"}:
+                    completion_outcome = self._completion_success_from_summaries(
+                        self._turn_tool_summaries_since(turn_started_at)
+                    )
+                    if completion_outcome is not None:
+                        self._telemetry["intent_completion_total"] += 1.0
+                        if completion_outcome:
+                            self._telemetry["intent_completion_success"] += 1.0
                 if int(self._telemetry["turns"]) % TELEMETRY_LOG_EVERY_TURNS == 0:
                     self._refresh_tool_error_counters()
                     snapshot = self._telemetry_snapshot()

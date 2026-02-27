@@ -3053,7 +3053,7 @@ class TestServicesTools:
 
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.2"
+        assert payload["schema_version"] == "1.3"
         assert "local_time" in payload
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
@@ -3105,6 +3105,8 @@ class TestServicesTools:
         assert isinstance(payload["plan_preview"]["strict_mode"], bool)
         assert "skills" in payload
         assert "observability" in payload
+        assert "intent_metrics" in payload["observability"]
+        assert "correction_frequency" in payload["observability"]["intent_metrics"]
         assert "retention_policy" in payload
         assert "memory_retention_days" in payload["retention_policy"]
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
@@ -3115,7 +3117,7 @@ class TestServicesTools:
 
         result = await services.system_status_contract({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.2"
+        assert payload["schema_version"] == "1.3"
         assert "top_level_required" in payload
         assert "tool_policy" in payload["top_level_required"]
         assert "identity" in payload["top_level_required"]
@@ -3150,6 +3152,9 @@ class TestServicesTools:
         assert "user_profiles" in payload["identity_required"]
         assert "skills_required" in payload
         assert "observability_required" in payload
+        assert "intent_metrics" in payload["observability_required"]
+        assert "observability_intent_metrics_required" in payload
+        assert "completion_success_rate" in payload["observability_intent_metrics_required"]
         assert "plan_preview_required" in payload
         assert "strict_mode" in payload["plan_preview_required"]
         assert "retention_policy_required" in payload

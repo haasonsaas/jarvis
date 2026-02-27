@@ -25,6 +25,21 @@ def _percentile(values: list[float], q: float) -> float:
     return float(values[lo] + ((values[hi] - values[lo]) * frac))
 
 
+def _default_intent_metrics() -> dict[str, float]:
+    return {
+        "turn_count": 0.0,
+        "answer_intent_count": 0.0,
+        "action_intent_count": 0.0,
+        "hybrid_intent_count": 0.0,
+        "answer_sample_count": 0.0,
+        "completion_sample_count": 0.0,
+        "answer_quality_success_rate": 0.0,
+        "completion_success_rate": 0.0,
+        "correction_count": 0.0,
+        "correction_frequency": 0.0,
+    }
+
+
 class ObservabilityStore:
     """Persistent observability state and metric export."""
 
@@ -261,6 +276,41 @@ class ObservabilityStore:
             }
         return rates
 
+    @staticmethod
+    def _coerce_intent_metrics(payload: Any) -> dict[str, float]:
+        defaults = _default_intent_metrics()
+        if not isinstance(payload, dict):
+            return defaults
+        metrics = dict(defaults)
+        for key in defaults:
+            raw = payload.get(key, defaults[key])
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                value = defaults[key]
+            if not math.isfinite(value):
+                value = defaults[key]
+            metrics[key] = value
+        return metrics
+
+    def intent_success_metrics(self, *, window_sec: float = 3600.0) -> dict[str, float]:
+        cutoff = time.time() - max(1.0, float(window_sec))
+        row = self._conn.cursor().execute(
+            "SELECT payload FROM telemetry_snapshots WHERE ts >= ? ORDER BY ts DESC LIMIT 1",
+            (cutoff,),
+        ).fetchone()
+        if row is None:
+            row = self._conn.cursor().execute(
+                "SELECT payload FROM telemetry_snapshots ORDER BY ts DESC LIMIT 1",
+            ).fetchone()
+        if row is None:
+            return _default_intent_metrics()
+        try:
+            payload = json.loads(str(row["payload"]))
+        except Exception:
+            return _default_intent_metrics()
+        return self._coerce_intent_metrics(payload.get("intent_metrics"))
+
     def detect_failure_burst(self, *, window_sec: float = 300.0) -> list[dict[str, Any]]:
         cutoff = time.time() - max(1.0, float(window_sec))
         row = self._conn.cursor().execute(
@@ -292,12 +342,14 @@ class ObservabilityStore:
             "restart_count": self._restart_count,
             "latency_percentiles": self.latency_percentiles(window_sec=3600.0),
             "tool_rates": self.tool_success_rates(window_sec=900.0),
+            "intent_metrics": self.intent_success_metrics(window_sec=3600.0),
             "alerts": self.active_alerts(limit=20),
         }
 
     def prometheus_metrics(self) -> str:
         status = self.status_snapshot()
         lat = status["latency_percentiles"]
+        intent = self._coerce_intent_metrics(status.get("intent_metrics"))
         lines = [
             "# HELP jarvis_uptime_seconds Uptime since process start",
             "# TYPE jarvis_uptime_seconds gauge",
@@ -322,4 +374,17 @@ class ObservabilityStore:
             lines.append(
                 f'jarvis_tool_error_rate{{tool="{safe_tool}"}} {float(payload.get("error_rate", 0.0)):.6f}'
             )
+        lines.extend(
+            [
+                "# HELP jarvis_intent_answer_quality_success_rate Intent-level answer quality success proxy",
+                "# TYPE jarvis_intent_answer_quality_success_rate gauge",
+                f"jarvis_intent_answer_quality_success_rate {intent['answer_quality_success_rate']:.6f}",
+                "# HELP jarvis_intent_completion_success_rate Intent-level completion success rate",
+                "# TYPE jarvis_intent_completion_success_rate gauge",
+                f"jarvis_intent_completion_success_rate {intent['completion_success_rate']:.6f}",
+                "# HELP jarvis_intent_correction_frequency User correction frequency",
+                "# TYPE jarvis_intent_correction_frequency gauge",
+                f"jarvis_intent_correction_frequency {intent['correction_frequency']:.6f}",
+            ]
+        )
         return "\n".join(lines) + "\n"

@@ -100,6 +100,18 @@ def test_parse_memory_correction_command_rejects_ambiguous_phrases():
     assert Jarvis._parse_memory_correction_command("forget this") is None
 
 
+def test_classify_user_intent():
+    assert Jarvis._classify_user_intent("What time is it?") == "answer"
+    assert Jarvis._classify_user_intent("Turn on the kitchen lights.") == "action"
+    assert Jarvis._classify_user_intent("Can you turn on the lights and tell me the weather?") == "hybrid"
+
+
+def test_looks_like_user_correction():
+    assert Jarvis._looks_like_user_correction("Actually, I meant the bedroom lamp.") is True
+    assert Jarvis._looks_like_user_correction("No, I meant tomorrow morning.") is True
+    assert Jarvis._looks_like_user_correction("What time is it?") is False
+
+
 def test_start_requires_sounddevice_for_local_tts_playback():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis._started = False
@@ -159,6 +171,39 @@ def test_telemetry_snapshot_averages():
     assert snapshot["storage_errors"] == 1.0
     assert snapshot["unknown_summary_details"] == 0.0
     assert snapshot["fallback_responses"] == 4.0
+    intent = snapshot["intent_metrics"]
+    assert intent["answer_quality_success_rate"] == 0.0
+    assert intent["completion_success_rate"] == 0.0
+    assert intent["correction_frequency"] == 0.0
+
+
+def test_telemetry_snapshot_intent_metric_rates():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._telemetry = {
+        "intent_turns_total": 10.0,
+        "intent_answer_turns": 4.0,
+        "intent_action_turns": 3.0,
+        "intent_hybrid_turns": 3.0,
+        "intent_answer_total": 8.0,
+        "intent_answer_success": 6.0,
+        "intent_completion_total": 5.0,
+        "intent_completion_success": 4.0,
+        "intent_corrections": 2.0,
+    }
+    jarvis._telemetry_error_counts = {}
+
+    snapshot = Jarvis._telemetry_snapshot(jarvis)
+    intent = snapshot["intent_metrics"]
+    assert intent["turn_count"] == 10.0
+    assert intent["answer_intent_count"] == 4.0
+    assert intent["action_intent_count"] == 3.0
+    assert intent["hybrid_intent_count"] == 3.0
+    assert intent["answer_sample_count"] == 8.0
+    assert intent["completion_sample_count"] == 5.0
+    assert intent["answer_quality_success_rate"] == pytest.approx(0.75)
+    assert intent["completion_success_rate"] == pytest.approx(0.8)
+    assert intent["correction_count"] == 2.0
+    assert intent["correction_frequency"] == pytest.approx(0.2)
 
 
 def test_refresh_tool_error_counters():

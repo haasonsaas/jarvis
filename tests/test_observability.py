@@ -20,6 +20,12 @@ def test_observability_store_persists_and_reports_percentiles(tmp_path):
                     "avg_tts_first_audio_ms": value * 3,
                     "service_errors": 0,
                     "storage_errors": 0,
+                    "intent_metrics": {
+                        "turn_count": 5.0,
+                        "answer_quality_success_rate": 0.8,
+                        "completion_success_rate": 0.7,
+                        "correction_frequency": 0.1,
+                    },
                 }
             )
         p = store.latency_percentiles(window_sec=3600)
@@ -29,6 +35,8 @@ def test_observability_store_persists_and_reports_percentiles(tmp_path):
         status = store.status_snapshot()
         assert status["enabled"] is True
         assert status["restart_count"] >= 1
+        assert "intent_metrics" in status
+        assert status["intent_metrics"]["answer_quality_success_rate"] == 0.8
     finally:
         store.stop()
         store.close()
@@ -73,12 +81,21 @@ def test_observability_prometheus_metrics_contains_expected_lines(tmp_path):
                 "avg_tts_first_audio_ms": 340.0,
                 "service_errors": 1,
                 "storage_errors": 0,
+                "intent_metrics": {
+                    "turn_count": 3.0,
+                    "answer_quality_success_rate": 0.66,
+                    "completion_success_rate": 0.5,
+                    "correction_frequency": 0.33,
+                },
             }
         )
         metrics = store.prometheus_metrics()
         assert "jarvis_uptime_seconds" in metrics
         assert "jarvis_restart_count" in metrics
         assert "jarvis_stt_latency_ms" in metrics
+        assert "jarvis_intent_answer_quality_success_rate" in metrics
+        assert "jarvis_intent_completion_success_rate" in metrics
+        assert "jarvis_intent_correction_frequency" in metrics
     finally:
         store.stop()
         store.close()
