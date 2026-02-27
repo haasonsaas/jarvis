@@ -56,6 +56,9 @@ import pytest
         ("jarvis.tools.services_domains.trust_memory_query", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.trust_memory_summary", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.trust_memory_governance", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.trust_proactive_briefing", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.trust_proactive_nudges", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.trust_proactive_followthrough", "jarvis.tools.services"),
     ],
 )
 def test_runtime_module_import_boundary(module_name: str, blocked_module: str) -> None:
