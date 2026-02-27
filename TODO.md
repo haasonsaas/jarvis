@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 64 (Home Assistant Tool Decomposition)
+# Jarvis TODO — Wave 65 (Smart-Home Mutation Policy Split)
 
 Last updated: 2026-02-27
 
@@ -8,90 +8,70 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 44
-- Completed: 44
+- Total items: 31
+- Completed: 31
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W64-A01` Profile post-Wave-63 hotspots and choose next low-risk high-value split targets.
-- [x] `W64-A02` Select Home Assistant tool handlers with multi-branch concentration.
-- [x] `W64-A03` Include `home_ha_todo.py` in scope.
-- [x] `W64-A04` Include `home_ha_timer.py` in scope.
-- [x] `W64-A05` Include `home_media_control_tool.py` in scope.
-- [x] `W64-A06` Preserve behavior/audit/policy semantics and existing response text contracts.
+- [x] `W65-A01` Profile post-Wave-64 hotspots and select highest policy-concentration candidate.
+- [x] `W65-A02` Select `home_mutation_policy.py` for focused decomposition.
+- [x] `W65-A03` Preserve all `smart_home` response text and policy decisions.
+- [x] `W65-A04` Preserve identity/audit/preview semantics and guardrail ordering.
 
-## B) Home Assistant to-do split
+## B) Validation + identity split
 
-- [x] `W64-B01` Create `home_ha_todo_preflight.py`.
-- [x] `W64-B02` Move policy/config/action/entity/identity/readonly preflight checks.
-- [x] `W64-B03` Create `home_ha_todo_list_action.py`.
-- [x] `W64-B04` Move list/get-items retrieval and list rendering flow.
-- [x] `W64-B05` Create `home_ha_todo_mutate_action.py`.
-- [x] `W64-B06` Move add/remove service dispatch + recovery path.
-- [x] `W64-B07` Reduce `home_ha_todo.py` to orchestrator wrapper.
+- [x] `W65-B01` Create `home_mutation_policy_validate_identity.py`.
+- [x] `W65-B02` Move field/domain/action/data validation checks.
+- [x] `W65-B03` Move dry-run/safe-mode normalization.
+- [x] `W65-B04` Move identity authorization and denied audit path.
+- [x] `W65-B05` Move strict-confirm and sensitive-confirm enforcement.
+- [x] `W65-B06` Return normalized context payload for downstream guardrails.
 
-## C) Home Assistant timer split
+## C) Guardrail split
 
-- [x] `W64-C01` Create `home_ha_timer_preflight.py`.
-- [x] `W64-C02` Move tool/config/action/entity/identity/readonly checks.
-- [x] `W64-C03` Create `home_ha_timer_state_action.py`.
-- [x] `W64-C04` Move timer state retrieval and response shaping.
-- [x] `W64-C05` Create `home_ha_timer_mutate_action.py`.
-- [x] `W64-C06` Move start/pause/cancel/finish duration/service dispatch flow.
-- [x] `W64-C07` Reduce `home_ha_timer.py` to orchestrator wrapper.
+- [x] `W65-C01` Create `home_mutation_policy_guardrails.py`.
+- [x] `W65-C02` Move ambiguous high-risk target denial logic.
+- [x] `W65-C03` Move area-policy enforcement logic.
+- [x] `W65-C04` Move plan-preview gating and preview audit path.
+- [x] `W65-C05` Preserve preview risk-level mapping by domain sensitivity.
 
-## D) Home media control split
+## D) Wrapper reduction
 
-- [x] `W64-D01` Create `home_media_control_preflight.py`.
-- [x] `W64-D02` Move action/entity validation and volume validation.
-- [x] `W64-D03` Move identity authorization, area policy, preview checks.
-- [x] `W64-D04` Create `home_media_control_execute.py`.
-- [x] `W64-D05` Move dry-run response/audit behavior.
-- [x] `W64-D06` Move execution/recovery/error mapping behavior.
-- [x] `W64-D07` Reduce `home_media_control_tool.py` to orchestrator wrapper.
+- [x] `W65-D01` Reduce `home_mutation_policy.py` to orchestrator wrapper.
+- [x] `W65-D02` Wire wrapper through validate-then-guardrails flow.
 
-## E) Import boundaries and verification
+## E) Boundaries and validation
 
-- [x] `W64-E01` Extend import-boundary coverage for new to-do split modules.
-- [x] `W64-E02` Extend import-boundary coverage for new timer split modules.
-- [x] `W64-E03` Extend import-boundary coverage for new media split modules.
-- [x] `W64-E04` Run focused lint on all changed modules.
-- [x] `W64-E05` Run targeted pytest for `smart_home` + HA todo/timer/media paths.
-- [x] `W64-E06` Run `tests/test_import_boundaries.py`.
-- [x] `W64-E07` Run full `make check`.
-- [x] `W64-E08` Run full `make security-gate`.
-- [x] `W64-E09` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W65-E01` Extend import-boundary coverage for new policy split modules.
+- [x] `W65-E02` Run focused lint on changed modules.
+- [x] `W65-E03` Run targeted pytest for `smart_home` behavior.
+- [x] `W65-E04` Run `tests/test_import_boundaries.py`.
+- [x] `W65-E05` Run full `make check`.
+- [x] `W65-E06` Run full `make security-gate`.
+- [x] `W65-E07` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W64-F01` Record line-count reductions and extracted module set.
-- [x] `W64-F02` Commit Wave 64 tranche.
-- [x] `W64-F03` Push Wave 64 to origin/main.
+- [x] `W65-F01` Record line-count outcomes for split module.
+- [x] `W65-F02` Commit Wave 65 tranche.
+- [x] `W65-F03` Push Wave 65 to origin/main.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Wrapper concentration reductions:
-  - `home_ha_todo.py`: `189 -> 24`
-  - `home_ha_timer.py`: `171 -> 24`
-  - `home_media_control_tool.py`: `197 -> 19`
+- Wrapper concentration reduction:
+  - `home_mutation_policy.py`: `231 -> 26`
 - New extracted modules:
-  - `home_ha_todo_preflight.py`
-  - `home_ha_todo_list_action.py`
-  - `home_ha_todo_mutate_action.py`
-  - `home_ha_timer_preflight.py`
-  - `home_ha_timer_state_action.py`
-  - `home_ha_timer_mutate_action.py`
-  - `home_media_control_preflight.py`
-  - `home_media_control_execute.py`
+  - `home_mutation_policy_validate_identity.py`
+  - `home_mutation_policy_guardrails.py`
 - Validation status:
   - Focused lint: pass.
-  - Targeted pytest (`home_assistant_todo/home_assistant_timer/media_control/smart_home`): `46 passed`.
+  - Targeted pytest (`smart_home`): `41 passed`.
   - `tests/test_import_boundaries.py`: pass.
-  - `make check`: `700 passed`.
-  - `make security-gate`: `700 passed`; fault subset `3 passed`.
+  - `make check`: `702 passed`.
+  - `make security-gate`: `702 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

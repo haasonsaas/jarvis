@@ -32,6 +32,8 @@ import pytest
         ("jarvis.tools.services_domains.home_mutation", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_mutation_preflight", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_mutation_policy", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.home_mutation_policy_validate_identity", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.home_mutation_policy_guardrails", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_mutation_state_checks", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_mutation_execute", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_ha_tools", "jarvis.tools.services"),
