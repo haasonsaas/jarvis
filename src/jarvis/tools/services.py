@@ -14,7 +14,6 @@ import logging
 import math
 import random
 import re
-import secrets
 import smtplib
 import sys
 import time
@@ -187,6 +186,16 @@ from jarvis.tools.services_circuit_runtime import (
     integration_for_tool as _runtime_integration_for_tool,
     integration_record_failure as _runtime_integration_record_failure,
     integration_record_success as _runtime_integration_record_success,
+)
+from jarvis.tools.services_policy_runtime import (
+    hhmm_to_minutes as _runtime_hhmm_to_minutes,
+    identity_profile_level as _runtime_identity_profile_level,
+    normalize_nudge_policy as _runtime_normalize_nudge_policy,
+    profile_rank as _runtime_profile_rank,
+    prune_guest_sessions as _runtime_prune_guest_sessions,
+    quiet_window_active as _runtime_quiet_window_active,
+    register_guest_session as _runtime_register_guest_session,
+    resolve_guest_session as _runtime_resolve_guest_session,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -867,83 +876,31 @@ def _integration_circuit_open_message(integration: str, remaining_sec: float) ->
 
 
 def _normalize_nudge_policy(value: Any) -> str:
-    normalized = str(value or "adaptive").strip().lower()
-    if normalized in {"interrupt", "defer", "adaptive"}:
-        return normalized
-    return "adaptive"
+    return _runtime_normalize_nudge_policy(value)
 
 
 def _hhmm_to_minutes(value: str) -> int | None:
-    text = str(value or "").strip()
-    match = re.fullmatch(r"(\d{1,2}):(\d{2})", text)
-    if not match:
-        return None
-    hours = int(match.group(1))
-    minutes = int(match.group(2))
-    if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
-        return None
-    return (hours * 60) + minutes
+    return _runtime_hhmm_to_minutes(value)
 
 
 def _quiet_window_active(*, now_ts: float | None = None) -> bool:
-    start = _hhmm_to_minutes(_nudge_quiet_hours_start)
-    end = _hhmm_to_minutes(_nudge_quiet_hours_end)
-    if start is None or end is None or start == end:
-        return False
-    local = time.localtime(time.time() if now_ts is None else float(now_ts))
-    minute = (local.tm_hour * 60) + local.tm_min
-    if start < end:
-        return start <= minute < end
-    return minute >= start or minute < end
+    return _runtime_quiet_window_active(_services_module(), now_ts=now_ts)
 
 
 def _identity_profile_level(profile: str) -> str:
-    normalized = str(profile or "control").strip().lower()
-    if normalized in {"deny", "guest", "readonly", "control", "trusted"}:
-        return normalized
-    return "control"
+    return _runtime_identity_profile_level(profile)
 
 
 def _profile_rank(profile: str) -> int:
-    order = {
-        "deny": 0,
-        "guest": 1,
-        "readonly": 2,
-        "control": 3,
-        "trusted": 4,
-    }
-    return order.get(_identity_profile_level(profile), 3)
+    return _runtime_profile_rank(profile)
 
 
 def _prune_guest_sessions(*, now_ts: float | None = None) -> None:
-    if not _guest_sessions:
-        return
-    now = time.time() if now_ts is None else float(now_ts)
-    expired = [
-        token
-        for token, row in _guest_sessions.items()
-        if float(row.get("expires_at", 0.0) or 0.0) <= now
-    ]
-    for token in expired:
-        _guest_sessions.pop(token, None)
-    if expired:
-        _persist_expansion_state()
+    _runtime_prune_guest_sessions(_services_module(), now_ts=now_ts)
 
 
 def _resolve_guest_session(token: str, *, now_ts: float | None = None) -> dict[str, Any] | None:
-    text = str(token or "").strip()
-    if not text:
-        return None
-    _prune_guest_sessions(now_ts=now_ts)
-    row = _guest_sessions.get(text)
-    if not isinstance(row, dict):
-        return None
-    expires_at = float(row.get("expires_at", 0.0) or 0.0)
-    now = time.time() if now_ts is None else float(now_ts)
-    if expires_at <= now:
-        _guest_sessions.pop(text, None)
-        return None
-    return row
+    return _runtime_resolve_guest_session(_services_module(), token, now_ts=now_ts)
 
 
 def _register_guest_session(
@@ -953,19 +910,13 @@ def _register_guest_session(
     ttl_sec: float,
     now_ts: float | None = None,
 ) -> dict[str, Any]:
-    now = time.time() if now_ts is None else float(now_ts)
-    ttl = _as_float(ttl_sec, GUEST_SESSION_DEFAULT_TTL_SEC, minimum=60.0, maximum=GUEST_SESSION_MAX_TTL_SEC)
-    token = secrets.token_urlsafe(12)
-    row = {
-        "token": token,
-        "guest_id": str(guest_id or "guest").strip().lower() or "guest",
-        "capabilities": sorted(set(_as_str_list(capabilities, lower=True))),
-        "issued_at": now,
-        "expires_at": now + ttl,
-    }
-    _guest_sessions[token] = row
-    _prune_guest_sessions(now_ts=now)
-    return row
+    return _runtime_register_guest_session(
+        _services_module(),
+        guest_id=guest_id,
+        capabilities=capabilities,
+        ttl_sec=ttl_sec,
+        now_ts=now_ts,
+    )
 
 
 def _extract_area_from_entity(entity_id: str) -> str:
