@@ -185,6 +185,7 @@ Smart home safety defaults:
   - `GET /api/conversation-trace` returns live turn flow/tool/policy/latency trace rows used by the dashboard panel.
   - `/api/status` now includes `episodic_timeline` snapshots for recent important turns/actions.
   - `/api/status` now includes `operator_controls` with `active_control_preset`, available presets, and the current runtime profile snapshot.
+  - `/api/status` now includes `runtime_invariants` (last check, total violations, auto-heals, recent entries).
   - Operator control actions support one-click presets/profile portability:
     - `apply_control_preset` (`quiet_hours`, `demo_mode`, `maintenance_mode`)
     - `export_runtime_profile` / `import_runtime_profile`

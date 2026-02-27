@@ -353,6 +353,31 @@ def test_publish_voice_status_includes_turn_choreography():
     assert payload["control_preset"] == "custom"
 
 
+def test_runtime_invariant_checker_auto_heals_mode_and_preset_mismatches():
+    jarvis = Jarvis.__new__(Jarvis)
+    voice = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))
+    voice.set_mode("push_to_talk")
+    voice.set_push_to_talk_active(False)
+    jarvis._voice_attention = voice
+    jarvis._active_control_preset = "broken-preset"
+    jarvis._runtime_invariant_checked_at = 0.0
+    jarvis._runtime_invariant_checked_monotonic = 0.0
+    jarvis._runtime_invariant_violations_total = 0
+    jarvis._runtime_invariant_auto_heals_total = 0
+    jarvis._runtime_invariant_recent = deque(maxlen=40)
+    jarvis._observability = None
+
+    snapshot = Jarvis._check_runtime_invariants(jarvis, auto_heal=True)
+
+    assert voice.push_to_talk_active is True
+    assert jarvis._active_control_preset == "custom"
+    assert snapshot["total_violations"] == 2
+    assert snapshot["total_auto_heals"] == 2
+    codes = {item["code"] for item in snapshot["recent"]}
+    assert "push_to_talk_mode_inactive" in codes
+    assert "invalid_control_preset" in codes
+
+
 def test_start_requires_sounddevice_for_local_tts_playback():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis._started = False

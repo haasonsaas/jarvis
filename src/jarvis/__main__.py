@@ -155,6 +155,7 @@ FOLLOWUP_CARRYOVER_PREFIX_TERMS = (
 FOLLOWUP_CARRYOVER_REFERENCE_TERMS = {"it", "that", "this", "them", "there", "one", "same"}
 FOLLOWUP_CARRYOVER_SHORT_REPLY_MAX_WORDS = 8
 FOLLOWUP_CARRYOVER_ACK_TERMS = {"yes", "yep", "yeah", "no", "nope", "ok", "okay", "thanks", "thank", "sure"}
+RUNTIME_INVARIANT_HISTORY_MAXLEN = 40
 TURN_CHOREOGRAPHY_CUES: dict[State, dict[str, float | str]] = {
     State.IDLE: {"label": "idle_reset", "turn_lean": 0.0, "turn_tilt": 0.0, "turn_glance_yaw": 0.0},
     State.LISTENING: {"label": "listen_lean_in", "turn_lean": 1.5, "turn_tilt": -1.0, "turn_glance_yaw": -3.0},
@@ -395,6 +396,11 @@ class Jarvis:
         self._active_control_preset = "custom"
         self._personality_preview_snapshot: dict[str, str] | None = None
         self._stt_diagnostics: dict[str, Any] = self._default_stt_diagnostics()
+        self._runtime_invariant_checked_at = 0.0
+        self._runtime_invariant_checked_monotonic = 0.0
+        self._runtime_invariant_violations_total = 0
+        self._runtime_invariant_auto_heals_total = 0
+        self._runtime_invariant_recent: deque[dict[str, Any]] = deque(maxlen=RUNTIME_INVARIANT_HISTORY_MAXLEN)
         self._load_runtime_state()
         self._publish_voice_status()
         self._publish_skills_status()
@@ -518,6 +524,7 @@ class Jarvis:
         ]
 
     def _publish_voice_status(self) -> None:
+        self._check_runtime_invariants(auto_heal=True)
         voice = self._voice_controller()
         status = voice.status()
         try:
@@ -996,6 +1003,97 @@ class Jarvis:
         else:
             return text
         return f"{text}\n\nVoice profile preference:\n{guidance}"
+
+    def _runtime_invariant_snapshot(self) -> dict[str, Any]:
+        recent = list(getattr(self, "_runtime_invariant_recent", []))
+        return {
+            "last_checked_at": float(getattr(self, "_runtime_invariant_checked_at", 0.0)),
+            "total_violations": int(getattr(self, "_runtime_invariant_violations_total", 0)),
+            "total_auto_heals": int(getattr(self, "_runtime_invariant_auto_heals_total", 0)),
+            "recent": recent[:20],
+        }
+
+    def _check_runtime_invariants(self, *, auto_heal: bool = True) -> dict[str, Any]:
+        now = time.time()
+        self._runtime_invariant_checked_at = now
+        self._runtime_invariant_checked_monotonic = time.monotonic()
+        voice = self._voice_controller()
+        violations: list[dict[str, Any]] = []
+        mode = str(getattr(voice, "mode", "unknown")).strip().lower()
+        push_to_talk_active = bool(getattr(voice, "push_to_talk_active", False))
+
+        if mode == "push_to_talk" and not push_to_talk_active:
+            healed = False
+            if auto_heal:
+                voice.set_push_to_talk_active(True)
+                healed = True
+            violations.append(
+                {
+                    "code": "push_to_talk_mode_inactive",
+                    "message": "wake mode push_to_talk requires push_to_talk_active=true",
+                    "healed": healed,
+                }
+            )
+        if mode != "push_to_talk" and push_to_talk_active:
+            healed = False
+            if auto_heal:
+                voice.set_push_to_talk_active(False)
+                healed = True
+            violations.append(
+                {
+                    "code": "push_to_talk_active_mode_mismatch",
+                    "message": "push_to_talk_active=true requires wake mode push_to_talk",
+                    "healed": healed,
+                }
+            )
+
+        preset = str(getattr(self, "_active_control_preset", "custom")).strip().lower()
+        if preset not in VALID_CONTROL_PRESETS and preset != "custom":
+            healed = False
+            if auto_heal:
+                self._active_control_preset = "custom"
+                healed = True
+            violations.append(
+                {
+                    "code": "invalid_control_preset",
+                    "message": "active control preset must be known or custom",
+                    "healed": healed,
+                }
+            )
+
+        recent = getattr(self, "_runtime_invariant_recent", None)
+        if not isinstance(recent, deque):
+            recent = deque(maxlen=RUNTIME_INVARIANT_HISTORY_MAXLEN)
+            self._runtime_invariant_recent = recent
+        if not hasattr(self, "_runtime_invariant_violations_total"):
+            self._runtime_invariant_violations_total = 0
+        if not hasattr(self, "_runtime_invariant_auto_heals_total"):
+            self._runtime_invariant_auto_heals_total = 0
+
+        healed_any = False
+        for item in violations:
+            healed = bool(item.get("healed", False))
+            if healed:
+                healed_any = True
+            self._runtime_invariant_violations_total += 1
+            if healed:
+                self._runtime_invariant_auto_heals_total += 1
+            record = {
+                "timestamp": now,
+                "code": str(item.get("code", "unknown")),
+                "message": str(item.get("message", "")),
+                "healed": healed,
+            }
+            recent.appendleft(record)
+            observability = getattr(self, "_observability", None)
+            if observability is not None:
+                with suppress(Exception):
+                    observability.record_event("runtime_invariant", record)
+
+        if healed_any:
+            self._persist_runtime_state_safe()
+
+        return self._runtime_invariant_snapshot()
 
     @staticmethod
     def _percentile(values: list[float], q: float) -> float:
@@ -1570,6 +1668,9 @@ class Jarvis:
         state_since = time.monotonic()
         while True:
             now = time.monotonic()
+            if (now - float(getattr(self, "_runtime_invariant_checked_monotonic", 0.0))) >= 2.0:
+                with suppress(Exception):
+                    self._check_runtime_invariants(auto_heal=True)
             current = str(getattr(self.presence.signals.state, "value", "unknown")).lower()
             if current != state_name:
                 state_name = current
@@ -1657,6 +1758,7 @@ class Jarvis:
             "available_control_presets": sorted(VALID_CONTROL_PRESETS),
             "runtime_profile": self._runtime_profile_snapshot(),
         }
+        status["runtime_invariants"] = self._runtime_invariant_snapshot()
         return status
 
     def _startup_diagnostics_provider(self) -> list[str]:
