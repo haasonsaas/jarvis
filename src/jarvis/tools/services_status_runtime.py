@@ -221,6 +221,20 @@ def observability_snapshot(services_module: Any) -> dict[str, Any]:
     return snapshot
 
 
+def skills_status_snapshot(services_module: Any) -> dict[str, Any]:
+    s = services_module
+    if not s._runtime_skills_state:
+        if s._skill_registry is not None:
+            return s._skill_registry.status_snapshot()
+        return {
+            "enabled": False,
+            "loaded_count": 0,
+            "enabled_count": 0,
+            "skills": [],
+        }
+    return {str(key): value for key, value in s._runtime_skills_state.items()}
+
+
 def expansion_snapshot(services_module: Any) -> dict[str, Any]:
     s = services_module
     s._prune_guest_sessions()

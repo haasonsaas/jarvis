@@ -90,6 +90,7 @@ from jarvis.tools.services_status_runtime import (
     observability_snapshot as _runtime_observability_snapshot,
     recent_tool_rows as _runtime_recent_tool_rows,
     score_label as _runtime_score_label,
+    skills_status_snapshot as _runtime_skills_status_snapshot,
     voice_attention_snapshot as _runtime_voice_attention_snapshot,
 )
 from jarvis.tools.services_ha_runtime import (
@@ -1328,16 +1329,7 @@ def _observability_snapshot() -> dict[str, Any]:
 
 
 def _skills_status_snapshot() -> dict[str, Any]:
-    if not _runtime_skills_state:
-        if _skill_registry is not None:
-            return _skill_registry.status_snapshot()
-        return {
-            "enabled": False,
-            "loaded_count": 0,
-            "enabled_count": 0,
-            "skills": [],
-        }
-    return {str(key): value for key, value in _runtime_skills_state.items()}
+    return _runtime_skills_status_snapshot(_services_module())
 
 
 def _expansion_snapshot() -> dict[str, Any]:
