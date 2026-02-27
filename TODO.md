@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 47 (Integrations Ops Decomposition)
+# Jarvis TODO — Wave 48 (Planner Schedule Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,73 +8,64 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 31
-- Completed: 31
+- Total items: 27
+- Completed: 27
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W47-A01` Confirm Wave 46 merged and branch baseline clean.
-- [x] `W47-A02` Re-profile largest remaining service-domain modules.
-- [x] `W47-A03` Select `services_domains/integrations_ops.py` for decomposition.
-- [x] `W47-A04` Preserve compatibility API, including private calendar helper exports.
+- [x] `W48-A01` Confirm Wave 47 merged and branch baseline clean.
+- [x] `W48-A02` Re-profile largest remaining service-domain modules.
+- [x] `W48-A03` Select `services_domains/planner_schedule.py` for decomposition.
+- [x] `W48-A04` Preserve API compatibility via export shim.
 
 ## B) Decomposition design
 
-- [x] `W47-B01` Define `integrations_weather.py` for weather handler.
-- [x] `W47-B02` Define `integrations_webhook.py` for webhook trigger + inbound list/clear.
-- [x] `W47-B03` Define `integrations_calendar.py` for calendar helpers and event queries.
-- [x] `W47-B04` Define `integrations_deadletter.py` for dead-letter list/replay.
-- [x] `W47-B05` Keep runtime behavior and lazy services binding unchanged.
+- [x] `W48-B01` Define `planner_timers.py` for timer handlers.
+- [x] `W48-B02` Define `planner_reminders.py` for reminder handlers and reminder payload helpers.
+- [x] `W48-B03` Keep runtime behavior and lazy services binding unchanged.
 
 ## C) Extraction implementation
 
-- [x] `W47-C01` Create `services_domains/integrations_weather.py`.
-- [x] `W47-C02` Move `weather_lookup`.
-- [x] `W47-C03` Create `services_domains/integrations_webhook.py`.
-- [x] `W47-C04` Move `webhook_trigger`, `webhook_inbound_list`, `webhook_inbound_clear`.
-- [x] `W47-C05` Create `services_domains/integrations_calendar.py`.
-- [x] `W47-C06` Move `_calendar_fetch_events`, `_parse_calendar_window`, `calendar_events`, `calendar_next_event`.
-- [x] `W47-C07` Create `services_domains/integrations_deadletter.py`.
-- [x] `W47-C08` Move `dead_letter_list`, `dead_letter_replay`.
+- [x] `W48-C01` Create `services_domains/planner_timers.py`.
+- [x] `W48-C02` Move `timer_create`, `timer_list`, `timer_cancel`.
+- [x] `W48-C03` Create `services_domains/planner_reminders.py`.
+- [x] `W48-C04` Move `_list_reminder_payloads`, `_due_unnotified_reminder_payloads`.
+- [x] `W48-C05` Move `reminder_create`, `reminder_list`, `reminder_complete`, `reminder_notify_due`.
 
 ## D) Compatibility and boundaries
 
-- [x] `W47-D01` Replace `services_domains/integrations_ops.py` with compatibility exports.
-- [x] `W47-D02` Keep `services_domains/integrations.py` compatibility imports intact.
-- [x] `W47-D03` Add import-boundary check for `integrations_weather`.
-- [x] `W47-D04` Add import-boundary check for `integrations_webhook`.
-- [x] `W47-D05` Add import-boundary check for `integrations_calendar`.
-- [x] `W47-D06` Add import-boundary check for `integrations_deadletter`.
+- [x] `W48-D01` Replace `services_domains/planner_schedule.py` with compatibility exports.
+- [x] `W48-D02` Keep imports used by `services_domains/planner.py` stable.
+- [x] `W48-D03` Add import-boundary check for `planner_timers`.
+- [x] `W48-D04` Add import-boundary check for `planner_reminders`.
 
 ## E) Validation
 
-- [x] `W47-E01` Run focused lint on changed integration modules + boundary tests.
-- [x] `W47-E02` Run targeted pytest for integrations handlers + boundaries.
-- [x] `W47-E03` Run full `make check`.
-- [x] `W47-E04` Run full `make security-gate`.
-- [x] `W47-E05` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W48-E01` Run focused lint on planner schedule modules + boundary test file.
+- [x] `W48-E02` Run targeted pytest for timer/reminder handlers + boundaries.
+- [x] `W48-E03` Run full `make check`.
+- [x] `W48-E04` Run full `make security-gate`.
+- [x] `W48-E05` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W47-F01` Capture post-split line-count outcomes.
-- [x] `W47-F02` Commit and push Wave 47.
+- [x] `W48-F01` Capture post-split line-count outcomes.
+- [x] `W48-F02` Commit and push Wave 48.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Integrations-ops decomposition:
-  - `services_domains/integrations_ops.py`: `786 -> 33` lines (compatibility exports)
-  - New `services_domains/integrations_weather.py`: `149` lines
-  - New `services_domains/integrations_webhook.py`: `268` lines
-  - New `services_domains/integrations_calendar.py`: `240` lines
-  - New `services_domains/integrations_deadletter.py`: `162` lines
+- Planner schedule decomposition:
+  - `services_domains/planner_schedule.py`: `535 -> 25` lines (compatibility exports)
+  - New `services_domains/planner_timers.py`: `201` lines
+  - New `services_domains/planner_reminders.py`: `346` lines
 - Boundary enforcement:
-  - Added import-boundary coverage for all new integrations operation modules.
+  - Added import-boundary coverage for new planner timer/reminder modules.
 - Validation status:
-  - `make check`: `632 passed`
-  - `make security-gate`: `632 passed`; fault subset `3 passed`
+  - `make check`: `634 passed`
+  - `make security-gate`: `634 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
