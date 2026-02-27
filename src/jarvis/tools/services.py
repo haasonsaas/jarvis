@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
-import hmac
+import hmac  # noqa: F401  # accessed by domain modules via services module alias
 import json
 import logging
 import math
@@ -73,6 +73,13 @@ from jarvis.tools.services_integrations_runtime import (
     notion_configured as _runtime_notion_configured,
     run_release_channel_check as _runtime_run_release_channel_check,
     write_quality_report_artifact as _runtime_write_quality_report_artifact,
+)
+from jarvis.tools.services_identity_runtime import (
+    identity_audit_fields as _runtime_identity_audit_fields,
+    identity_authorize as _runtime_identity_authorize,
+    identity_context as _runtime_identity_context,
+    identity_enriched_audit as _runtime_identity_enriched_audit,
+    identity_trust_domain as _runtime_identity_trust_domain,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -734,91 +741,15 @@ def _contains_pii(text: str) -> bool:
 
 
 def _identity_context(args: dict[str, Any] | None) -> dict[str, Any]:
-    payload = args if isinstance(args, dict) else {}
-    request_context = payload.get("request_context")
-    context_payload = request_context if isinstance(request_context, dict) else {}
-    guest_token = str(
-        payload.get("guest_session_token")
-        or context_payload.get("guest_session_token")
-        or ""
-    ).strip()
-    guest_session = _resolve_guest_session(guest_token) if guest_token else None
-
-    if guest_session is not None:
-        speaker_verified = _as_bool(
-            payload.get("speaker_verified", context_payload.get("speaker_verified")),
-            default=False,
-        )
-        return {
-            "requester_id": str(guest_session.get("guest_id", "guest")),
-            "profile": "guest",
-            "trusted": False,
-            "speaker_verified": speaker_verified,
-            "source": "guest_session",
-            "guest_session_token": str(guest_session.get("token", "")),
-            "guest_capabilities": _as_str_list(guest_session.get("capabilities"), lower=True),
-            "guest_expires_at": float(guest_session.get("expires_at", 0.0) or 0.0),
-        }
-
-    requester_id = str(payload.get("requester_id", "")).strip().lower()
-    source = "requester_id"
-    if not requester_id:
-        requester_id = str(context_payload.get("requester_id") or context_payload.get("user_id") or "").strip().lower()
-        source = "request_context" if requester_id else "default"
-    if not requester_id:
-        requester_id = _identity_default_user
-    profile = _identity_user_profiles.get(requester_id, _identity_default_profile)
-    if profile not in {"deny", "readonly", "control", "trusted"}:
-        profile = "control"
-    speaker_verified = _as_bool(
-        payload.get("speaker_verified", context_payload.get("speaker_verified")),
-        default=False,
-    )
-    trusted = requester_id in _identity_trusted_users or profile == "trusted" or speaker_verified
-    return {
-        "requester_id": requester_id,
-        "profile": _identity_profile_level(profile),
-        "trusted": trusted,
-        "speaker_verified": speaker_verified,
-        "source": source,
-        "guest_session_token": "",
-        "guest_capabilities": [],
-        "guest_expires_at": 0.0,
-    }
+    return _runtime_identity_context(_services_module(), args)
 
 
 def _identity_audit_fields(context: dict[str, Any], decision_chain: list[str] | None = None) -> dict[str, Any]:
-    chain = [str(item) for item in (decision_chain or []) if str(item).strip()]
-    if not chain:
-        chain = ["identity_context_applied"]
-    return {
-        "requester_id": str(context.get("requester_id", "")),
-        "requester_profile": _identity_profile_level(str(context.get("profile", "control"))),
-        "requester_trusted": bool(context.get("trusted", False)),
-        "speaker_verified": bool(context.get("speaker_verified", False)),
-        "identity_source": str(context.get("source", "default")),
-        "guest_session_token": str(context.get("guest_session_token", "")),
-        "guest_expires_at": float(context.get("guest_expires_at", 0.0) or 0.0),
-        "decision_chain": chain,
-    }
+    return _runtime_identity_audit_fields(_services_module(), context, decision_chain)
 
 
 def _identity_trust_domain(tool_name: str, args: dict[str, Any] | None) -> str:
-    payload = args if isinstance(args, dict) else {}
-    domain = str(payload.get("domain", "")).strip().lower()
-    if domain:
-        return domain
-    mapped = {
-        "email_send": "email",
-        "webhook_trigger": "webhook",
-        "slack_notify": "messaging",
-        "discord_notify": "messaging",
-        "home_assistant_conversation": "home_assistant",
-        "smart_home": "home_assistant",
-        "media_control": "home_assistant",
-        "todoist_add_task": "todoist",
-    }
-    return mapped.get(str(tool_name or "").strip().lower(), "general")
+    return _runtime_identity_trust_domain(_services_module(), tool_name, args)
 
 
 def _identity_authorize(
@@ -828,121 +759,22 @@ def _identity_authorize(
     mutating: bool,
     high_risk: bool,
 ) -> tuple[bool, str | None, dict[str, Any], list[str]]:
-    context = _identity_context(args)
-    payload = args if isinstance(args, dict) else {}
-    chain = [
-        f"tool={tool_name}",
-        f"requester={context['requester_id']}",
-        f"profile={context['profile']}",
-    ]
-    if _safe_mode_enabled and mutating:
-        chain.append("deny:safe_mode")
-        return (
-            False,
-            "Safe mode is enabled. Mutating actions are blocked; disable safe mode or use dry-run where supported.",
-            context,
-            chain,
-        )
-    if _identity_profile_level(str(context.get("profile", "control"))) == "guest":
-        guest_caps = {
-            item
-            for item in _as_str_list(context.get("guest_capabilities"), lower=True)
-            if item
-        }
-        tool_cap = str(tool_name or "").strip().lower()
-        if tool_cap not in guest_caps and "*" not in guest_caps:
-            chain.append("deny:guest_capability")
-            return (
-                False,
-                f"Guest session does not allow '{tool_name}'. Allowed capabilities: {sorted(guest_caps)}",
-                context,
-                chain,
-            )
-        chain.append("guest_session_capability")
-
-    if not _identity_enforcement_enabled:
-        chain.append("identity_enforcement_disabled")
-        return True, None, context, chain
-
-    profile = _identity_profile_level(str(context.get("profile", "control")))
-    if profile == "deny":
-        chain.append("deny:user_profile")
-        return (
-            False,
-            (
-                f"Action blocked for requester '{context['requester_id']}'. "
-                "Ask an admin to update IDENTITY_USER_PROFILES for this user."
-            ),
-            context,
-            chain,
-        )
-    if mutating and profile == "readonly":
-        chain.append("deny:readonly_profile")
-        return (
-            False,
-            (
-                f"Requester '{context['requester_id']}' is readonly for mutating actions. "
-                "Ask a trusted user or admin to execute this action."
-            ),
-            context,
-            chain,
-        )
-    domain = _identity_trust_domain(tool_name, payload)
-    policy = _identity_trust_policies.get(domain, {})
-    required_profile = _identity_profile_level(str(policy.get("required_profile", "control")))
-    if _profile_rank(profile) < _profile_rank(required_profile):
-        chain.append("deny:trust_policy")
-        return (
-            False,
-            (
-                f"Trust policy for domain '{domain}' requires profile>={required_profile}; "
-                f"requester profile is {profile}."
-            ),
-            context,
-            chain,
-        )
-    if _as_bool(policy.get("requires_step_up"), default=False):
-        if not (_as_bool(payload.get("approved"), default=False) or bool(payload.get("approval_code"))):
-            chain.append("deny:step_up_required")
-            return (
-                False,
-                f"Trust policy for domain '{domain}' requires step-up approval.",
-                context,
-                chain,
-            )
-        chain.append("trust_policy_step_up")
-    if high_risk and _identity_require_approval:
-        approved = _as_bool(payload.get("approved"), default=False)
-        approval_code = str(payload.get("approval_code", "")).strip()
-        code_valid = bool(_identity_approval_code) and bool(approval_code) and hmac.compare_digest(
-            approval_code,
-            _identity_approval_code,
-        )
-        trusted_approved = bool(context.get("trusted", False)) and approved
-        if not (code_valid or trusted_approved):
-            chain.append("deny:approval_required")
-            if _identity_approval_code:
-                guidance = "Provide a valid approval_code, or use a trusted requester with approved=true."
-            else:
-                guidance = "Use a trusted requester with approved=true."
-            return (
-                False,
-                f"High-risk action requires approval. {guidance}",
-                context,
-                chain,
-            )
-        if code_valid:
-            chain.append("approval_code_valid")
-        if trusted_approved:
-            chain.append("trusted_approval")
-    if context.get("trusted"):
-        chain.append("trusted_requester")
-    chain.append("allow")
-    return True, None, context, chain
+    return _runtime_identity_authorize(
+        _services_module(),
+        tool_name,
+        args,
+        mutating=mutating,
+        high_risk=high_risk,
+    )
 
 
 def _identity_enriched_audit(details: dict[str, Any], identity: dict[str, Any], decision_chain: list[str]) -> dict[str, Any]:
-    return {**details, **_identity_audit_fields(identity, decision_chain)}
+    return _runtime_identity_enriched_audit(
+        _services_module(),
+        details,
+        identity,
+        decision_chain,
+    )
 
 
 def _tokenized_words(text: str) -> list[str]:
@@ -3567,5 +3399,3 @@ def _planner_ready_nodes(graph: dict[str, Any]) -> list[dict[str, Any]]:
         if all(status_by_id.get(dep, "done") == "done" for dep in deps):
             ready.append(dict(node))
     return ready
-
-

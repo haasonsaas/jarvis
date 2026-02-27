@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 16 (Services Integration Runtime Decomposition)
+# Jarvis TODO — Wave 17 (Identity Runtime Decomposition)
 
 Last updated: 2026-02-27
 
@@ -16,20 +16,20 @@ Last updated: 2026-02-27
 
 ## A) Decomposition
 
-- [x] `W16-S01` Extract release-channel helper stack (`_run_release_channel_check`, `_load_release_channel_config`, `_evaluate_release_channel`) into `src/jarvis/tools/services_integrations_runtime.py`.
-- [x] `W16-S02` Extract notes/report artifact helpers (`_write_quality_report_artifact`, `_capture_note`, `_notion_configured`, `_capture_note_notion`) into `services_integrations_runtime.py`.
-- [x] `W16-S03` Keep compatibility wrappers in `src/jarvis/tools/services.py` so existing domain modules and imports keep the same callable names.
+- [x] `W17-S01` Extract identity context/audit/domain helpers from `services.py` into `src/jarvis/tools/services_identity_runtime.py`.
+- [x] `W17-S02` Extract identity authorization decision flow (`_identity_authorize`) into `services_identity_runtime.py`.
+- [x] `W17-S03` Keep compatibility wrappers in `services.py` for `_identity_context`, `_identity_audit_fields`, `_identity_trust_domain`, `_identity_authorize`, and `_identity_enriched_audit`.
 
 ## B) Quality and verification
 
-- [x] `W16-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after extraction.
+- [x] `W17-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after extraction.
 
 ---
 
 ## Outcome snapshot (current)
 
-- New integration runtime helper module: `src/jarvis/tools/services_integrations_runtime.py`.
-- `src/jarvis/tools/services.py` reduced to `3,571` lines (from `3,730` before this wave).
+- New identity runtime helper module: `src/jarvis/tools/services_identity_runtime.py`.
+- `src/jarvis/tools/services.py` reduced to `3,401` lines (from `3,571` before this wave).
 - Full gates are green:
   - `make check` (`555 passed`)
   - `make security-gate` (`555 passed`; fault-injection subset `3 passed`)
