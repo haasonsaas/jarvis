@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 15 (Services Bind + State Bootstrap Decomposition)
+# Jarvis TODO — Wave 16 (Services Integration Runtime Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,30 +8,28 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 5
-- Completed: 5
+- Total items: 4
+- Completed: 4
 - Remaining: 0
 
 ---
 
 ## A) Decomposition
 
-- [x] `W15-S01` Extract `services.bind(...)` runtime initialization/bootstrap into `src/jarvis/tools/services_runtime_state.py`.
-- [x] `W15-S02` Extract expansion-state helpers (`_replace_state_dict`, `_expansion_state_payload`, `_persist_expansion_state`, `_load_expansion_state`) into `services_runtime_state.py`.
-- [x] `W15-S03` Keep compatibility wrappers in `src/jarvis/tools/services.py` so existing imports/callers continue to use the same function names.
-- [x] `W15-S04` Address time-of-day flakiness in `test_reminder_notify_due_dispatches_and_marks_notified` by making the policy explicit (`interrupt`) in test setup.
+- [x] `W16-S01` Extract release-channel helper stack (`_run_release_channel_check`, `_load_release_channel_config`, `_evaluate_release_channel`) into `src/jarvis/tools/services_integrations_runtime.py`.
+- [x] `W16-S02` Extract notes/report artifact helpers (`_write_quality_report_artifact`, `_capture_note`, `_notion_configured`, `_capture_note_notion`) into `services_integrations_runtime.py`.
+- [x] `W16-S03` Keep compatibility wrappers in `src/jarvis/tools/services.py` so existing domain modules and imports keep the same callable names.
 
 ## B) Quality and verification
 
-- [x] `W15-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after extraction.
+- [x] `W16-Q01` Re-run full `make check`, `make security-gate`, and readiness full suite after extraction.
 
 ---
 
 ## Outcome snapshot (current)
 
-- New runtime bootstrap module: `src/jarvis/tools/services_runtime_state.py`.
-- `src/jarvis/tools/services.py` now delegates bind/state-bootstrap responsibilities to that module.
-- `src/jarvis/tools/services.py` reduced to `3,730` lines (from `4,102` before this wave).
+- New integration runtime helper module: `src/jarvis/tools/services_integrations_runtime.py`.
+- `src/jarvis/tools/services.py` reduced to `3,571` lines (from `3,730` before this wave).
 - Full gates are green:
   - `make check` (`555 passed`)
   - `make security-gate` (`555 passed`; fault-injection subset `3 passed`)
