@@ -75,6 +75,8 @@ import pytest
         ("jarvis.tools.services_domains.trust_memory_governance", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.trust_proactive_briefing", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.trust_proactive_nudges", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.trust_proactive_anomaly", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.trust_proactive_nudge_decision", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.trust_proactive_followthrough", "jarvis.tools.services"),
     ],
 )
