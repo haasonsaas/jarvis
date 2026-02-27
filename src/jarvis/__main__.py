@@ -131,6 +131,11 @@ from jarvis.runtime_lifecycle import (
     start as _runtime_start,
     stop as _runtime_stop,
 )
+from jarvis.runtime_voice_status import (
+    apply_turn_choreography as _runtime_apply_turn_choreography,
+    publish_voice_status as _runtime_publish_voice_status,
+    turn_choreography_snapshot as _runtime_turn_choreography_snapshot,
+)
 from jarvis.runtime_audio_output import (
     clear_tts_queue as _runtime_clear_tts_queue,
     flush_output as _runtime_flush_output,
@@ -461,102 +466,25 @@ class Jarvis:
         )
 
     def _publish_voice_status(self) -> None:
-        self._check_runtime_invariants(auto_heal=True)
-        voice = self._voice_controller()
-        status = voice.status()
-        try:
-            state = self.presence.signals.state
-            status["presence_state"] = str(state.value)
-            self._apply_turn_choreography(state)
-        except Exception:
-            status["presence_state"] = "unknown"
-        status["turn_choreography"] = self._turn_choreography_snapshot()
-        status["stt_diagnostics"] = self._stt_diagnostics_snapshot()
-        status["voice_profile_user"] = self._active_voice_user()
-        status["voice_profile"] = self._active_voice_profile()
-        status["voice_profile_count"] = len(getattr(self, "_voice_user_profiles", {}))
-        status["control_preset"] = str(getattr(self, "_active_control_preset", "custom"))
-        last_doa_update = float(getattr(self, "_last_doa_update", 0.0) or 0.0)
-        now_mono = time.monotonic()
-        doa_age_sec = 0.0
-        if last_doa_update:
-            doa_age_sec = max(0.0, now_mono - last_doa_update)
-        attention_source = "unknown"
-        with suppress(Exception):
-            attention_source = str(self.presence.attention_source())
-        status["acoustic_scene"] = {
-            "last_doa_angle": getattr(self, "_last_doa_angle", None),
-            "last_doa_speech": getattr(self, "_last_doa_speech", None),
-            "last_doa_age_sec": doa_age_sec,
-            "attention_confidence": self._attention_confidence(now_mono),
-            "attention_source": attention_source,
-        }
-        last_learned_preferences = getattr(self, "_last_learned_preferences", {})
-        status["preference_learning"] = (
-            dict(last_learned_preferences)
-            if isinstance(last_learned_preferences, dict)
-            else {}
+        _runtime_publish_voice_status(
+            self,
+            set_runtime_voice_state_fn=set_runtime_voice_state,
+            cues_by_state=TURN_CHOREOGRAPHY_CUES,
+            idle_state_value=str(State.IDLE.value),
         )
-        status["multimodal_grounding"] = self._multimodal_grounding_snapshot()
-        set_runtime_voice_state(status)
-        observability = getattr(self, "_observability", None)
-        if observability is not None:
-            with suppress(Exception):
-                observability.record_state_transition(status.get("presence_state", "unknown"), reason="presence_state")
 
     def _apply_turn_choreography(self, state: State) -> None:
-        cues = TURN_CHOREOGRAPHY_CUES.get(state)
-        if cues is None:
-            return
-        label = str(cues.get("label", "unknown"))
-        phase = str(state.value)
-        current = getattr(self, "_turn_choreography", {})
-        if isinstance(current, dict) and current.get("phase") == phase and current.get("label") == label:
-            return
-        signals = getattr(self.presence, "signals", None)
-        if signals is None:
-            return
-        turn_lean = float(cues.get("turn_lean", 0.0))
-        turn_tilt = float(cues.get("turn_tilt", 0.0))
-        turn_glance_yaw = float(cues.get("turn_glance_yaw", 0.0))
-        signals.turn_lean = turn_lean
-        signals.turn_tilt = turn_tilt
-        signals.turn_glance_yaw = turn_glance_yaw
-        updated_at = time.time()
-        self._turn_choreography = {
-            "phase": phase,
-            "label": label,
-            "turn_lean": turn_lean,
-            "turn_tilt": turn_tilt,
-            "turn_glance_yaw": turn_glance_yaw,
-            "updated_at": updated_at,
-        }
-        observability = getattr(self, "_observability", None)
-        if observability is not None:
-            with suppress(Exception):
-                observability.record_event(
-                    "turn_choreography",
-                    {
-                        "phase": phase,
-                        "label": label,
-                        "turn_lean": turn_lean,
-                        "turn_tilt": turn_tilt,
-                        "turn_glance_yaw": turn_glance_yaw,
-                    },
-                )
+        _runtime_apply_turn_choreography(
+            self,
+            state,
+            cues_by_state=TURN_CHOREOGRAPHY_CUES,
+        )
 
     def _turn_choreography_snapshot(self) -> dict[str, Any]:
-        current = getattr(self, "_turn_choreography", None)
-        if isinstance(current, dict):
-            return {str(key): value for key, value in current.items()}
-        return {
-            "phase": str(State.IDLE.value),
-            "label": "idle_reset",
-            "turn_lean": 0.0,
-            "turn_tilt": 0.0,
-            "turn_glance_yaw": 0.0,
-            "updated_at": 0.0,
-        }
+        return _runtime_turn_choreography_snapshot(
+            self,
+            idle_state_value=str(State.IDLE.value),
+        )
 
     def _publish_skills_status(self) -> None:
         skills = getattr(self, "_skills", None)

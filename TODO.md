@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/101 Runtime Decomposition
+# Jarvis TODO — Wave 74/102 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 239
-- Completed: 239
+- Total items: 247
+- Completed: 247
 - Remaining: 0
 
 ---
@@ -347,6 +347,17 @@ Last updated: 2026-02-27
 - [x] `W101-AE07` Run full quality/security/readiness gates.
 - [x] `W101-AE08` Update TODO + tranche snapshot.
 
+## AF) Wave 102 (completed): voice-status and turn-choreography extraction
+
+- [x] `W102-AF01` Profile `_publish_voice_status`, `_apply_turn_choreography`, and `_turn_choreography_snapshot` in `src/jarvis/__main__.py`.
+- [x] `W102-AF02` Create `runtime_voice_status.py` for voice-status payload and choreography helpers.
+- [x] `W102-AF03` Rewire `Jarvis` voice-status/choreography methods to runtime helper functions.
+- [x] `W102-AF04` Preserve runtime payload keys (`acoustic_scene`, `voice_profile`, `multimodal_grounding`, etc.) and observability transitions.
+- [x] `W102-AF05` Add focused unit coverage for runtime voice-status helpers.
+- [x] `W102-AF06` Extend import-boundary coverage for `runtime_voice_status`.
+- [x] `W102-AF07` Run full quality/security/readiness gates.
+- [x] `W102-AF08` Update TODO + tranche snapshot.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -375,6 +386,7 @@ Last updated: 2026-02-27
   - `runtime_operator_server.py`
   - `runtime_audio_output.py`
   - `runtime_lifecycle.py`
+  - `runtime_voice_status.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -407,6 +419,7 @@ Last updated: 2026-02-27
   - Startup/shutdown orchestration moved from `Jarvis.start`/`Jarvis.stop` into `runtime_lifecycle.py`.
   - Turn-taking, attention-confidence, STT-repair, and confirmation heuristics moved from `Jarvis` method bodies into `runtime_turn.py`.
   - Startup summary line composition moved from `Jarvis._startup_summary_lines` into `runtime_startup.startup_summary_lines`.
+  - Voice-status payload composition and turn-choreography helpers moved from `Jarvis` method bodies into `runtime_voice_status.py`.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -440,7 +453,9 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_runtime_lifecycle.py tests/test_runtime_audio_output.py tests/test_main_lifecycle.py tests/test_import_boundaries.py`: `244 passed`.
   - `uv run pytest -q tests/test_runtime_startup.py tests/test_main_lifecycle.py tests/test_import_boundaries.py -k "startup_summary_lines or runtime_startup or startup_blockers or operator_auth or import_boundary"`: `197 passed, 41 deselected`.
   - `uv run pytest -q tests/test_runtime_lifecycle.py tests/test_runtime_audio_output.py tests/test_runtime_turn.py tests/test_main_audio.py`: `23 passed`.
+  - `uv run pytest -q tests/test_runtime_voice_status.py tests/test_main_lifecycle.py tests/test_import_boundaries.py -k "runtime_voice_status or publish_voice_status or apply_turn_choreography or turn_choreography_snapshot or import_boundary"`: `199 passed, 40 deselected`.
+  - `uv run pytest -q tests/test_runtime_lifecycle.py tests/test_runtime_audio_output.py tests/test_runtime_turn.py tests/test_runtime_startup.py`: `19 passed`.
   - `./scripts/test_soak_reliability.sh 2`: accepted; `cycles_completed=2/2`, `phase_count=8`, `failed_count=0`, artifact `.artifacts/quality/soak-profile-fast-repeat2.json`.
-  - `make check`: `810 passed`.
-  - `make security-gate`: `810 passed`; fault subset `3 passed`.
+  - `make check`: `815 passed`.
+  - `make security-gate`: `815 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

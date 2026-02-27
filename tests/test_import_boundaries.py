@@ -24,6 +24,7 @@ import pytest
         ("jarvis.runtime_conversation_trace", "jarvis.__main__"),
         ("jarvis.runtime_conversation", "jarvis.__main__"),
         ("jarvis.runtime_turn", "jarvis.__main__"),
+        ("jarvis.runtime_voice_status", "jarvis.__main__"),
         ("jarvis.runtime_preferences", "jarvis.__main__"),
         ("jarvis.runtime_multimodal", "jarvis.__main__"),
         ("jarvis.tools.services_proactive_runtime", "jarvis.tools.services"),
