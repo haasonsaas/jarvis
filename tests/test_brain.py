@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from jarvis.brain import Brain, _find_sentence_boundary
+from jarvis.brain import Brain, INTERACTION_CONTRACT, _find_sentence_boundary
 from jarvis.presence import PresenceLoop, State
 
 
@@ -69,6 +69,12 @@ class TestBrain:
             mock_ss.return_value = MagicMock()
             brain = Brain(config, presence)
         assert "mcp__jarvis-services__memory_add" not in brain._client.options.allowed_tools
+
+    def test_system_prompt_includes_interaction_contract(self, brain):
+        prompt = brain._client.options.system_prompt
+        assert "Interaction Contract:" in prompt
+        assert "Response Order:" in prompt
+        assert "Ambiguity And Safety:" in prompt
 
     @pytest.mark.asyncio
     async def test_respond_sets_thinking_state(self, brain):
@@ -256,6 +262,9 @@ class TestBrain:
         payload = captured.get("text", "")
         assert "Prompt style:" in payload
         assert "Mode=friendly" in payload
+        assert "Response contract:" in payload
+        contract_rule = INTERACTION_CONTRACT["response_order"][0]
+        assert contract_rule in payload
 
     @pytest.mark.asyncio
     async def test_memory_persona_style_overrides_config(self, brain):

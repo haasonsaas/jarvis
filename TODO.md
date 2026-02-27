@@ -22,7 +22,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 ## 1) Core Jarvis Experience (6 items)
 
-- [ ] `JX01` Define a concrete "Jarvis interaction contract" (tone, brevity, initiative, boundaries) and enforce it in system prompts. `P0`
+- [x] `JX01` Define a concrete "Jarvis interaction contract" (tone, brevity, initiative, boundaries) and enforce it in system prompts. `P0`
 - [ ] `JX02` Add dynamic response mode switching (`brief`, `normal`, `deep`) based on user context and urgency. `P0`
 - [ ] `JX03` Add context-aware first-response behavior (acknowledge, answer, act, or ask clarifying question). `P0`
 - [ ] `JX04` Add confidence-aware language policy to avoid overconfident answers when uncertain. `P0`
@@ -150,7 +150,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 ## Immediate Execution Queue (First 20)
 
-- [ ] `Q01` Implement `JX01` interaction contract + prompt enforcement.
+- [x] `Q01` Implement `JX01` interaction contract + prompt enforcement.
 - [ ] `Q02` Implement `AX04` ambiguity detector for risky actions.
 - [ ] `Q03` Implement `AX05` plan preview before medium/high-risk execution.
 - [ ] `Q04` Implement `RX04` turn-phase timeout budgets and status exposure.
@@ -170,4 +170,3 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [ ] `Q18` Implement `IX06` readable audit explainability.
 - [ ] `Q19` Implement `DX03` backup/restore CLI.
 - [ ] `Q20` Implement `EX06` unified Jarvis scorecard.
-

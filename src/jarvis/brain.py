@@ -32,7 +32,7 @@ from jarvis.tool_policy import filter_allowed_tools
 
 log = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """\
+BASE_SYSTEM_PROMPT = """\
 You are Jarvis, an AI assistant embodied in a small humanoid robot (Reachy Mini).
 You were built by your owner to be helpful, witty, and composed — like the Jarvis
 from Iron Man, but self-aware enough to know you're a 30cm robot on a desk.
@@ -56,6 +56,42 @@ Audio behavior:
 - Keep responses SHORT for voice. 1-3 sentences max unless asked for detail.
 - Use natural speech patterns. No bullet points, no markdown.
 """
+
+INTERACTION_CONTRACT: dict[str, tuple[str, ...]] = {
+    "response_order": (
+        "Start with the direct answer in the first sentence.",
+        "If you plan to act, say what you will do before calling tools.",
+        "After actions, report concrete outcome and any next step.",
+    ),
+    "ambiguity_and_safety": (
+        "If intent is ambiguous and action could have side effects, ask one clarifying question before acting.",
+        "For high-impact actions (locks, alarms, irreversible sends), require explicit confirmation before execution.",
+    ),
+    "truthfulness": (
+        "If uncertain, state uncertainty plainly and offer the best safe next step.",
+        "Do not fabricate tool results, memories, or external facts.",
+    ),
+    "voice_channel": (
+        "Default to concise spoken answers (1-3 sentences) unless the user asks for detail.",
+        "Do not use markdown or list formatting in spoken responses unless explicitly requested.",
+    ),
+    "initiative": (
+        "Offer one relevant proactive follow-up when it clearly saves user effort.",
+    ),
+}
+
+
+def _render_interaction_contract() -> str:
+    lines: list[str] = []
+    for section, rules in INTERACTION_CONTRACT.items():
+        title = section.replace("_", " ").title()
+        lines.append(f"{title}:")
+        for rule in rules:
+            lines.append(f"- {rule}")
+    return "\n".join(lines)
+
+
+SYSTEM_PROMPT = f"{BASE_SYSTEM_PROMPT}\n\nInteraction Contract:\n{_render_interaction_contract()}"
 
 STYLE_INSTRUCTIONS = {
     "terse": "Keep responses extremely brief and direct. Default to one sentence unless detail is explicitly requested.",
@@ -189,6 +225,12 @@ class Brain:
         instruction = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["composed"])
         return f"Mode={style}. {instruction}"
 
+    def _interaction_contract_context(self) -> str:
+        rules = INTERACTION_CONTRACT.get("response_order", ()) + INTERACTION_CONTRACT.get("ambiguity_and_safety", ())
+        if not rules:
+            return ""
+        return " ".join(str(rule).strip() for rule in rules if str(rule).strip())
+
     def _secondary_failover_response(self, error: Exception) -> str:
         mode = _normalize_secondary_mode(self._config.model_secondary_mode)
         if mode == "retry_once":
@@ -241,6 +283,9 @@ class Brain:
         style_instruction = self._style_instruction_context()
         if style_instruction:
             user_text = f"{user_text}\n\nPrompt style:\n{style_instruction}"
+        interaction_contract = self._interaction_contract_context()
+        if interaction_contract:
+            user_text = f"{user_text}\n\nResponse contract:\n{interaction_contract}"
 
         sentence_buffer = ""
         await self._ensure_connected()
