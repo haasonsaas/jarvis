@@ -1,4 +1,4 @@
-.PHONY: check test-fast test-sim test-faults test-fault-profiles test-soak test-soak-extended test-personality security-gate \
+.PHONY: check test-fast test-sim test-faults test-fault-profiles test-soak test-soak-reliability test-soak-extended test-personality security-gate \
 	bootstrap quality-report eval-dataset release-channel-check release-acceptance readiness
 
 check:
@@ -19,6 +19,9 @@ test-fault-profiles:
 
 test-soak:
 	./scripts/test_soak.sh
+
+test-soak-reliability:
+	./scripts/test_soak_reliability.sh
 
 test-soak-extended:
 	./scripts/test_soak_extended.sh full

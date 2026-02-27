@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/95 Runtime Decomposition
+# Jarvis TODO — Wave 74/96 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 191
-- Completed: 191
+- Total items: 199
+- Completed: 199
 - Remaining: 0
 
 ---
@@ -281,6 +281,17 @@ Last updated: 2026-02-27
 - [x] `W95-Y07` Run `make check`.
 - [x] `W95-Y08` Run `make security-gate`.
 
+## Z) Wave 96 (completed): reliability soak execution hardening
+
+- [x] `W96-Z01` Add repeatable fast-soak reliability script entrypoint (`scripts/test_soak_reliability.sh`).
+- [x] `W96-Z02` Validate script input guards for repeat-cycle argument.
+- [x] `W96-Z03` Add `make test-soak-reliability` target.
+- [x] `W96-Z04` Execute multi-cycle soak run (`repeat=2`) and capture artifact.
+- [x] `W96-Z05` Verify soak acceptance/phase accounting in generated JSON artifact.
+- [x] `W96-Z06` Re-run full `make check` after soak-target changes.
+- [x] `W96-Z07` Keep quality/security/readiness baselines green.
+- [x] `W96-Z08` Update TODO and release notes with reliability soak status.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -332,6 +343,7 @@ Last updated: 2026-02-27
   - Memory correction parsing logic moved from `Jarvis._parse_memory_correction_command` body into `runtime_memory_correction.py`.
   - STT fallback orchestration moved from `Jarvis._transcribe_with_fallback` body into `runtime_telemetry.transcribe_with_fallback`.
   - Conversation trace + episodic snapshot logic moved from `Jarvis` method bodies into `runtime_conversation_trace.py`.
+  - Added repeatable reliability soak entrypoint `scripts/test_soak_reliability.sh` and `make test-soak-reliability` target.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -356,6 +368,7 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_voice_profile.py tests/test_runtime_state.py -k "parse_memory_correction_command or classify_user_intent or looks_like_user_correction or parse_control_bool or parse_control_choice or followup_carryover"`: `12 passed`.
   - `uv run pytest -q tests/test_main_audio.py tests/test_main_lifecycle.py tests/test_runtime_voice_profile.py tests/test_runtime_state.py -k "transcribe_with_fallback or parse_memory_correction_command or parse_control_bool or parse_control_choice or followup_carryover"`: `11 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_operator_status.py tests/test_main_audio.py tests/test_import_boundaries.py`: `248 passed`.
+  - `./scripts/test_soak_reliability.sh 2`: accepted; `cycles_completed=2/2`, `phase_count=8`, `failed_count=0`, artifact `.artifacts/quality/soak-profile-fast-repeat2.json`.
   - `make check`: `786 passed`.
   - `make security-gate`: `786 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
