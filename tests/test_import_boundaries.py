@@ -59,6 +59,8 @@ import pytest
         ("jarvis.tools.services_domains.integrations_ops", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.integrations_weather", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.integrations_webhook", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.integrations_webhook_trigger", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.integrations_webhook_inbound", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.integrations_calendar", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.integrations_deadletter", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.planner_engine_domain", "jarvis.tools.services"),

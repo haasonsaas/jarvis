@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 59 (Area + Media Handler Decomposition)
+# Jarvis TODO — Wave 60 (Webhook Integration Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,67 +8,67 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 22
-- Completed: 22
+- Total items: 23
+- Completed: 23
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W59-A01` Re-profile high-line home domain modules after Wave 58.
-- [x] `W59-A02` Select `services_domains/home_ha_area_media.py` for decomposition.
-- [x] `W59-A03` Preserve API contract for `home_assistant_area_entities` and `media_control`.
+- [x] `W60-A01` Re-profile next integration hotspots after Wave 59.
+- [x] `W60-A02` Select `services_domains/integrations_webhook.py` for decomposition.
+- [x] `W60-A03` Preserve API contract for `webhook_trigger`, `webhook_inbound_list`, and `webhook_inbound_clear`.
 
 ## B) Decomposition design
 
-- [x] `W59-B01` Extract area entity lookup flow to `home_area_entities_tool.py`.
-- [x] `W59-B02` Extract media action flow to `home_media_control_tool.py`.
-- [x] `W59-B03` Reduce `home_ha_area_media.py` to thin exports.
+- [x] `W60-B01` Extract outbound delivery flow to `integrations_webhook_trigger.py`.
+- [x] `W60-B02` Extract inbound event list/clear flow to `integrations_webhook_inbound.py`.
+- [x] `W60-B03` Keep `integrations_webhook.py` as export facade.
 
 ## C) Extraction implementation
 
-- [x] `W59-C01` Create `services_domains/home_area_entities_tool.py`.
-- [x] `W59-C02` Move area template/render/filter/state-include logic.
-- [x] `W59-C03` Create `services_domains/home_media_control_tool.py`.
-- [x] `W59-C04` Move media action validation, policy, preview, and execution logic.
-- [x] `W59-C05` Replace `home_ha_area_media.py` with export facade.
+- [x] `W60-C01` Create `services_domains/integrations_webhook_trigger.py`.
+- [x] `W60-C02` Move policy + allowlist + preview + delivery + dead-letter logic.
+- [x] `W60-C03` Create `services_domains/integrations_webhook_inbound.py`.
+- [x] `W60-C04` Move inbound list and clear handlers.
+- [x] `W60-C05` Replace `integrations_webhook.py` with thin exports.
 
 ## D) Boundaries and quality
 
-- [x] `W59-D01` Add import-boundary check for `home_area_entities_tool`.
-- [x] `W59-D02` Add import-boundary check for `home_media_control_tool`.
-- [x] `W59-D03` Preserve lazy access pattern for service helpers.
+- [x] `W60-D01` Add import-boundary check for `integrations_webhook_trigger`.
+- [x] `W60-D02` Add import-boundary check for `integrations_webhook_inbound`.
+- [x] `W60-D03` Keep lazy service-helper access in extracted modules.
 
 ## E) Validation
 
-- [x] `W59-E01` Run focused lint for changed modules + boundary test file.
-- [x] `W59-E02` Run targeted tests for area-entities/media-control paths.
-- [x] `W59-E03` Run `tests/test_import_boundaries.py`.
-- [x] `W59-E04` Run full `make check`.
-- [x] `W59-E05` Run full `make security-gate`.
-- [x] `W59-E06` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W60-E01` Run focused lint for changed webhook modules + boundary test file.
+- [x] `W60-E02` Run targeted webhook tests from `test_tools_services.py`.
+- [x] `W60-E03` Run `tests/test_import_boundaries.py`.
+- [x] `W60-E04` Run full `make check`.
+- [x] `W60-E05` Run full `make security-gate`.
+- [x] `W60-E06` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W59-F01` Capture post-split line-count outcomes.
-- [x] `W59-F02` Commit Wave 59 changes.
-- [x] `W59-F03` Push Wave 59 to remote.
+- [x] `W60-F01` Capture post-split line-count outcomes.
+- [x] `W60-F02` Commit Wave 60 changes.
+- [x] `W60-F03` Push Wave 60 to remote.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Area/media decomposition:
-  - `services_domains/home_ha_area_media.py`: `290 -> 8` lines (thin exports).
-  - New `services_domains/home_area_entities_tool.py`: `109` lines.
-  - New `services_domains/home_media_control_tool.py`: `197` lines.
+- Webhook integration decomposition:
+  - `services_domains/integrations_webhook.py`: `268 -> 11` lines (thin exports).
+  - New `services_domains/integrations_webhook_trigger.py`: `233` lines.
+  - New `services_domains/integrations_webhook_inbound.py`: `50` lines.
 - Boundary enforcement:
-  - Added import-boundary coverage for both new home area/media modules.
+  - Added import-boundary coverage for both extracted webhook modules.
 - Validation status:
   - Focused lint: pass.
-  - Targeted tests: pass (`2 passed`, `220 deselected`).
-  - `tests/test_import_boundaries.py`: pass (`71 passed`).
-  - `make check`: `660 passed`.
-  - `make security-gate`: `660 passed`; fault subset `3 passed`.
+  - Targeted webhook tests: pass (`4 passed`, `218 deselected`).
+  - `tests/test_import_boundaries.py`: pass (`73 passed`).
+  - `make check`: `662 passed`.
+  - `make security-gate`: `662 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
