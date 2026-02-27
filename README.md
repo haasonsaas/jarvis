@@ -139,6 +139,8 @@ Smart home safety defaults:
 - Follow-up intent carryover preserves unresolved action context across short multi-turn replies:
   - short fragments like `the bedroom` or `and in the office` inherit prior unresolved action targets.
   - explicit new action phrasing (e.g. `turn on the kitchen lights`) remains a new request.
+- Runtime STT confidence diagnostics are exposed in operator status:
+  - `voice_attention.stt_diagnostics` reports confidence score/band, model source, fallback usage, and transcript quality signals.
 - Home Assistant conversation tool requires both:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`

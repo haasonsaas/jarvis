@@ -83,3 +83,46 @@ class TestSpeechToText:
         result = stt.transcribe(np.zeros(100, dtype=np.float32), sample_rate=0)
         assert result == ""
         mock_model.transcribe.assert_not_called()
+
+    @patch("jarvis.audio.stt.WhisperModel")
+    def test_transcribe_with_diagnostics_returns_confidence_fields(self, mock_whisper_cls):
+        mock_model = MagicMock()
+        mock_whisper_cls.return_value = mock_model
+
+        seg1 = MagicMock()
+        seg1.text = "Hello"
+        seg1.avg_logprob = -0.4
+        seg1.no_speech_prob = 0.1
+        seg2 = MagicMock()
+        seg2.text = "world"
+        seg2.avg_logprob = -0.3
+        seg2.no_speech_prob = 0.05
+        info = MagicMock(language="en", language_probability=0.98)
+        mock_model.transcribe.return_value = (iter([seg1, seg2]), info)
+
+        from jarvis.audio.stt import SpeechToText
+        stt = SpeechToText()
+        text, diagnostics = stt.transcribe_with_diagnostics(np.ones(16000, dtype=np.float32))
+
+        assert text == "Hello world"
+        assert diagnostics["confidence_band"] in {"medium", "high"}
+        assert diagnostics["confidence_score"] > 0.5
+        assert diagnostics["word_count"] == 2
+        assert diagnostics["language"] == "en"
+        assert diagnostics["language_probability"] == 0.98
+        assert diagnostics["segment_count"] == 2
+
+    @patch("jarvis.audio.stt.WhisperModel")
+    def test_transcribe_with_diagnostics_handles_model_failure(self, mock_whisper_cls):
+        mock_model = MagicMock()
+        mock_whisper_cls.return_value = mock_model
+        mock_model.transcribe.side_effect = RuntimeError("boom")
+
+        from jarvis.audio.stt import SpeechToText
+        stt = SpeechToText()
+        text, diagnostics = stt.transcribe_with_diagnostics(np.ones(16000, dtype=np.float32))
+
+        assert text == ""
+        assert diagnostics["confidence_score"] == 0.0
+        assert diagnostics["confidence_band"] == "unknown"
+        assert diagnostics["error"] == "transcription_failed"

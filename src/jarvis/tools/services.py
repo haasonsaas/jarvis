@@ -2828,6 +2828,21 @@ def _voice_attention_snapshot() -> dict[str, Any]:
         "turn_glance_yaw": 0.0,
         "updated_at": 0.0,
     }
+    default_stt_diagnostics = {
+        "source": "none",
+        "fallback_used": False,
+        "confidence_score": 0.0,
+        "confidence_band": "unknown",
+        "avg_logprob": -3.0,
+        "avg_no_speech_prob": 1.0,
+        "language": "unknown",
+        "language_probability": 0.0,
+        "segment_count": 0,
+        "word_count": 0,
+        "char_count": 0,
+        "updated_at": 0.0,
+        "error": "",
+    }
     if not _runtime_voice_state:
         return {
             "mode": "unknown",
@@ -2839,6 +2854,7 @@ def _voice_attention_snapshot() -> dict[str, Any]:
             "speech_rate_wps": 0.0,
             "interruption_likelihood": 0.0,
             "turn_choreography": default_choreography,
+            "stt_diagnostics": default_stt_diagnostics,
         }
     snapshot = {str(key): value for key, value in _runtime_voice_state.items()}
     snapshot.setdefault("silence_timeout_sec", 0.0)
@@ -2847,6 +2863,13 @@ def _voice_attention_snapshot() -> dict[str, Any]:
     snapshot.setdefault("interruption_likelihood", 0.0)
     if not isinstance(snapshot.get("turn_choreography"), dict):
         snapshot["turn_choreography"] = default_choreography
+    if not isinstance(snapshot.get("stt_diagnostics"), dict):
+        snapshot["stt_diagnostics"] = default_stt_diagnostics
+    else:
+        stt_diag = {str(key): value for key, value in snapshot["stt_diagnostics"].items()}
+        for key, value in default_stt_diagnostics.items():
+            stt_diag.setdefault(key, value)
+        snapshot["stt_diagnostics"] = stt_diag
     return snapshot
 
 
@@ -6195,6 +6218,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "speech_rate_wps",
             "interruption_likelihood",
             "turn_choreography",
+            "stt_diagnostics",
         ],
         "voice_attention_turn_choreography_required": [
             "phase",
@@ -6203,6 +6227,21 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "turn_tilt",
             "turn_glance_yaw",
             "updated_at",
+        ],
+        "voice_attention_stt_diagnostics_required": [
+            "source",
+            "fallback_used",
+            "confidence_score",
+            "confidence_band",
+            "avg_logprob",
+            "avg_no_speech_prob",
+            "language",
+            "language_probability",
+            "segment_count",
+            "word_count",
+            "char_count",
+            "updated_at",
+            "error",
         ],
         "turn_timeouts_required": [
             "watchdog_enabled",

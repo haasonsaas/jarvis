@@ -35,7 +35,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `VX02` Add adaptive end-of-turn timing based on speaking rate and interruption likelihood. `P0`
 - [x] `VX03` Add explicit "follow-up intent carryover" so multi-turn requests preserve unresolved slots. `P0`
 - [ ] `VX04` Add per-user voice preferences (pace, verbosity, confirmations). `P1`
-- [ ] `VX05` Add runtime STT confidence diagnostics in operator UI and status endpoints. `P1`
+- [x] `VX05` Add runtime STT confidence diagnostics in operator UI and status endpoints. `P1`
 - [ ] `VX06` Add conversation repair loops ("I misheard X, did you mean Y?") with minimal friction. `P1`
 
 ## 3) Proactive Assistant Behavior (6 items)

@@ -195,6 +195,9 @@ def test_transcribe_with_fallback_uses_secondary_model():
     text = Jarvis._transcribe_with_fallback(jarvis, np.ones(32, dtype=np.float32))
     assert text == "fallback transcript"
     assert jarvis._telemetry["fallback_responses"] == 1.0
+    assert jarvis._stt_diagnostics["source"] == "secondary"
+    assert jarvis._stt_diagnostics["fallback_used"] is True
+    assert jarvis._stt_diagnostics["word_count"] >= 1
 
 
 @pytest.mark.asyncio

@@ -214,6 +214,8 @@ def test_publish_voice_status_includes_turn_choreography():
     assert payload["presence_state"] == "listening"
     assert payload["turn_choreography"]["phase"] == "listening"
     assert payload["turn_choreography"]["label"] == "listen_lean_in"
+    assert "stt_diagnostics" in payload
+    assert payload["stt_diagnostics"]["confidence_band"] == "unknown"
 
 
 def test_start_requires_sounddevice_for_local_tts_playback():

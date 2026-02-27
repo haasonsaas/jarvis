@@ -377,6 +377,7 @@ class Jarvis:
         self._telemetry_error_counts: dict[str, float] = {}
         self._conversation_traces: deque[dict[str, Any]] = deque(maxlen=CONVERSATION_TRACE_MAXLEN)
         self._turn_trace_seq = 0
+        self._stt_diagnostics: dict[str, Any] = self._default_stt_diagnostics()
         self._load_runtime_state()
         self._publish_voice_status()
         self._publish_skills_status()
@@ -496,6 +497,7 @@ class Jarvis:
         except Exception:
             status["presence_state"] = "unknown"
         status["turn_choreography"] = self._turn_choreography_snapshot()
+        status["stt_diagnostics"] = self._stt_diagnostics_snapshot()
         set_runtime_voice_state(status)
         observability = getattr(self, "_observability", None)
         if observability is not None:
@@ -846,14 +848,192 @@ class Jarvis:
             },
         }
 
+    @staticmethod
+    def _default_stt_diagnostics() -> dict[str, Any]:
+        return {
+            "source": "none",
+            "fallback_used": False,
+            "confidence_score": 0.0,
+            "confidence_band": "unknown",
+            "avg_logprob": -3.0,
+            "avg_no_speech_prob": 1.0,
+            "language": "unknown",
+            "language_probability": 0.0,
+            "segment_count": 0,
+            "word_count": 0,
+            "char_count": 0,
+            "updated_at": 0.0,
+            "error": "",
+        }
+
+    @staticmethod
+    def _stt_confidence_band(score: float, *, has_words: bool) -> str:
+        if not has_words:
+            return "unknown"
+        if score >= 0.78:
+            return "high"
+        if score >= 0.50:
+            return "medium"
+        return "low"
+
+    def _stt_diagnostics_snapshot(self) -> dict[str, Any]:
+        snapshot = self._default_stt_diagnostics()
+        current = getattr(self, "_stt_diagnostics", None)
+        if isinstance(current, dict):
+            for key in snapshot:
+                if key in current:
+                    snapshot[key] = current[key]
+
+        def safe_float(value: Any, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return default
+            if not math.isfinite(number):
+                return default
+            if minimum is not None:
+                number = max(minimum, number)
+            if maximum is not None:
+                number = min(maximum, number)
+            return number
+
+        def safe_int(value: Any, default: int = 0) -> int:
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                return default
+            return max(0, number)
+
+        snapshot["source"] = str(snapshot.get("source", "none")).strip().lower() or "none"
+        snapshot["fallback_used"] = bool(snapshot.get("fallback_used", False))
+        snapshot["confidence_score"] = safe_float(snapshot.get("confidence_score"), 0.0, minimum=0.0, maximum=1.0)
+        band = str(snapshot.get("confidence_band", "unknown")).strip().lower()
+        if band not in {"unknown", "low", "medium", "high"}:
+            band = self._stt_confidence_band(
+                float(snapshot["confidence_score"]),
+                has_words=safe_int(snapshot.get("word_count")) > 0,
+            )
+        snapshot["confidence_band"] = band
+        snapshot["avg_logprob"] = safe_float(snapshot.get("avg_logprob"), -3.0)
+        snapshot["avg_no_speech_prob"] = safe_float(
+            snapshot.get("avg_no_speech_prob"),
+            1.0,
+            minimum=0.0,
+            maximum=1.0,
+        )
+        snapshot["language"] = str(snapshot.get("language", "unknown")).strip().lower() or "unknown"
+        snapshot["language_probability"] = safe_float(
+            snapshot.get("language_probability"),
+            0.0,
+            minimum=0.0,
+            maximum=1.0,
+        )
+        snapshot["segment_count"] = safe_int(snapshot.get("segment_count"))
+        snapshot["word_count"] = safe_int(snapshot.get("word_count"))
+        snapshot["char_count"] = safe_int(snapshot.get("char_count"))
+        snapshot["updated_at"] = safe_float(snapshot.get("updated_at"), 0.0, minimum=0.0)
+        snapshot["error"] = str(snapshot.get("error", "")).strip().lower()
+        return snapshot
+
+    @staticmethod
+    def _transcribe_with_optional_diagnostics(model: Any, audio: np.ndarray) -> tuple[str, dict[str, Any]]:
+        diagnostics_method = getattr(model, "transcribe_with_diagnostics", None)
+        if callable(diagnostics_method):
+            with suppress(Exception):
+                result = diagnostics_method(audio)
+                if isinstance(result, tuple) and len(result) == 2:
+                    text = str(result[0] or "")
+                    diagnostics = result[1]
+                    if isinstance(diagnostics, dict):
+                        return text, {str(key): value for key, value in diagnostics.items()}
+                    return text, {}
+        text = model.transcribe(audio)
+        return str(text or ""), {}
+
+    def _update_stt_diagnostics(
+        self,
+        *,
+        text: str,
+        source: str,
+        fallback_used: bool,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        payload = self._default_stt_diagnostics()
+        diag = diagnostics if isinstance(diagnostics, dict) else {}
+
+        def safe_float(value: Any, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return default
+            if not math.isfinite(number):
+                return default
+            if minimum is not None:
+                number = max(minimum, number)
+            if maximum is not None:
+                number = min(maximum, number)
+            return number
+
+        def safe_int(value: Any, default: int = 0) -> int:
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                return default
+            return max(0, number)
+
+        transcript = str(text or "").strip()
+        words = re.findall(r"[a-z0-9']+", transcript.lower())
+        word_count = len(words)
+        char_count = len(transcript)
+        confidence_score_raw = diag.get("confidence_score")
+        confidence_score = safe_float(confidence_score_raw, -1.0, minimum=-1.0, maximum=1.0)
+        if confidence_score < 0.0:
+            confidence_score = 0.0
+        if confidence_score_raw is None and transcript:
+            confidence_score = min(1.0, 0.45 + min(0.4, word_count / 20.0))
+        confidence_band = str(diag.get("confidence_band", "")).strip().lower()
+        if confidence_band not in {"unknown", "low", "medium", "high"}:
+            confidence_band = self._stt_confidence_band(confidence_score, has_words=word_count > 0)
+
+        payload.update(
+            {
+                "source": str(source or "none").strip().lower() or "none",
+                "fallback_used": bool(fallback_used),
+                "confidence_score": confidence_score,
+                "confidence_band": confidence_band,
+                "avg_logprob": safe_float(diag.get("avg_logprob"), -3.0),
+                "avg_no_speech_prob": safe_float(diag.get("avg_no_speech_prob"), 1.0, minimum=0.0, maximum=1.0),
+                "language": str(diag.get("language", "unknown")).strip().lower() or "unknown",
+                "language_probability": safe_float(diag.get("language_probability"), 0.0, minimum=0.0, maximum=1.0),
+                "segment_count": safe_int(diag.get("segment_count", 0)),
+                "word_count": word_count if word_count else safe_int(diag.get("word_count", 0)),
+                "char_count": char_count if char_count else safe_int(diag.get("char_count", 0)),
+                "updated_at": time.time(),
+                "error": str(diag.get("error", "")).strip().lower(),
+            }
+        )
+        self._stt_diagnostics = payload
+
     def _transcribe_with_fallback(self, audio: np.ndarray) -> str:
-        text = self.stt.transcribe(audio)
+        text, primary_diag = self._transcribe_with_optional_diagnostics(self.stt, audio)
+        self._update_stt_diagnostics(
+            text=text,
+            source="primary",
+            fallback_used=False,
+            diagnostics=primary_diag,
+        )
         if text.strip():
             return text
         fallback = getattr(self, "_stt_secondary", None)
         if fallback is None:
             return text
-        recovered = fallback.transcribe(audio)
+        recovered, fallback_diag = self._transcribe_with_optional_diagnostics(fallback, audio)
+        self._update_stt_diagnostics(
+            text=recovered,
+            source="secondary",
+            fallback_used=bool(recovered.strip()),
+            diagnostics=fallback_diag,
+        )
         if recovered.strip():
             self._telemetry["fallback_responses"] += 1.0
             observability = getattr(self, "_observability", None)
@@ -1539,7 +1719,15 @@ class Jarvis:
         with suppress(Exception):
             self.robot.disconnect()
         self._started = False
-        set_runtime_voice_state({"mode": "offline", "followup_active": False, "sleeping": False, "active_room": "unknown"})
+        set_runtime_voice_state(
+            {
+                "mode": "offline",
+                "followup_active": False,
+                "sleeping": False,
+                "active_room": "unknown",
+                "stt_diagnostics": self._default_stt_diagnostics(),
+            }
+        )
         self._publish_observability_status()
         self._publish_skills_status()
         log.info("Jarvis offline.")
@@ -1576,6 +1764,7 @@ class Jarvis:
                     log.info("STT latency: %.0fms", stt_elapsed * 1000.0)
                     self._telemetry["stt_latency_total_ms"] += stt_elapsed * 1000.0
                     self._telemetry["stt_latency_count"] += 1.0
+                self._publish_voice_status()
                 if not text.strip():
                     self.presence.signals.state = State.IDLE
                     self._publish_voice_status()

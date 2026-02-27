@@ -3129,6 +3129,9 @@ class TestServicesTools:
         assert "speech_rate_wps" in payload["voice_attention"]
         assert "interruption_likelihood" in payload["voice_attention"]
         assert "turn_choreography" in payload["voice_attention"]
+        assert "stt_diagnostics" in payload["voice_attention"]
+        assert "confidence_score" in payload["voice_attention"]["stt_diagnostics"]
+        assert "confidence_band" in payload["voice_attention"]["stt_diagnostics"]
         assert "phase" in payload["voice_attention"]["turn_choreography"]
         assert "turn_timeouts" in payload
         assert isinstance(payload["turn_timeouts"]["watchdog_enabled"], bool)
@@ -3213,8 +3216,12 @@ class TestServicesTools:
         assert "speech_rate_wps" in payload["voice_attention_required"]
         assert "interruption_likelihood" in payload["voice_attention_required"]
         assert "turn_choreography" in payload["voice_attention_required"]
+        assert "stt_diagnostics" in payload["voice_attention_required"]
         assert "voice_attention_turn_choreography_required" in payload
         assert "turn_glance_yaw" in payload["voice_attention_turn_choreography_required"]
+        assert "voice_attention_stt_diagnostics_required" in payload
+        assert "confidence_score" in payload["voice_attention_stt_diagnostics_required"]
+        assert "confidence_band" in payload["voice_attention_stt_diagnostics_required"]
         assert "turn_timeouts_required" in payload
         assert "act_sec" in payload["turn_timeouts_required"]
         assert "integrations_required" in payload
