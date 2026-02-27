@@ -75,6 +75,7 @@ import pytest
         ("jarvis.tools.services_state_facade_runtime", "jarvis.tools.services"),
         ("jarvis.tools.services_planner_facade_runtime", "jarvis.tools.services"),
         ("jarvis.tools.services_coercion_facade_runtime", "jarvis.tools.services"),
+        ("jarvis.tools.services_integrations_facade_runtime", "jarvis.tools.services"),
         ("jarvis.tools.service_schemas", "jarvis.tools.services"),
         ("jarvis.tools.service_schemas_home", "jarvis.tools.services"),
         ("jarvis.tools.service_schemas_comms", "jarvis.tools.services"),

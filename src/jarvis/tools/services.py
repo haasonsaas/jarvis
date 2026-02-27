@@ -64,14 +64,14 @@ from jarvis.tools.services_state_facade_runtime import (
     quality_reports_snapshot as _facade_quality_reports_snapshot,
     replace_state_dict as _facade_replace_state_dict,
 )
-from jarvis.tools.services_integrations_runtime import (
-    capture_note as _runtime_capture_note,
-    capture_note_notion as _runtime_capture_note_notion,
-    evaluate_release_channel as _runtime_evaluate_release_channel,
-    load_release_channel_config as _runtime_load_release_channel_config,
-    notion_configured as _runtime_notion_configured,
-    run_release_channel_check as _runtime_run_release_channel_check,
-    write_quality_report_artifact as _runtime_write_quality_report_artifact,
+from jarvis.tools.services_integrations_facade_runtime import (
+    capture_note as _facade_capture_note,
+    capture_note_notion as _facade_capture_note_notion,
+    evaluate_release_channel as _facade_evaluate_release_channel,
+    load_release_channel_config as _facade_load_release_channel_config,
+    notion_configured as _facade_notion_configured,
+    run_release_channel_check as _facade_run_release_channel_check,
+    write_quality_report_artifact as _facade_write_quality_report_artifact,
 )
 from jarvis.tools.services_identity_facade_runtime import (
     identity_audit_fields as _facade_identity_audit_fields,
@@ -711,50 +711,13 @@ def _load_expansion_state() -> None:
     _facade_load_expansion_state()
 
 
-def _run_release_channel_check(base: Path, check: dict[str, Any]) -> dict[str, Any]:
-    return _runtime_run_release_channel_check(base, check)
-
-
-def _load_release_channel_config() -> tuple[dict[str, Any] | None, str]:
-    return _runtime_load_release_channel_config(_services_module())
-
-
-def _evaluate_release_channel(*, channel: str, workspace: Path | None = None) -> dict[str, Any]:
-    return _runtime_evaluate_release_channel(
-        _services_module(),
-        channel=channel,
-        workspace=workspace,
-    )
-
-
-def _write_quality_report_artifact(payload: dict[str, Any], *, report_path: str | None = None) -> str:
-    return _runtime_write_quality_report_artifact(
-        _services_module(),
-        payload,
-        report_path=report_path,
-    )
-
-
-def _capture_note(*, backend: str, title: str, content: str, path_hint: str = "") -> dict[str, Any]:
-    return _runtime_capture_note(
-        _services_module(),
-        backend=backend,
-        title=title,
-        content=content,
-        path_hint=path_hint,
-    )
-
-
-def _notion_configured() -> bool:
-    return _runtime_notion_configured(_services_module())
-
-
-async def _capture_note_notion(*, title: str, content: str) -> tuple[dict[str, Any] | None, str | None]:
-    return await _runtime_capture_note_notion(
-        _services_module(),
-        title=title,
-        content=content,
-    )
+_run_release_channel_check = _facade_run_release_channel_check
+_load_release_channel_config = _facade_load_release_channel_config
+_evaluate_release_channel = _facade_evaluate_release_channel
+_write_quality_report_artifact = _facade_write_quality_report_artifact
+_capture_note = _facade_capture_note
+_notion_configured = _facade_notion_configured
+_capture_note_notion = _facade_capture_note_notion
 
 
 _duration_seconds = _facade_duration_seconds
