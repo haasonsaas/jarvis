@@ -210,17 +210,17 @@ from jarvis.tools.services_policy_facade_runtime import (
     register_guest_session as _facade_register_guest_session,
     resolve_guest_session as _facade_resolve_guest_session,
 )
-from jarvis.tools.services_automation_runtime import (
-    apply_ha_automation_config as _runtime_apply_ha_automation_config,
-    automation_entry_from_draft as _runtime_automation_entry_from_draft,
-    autonomy_tasks as _runtime_autonomy_tasks,
-    delete_ha_automation_config as _runtime_delete_ha_automation_config,
-    home_plan_from_request as _runtime_home_plan_from_request,
-    json_preview as _runtime_json_preview,
-    normalize_automation_config as _runtime_normalize_automation_config,
-    planner_ready_nodes as _runtime_planner_ready_nodes,
-    slugify_identifier as _runtime_slugify_identifier,
-    structured_diff as _runtime_structured_diff,
+from jarvis.tools.services_planner_facade_runtime import (
+    apply_ha_automation_config as _facade_apply_ha_automation_config,
+    automation_entry_from_draft as _facade_automation_entry_from_draft,
+    autonomy_tasks as _facade_autonomy_tasks,
+    delete_ha_automation_config as _facade_delete_ha_automation_config,
+    home_plan_from_request as _facade_home_plan_from_request,
+    json_preview as _facade_json_preview,
+    normalize_automation_config as _facade_normalize_automation_config,
+    planner_ready_nodes as _facade_planner_ready_nodes,
+    slugify_identifier as _facade_slugify_identifier,
+    structured_diff as _facade_structured_diff,
 )
 from jarvis.tools.services_action_facade_runtime import (
     action_key as _facade_action_key,
@@ -997,44 +997,13 @@ _expansion_payload_response = _facade_expansion_payload_response
 
 
 
-def _home_plan_from_request(request_text: str) -> dict[str, Any]:
-    return _runtime_home_plan_from_request(request_text)
-
-
-def _slugify_identifier(value: str, *, fallback: str = "item") -> str:
-    return _runtime_slugify_identifier(value, fallback=fallback)
-
-
-def _json_preview(value: Any, *, limit: int = 500) -> str:
-    return _runtime_json_preview(value, limit=limit)
-
-
-def _structured_diff(previous: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
-    return _runtime_structured_diff(previous, current)
-
-
-def _normalize_automation_config(args: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
-    return _runtime_normalize_automation_config(args)
-
-
-def _automation_entry_from_draft(draft: dict[str, Any]) -> dict[str, Any]:
-    return _runtime_automation_entry_from_draft(draft)
-
-
-async def _apply_ha_automation_config(automation_id: str, config_payload: dict[str, Any]) -> tuple[bool, str]:
-    return await _runtime_apply_ha_automation_config(_services_module(), automation_id, config_payload)
-
-
-async def _delete_ha_automation_config(automation_id: str) -> tuple[bool, str]:
-    return await _runtime_delete_ha_automation_config(_services_module(), automation_id)
-
-
-def _autonomy_tasks() -> list[dict[str, Any]]:
-    return _runtime_autonomy_tasks(_services_module())
-
-
-
-
-
-def _planner_ready_nodes(graph: dict[str, Any]) -> list[dict[str, Any]]:
-    return _runtime_planner_ready_nodes(_services_module(), graph)
+_home_plan_from_request = _facade_home_plan_from_request
+_slugify_identifier = _facade_slugify_identifier
+_json_preview = _facade_json_preview
+_structured_diff = _facade_structured_diff
+_normalize_automation_config = _facade_normalize_automation_config
+_automation_entry_from_draft = _facade_automation_entry_from_draft
+_apply_ha_automation_config = _facade_apply_ha_automation_config
+_delete_ha_automation_config = _facade_delete_ha_automation_config
+_autonomy_tasks = _facade_autonomy_tasks
+_planner_ready_nodes = _facade_planner_ready_nodes
