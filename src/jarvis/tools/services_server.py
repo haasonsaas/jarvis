@@ -68,7 +68,12 @@ from jarvis.tools.services_domains.planner import (
     timer_list,
 )
 from jarvis.tools.services_domains.trust import (
+    proactive_assistant,
+)
+from jarvis.tools.services_domains.trust_identity import (
     identity_trust,
+)
+from jarvis.tools.services_domains.trust_memory import (
     memory_add,
     memory_forget,
     memory_governance,
@@ -78,7 +83,6 @@ from jarvis.tools.services_domains.trust import (
     memory_summary_add,
     memory_summary_list,
     memory_update,
-    proactive_assistant,
 )
 
 ToolHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]

@@ -304,6 +304,8 @@ from jarvis.tools.services_domains.governance import (  # noqa: F401  # compatib
 )
 from jarvis.tools.services_domains.trust import (  # noqa: F401  # compatibility exports for tests/importers
     proactive_assistant,
+)
+from jarvis.tools.services_domains.trust_memory import (  # noqa: F401  # compatibility exports for tests/importers
     memory_add,
     memory_update,
     memory_forget,
@@ -313,6 +315,8 @@ from jarvis.tools.services_domains.trust import (  # noqa: F401  # compatibility
     memory_summary_add,
     memory_summary_list,
     memory_governance,
+)
+from jarvis.tools.services_domains.trust_identity import (  # noqa: F401  # compatibility exports for tests/importers
     identity_trust,
 )
 
