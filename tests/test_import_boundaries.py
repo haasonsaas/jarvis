@@ -17,6 +17,8 @@ import pytest
         ("jarvis.runtime_voice_profile", "jarvis.__main__"),
         ("jarvis.runtime_operator_status", "jarvis.__main__"),
         ("jarvis.runtime_observability_status", "jarvis.__main__"),
+        ("jarvis.runtime_memory_correction", "jarvis.__main__"),
+        ("jarvis.runtime_conversation_trace", "jarvis.__main__"),
         ("jarvis.runtime_conversation", "jarvis.__main__"),
         ("jarvis.runtime_preferences", "jarvis.__main__"),
         ("jarvis.runtime_multimodal", "jarvis.__main__"),

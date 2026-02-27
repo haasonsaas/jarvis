@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/94 Runtime Decomposition
+# Jarvis TODO — Wave 74/95 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 183
-- Completed: 183
+- Total items: 191
+- Completed: 191
 - Remaining: 0
 
 ---
@@ -270,6 +270,17 @@ Last updated: 2026-02-27
 - [x] `W94-X07` Run `make security-gate`.
 - [x] `W94-X08` Run `./scripts/jarvis_readiness.sh fast`.
 
+## Y) Wave 95 (completed): __main__ conversation trace extraction
+
+- [x] `W95-Y01` Profile conversation trace/episodic snapshot extraction boundary in `src/jarvis/__main__.py`.
+- [x] `W95-Y02` Create `runtime_conversation_trace.py` for trace + episodic runtime helpers.
+- [x] `W95-Y03` Rewire `Jarvis._record_conversation_trace` and `_record_episodic_snapshot` to runtime helpers.
+- [x] `W95-Y04` Rewire operator trace providers to runtime helpers.
+- [x] `W95-Y05` Extend import-boundary coverage for new runtime helper modules.
+- [x] `W95-Y06` Run focused lifecycle/operator/audio/import-boundary regression tests.
+- [x] `W95-Y07` Run `make check`.
+- [x] `W95-Y08` Run `make security-gate`.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -294,6 +305,7 @@ Last updated: 2026-02-27
   - `services_coercion_facade_runtime.py`
   - `services_integrations_facade_runtime.py`
   - `runtime_memory_correction.py`
+  - `runtime_conversation_trace.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -319,6 +331,7 @@ Last updated: 2026-02-27
   - `Jarvis` pass-through wrappers for control/intent/telemetry helpers now use direct `staticmethod` aliases where behavior is identical.
   - Memory correction parsing logic moved from `Jarvis._parse_memory_correction_command` body into `runtime_memory_correction.py`.
   - STT fallback orchestration moved from `Jarvis._transcribe_with_fallback` body into `runtime_telemetry.transcribe_with_fallback`.
+  - Conversation trace + episodic snapshot logic moved from `Jarvis` method bodies into `runtime_conversation_trace.py`.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -342,6 +355,7 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py -k "release_channel or quality_report_artifact or capture_note or note_capture"`: `2 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_voice_profile.py tests/test_runtime_state.py -k "parse_memory_correction_command or classify_user_intent or looks_like_user_correction or parse_control_bool or parse_control_choice or followup_carryover"`: `12 passed`.
   - `uv run pytest -q tests/test_main_audio.py tests/test_main_lifecycle.py tests/test_runtime_voice_profile.py tests/test_runtime_state.py -k "transcribe_with_fallback or parse_memory_correction_command or parse_control_bool or parse_control_choice or followup_carryover"`: `11 passed`.
-  - `make check`: `784 passed`.
-  - `make security-gate`: `784 passed`; fault subset `3 passed`.
+  - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_operator_status.py tests/test_main_audio.py tests/test_import_boundaries.py`: `248 passed`.
+  - `make check`: `786 passed`.
+  - `make security-gate`: `786 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
