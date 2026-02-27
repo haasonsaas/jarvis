@@ -21,7 +21,7 @@ from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse  # noqa: F401  # accessed by domain modules via services module alias
 
 import aiohttp  # noqa: F401
 
@@ -227,6 +227,12 @@ from jarvis.tools.services_home_policy_runtime import (
     extract_area_from_entity as _runtime_extract_area_from_entity,
     home_action_is_loud as _runtime_home_action_is_loud,
     home_area_policy_violation as _runtime_home_area_policy_violation,
+)
+from jarvis.tools.services_webhook_runtime import (
+    collect_json_lists_by_key as _runtime_collect_json_lists_by_key,
+    parse_calendar_event_timestamp as _runtime_parse_calendar_event_timestamp,
+    record_inbound_webhook_event as _runtime_record_inbound_webhook_event,
+    webhook_host_allowed as _runtime_webhook_host_allowed,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -1283,41 +1289,15 @@ async def _ha_render_template(template_text: str, *, timeout_sec: float = 10.0) 
 
 
 def _collect_json_lists_by_key(value: Any, key: str) -> list[Any]:
-    results: list[Any] = []
-    if isinstance(value, dict):
-        for item_key, item_value in value.items():
-            if item_key == key and isinstance(item_value, list):
-                results.extend(item_value)
-            else:
-                results.extend(_collect_json_lists_by_key(item_value, key))
-    elif isinstance(value, list):
-        for item in value:
-            results.extend(_collect_json_lists_by_key(item, key))
-    return results
+    return _runtime_collect_json_lists_by_key(value, key)
 
 
 def _parse_calendar_event_timestamp(value: Any) -> float | None:
-    if not isinstance(value, str):
-        return None
-    parsed = _parse_datetime_text(value)
-    if parsed is None:
-        return None
-    return parsed.timestamp()
+    return _runtime_parse_calendar_event_timestamp(_services_module(), value)
 
 
 def _webhook_host_allowed(url: str) -> bool:
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").strip().lower()
-    if not host:
-        return False
-    if not _webhook_allowlist:
-        return False
-    for allowed in _webhook_allowlist:
-        if host == allowed:
-            return True
-        if host.endswith(f".{allowed}"):
-            return True
-    return False
+    return _runtime_webhook_host_allowed(_services_module(), url)
 
 
 def record_inbound_webhook_event(
@@ -1327,31 +1307,13 @@ def record_inbound_webhook_event(
     source: str = "unknown",
     path: str = "/",
 ) -> int:
-    global _inbound_webhook_seq
-    event_id = _inbound_webhook_seq
-    _inbound_webhook_seq += 1
-    entry = {
-        "id": event_id,
-        "timestamp": time.time(),
-        "source": str(source),
-        "path": str(path),
-        "headers": _sanitize_inbound_headers(headers),
-        "payload": _sanitize_inbound_payload(payload),
-    }
-    _inbound_webhook_events.append(entry)
-    if len(_inbound_webhook_events) > 500:
-        del _inbound_webhook_events[:-500]
-    _audit(
-        "webhook_inbound",
-        {
-            "result": "ok",
-            "event_id": event_id,
-            "source": entry["source"],
-            "path": entry["path"],
-            "header_count": len(entry["headers"]),
-        },
+    return _runtime_record_inbound_webhook_event(
+        _services_module(),
+        payload=payload,
+        headers=headers,
+        source=source,
+        path=path,
     )
-    return event_id
 
 
 def _integration_health_snapshot() -> dict[str, Any]:
