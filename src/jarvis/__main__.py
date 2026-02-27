@@ -56,6 +56,9 @@ from jarvis.audio.runtime_audio import (
 )
 from jarvis.runtime_operator_control import handle_operator_control as _runtime_handle_operator_control
 from jarvis.runtime_operator_status import operator_status_provider as _runtime_operator_status_provider
+from jarvis.runtime_observability_status import (
+    default_observability_status_snapshot as _runtime_default_observability_status_snapshot,
+)
 from jarvis.runtime_turn import (
     classify_user_intent as _turn_classify_user_intent,
     completion_success_from_summaries as _turn_completion_success_from_summaries,
@@ -608,90 +611,12 @@ class Jarvis:
     def _publish_observability_status(self) -> None:
         observability = getattr(self, "_observability", None)
         if observability is None:
-            set_runtime_observability_state(
-                {
-                    "enabled": False,
-                    "uptime_sec": 0.0,
-                    "restart_count": 0,
-                    "alerts": [],
-                    "intent_metrics": {
-                        "turn_count": 0.0,
-                        "answer_intent_count": 0.0,
-                        "action_intent_count": 0.0,
-                        "hybrid_intent_count": 0.0,
-                        "answer_sample_count": 0.0,
-                        "completion_sample_count": 0.0,
-                        "answer_quality_success_rate": 0.0,
-                        "completion_success_rate": 0.0,
-                        "correction_count": 0.0,
-                        "correction_frequency": 0.0,
-                    },
-                    "multimodal_metrics": {
-                        "turn_count": 0.0,
-                        "avg_confidence": 0.0,
-                        "low_confidence_count": 0.0,
-                        "low_confidence_rate": 0.0,
-                    },
-                    "latency_dashboards": {
-                        "sample_count": 0,
-                        "overall_total_ms": {"p50": 0.0, "p95": 0.0, "p99": 0.0},
-                        "by_intent": {},
-                        "by_tool_mix": {},
-                        "by_wake_mode": {},
-                    },
-                    "policy_decision_analytics": {
-                        "decision_count": 0,
-                        "by_tool": {},
-                        "by_status": {},
-                        "by_reason": {},
-                        "by_user": {},
-                        "by_user_tool": {},
-                    },
-                }
-            )
+            set_runtime_observability_state(_runtime_default_observability_status_snapshot())
             return
         try:
             snapshot = observability.status_snapshot()
         except Exception:
-            snapshot = {
-                "enabled": False,
-                "uptime_sec": 0.0,
-                "restart_count": 0,
-                "alerts": [],
-                "intent_metrics": {
-                    "turn_count": 0.0,
-                    "answer_intent_count": 0.0,
-                    "action_intent_count": 0.0,
-                    "hybrid_intent_count": 0.0,
-                    "answer_sample_count": 0.0,
-                    "completion_sample_count": 0.0,
-                    "answer_quality_success_rate": 0.0,
-                    "completion_success_rate": 0.0,
-                    "correction_count": 0.0,
-                    "correction_frequency": 0.0,
-                },
-                "multimodal_metrics": {
-                    "turn_count": 0.0,
-                    "avg_confidence": 0.0,
-                    "low_confidence_count": 0.0,
-                    "low_confidence_rate": 0.0,
-                },
-                "latency_dashboards": {
-                    "sample_count": 0,
-                    "overall_total_ms": {"p50": 0.0, "p95": 0.0, "p99": 0.0},
-                    "by_intent": {},
-                    "by_tool_mix": {},
-                    "by_wake_mode": {},
-                },
-                "policy_decision_analytics": {
-                    "decision_count": 0,
-                    "by_tool": {},
-                    "by_status": {},
-                    "by_reason": {},
-                    "by_user": {},
-                    "by_user_tool": {},
-                },
-            }
+            snapshot = _runtime_default_observability_status_snapshot()
         if isinstance(snapshot, dict):
             snapshot["latency_dashboards"] = self._conversation_latency_analytics()
             snapshot["policy_decision_analytics"] = self._policy_decision_analytics()

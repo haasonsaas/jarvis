@@ -410,6 +410,59 @@ def test_publish_voice_status_includes_turn_choreography():
     assert "modality_scores" in payload["multimodal_grounding"]
 
 
+def test_publish_observability_status_defaults_when_observability_disabled():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._observability = None
+
+    with patch("jarvis.__main__.set_runtime_observability_state") as set_runtime:
+        Jarvis._publish_observability_status(jarvis)
+
+    payload = set_runtime.call_args.args[0]
+    assert payload["enabled"] is False
+    assert payload["uptime_sec"] == 0.0
+    assert payload["restart_count"] == 0
+    assert payload["intent_metrics"]["preference_update_turns"] == 0.0
+    assert payload["intent_metrics"]["preference_update_fields"] == 0.0
+    assert payload["latency_dashboards"]["sample_count"] == 0
+    assert payload["policy_decision_analytics"]["decision_count"] == 0
+
+
+def test_publish_observability_status_uses_default_when_snapshot_raises():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._observability = SimpleNamespace(status_snapshot=MagicMock(side_effect=RuntimeError("boom")))
+    jarvis._conversation_latency_analytics = MagicMock(
+        return_value={
+            "sample_count": 1,
+            "overall_total_ms": {"p50": 10.0, "p95": 10.0, "p99": 10.0},
+            "by_intent": {"action": {"p50": 10.0, "p95": 10.0, "p99": 10.0}},
+            "by_tool_mix": {"none": {"p50": 10.0, "p95": 10.0, "p99": 10.0}},
+            "by_wake_mode": {"wake_word": {"p50": 10.0, "p95": 10.0, "p99": 10.0}},
+        }
+    )
+    jarvis._policy_decision_analytics = MagicMock(
+        return_value={
+            "decision_count": 2,
+            "by_tool": {"smart_home": 2},
+            "by_status": {"allowed": 2},
+            "by_reason": {"ok": 2},
+            "by_user": {"owner": 2},
+            "by_user_tool": {"owner:smart_home": 2},
+        }
+    )
+
+    with patch("jarvis.__main__.set_runtime_observability_state") as set_runtime:
+        Jarvis._publish_observability_status(jarvis)
+
+    payload = set_runtime.call_args.args[0]
+    assert payload["enabled"] is False
+    assert payload["intent_metrics"]["preference_update_turns"] == 0.0
+    assert payload["intent_metrics"]["preference_update_fields"] == 0.0
+    assert payload["latency_dashboards"]["sample_count"] == 1
+    assert payload["policy_decision_analytics"]["decision_count"] == 2
+    jarvis._conversation_latency_analytics.assert_called_once()
+    jarvis._policy_decision_analytics.assert_called_once()
+
+
 def test_runtime_invariant_checker_auto_heals_mode_and_preset_mismatches():
     jarvis = Jarvis.__new__(Jarvis)
     voice = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))

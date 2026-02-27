@@ -9,8 +9,8 @@ Last updated: 2026-02-27
 
 ## Completion summary
 - Total items: 33
-- Completed: 26
-- Remaining: 7
+- Completed: 33
+- Remaining: 0
 
 ---
 
@@ -54,29 +54,31 @@ Last updated: 2026-02-27
 - [x] `W75-D08` Run `make security-gate`.
 - [x] `W75-D09` Run `./scripts/jarvis_readiness.sh fast`.
 
-## E) Wave 75 (next): __main__ observability snapshot dedupe
+## E) Wave 75 (completed): __main__ observability snapshot dedupe
 
-- [ ] `W75-E01` Extract observability fallback snapshot builder from `Jarvis._publish_observability_status`.
-- [ ] `W75-E02` Ensure fallback structure remains contract-identical.
-- [ ] `W75-E03` Add/adjust unit tests to lock fallback shape and metrics keys.
-- [ ] `W75-E04` Re-run targeted `__main__` and runtime tests.
-- [ ] `W75-E05` Run full quality/security/readiness gates.
-- [ ] `W75-E06` Commit and push Wave 75 tranche.
+- [x] `W75-E01` Extract observability fallback snapshot builder from `Jarvis._publish_observability_status`.
+- [x] `W75-E02` Ensure fallback structure remains contract-identical.
+- [x] `W75-E03` Add/adjust unit tests to lock fallback shape and metrics keys.
+- [x] `W75-E04` Re-run targeted `__main__` and runtime tests.
+- [x] `W75-E05` Run full quality/security/readiness gates.
+- [x] `W75-E06` Commit and push Wave 75 tranche.
 
 ---
 
 ## Outcome snapshot (latest completed tranche)
 
-- New module:
+- New modules:
   - `services_defaults.py`
+  - `runtime_observability_status.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
   - `services.re` export preserved for domain-module compatibility.
-- Validation (Wave 75D):
-  - `uv run pytest -q tests/test_import_boundaries.py`: `169 passed`.
-  - `uv run pytest -q tests/test_tools_services.py -k "system_status or jarvis_scorecard or skills_governance or quality_evaluator or embodiment_presence"`: `7 passed`.
-  - `uv run pytest -q tests/test_tools_services.py -k "smart_home or media_control or todoist or email_send or slack_notify or discord_notify or pushover_notify"`: `87 passed`.
-  - `make check`: `758 passed`.
-  - `make security-gate`: `758 passed`; fault subset `3 passed`.
+  - `Jarvis._publish_observability_status` now uses a shared default snapshot helper for both disabled-observability and exception fallback paths.
+- Validation (Wave 75D/E):
+  - `uv run pytest -q tests/test_import_boundaries.py`: `170 passed`.
+  - `uv run pytest -q tests/test_main_lifecycle.py -k "publish_observability_status"`: `2 passed`.
+  - `uv run pytest -q tests/test_main_lifecycle.py tests/test_main_audio.py tests/test_runtime_state.py`: `54 passed`.
+  - `make check`: `761 passed`.
+  - `make security-gate`: `761 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
