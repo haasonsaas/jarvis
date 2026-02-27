@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/85 Runtime Decomposition
+# Jarvis TODO — Wave 74/86 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 111
-- Completed: 111
+- Total items: 119
+- Completed: 119
 - Remaining: 0
 
 ---
@@ -171,6 +171,17 @@ Last updated: 2026-02-27
 - [x] `W85-O07` Run `make security-gate`.
 - [x] `W85-O08` Run `./scripts/jarvis_readiness.sh fast`.
 
+## P) Wave 86 (completed): status/scorecard wrapper extraction
+
+- [x] `W86-P01` Profile status + scorecard wrapper block in `services.py`.
+- [x] `W86-P02` Create `services_status_facade_runtime.py` for status/scorecard helper wrappers.
+- [x] `W86-P03` Preserve `services.py` compatibility names used by runtime/domain modules.
+- [x] `W86-P04` Extend import-boundary coverage for status facade module.
+- [x] `W86-P05` Run focused status/scorecard regression tests.
+- [x] `W86-P06` Run `make check`.
+- [x] `W86-P07` Run `make security-gate`.
+- [x] `W86-P08` Run `./scripts/jarvis_readiness.sh fast`.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -187,6 +198,7 @@ Last updated: 2026-02-27
   - `services_action_facade_runtime.py`
   - `services_schedule_facade_runtime.py`
   - `services_memory_facade_runtime.py`
+  - `services_status_facade_runtime.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -202,6 +214,7 @@ Last updated: 2026-02-27
   - Action-history wrapper family moved behind `services_action_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Schedule/timer/reminder wrapper family moved behind `services_schedule_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Memory/planning wrapper family moved behind `services_memory_facade_runtime.py` with `services.py` compatibility aliases maintained.
+  - Status/scorecard wrapper family moved behind `services_status_facade_runtime.py` with `services.py` compatibility aliases maintained.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -216,6 +229,7 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_main_audio.py tests/test_runtime_state.py`: `54 passed`.
   - `uv run pytest -q tests/test_tools_services.py -k "timer or reminder"`: `13 passed`.
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_memory.py tests/test_tools_services.py -k "memory_"`: `34 passed`.
-  - `make check`: `777 passed`.
-  - `make security-gate`: `777 passed`; fault subset `3 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py tests/test_main_lifecycle.py -k "system_status or scorecard or observability or identity_status or voice_attention"`: `12 passed`.
+  - `make check`: `778 passed`.
+  - `make security-gate`: `778 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

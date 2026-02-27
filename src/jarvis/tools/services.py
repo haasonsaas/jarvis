@@ -80,18 +80,18 @@ from jarvis.tools.services_identity_facade_runtime import (
     identity_enriched_audit as _facade_identity_enriched_audit,
     identity_trust_domain as _facade_identity_trust_domain,
 )
-from jarvis.tools.services_status_runtime import (
-    duration_p95_ms as _runtime_duration_p95_ms,
-    expansion_snapshot as _runtime_expansion_snapshot,
-    health_rollup as _runtime_health_rollup,
-    identity_status_snapshot as _runtime_identity_status_snapshot,
-    integration_health_snapshot as _runtime_integration_health_snapshot,
-    jarvis_scorecard_snapshot as _runtime_jarvis_scorecard_snapshot,
-    observability_snapshot as _runtime_observability_snapshot,
-    recent_tool_rows as _runtime_recent_tool_rows,
-    score_label as _runtime_score_label,
-    skills_status_snapshot as _runtime_skills_status_snapshot,
-    voice_attention_snapshot as _runtime_voice_attention_snapshot,
+from jarvis.tools.services_status_facade_runtime import (
+    duration_p95_ms as _facade_duration_p95_ms,
+    expansion_snapshot as _facade_expansion_snapshot,
+    health_rollup as _facade_health_rollup,
+    identity_status_snapshot as _facade_identity_status_snapshot,
+    integration_health_snapshot as _facade_integration_health_snapshot,
+    jarvis_scorecard_snapshot as _facade_jarvis_scorecard_snapshot,
+    observability_snapshot as _facade_observability_snapshot,
+    recent_tool_rows as _facade_recent_tool_rows,
+    score_label as _facade_score_label,
+    skills_status_snapshot as _facade_skills_status_snapshot,
+    voice_attention_snapshot as _facade_voice_attention_snapshot,
 )
 from jarvis.tools.services_ha_runtime import (
     ha_call_service as _runtime_ha_call_service,
@@ -989,77 +989,21 @@ def record_inbound_webhook_event(
     )
 
 
-def _integration_health_snapshot() -> dict[str, Any]:
-    return _runtime_integration_health_snapshot(_services_module())
+_integration_health_snapshot = _facade_integration_health_snapshot
+_identity_status_snapshot = _facade_identity_status_snapshot
+_voice_attention_snapshot = _facade_voice_attention_snapshot
+_observability_snapshot = _facade_observability_snapshot
+_skills_status_snapshot = _facade_skills_status_snapshot
+_expansion_snapshot = _facade_expansion_snapshot
 
 
-def _identity_status_snapshot() -> dict[str, Any]:
-    return _runtime_identity_status_snapshot(_services_module())
+_health_rollup = _facade_health_rollup
+_score_label = _facade_score_label
+_recent_tool_rows = _facade_recent_tool_rows
+_duration_p95_ms = _facade_duration_p95_ms
 
 
-def _voice_attention_snapshot() -> dict[str, Any]:
-    return _runtime_voice_attention_snapshot(_services_module())
-
-
-def _observability_snapshot() -> dict[str, Any]:
-    return _runtime_observability_snapshot(_services_module())
-
-
-def _skills_status_snapshot() -> dict[str, Any]:
-    return _runtime_skills_status_snapshot(_services_module())
-
-
-def _expansion_snapshot() -> dict[str, Any]:
-    return _runtime_expansion_snapshot(_services_module())
-
-
-def _health_rollup(
-    *,
-    config_present: bool,
-    memory_state: dict[str, Any] | None,
-    recent_tools: list[dict[str, object]] | dict[str, str],
-    identity_status: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    return _runtime_health_rollup(
-        config_present=config_present,
-        memory_state=memory_state,
-        recent_tools=recent_tools,
-        identity_status=identity_status,
-    )
-
-
-def _score_label(score: float) -> str:
-    return _runtime_score_label(_services_module(), score)
-
-
-def _recent_tool_rows(recent_tools: list[dict[str, object]] | dict[str, str] | Any) -> list[dict[str, object]]:
-    return _runtime_recent_tool_rows(recent_tools)
-
-
-def _duration_p95_ms(rows: list[dict[str, object]]) -> float:
-    return _runtime_duration_p95_ms(rows)
-
-
-def _jarvis_scorecard_snapshot(
-    *,
-    recent_tools: list[dict[str, object]] | dict[str, str],
-    health: dict[str, Any],
-    observability: dict[str, Any],
-    identity: dict[str, Any],
-    tool_policy: dict[str, Any],
-    audit: dict[str, Any],
-    integrations: dict[str, Any],
-) -> dict[str, Any]:
-    return _runtime_jarvis_scorecard_snapshot(
-        _services_module(),
-        recent_tools=recent_tools,
-        health=health,
-        observability=observability,
-        identity=identity,
-        tool_policy=tool_policy,
-        audit=audit,
-        integrations=integrations,
-    )
+_jarvis_scorecard_snapshot = _facade_jarvis_scorecard_snapshot
 
 
 # ── Home Assistant ────────────────────────────────────────────
