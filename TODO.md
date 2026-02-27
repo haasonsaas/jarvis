@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 45 (Governance Decomposition)
+# Jarvis TODO — Wave 46 (Trust Memory Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,74 +8,73 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 31
-- Completed: 31
+- Total items: 30
+- Completed: 30
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W45-A01` Confirm Wave 44 merged and tree clean before new edits.
-- [x] `W45-A02` Re-profile largest remaining service-domain modules.
-- [x] `W45-A03` Select `services_domains/governance.py` for decomposition.
-- [x] `W45-A04` Preserve external API via compatibility exports.
+- [x] `W46-A01` Confirm Wave 45 merged and branch baseline clean.
+- [x] `W46-A02` Re-profile largest remaining domain modules.
+- [x] `W46-A03` Select `services_domains/trust_memory.py` for decomposition.
+- [x] `W46-A04` Preserve compatibility import surface.
 
 ## B) Decomposition design
 
-- [x] `W45-B01` Define `governance_tool_summary.py` for summary endpoints.
-- [x] `W45-B02` Define `governance_skills.py` for skills governance and lifecycle ops.
-- [x] `W45-B03` Define `governance_quality.py` for quality and embodiment handlers.
-- [x] `W45-B04` Define `governance_status.py` for system status contract/scorecard.
-- [x] `W45-B05` Keep lazy `services` lookup pattern unchanged in all new modules.
+- [x] `W46-B01` Define `trust_memory_ops.py` for add/update/forget.
+- [x] `W46-B02` Define `trust_memory_query.py` for search/status/recent.
+- [x] `W46-B03` Define `trust_memory_summary.py` for summary add/list.
+- [x] `W46-B04` Define `trust_memory_governance.py` for quality audit/cleanup controls.
+- [x] `W46-B05` Retain lazy `services` lookup and no behavior changes.
 
 ## C) Extraction implementation
 
-- [x] `W45-C01` Create `services_domains/governance_tool_summary.py`.
-- [x] `W45-C02` Move `tool_summary` and `tool_summary_text`.
-- [x] `W45-C03` Create `services_domains/governance_skills.py`.
-- [x] `W45-C04` Move `_skills_snapshot_rows` and `skills_governance`.
-- [x] `W45-C05` Move `skills_list`, `skills_enable`, `skills_disable`, `skills_version`.
-- [x] `W45-C06` Create `services_domains/governance_quality.py`.
-- [x] `W45-C07` Move `quality_evaluator` and `embodiment_presence`.
-- [x] `W45-C08` Create `services_domains/governance_status.py`.
-- [x] `W45-C09` Move `system_status`, `system_status_contract`, and `jarvis_scorecard`.
+- [x] `W46-C01` Create `services_domains/trust_memory_ops.py`.
+- [x] `W46-C02` Move `memory_add`, `memory_update`, `memory_forget`.
+- [x] `W46-C03` Create `services_domains/trust_memory_query.py`.
+- [x] `W46-C04` Move `memory_search`, `memory_status`, `memory_recent`.
+- [x] `W46-C05` Create `services_domains/trust_memory_summary.py`.
+- [x] `W46-C06` Move `memory_summary_add`, `memory_summary_list`.
+- [x] `W46-C07` Create `services_domains/trust_memory_governance.py`.
+- [x] `W46-C08` Move `_memory_quality_audit` and `memory_governance`.
 
 ## D) Compatibility and boundaries
 
-- [x] `W45-D01` Replace `services_domains/governance.py` with compatibility exports.
-- [x] `W45-D02` Preserve imports expected by `services.py` and `services_server.py`.
-- [x] `W45-D03` Add import-boundary check for `governance_tool_summary`.
-- [x] `W45-D04` Add import-boundary check for `governance_skills`.
-- [x] `W45-D05` Add import-boundary check for `governance_quality`.
-- [x] `W45-D06` Add import-boundary check for `governance_status`.
+- [x] `W46-D01` Replace `services_domains/trust_memory.py` with compatibility exports.
+- [x] `W46-D02` Keep imports expected by `services.py` and `services_server.py` stable.
+- [x] `W46-D03` Add import-boundary check for `trust_memory_ops`.
+- [x] `W46-D04` Add import-boundary check for `trust_memory_query`.
+- [x] `W46-D05` Add import-boundary check for `trust_memory_summary`.
+- [x] `W46-D06` Add import-boundary check for `trust_memory_governance`.
 
 ## E) Validation
 
-- [x] `W45-E01` Run focused lint on changed governance modules + boundary tests.
-- [x] `W45-E02` Run targeted pytest for governance handlers + import boundaries.
-- [x] `W45-E03` Run full `make check`.
-- [x] `W45-E04` Run full `make security-gate`.
-- [x] `W45-E05` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W46-E01` Run focused lint on touched trust-memory modules + boundary test.
+- [x] `W46-E02` Run targeted pytest for trust-memory handlers + boundaries.
+- [x] `W46-E03` Run full `make check`.
+- [x] `W46-E04` Run full `make security-gate`.
+- [x] `W46-E05` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W45-F01` Capture post-split governance line-count results.
-- [x] `W45-F02` Commit and push Wave 45.
+- [x] `W46-F01` Capture post-split line-count outcomes.
+- [x] `W46-F02` Commit and push Wave 46.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Governance decomposition:
-  - `services_domains/governance.py`: `649 -> 39` lines (compatibility exports)
-  - New `services_domains/governance_tool_summary.py`: `59` lines
-  - New `services_domains/governance_skills.py`: `314` lines
-  - New `services_domains/governance_quality.py`: `201` lines
-  - New `services_domains/governance_status.py`: `105` lines
+- Trust-memory decomposition:
+  - `services_domains/trust_memory.py`: `600 -> 31` lines (compatibility exports)
+  - New `services_domains/trust_memory_ops.py`: `160` lines
+  - New `services_domains/trust_memory_query.py`: `243` lines
+  - New `services_domains/trust_memory_summary.py`: `70` lines
+  - New `services_domains/trust_memory_governance.py`: `160` lines
 - Boundary enforcement:
-  - Added import-boundary coverage for all new governance modules.
+  - Added import-boundary coverage for all new trust-memory modules.
 - Validation status:
-  - `make check`: `624 passed`
-  - `make security-gate`: `624 passed`; fault subset `3 passed`
+  - `make check`: `628 passed`
+  - `make security-gate`: `628 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
