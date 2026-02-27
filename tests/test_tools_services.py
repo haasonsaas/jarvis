@@ -1558,6 +1558,61 @@ class TestServicesTools:
         assert call_headers["Authorization"] == "Bearer secret-token"
 
     @pytest.mark.asyncio
+    async def test_dead_letter_queue_captures_webhook_failure_and_replays(self, tmp_path):
+        from jarvis.tools import services
+
+        cfg = services._config
+        assert cfg is not None
+        cfg.webhook_allowlist = ["example.com"]
+        cfg.dead_letter_queue_path = str(tmp_path / "dead-letter.jsonl")
+        services.bind(cfg)
+
+        fail_response = AsyncMock()
+        fail_response.status = 500
+        fail_response.text = AsyncMock(return_value="nope")
+        fail_ctx = AsyncMock()
+        fail_ctx.__aenter__ = AsyncMock(return_value=fail_response)
+        fail_ctx.__aexit__ = AsyncMock(return_value=False)
+        fail_session = AsyncMock()
+        fail_session.__aenter__ = AsyncMock(return_value=fail_session)
+        fail_session.__aexit__ = AsyncMock(return_value=False)
+        fail_session.request = MagicMock(return_value=fail_ctx)
+
+        args = {"url": "https://api.example.com/hooks/jarvis", "method": "POST", "payload": {"ok": True}}
+        with patch("aiohttp.ClientSession", return_value=fail_session):
+            failed = await services.webhook_trigger(args)
+        assert "failed (500)" in failed["content"][0]["text"].lower()
+
+        listed = await services.dead_letter_list({"status": "open"})
+        listed_payload = json.loads(listed["content"][0]["text"])
+        assert listed_payload["pending_count"] == 1
+        assert listed_payload["entry_count"] == 1
+        assert listed_payload["recent"]
+        entry_id = listed_payload["recent"][0]["entry_id"]
+
+        ok_response = AsyncMock()
+        ok_response.status = 200
+        ok_response.text = AsyncMock(return_value="ok")
+        ok_ctx = AsyncMock()
+        ok_ctx.__aenter__ = AsyncMock(return_value=ok_response)
+        ok_ctx.__aexit__ = AsyncMock(return_value=False)
+        ok_session = AsyncMock()
+        ok_session.__aenter__ = AsyncMock(return_value=ok_session)
+        ok_session.__aexit__ = AsyncMock(return_value=False)
+        ok_session.request = MagicMock(return_value=ok_ctx)
+
+        with patch("aiohttp.ClientSession", return_value=ok_session):
+            replayed = await services.dead_letter_replay({"entry_id": entry_id})
+        replayed_payload = json.loads(replayed["content"][0]["text"])
+        assert replayed_payload["replayed_count"] == 1
+        assert replayed_payload["failed_count"] == 0
+
+        listed_all = await services.dead_letter_list({"status": "all"})
+        listed_all_payload = json.loads(listed_all["content"][0]["text"])
+        assert listed_all_payload["pending_count"] == 0
+        assert listed_all_payload["replayed_count"] == 1
+
+    @pytest.mark.asyncio
     async def test_webhook_inbound_list_and_clear(self):
         from jarvis.tools import services
 
@@ -3094,7 +3149,7 @@ class TestServicesTools:
 
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.7"
+        assert payload["schema_version"] == "1.8"
         assert "local_time" in payload
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
@@ -3188,6 +3243,12 @@ class TestServicesTools:
         assert "unresolved_count" in payload["recovery_journal"]
         assert "interrupted_count" in payload["recovery_journal"]
         assert isinstance(payload["recovery_journal"]["recent"], list)
+        assert "dead_letter_queue" in payload
+        assert "path" in payload["dead_letter_queue"]
+        assert "pending_count" in payload["dead_letter_queue"]
+        assert "failed_count" in payload["dead_letter_queue"]
+        assert "replayed_count" in payload["dead_letter_queue"]
+        assert isinstance(payload["dead_letter_queue"]["recent"], list)
         assert payload["health"]["health_level"] in {"ok", "degraded", "error"}
 
     @pytest.mark.asyncio
@@ -3196,7 +3257,7 @@ class TestServicesTools:
 
         result = await services.system_status_contract({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.7"
+        assert payload["schema_version"] == "1.8"
         assert "top_level_required" in payload
         assert "tool_policy" in payload["top_level_required"]
         assert "identity" in payload["top_level_required"]
@@ -3272,6 +3333,9 @@ class TestServicesTools:
         assert "recovery_journal_required" in payload
         assert "unresolved_count" in payload["recovery_journal_required"]
         assert "interrupted_count" in payload["recovery_journal_required"]
+        assert "dead_letter_queue" in payload["top_level_required"]
+        assert "dead_letter_queue_required" in payload
+        assert "pending_count" in payload["dead_letter_queue_required"]
 
     @pytest.mark.asyncio
     async def test_jarvis_scorecard_reports_unified_dimensions(self, tmp_path):
@@ -3684,6 +3748,8 @@ class TestServicesTools:
         assert schemas["reminder_notify_due"]["properties"]["nudge_policy"]["type"] == "string"
         assert schemas["calendar_events"]["properties"]["limit"]["type"] == "integer"
         assert schemas["email_summary"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["dead_letter_list"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["dead_letter_replay"]["properties"]["limit"]["type"] == "integer"
         assert schemas["webhook_inbound_list"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary_text"]["properties"]["limit"]["type"] == "integer"

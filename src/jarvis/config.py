@@ -180,6 +180,12 @@ class Config:
             os.path.expanduser("~/.jarvis/recovery-journal.jsonl"),
         )
     )
+    dead_letter_queue_path: str = field(
+        default_factory=lambda: os.environ.get(
+            "DEAD_LETTER_QUEUE_PATH",
+            os.path.expanduser("~/.jarvis/dead-letter-queue.jsonl"),
+        )
+    )
     observability_failure_burst_threshold: int = field(
         default_factory=lambda: _env_int("OBSERVABILITY_FAILURE_BURST_THRESHOLD", 5)
     )

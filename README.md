@@ -105,7 +105,7 @@ cp .env.example .env
 # Optional: MODEL_FAILOVER_ENABLED / MODEL_SECONDARY_MODE / WATCHDOG_* / TURN_TIMEOUT_ACT_SEC / STARTUP_STRICT
 # Optional: OPERATOR_SERVER_ENABLED / OPERATOR_SERVER_HOST / OPERATOR_SERVER_PORT / OPERATOR_AUTH_MODE / OPERATOR_AUTH_TOKEN
 # Optional: WEBHOOK_INBOUND_ENABLED / WEBHOOK_INBOUND_TOKEN
-# Optional: RECOVERY_JOURNAL_PATH (persistent interrupted-action journal)
+# Optional: RECOVERY_JOURNAL_PATH / DEAD_LETTER_QUEUE_PATH (interrupted-action + failed-outbound journals)
 # Optional: OBSERVABILITY_* (DB/state/event paths, burst threshold, snapshot interval)
 # Optional: SKILLS_ENABLED / SKILLS_DIR / SKILLS_ALLOWLIST / SKILLS_REQUIRE_SIGNATURE / SKILLS_SIGNATURE_KEY
 ```
@@ -162,6 +162,7 @@ Smart home safety defaults:
   - `system_status.turn_timeouts` (listen/think/speak/act timeout budgets)
   - `system_status.integrations.*.circuit_breaker` (open/remaining/failure state per integration)
   - `system_status.recovery_journal` (interrupted-action reconciliation summary)
+  - `system_status.dead_letter_queue` (failed outbound delivery queue with replay status)
   - `jarvis_scorecard` (standalone scorecard payload for dashboards and alerts)
   - `system_status_contract` (stable required-field contract)
 - Memory retrieval now includes confidence/provenance details:
@@ -231,6 +232,9 @@ Smart home safety defaults:
   - `webhook_trigger` enforces `https` + `WEBHOOK_ALLOWLIST` domain policy
   - optional bearer token injection via `WEBHOOK_AUTH_TOKEN`
   - when identity enforcement is enabled, high-risk calls require `approval_code` or a trusted requester with `approved=true`
+  - failed outbound webhook/channel/email/push attempts are queued for operator replay:
+    - `dead_letter_list` to inspect queue state
+    - `dead_letter_replay` to retry specific or filtered entries
 
 ### First-Time Operator Checklist
 

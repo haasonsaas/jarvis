@@ -46,6 +46,7 @@ log = logging.getLogger(__name__)
 # Audit log in user's home dir for predictable location
 AUDIT_LOG = Path.home() / ".jarvis" / "audit.jsonl"
 DEFAULT_RECOVERY_JOURNAL = Path.home() / ".jarvis" / "recovery-journal.jsonl"
+DEFAULT_DEAD_LETTER_QUEUE = Path.home() / ".jarvis" / "dead-letter-queue.jsonl"
 
 # Domains that always default to dry_run
 SENSITIVE_DOMAINS = {"lock", "alarm_control_panel", "cover", "climate"}
@@ -75,7 +76,7 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
-SYSTEM_STATUS_CONTRACT_VERSION = "1.7"
+SYSTEM_STATUS_CONTRACT_VERSION = "1.8"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
@@ -209,6 +210,7 @@ _inbound_webhook_seq: int = 1
 _pending_plan_previews: dict[str, dict[str, Any]] = {}
 _integration_circuit_breakers: dict[str, dict[str, Any]] = {}
 _recovery_journal_path: Path = DEFAULT_RECOVERY_JOURNAL
+_dead_letter_queue_path: Path = DEFAULT_DEAD_LETTER_QUEUE
 SENSITIVE_AUDIT_KEY_TOKENS = {
     "code",
     "pin",
@@ -536,6 +538,21 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "limit": {"type": "integer"},
         },
     },
+    "dead_letter_list": {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer"},
+            "status": {"type": "string"},
+        },
+    },
+    "dead_letter_replay": {
+        "type": "object",
+        "properties": {
+            "entry_id": {"type": "string"},
+            "limit": {"type": "integer"},
+            "status": {"type": "string"},
+        },
+    },
     "timer_create": {
         "type": "object",
         "properties": {
@@ -819,6 +836,8 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "discord_notify": {"message"},
     "email_send": {"subject", "body"},
     "email_summary": set(),
+    "dead_letter_list": set(),
+    "dead_letter_replay": set(),
     "timer_create": {"duration"},
     "timer_list": set(),
     "timer_cancel": set(),
@@ -911,7 +930,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _plan_preview_require_ack, _safe_mode_enabled
     global _memory_retention_days, _audit_retention_days
     global _memory_pii_guardrails_enabled, _audit_encryption_enabled, _data_encryption_key
-    global _timer_id_seq, _reminder_id_seq, _integration_circuit_breakers, _recovery_journal_path
+    global _timer_id_seq, _reminder_id_seq, _integration_circuit_breakers, _recovery_journal_path, _dead_letter_queue_path
     _config = config
     _memory = memory_store
     _audit_log_max_bytes = int(config.audit_log_max_bytes)
@@ -995,6 +1014,9 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _data_encryption_key = str(getattr(config, "data_encryption_key", "")).strip()
     _recovery_journal_path = Path(
         str(getattr(config, "recovery_journal_path", str(DEFAULT_RECOVERY_JOURNAL)))
+    ).expanduser()
+    _dead_letter_queue_path = Path(
+        str(getattr(config, "dead_letter_queue_path", str(DEFAULT_DEAD_LETTER_QUEUE)))
     ).expanduser()
     _configure_audit_encryption(enabled=_audit_encryption_enabled, key=_data_encryption_key)
     _action_last_seen.clear()
@@ -2280,6 +2302,170 @@ def _recovery_journal_status(*, limit: int = 20) -> dict[str, Any]:
         "interrupted_count": interrupted,
         "recent": recent,
     }
+
+
+def _read_dead_letter_entries() -> list[dict[str, Any]]:
+    path = _dead_letter_queue_path
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return []
+    entries: list[dict[str, Any]] = []
+    for line in lines:
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            entries.append(payload)
+    return entries
+
+
+def _write_dead_letter_entries(entries: list[dict[str, Any]]) -> None:
+    path = _dead_letter_queue_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps(item, default=str) for item in entries if isinstance(item, dict)]
+    text = "\n".join(lines)
+    if text:
+        text += "\n"
+    try:
+        path.write_text(text)
+    except OSError as exc:
+        log.warning("Failed to write dead-letter queue: %s", exc)
+
+
+def _append_dead_letter_entry(entry: dict[str, Any]) -> None:
+    path = _dead_letter_queue_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(entry, default=str)
+    try:
+        with path.open("a") as handle:
+            handle.write(line + "\n")
+    except OSError as exc:
+        log.warning("Failed to append dead-letter queue entry: %s", exc)
+
+
+def _dead_letter_matches(entry: dict[str, Any], *, status_filter: str) -> bool:
+    status = str(entry.get("status", "pending")).strip().lower() or "pending"
+    if status_filter == "all":
+        return True
+    if status_filter == "open":
+        return status in {"pending", "failed"}
+    return status == status_filter
+
+
+def _dead_letter_queue_status(*, limit: int = 20, status_filter: str = "open") -> dict[str, Any]:
+    entries = _read_dead_letter_entries()
+    size = max(1, min(200, int(limit)))
+    selected = [entry for entry in entries if _dead_letter_matches(entry, status_filter=status_filter)]
+    recent_raw = selected[-size:]
+    recent: list[dict[str, Any]] = []
+    for entry in recent_raw:
+        tool_name = str(entry.get("tool", "unknown")).strip().lower()
+        args = entry.get("args")
+        args_preview = _sanitize_inbound_payload(args if isinstance(args, dict) else {})
+        recent.append(
+            {
+                "entry_id": str(entry.get("entry_id", "")),
+                "timestamp": float(entry.get("timestamp", 0.0) or 0.0),
+                "tool": tool_name,
+                "status": str(entry.get("status", "pending")),
+                "reason": str(entry.get("reason", "")),
+                "attempts": int(entry.get("attempts", 0) or 0),
+                "last_attempt_at": float(entry.get("last_attempt_at", 0.0) or 0.0),
+                "last_error": str(entry.get("last_error", "")),
+                "args_preview": args_preview,
+                "replayable": tool_name in {
+                    "webhook_trigger",
+                    "slack_notify",
+                    "discord_notify",
+                    "email_send",
+                    "pushover_notify",
+                },
+            }
+        )
+    pending = sum(1 for entry in entries if str(entry.get("status", "pending")).strip().lower() == "pending")
+    failed = sum(1 for entry in entries if str(entry.get("status", "")).strip().lower() == "failed")
+    replayed = sum(1 for entry in entries if str(entry.get("status", "")).strip().lower() == "replayed")
+    return {
+        "path": str(_dead_letter_queue_path),
+        "exists": _dead_letter_queue_path.exists(),
+        "entry_count": len(entries),
+        "pending_count": pending,
+        "failed_count": failed,
+        "replayed_count": replayed,
+        "recent": recent,
+    }
+
+
+def _dead_letter_enqueue(tool_name: str, args: dict[str, Any], *, reason: str, detail: str = "") -> str | None:
+    if not isinstance(args, dict):
+        return None
+    if bool(args.get("_dead_letter_replay")):
+        return None
+    payload_args = {str(key): value for key, value in args.items() if str(key) != "_dead_letter_replay"}
+    entry_id = secrets.token_hex(10)
+    entry = {
+        "timestamp": time.time(),
+        "entry_id": entry_id,
+        "tool": str(tool_name),
+        "status": "pending",
+        "reason": str(reason),
+        "attempts": 0,
+        "last_attempt_at": 0.0,
+        "last_error": str(detail),
+        "args": payload_args,
+    }
+    _append_dead_letter_entry(entry)
+    _audit(
+        "dead_letter_queue",
+        {
+            "result": "enqueued",
+            "entry_id": entry_id,
+            "tool": str(tool_name),
+            "reason": str(reason),
+        },
+    )
+    return entry_id
+
+
+def _tool_response_text(result: dict[str, Any]) -> str:
+    if not isinstance(result, dict):
+        return ""
+    content = result.get("content")
+    if not isinstance(content, list) or not content:
+        return ""
+    first = content[0]
+    if not isinstance(first, dict):
+        return ""
+    return str(first.get("text", "")).strip()
+
+
+def _tool_response_success(text: str) -> bool:
+    value = str(text).strip().lower()
+    if not value:
+        return False
+    failure_markers = (
+        "not permitted",
+        "denied",
+        "failed",
+        "error",
+        "timed out",
+        "cancelled",
+        "required",
+        "missing",
+        "not configured",
+        "authentication failed",
+        "invalid",
+        "unexpected",
+        "circuit breaker is open",
+    )
+    return not any(marker in value for marker in failure_markers)
 
 
 def _prune_audit_file(path: Path, *, cutoff_ts: float) -> int:
@@ -4659,6 +4845,12 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
                     if resp.status in {401, 403}:
                         recovery.mark_failed("auth", context={"http_status": resp.status})
                         _record_service_error("webhook_trigger", start_time, "auth")
+                        _dead_letter_enqueue(
+                            "webhook_trigger",
+                            args,
+                            reason="auth",
+                            detail=f"http_status={resp.status}",
+                        )
                         _audit(
                             "webhook_trigger",
                             {"result": "auth", "method": method, "host": parsed.hostname or "", "status": resp.status},
@@ -4666,6 +4858,12 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
                         return {"content": [{"type": "text", "text": "Webhook authentication failed."}]}
                     recovery.mark_failed("http_error", context={"http_status": resp.status})
                     _record_service_error("webhook_trigger", start_time, "http_error")
+                    _dead_letter_enqueue(
+                        "webhook_trigger",
+                        args,
+                        reason="http_error",
+                        detail=f"http_status={resp.status}",
+                    )
                     _audit(
                         "webhook_trigger",
                         {"result": "http_error", "method": method, "host": parsed.hostname or "", "status": resp.status},
@@ -4674,21 +4872,25 @@ async def webhook_trigger(args: dict[str, Any]) -> dict[str, Any]:
         except asyncio.TimeoutError:
             recovery.mark_failed("timeout")
             _record_service_error("webhook_trigger", start_time, "timeout")
+            _dead_letter_enqueue("webhook_trigger", args, reason="timeout", detail="request timed out")
             _audit("webhook_trigger", {"result": "timeout", "method": method, "host": parsed.hostname or ""})
             return {"content": [{"type": "text", "text": "Webhook request timed out."}]}
         except asyncio.CancelledError:
             recovery.mark_cancelled()
             _record_service_error("webhook_trigger", start_time, "cancelled")
+            _dead_letter_enqueue("webhook_trigger", args, reason="cancelled", detail="request cancelled")
             _audit("webhook_trigger", {"result": "cancelled", "method": method, "host": parsed.hostname or ""})
             return {"content": [{"type": "text", "text": "Webhook request was cancelled."}]}
         except aiohttp.ClientError:
             recovery.mark_failed("network_client_error")
             _record_service_error("webhook_trigger", start_time, "network_client_error")
+            _dead_letter_enqueue("webhook_trigger", args, reason="network_client_error", detail="client transport failure")
             _audit("webhook_trigger", {"result": "network_client_error", "method": method, "host": parsed.hostname or ""})
             return {"content": [{"type": "text", "text": "Failed to reach webhook endpoint."}]}
         except Exception:
             recovery.mark_failed("unexpected")
             _record_service_error("webhook_trigger", start_time, "unexpected")
+            _dead_letter_enqueue("webhook_trigger", args, reason="unexpected", detail="unexpected exception")
             _audit("webhook_trigger", {"result": "unexpected", "method": method, "host": parsed.hostname or ""})
             log.exception("Unexpected webhook_trigger failure")
             return {"content": [{"type": "text", "text": "Unexpected webhook trigger error."}]}
@@ -4774,30 +4976,46 @@ async def slack_notify(args: dict[str, Any]) -> dict[str, Any]:
                     if resp.status in {401, 403}:
                         recovery.mark_failed("auth", context={"http_status": resp.status})
                         _record_service_error("slack_notify", start_time, "auth")
+                        _dead_letter_enqueue(
+                            "slack_notify",
+                            args,
+                            reason="auth",
+                            detail=f"http_status={resp.status}",
+                        )
                         _audit("slack_notify", {"result": "auth", "status": resp.status})
                         return {"content": [{"type": "text", "text": "Slack webhook authentication failed."}]}
                     recovery.mark_failed("http_error", context={"http_status": resp.status})
                     _record_service_error("slack_notify", start_time, "http_error")
+                    _dead_letter_enqueue(
+                        "slack_notify",
+                        args,
+                        reason="http_error",
+                        detail=f"http_status={resp.status}",
+                    )
                     _audit("slack_notify", {"result": "http_error", "status": resp.status})
                     return {"content": [{"type": "text", "text": f"Slack webhook error ({resp.status})."}]}
         except asyncio.TimeoutError:
             recovery.mark_failed("timeout")
             _record_service_error("slack_notify", start_time, "timeout")
+            _dead_letter_enqueue("slack_notify", args, reason="timeout", detail="request timed out")
             _audit("slack_notify", {"result": "timeout"})
             return {"content": [{"type": "text", "text": "Slack webhook request timed out."}]}
         except asyncio.CancelledError:
             recovery.mark_cancelled()
             _record_service_error("slack_notify", start_time, "cancelled")
+            _dead_letter_enqueue("slack_notify", args, reason="cancelled", detail="request cancelled")
             _audit("slack_notify", {"result": "cancelled"})
             return {"content": [{"type": "text", "text": "Slack webhook request was cancelled."}]}
         except aiohttp.ClientError:
             recovery.mark_failed("network_client_error")
             _record_service_error("slack_notify", start_time, "network_client_error")
+            _dead_letter_enqueue("slack_notify", args, reason="network_client_error", detail="client transport failure")
             _audit("slack_notify", {"result": "network_client_error"})
             return {"content": [{"type": "text", "text": "Failed to reach Slack webhook."}]}
         except Exception:
             recovery.mark_failed("unexpected")
             _record_service_error("slack_notify", start_time, "unexpected")
+            _dead_letter_enqueue("slack_notify", args, reason="unexpected", detail="unexpected exception")
             _audit("slack_notify", {"result": "unexpected"})
             log.exception("Unexpected slack_notify failure")
             return {"content": [{"type": "text", "text": "Unexpected Slack webhook error."}]}
@@ -4860,30 +5078,51 @@ async def discord_notify(args: dict[str, Any]) -> dict[str, Any]:
                     if resp.status in {401, 403}:
                         recovery.mark_failed("auth", context={"http_status": resp.status})
                         _record_service_error("discord_notify", start_time, "auth")
+                        _dead_letter_enqueue(
+                            "discord_notify",
+                            args,
+                            reason="auth",
+                            detail=f"http_status={resp.status}",
+                        )
                         _audit("discord_notify", {"result": "auth", "status": resp.status})
                         return {"content": [{"type": "text", "text": "Discord webhook authentication failed."}]}
                     recovery.mark_failed("http_error", context={"http_status": resp.status})
                     _record_service_error("discord_notify", start_time, "http_error")
+                    _dead_letter_enqueue(
+                        "discord_notify",
+                        args,
+                        reason="http_error",
+                        detail=f"http_status={resp.status}",
+                    )
                     _audit("discord_notify", {"result": "http_error", "status": resp.status})
                     return {"content": [{"type": "text", "text": f"Discord webhook error ({resp.status})."}]}
         except asyncio.TimeoutError:
             recovery.mark_failed("timeout")
             _record_service_error("discord_notify", start_time, "timeout")
+            _dead_letter_enqueue("discord_notify", args, reason="timeout", detail="request timed out")
             _audit("discord_notify", {"result": "timeout"})
             return {"content": [{"type": "text", "text": "Discord webhook request timed out."}]}
         except asyncio.CancelledError:
             recovery.mark_cancelled()
             _record_service_error("discord_notify", start_time, "cancelled")
+            _dead_letter_enqueue("discord_notify", args, reason="cancelled", detail="request cancelled")
             _audit("discord_notify", {"result": "cancelled"})
             return {"content": [{"type": "text", "text": "Discord webhook request was cancelled."}]}
         except aiohttp.ClientError:
             recovery.mark_failed("network_client_error")
             _record_service_error("discord_notify", start_time, "network_client_error")
+            _dead_letter_enqueue(
+                "discord_notify",
+                args,
+                reason="network_client_error",
+                detail="client transport failure",
+            )
             _audit("discord_notify", {"result": "network_client_error"})
             return {"content": [{"type": "text", "text": "Failed to reach Discord webhook."}]}
         except Exception:
             recovery.mark_failed("unexpected")
             _record_service_error("discord_notify", start_time, "unexpected")
+            _dead_letter_enqueue("discord_notify", args, reason="unexpected", detail="unexpected exception")
             _audit("discord_notify", {"result": "unexpected"})
             log.exception("Unexpected discord_notify failure")
             return {"content": [{"type": "text", "text": "Unexpected Discord webhook error."}]}
@@ -5015,16 +5254,19 @@ async def email_send(args: dict[str, Any]) -> dict[str, Any]:
         except smtplib.SMTPAuthenticationError:
             recovery.mark_failed("auth")
             _record_service_error("email_send", start_time, "auth")
+            _dead_letter_enqueue("email_send", args, reason="auth", detail="smtp authentication failed")
             _audit("email_send", {"result": "auth", "to": recipient})
             return {"content": [{"type": "text", "text": "Email SMTP authentication failed."}]}
         except (smtplib.SMTPException, OSError, TimeoutError):
             recovery.mark_failed("network_client_error")
             _record_service_error("email_send", start_time, "network_client_error")
+            _dead_letter_enqueue("email_send", args, reason="network_client_error", detail="smtp transport failure")
             _audit("email_send", {"result": "network_client_error", "to": recipient})
             return {"content": [{"type": "text", "text": "Failed to reach SMTP server."}]}
         except Exception:
             recovery.mark_failed("unexpected")
             _record_service_error("email_send", start_time, "unexpected")
+            _dead_letter_enqueue("email_send", args, reason="unexpected", detail="unexpected exception")
             _audit("email_send", {"result": "unexpected", "to": recipient})
             log.exception("Unexpected email_send failure")
             return {"content": [{"type": "text", "text": "Unexpected email send error."}]}
@@ -5069,6 +5311,130 @@ async def email_summary(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "No email history found."}]}
     record_summary("email_summary", "ok", start_time)
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+
+
+async def dead_letter_list(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("dead_letter_list"):
+        record_summary("dead_letter_list", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    limit = _as_int(args.get("limit", 20), 20, minimum=1, maximum=200)
+    status_filter = str(args.get("status", "open")).strip().lower() or "open"
+    if status_filter not in {"open", "all", "pending", "failed", "replayed"}:
+        _record_service_error("dead_letter_list", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "status must be one of open, all, pending, failed, replayed."}]}
+    payload = _dead_letter_queue_status(limit=limit, status_filter=status_filter)
+    payload["status_filter"] = status_filter
+    record_summary("dead_letter_list", "ok", start_time)
+    return {"content": [{"type": "text", "text": json.dumps(payload, default=str)}]}
+
+
+async def dead_letter_replay(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("dead_letter_replay"):
+        record_summary("dead_letter_replay", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    status_filter = str(args.get("status", "open")).strip().lower() or "open"
+    if status_filter not in {"open", "all", "pending", "failed", "replayed"}:
+        _record_service_error("dead_letter_replay", start_time, "invalid_data")
+        return {"content": [{"type": "text", "text": "status must be one of open, all, pending, failed, replayed."}]}
+    entry_id = str(args.get("entry_id", "")).strip()
+    limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=50)
+    entries = _read_dead_letter_entries()
+    if not entries:
+        record_summary("dead_letter_replay", "empty", start_time)
+        return {"content": [{"type": "text", "text": "Dead-letter queue is empty."}]}
+
+    replay_handlers: dict[str, Any] = {
+        "webhook_trigger": webhook_trigger,
+        "slack_notify": slack_notify,
+        "discord_notify": discord_notify,
+        "email_send": email_send,
+        "pushover_notify": pushover_notify,
+    }
+    selected_indexes: list[int] = []
+    for idx, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        item_entry_id = str(entry.get("entry_id", "")).strip()
+        if entry_id and item_entry_id != entry_id:
+            continue
+        if not _dead_letter_matches(entry, status_filter=status_filter):
+            continue
+        tool_name = str(entry.get("tool", "")).strip().lower()
+        if tool_name not in replay_handlers:
+            continue
+        selected_indexes.append(idx)
+        if not entry_id and len(selected_indexes) >= limit:
+            break
+    if not selected_indexes:
+        record_summary("dead_letter_replay", "empty", start_time)
+        return {"content": [{"type": "text", "text": "No matching dead-letter entries to replay."}]}
+
+    replayed_count = 0
+    failed_count = 0
+    results: list[dict[str, Any]] = []
+    for idx in selected_indexes:
+        entry = entries[idx]
+        tool_name = str(entry.get("tool", "")).strip().lower()
+        handler = replay_handlers.get(tool_name)
+        if handler is None:
+            continue
+        payload_raw = entry.get("args")
+        payload = dict(payload_raw) if isinstance(payload_raw, dict) else {}
+        payload["_dead_letter_replay"] = True
+        replay_text = ""
+        success = False
+        try:
+            replay_result = await handler(payload)
+            replay_text = _tool_response_text(replay_result)
+            success = _tool_response_success(replay_text)
+        except Exception as exc:
+            replay_text = f"{exc.__class__.__name__}: {exc}"
+            success = False
+        attempts = 0
+        try:
+            attempts = int(entry.get("attempts", 0) or 0)
+        except (TypeError, ValueError):
+            attempts = 0
+        entry["attempts"] = attempts + 1
+        entry["last_attempt_at"] = time.time()
+        entry["last_error"] = "" if success else replay_text[:300]
+        entry["status"] = "replayed" if success else "failed"
+        if success:
+            replayed_count += 1
+        else:
+            failed_count += 1
+        results.append(
+            {
+                "entry_id": str(entry.get("entry_id", "")),
+                "tool": tool_name,
+                "status": str(entry.get("status", "unknown")),
+                "result": replay_text[:300],
+            }
+        )
+    _write_dead_letter_entries(entries)
+    if failed_count > 0 and replayed_count == 0:
+        record_summary("dead_letter_replay", "error", start_time, "replay_failed")
+    else:
+        record_summary("dead_letter_replay", "ok", start_time)
+    payload = {
+        "requested_entry_id": entry_id,
+        "attempted_count": len(selected_indexes),
+        "replayed_count": replayed_count,
+        "failed_count": failed_count,
+        "results": results,
+    }
+    _audit(
+        "dead_letter_replay",
+        {
+            "result": "ok" if failed_count == 0 else "partial",
+            "attempted_count": len(selected_indexes),
+            "replayed_count": replayed_count,
+            "failed_count": failed_count,
+        },
+    )
+    return {"content": [{"type": "text", "text": json.dumps(payload, default=str)}]}
 
 
 def _list_reminder_payloads(*, include_completed: bool, limit: int, now_ts: float) -> list[dict[str, Any]]:
@@ -5918,17 +6284,20 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
                         except Exception:
                             recovery.mark_failed("invalid_json")
                             _record_service_error("pushover_notify", start_time, "invalid_json")
+                            _dead_letter_enqueue("pushover_notify", args, reason="invalid_json", detail="invalid response json")
                             _audit("pushover_notify", {"result": "invalid_json"})
                             return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
                         if not isinstance(body, dict):
                             recovery.mark_failed("invalid_json")
                             _record_service_error("pushover_notify", start_time, "invalid_json")
+                            _dead_letter_enqueue("pushover_notify", args, reason="invalid_json", detail="invalid response type")
                             _audit("pushover_notify", {"result": "invalid_json"})
                             return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
                         status_value = _as_exact_int(body.get("status"))
                         if status_value is None:
                             recovery.mark_failed("invalid_json")
                             _record_service_error("pushover_notify", start_time, "invalid_json")
+                            _dead_letter_enqueue("pushover_notify", args, reason="invalid_json", detail="missing status field")
                             _audit("pushover_notify", {"result": "invalid_json"})
                             return {"content": [{"type": "text", "text": "Invalid Pushover response."}]}
                         if status_value != 1:
@@ -5938,6 +6307,12 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
                                 error_text = "; ".join(str(item) for item in errors if str(item).strip())
                             recovery.mark_failed("api_error")
                             _record_service_error("pushover_notify", start_time, "api_error")
+                            _dead_letter_enqueue(
+                                "pushover_notify",
+                                args,
+                                reason="api_error",
+                                detail=error_text or "api rejected notification",
+                            )
                             _audit("pushover_notify", {"result": "api_error", "error": error_text})
                             return {"content": [{"type": "text", "text": f"Pushover rejected notification{f': {error_text}' if error_text else '.'}"}]}
                         _integration_record_success("pushover")
@@ -5956,30 +6331,46 @@ async def pushover_notify(args: dict[str, Any]) -> dict[str, Any]:
                     if resp.status in {400, 401}:
                         recovery.mark_failed("auth", context={"http_status": resp.status})
                         _record_service_error("pushover_notify", start_time, "auth")
+                        _dead_letter_enqueue(
+                            "pushover_notify",
+                            args,
+                            reason="auth",
+                            detail=f"http_status={resp.status}",
+                        )
                         _audit("pushover_notify", {"result": "auth", "status": resp.status})
                         return {"content": [{"type": "text", "text": "Pushover authentication failed."}]}
                     recovery.mark_failed("http_error", context={"http_status": resp.status})
                     _record_service_error("pushover_notify", start_time, "http_error")
+                    _dead_letter_enqueue(
+                        "pushover_notify",
+                        args,
+                        reason="http_error",
+                        detail=f"http_status={resp.status}",
+                    )
                     _audit("pushover_notify", {"result": "http_error", "status": resp.status})
                     return {"content": [{"type": "text", "text": f"Pushover error ({resp.status}) sending notification."}]}
         except asyncio.TimeoutError:
             recovery.mark_failed("timeout")
             _record_service_error("pushover_notify", start_time, "timeout")
+            _dead_letter_enqueue("pushover_notify", args, reason="timeout", detail="request timed out")
             _audit("pushover_notify", {"result": "timeout"})
             return {"content": [{"type": "text", "text": "Pushover request timed out."}]}
         except asyncio.CancelledError:
             recovery.mark_cancelled()
             _record_service_error("pushover_notify", start_time, "cancelled")
+            _dead_letter_enqueue("pushover_notify", args, reason="cancelled", detail="request cancelled")
             _audit("pushover_notify", {"result": "cancelled"})
             return {"content": [{"type": "text", "text": "Pushover request was cancelled."}]}
         except aiohttp.ClientError as e:
             recovery.mark_failed("network_client_error")
             _record_service_error("pushover_notify", start_time, "network_client_error")
+            _dead_letter_enqueue("pushover_notify", args, reason="network_client_error", detail=str(e))
             _audit("pushover_notify", {"result": "network_client_error"})
             return {"content": [{"type": "text", "text": f"Failed to reach Pushover: {e}"}]}
         except Exception:
             recovery.mark_failed("unexpected")
             _record_service_error("pushover_notify", start_time, "unexpected")
+            _dead_letter_enqueue("pushover_notify", args, reason="unexpected", detail="unexpected exception")
             _audit("pushover_notify", {"result": "unexpected"})
             log.exception("Unexpected pushover_notify failure")
             return {"content": [{"type": "text", "text": "Unexpected Pushover error."}]}
@@ -6177,6 +6568,7 @@ async def system_status(args: dict[str, Any]) -> dict[str, Any]:
             "audit_retention_days": _audit_retention_days,
         },
         "recovery_journal": _recovery_journal_status(limit=20),
+        "dead_letter_queue": _dead_letter_queue_status(limit=20, status_filter="all"),
         "memory": memory_status,
         "audit": audit_status,
         "recent_tools": recent_tools,
@@ -6218,6 +6610,7 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "plan_preview",
             "retention_policy",
             "recovery_journal",
+            "dead_letter_queue",
             "memory",
             "audit",
             "recent_tools",
@@ -6416,6 +6809,15 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "tracked_actions",
             "unresolved_count",
             "interrupted_count",
+            "recent",
+        ],
+        "dead_letter_queue_required": [
+            "path",
+            "exists",
+            "entry_count",
+            "pending_count",
+            "failed_count",
+            "replayed_count",
             "recent",
         ],
         "health_required": [
@@ -7384,6 +7786,18 @@ email_summary_tool = tool(
     SERVICE_TOOL_SCHEMAS["email_summary"],
 )(email_summary)
 
+dead_letter_list_tool = tool(
+    "dead_letter_list",
+    "List dead-letter queue entries for failed outbound notifications/webhooks.",
+    SERVICE_TOOL_SCHEMAS["dead_letter_list"],
+)(dead_letter_list)
+
+dead_letter_replay_tool = tool(
+    "dead_letter_replay",
+    "Replay failed outbound dead-letter entries by id or filter.",
+    SERVICE_TOOL_SCHEMAS["dead_letter_replay"],
+)(dead_letter_replay)
+
 todoist_add_task_tool = tool(
     "todoist_add_task",
     "Create a task in Todoist (project configurable via env).",
@@ -7616,6 +8030,8 @@ def create_services_server():
             discord_notify_tool,
             email_send_tool,
             email_summary_tool,
+            dead_letter_list_tool,
+            dead_letter_replay_tool,
             todoist_add_task_tool,
             todoist_list_tasks_tool,
             pushover_notify_tool,
