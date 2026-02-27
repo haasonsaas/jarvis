@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 54 (Planner Reminders Decomposition)
+# Jarvis TODO — Wave 55 (Todoist Domain Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,71 +8,67 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 25
-- Completed: 25
+- Total items: 24
+- Completed: 24
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W54-A01` Re-profile large `services_domains` modules after Wave 53.
-- [x] `W54-A02` Select `planner_reminders.py` as next decomposition target.
-- [x] `W54-A03` Preserve reminder tool API contract (`create/list/complete/notify`).
+- [x] `W55-A01` Re-profile remaining large communications domain files.
+- [x] `W55-A02` Select `services_domains/comms_todoist.py` for decomposition.
+- [x] `W55-A03` Preserve Todoist tool API contract (`add_task`, `list_tasks`).
 
 ## B) Decomposition design
 
-- [x] `W54-B01` Extract reminder create/list/complete into `planner_reminders_crud.py`.
-- [x] `W54-B02` Extract due notification flow into `planner_reminders_notify.py`.
-- [x] `W54-B03` Keep `planner_reminders.py` as thin export surface.
+- [x] `W55-B01` Extract task creation flow to `comms_todoist_add.py`.
+- [x] `W55-B02` Extract task listing flow to `comms_todoist_list.py`.
+- [x] `W55-B03` Keep `comms_todoist.py` as thin export facade.
 
 ## C) Extraction implementation
 
-- [x] `W54-C01` Create `services_domains/planner_reminders_crud.py`.
-- [x] `W54-C02` Move `_list_reminder_payloads` helper.
-- [x] `W54-C03` Move `reminder_create` logic.
-- [x] `W54-C04` Move `reminder_list` logic.
-- [x] `W54-C05` Move `reminder_complete` logic.
-- [x] `W54-C06` Create `services_domains/planner_reminders_notify.py`.
-- [x] `W54-C07` Move `_due_unnotified_reminder_payloads` helper.
-- [x] `W54-C08` Move `reminder_notify_due` logic.
-- [x] `W54-C09` Rewrite `planner_reminders.py` to re-export public handlers.
+- [x] `W55-C01` Create `services_domains/comms_todoist_add.py`.
+- [x] `W55-C02` Move `todoist_add_task` request/validation/recovery logic.
+- [x] `W55-C03` Create `services_domains/comms_todoist_list.py`.
+- [x] `W55-C04` Move `todoist_list_tasks` retry/formatting logic.
+- [x] `W55-C05` Replace `comms_todoist.py` body with export surface.
 
 ## D) Boundaries and quality
 
-- [x] `W54-D01` Add import-boundary check for `planner_reminders_crud`.
-- [x] `W54-D02` Add import-boundary check for `planner_reminders_notify`.
-- [x] `W54-D03` Keep runtime helper imports isolated from `jarvis.tools.services`.
+- [x] `W55-D01` Add import-boundary check for `comms_todoist_add`.
+- [x] `W55-D02` Add import-boundary check for `comms_todoist_list`.
+- [x] `W55-D03` Keep lazy service loading pattern in extracted modules.
 
 ## E) Validation
 
-- [x] `W54-E01` Run focused lint for reminder modules + boundary test file.
-- [x] `W54-E02` Run targeted reminder lifecycle/notification tests.
-- [x] `W54-E03` Run `tests/test_import_boundaries.py`.
-- [x] `W54-E04` Run full `make check`.
-- [x] `W54-E05` Run full `make security-gate`.
-- [x] `W54-E06` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W55-E01` Run focused lint for Todoist modules + boundary test file.
+- [x] `W55-E02` Run targeted Todoist tool tests from `test_tools_services.py`.
+- [x] `W55-E03` Run `tests/test_import_boundaries.py`.
+- [x] `W55-E04` Run full `make check`.
+- [x] `W55-E05` Run full `make security-gate`.
+- [x] `W55-E06` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W54-F01` Record post-split line-count outcomes.
-- [x] `W54-F02` Commit Wave 54 changes.
-- [x] `W54-F03` Push Wave 54 to remote.
+- [x] `W55-F01` Capture post-split line-count outcomes.
+- [x] `W55-F02` Commit Wave 55 changes.
+- [x] `W55-F03` Push Wave 55 to remote.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Planner reminder decomposition:
-  - `services_domains/planner_reminders.py`: `346 -> 17` lines (thin exports).
-  - New `services_domains/planner_reminders_crud.py`: `197` lines.
-  - New `services_domains/planner_reminders_notify.py`: `163` lines.
+- Todoist domain decomposition:
+  - `services_domains/comms_todoist.py`: `332 -> 8` lines (thin exports).
+  - New `services_domains/comms_todoist_add.py`: `176` lines.
+  - New `services_domains/comms_todoist_list.py`: `169` lines.
 - Boundary enforcement:
-  - Added import-boundary coverage for both new reminder modules.
+  - Added import-boundary coverage for both new Todoist modules.
 - Validation status:
   - Focused lint: pass.
-  - Reminder targeted tests: pass.
-  - `tests/test_import_boundaries.py`: pass.
-  - `make check`: `650 passed`.
-  - `make security-gate`: `650 passed`; fault subset `3 passed`.
+  - Todoist targeted tests: pass (`28 passed`, `194 deselected`).
+  - `tests/test_import_boundaries.py`: pass (`63 passed`).
+  - `make check`: `652 passed`.
+  - `make security-gate`: `652 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

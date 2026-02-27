@@ -40,6 +40,8 @@ import pytest
         ("jarvis.tools.services_domains.comms_notify_pushover", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.comms_email", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.comms_todoist", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.comms_todoist_add", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.comms_todoist_list", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.governance_tool_summary", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.governance_skills", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.governance_quality", "jarvis.tools.services"),
