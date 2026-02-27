@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 68 (Status/Governance/Recovery Runtime Decomposition)
+# Jarvis TODO — Wave 69 (Runtime State + Audit Runtime Decomposition)
 
 Last updated: 2026-02-27
 
@@ -16,78 +16,73 @@ Last updated: 2026-02-27
 
 ## A) Scope and baseline
 
-- [x] `W68-A01` Profile largest remaining runtime hotspots in `src/jarvis/tools`.
-- [x] `W68-A02` Select `services_status_runtime.py` for split.
-- [x] `W68-A03` Select `services_governance_runtime.py` for split.
-- [x] `W68-A04` Select `services_recovery_runtime.py` for split.
-- [x] `W68-A05` Keep import API stable for `services.py` callers.
+- [x] `W69-A01` Profile remaining large runtime modules after Wave 68.
+- [x] `W69-A02` Select `services_runtime_state.py` for decomposition.
+- [x] `W69-A03` Select `services_audit_runtime.py` for decomposition.
+- [x] `W69-A04` Preserve `services.py` import contracts and helper names.
+- [x] `W69-A05` Keep behavior parity for bind/bootstrap, persistence, and audit flows.
 
-## B) Status runtime split
+## B) Runtime state split
 
-- [x] `W68-B01` Create `services_status_snapshots_runtime.py`.
-- [x] `W68-B02` Move integration/identity/voice snapshot helpers.
-- [x] `W68-B03` Move observability/skills/expansion snapshot helpers.
-- [x] `W68-B04` Move `health_rollup` helper.
-- [x] `W68-B05` Create `services_status_scorecard_runtime.py`.
-- [x] `W68-B06` Move scorecard helpers (`score_label`, row extraction, p95, scorecard payload).
-- [x] `W68-B07` Reduce `services_status_runtime.py` to compatibility wrapper.
+- [x] `W69-B01` Create `services_runtime_state_bind.py`.
+- [x] `W69-B02` Move `bind_runtime_state` implementation.
+- [x] `W69-B03` Move `_reset_runtime_state` implementation into bind module scope.
+- [x] `W69-B04` Create `services_runtime_state_reports.py`.
+- [x] `W69-B05` Move `quality_reports_snapshot` implementation.
+- [x] `W69-B06` Move `append_quality_report` implementation.
+- [x] `W69-B07` Create `services_runtime_state_persistence.py`.
+- [x] `W69-B08` Move `json_safe_clone`/`replace_state_dict` helpers.
+- [x] `W69-B09` Move expansion payload/persist/load helpers.
+- [x] `W69-B10` Reduce `services_runtime_state.py` to compatibility wrapper.
 
-## C) Governance runtime split
+## C) Audit runtime split
 
-- [x] `W68-C01` Create `services_governance_status_payload.py`.
-- [x] `W68-C02` Move tool-policy/scorecard-context payload helpers.
-- [x] `W68-C03` Create `services_governance_contract.py`.
-- [x] `W68-C04` Move system-status contract field map + payload helper.
-- [x] `W68-C05` Reduce `services_governance_runtime.py` to compatibility wrapper.
+- [x] `W69-C01` Create `services_audit_crypto_runtime.py`.
+- [x] `W69-C02` Move audit encryption/decryption helpers.
+- [x] `W69-C03` Create `services_audit_event_runtime.py`.
+- [x] `W69-C04` Move audit outcome/reason/humanization helpers.
+- [x] `W69-C05` Move decision explanation + audit write/rotate helpers.
+- [x] `W69-C06` Create `services_audit_sanitize_runtime.py`.
+- [x] `W69-C07` Move redaction + metadata-only + inbound sanitizer helpers.
+- [x] `W69-C08` Create `services_audit_retention_runtime.py`.
+- [x] `W69-C09` Move audit status/prune/retention helpers.
+- [x] `W69-C10` Reduce `services_audit_runtime.py` to compatibility wrapper.
 
-## D) Recovery runtime split
+## D) Boundary and quality verification
 
-- [x] `W68-D01` Create `services_recovery_journal_runtime.py`.
-- [x] `W68-D02` Move journal read/write/start/finish helpers.
-- [x] `W68-D03` Move `RecoveryOperation` context manager and reconcile/status helpers.
-- [x] `W68-D04` Create `services_dead_letter_runtime.py`.
-- [x] `W68-D05` Move dead-letter read/write/enqueue/status helpers.
-- [x] `W68-D06` Create `services_recovery_response_runtime.py`.
-- [x] `W68-D07` Move tool-response text/success evaluators.
-- [x] `W68-D08` Reduce `services_recovery_runtime.py` to compatibility wrapper.
+- [x] `W69-D01` Extend import-boundary coverage for runtime-state split modules.
+- [x] `W69-D02` Extend import-boundary coverage for audit split modules.
+- [x] `W69-D03` Run focused lint on all changed runtime modules.
+- [x] `W69-D04` Run `uv run pytest -q tests/test_import_boundaries.py`.
+- [x] `W69-D05` Run targeted tools tests for audit + expansion/state status paths.
+- [x] `W69-D06` Run full `make check`.
+- [x] `W69-D07` Run full `make security-gate`.
+- [x] `W69-D08` Run `./scripts/jarvis_readiness.sh fast`.
 
-## E) Boundaries and verification
+## E) Release loop
 
-- [x] `W68-E01` Extend import-boundary coverage for new status runtime modules.
-- [x] `W68-E02` Extend import-boundary coverage for new governance runtime modules.
-- [x] `W68-E03` Extend import-boundary coverage for new recovery runtime modules.
-- [x] `W68-E04` Run focused lint for changed runtime files.
-- [x] `W68-E05` Run `uv run pytest -q tests/test_import_boundaries.py`.
-- [x] `W68-E06` Run targeted status/recovery governance tool tests.
-- [x] `W68-E07` Run full `make check`.
-- [x] `W68-E08` Run full `make security-gate`.
-- [x] `W68-E09` Run `./scripts/jarvis_readiness.sh fast`.
-
-## F) Release loop
-
-- [x] `W68-F01` Record wrapper reductions and extracted module counts.
-- [x] `W68-F02` Commit Wave 68 tranche.
-- [x] `W68-F03` Push Wave 68 to `origin/main`.
+- [x] `W69-E01` Record wrapper reduction deltas and new module inventory.
+- [x] `W69-E02` Commit Wave 69 tranche.
+- [x] `W69-E03` Push Wave 69 tranche to `origin/main`.
 
 ---
 
 ## Outcome snapshot (completed)
 
 - Wrapper concentration reductions:
-  - `services_status_runtime.py`: `628 -> 33`
-  - `services_governance_runtime.py`: `496 -> 17`
-  - `services_recovery_runtime.py`: `419 -> 45`
+  - `services_runtime_state.py`: `491 -> 27`
+  - `services_audit_runtime.py`: `416 -> 49`
 - New extracted modules:
-  - `services_status_snapshots_runtime.py`
-  - `services_status_scorecard_runtime.py`
-  - `services_governance_status_payload.py`
-  - `services_governance_contract.py`
-  - `services_recovery_journal_runtime.py`
-  - `services_dead_letter_runtime.py`
-  - `services_recovery_response_runtime.py`
+  - `services_runtime_state_bind.py`
+  - `services_runtime_state_reports.py`
+  - `services_runtime_state_persistence.py`
+  - `services_audit_crypto_runtime.py`
+  - `services_audit_event_runtime.py`
+  - `services_audit_sanitize_runtime.py`
+  - `services_audit_retention_runtime.py`
 - Validation status:
-  - `uv run pytest -q tests/test_import_boundaries.py`: `135 passed`.
-  - `uv run pytest -q tests/test_tools_services.py -k "system_status or jarvis_scorecard or dead_letter or recovery_journal"`: `9 passed`.
-  - `make check`: `724 passed`.
-  - `make security-gate`: `724 passed`; fault subset `3 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py`: `144 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "audit_log or prune_audit_file or inbound_webhook_event or expansion_state_persists_across_bind or integration_hub_release_channel_actions or system_status"`: `18 passed`.
+  - `make check`: `733 passed`.
+  - `make security-gate`: `733 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
