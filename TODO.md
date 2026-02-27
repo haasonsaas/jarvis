@@ -122,7 +122,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 ## 12) Embodiment and Presence (6 items)
 
 - [ ] `BX01` Add richer stateful micro-expression library mapped to dialogue intent and certainty. `P1`
-- [ ] `BX02` Add conversational turn choreography (listen lean-in, think glance-away, answer lock-on). `P0`
+- [x] `BX02` Add conversational turn choreography (listen lean-in, think glance-away, answer lock-on). `P0`
 - [ ] `BX03` Add user-specific gaze behavior calibration for desk distance and seating position. `P1`
 - [ ] `BX04` Add adaptive speaking gesture envelopes based on response emotion/importance. `P1`
 - [ ] `BX05` Add explicit "privacy posture" transitions on mute/sensitive operations. `P0`
@@ -160,7 +160,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q08` Implement `HX06` idempotent home-action guardrail.
 - [x] `Q09` Implement `OX04` global safe-mode toggle.
 - [x] `Q10` Implement `EX01` intent-level success metrics.
-- [ ] `Q11` Implement `BX02` turn choreography pass.
+- [x] `Q11` Implement `BX02` turn choreography pass.
 - [ ] `Q12` Implement `VX02` adaptive end-of-turn timing.
 - [ ] `Q13` Implement `JX06` style consistency regression tests.
 - [ ] `Q14` Implement `RX01` integration circuit breakers.

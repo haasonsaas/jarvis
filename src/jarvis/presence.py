@@ -107,6 +107,9 @@ class Signals:
     intent_bow: float = 0.0             # 0-1 polite bow intensity
     intent_tilt: float = 0.0            # degrees of head tilt
     intent_glance_yaw: float = 0.0      # brief glance offset
+    turn_lean: float = 0.0              # turn choreography lean bias (mm)
+    turn_tilt: float = 0.0              # turn choreography tilt bias (degrees)
+    turn_glance_yaw: float = 0.0        # turn choreography gaze bias (degrees)
     speech_energy: float = 0.0          # 0-1 TTS energy for speech sway
     hand_present: bool = False
     hand_x: float = 0.0
@@ -246,14 +249,15 @@ class PresenceLoop:
         target_yaw, target_pitch = self._resolve_attention(sig, now)
 
         # Lean forward slightly when listening
-        lean = 2.0
+        lean = 2.0 + sig.turn_lean
         # Micro-nods correlated with VAD energy
         nod = math.sin(t * 4.0) * sig.vad_energy * 3.0
         nod += self._backchannel_nod(t, sig, now)
         nod += self._tool_feedback_nod(t, now)
 
         yield_glance = self._turn_yield_glance(sig, now)
-        target_yaw += yield_glance
+        target_yaw += yield_glance + sig.turn_glance_yaw
+        target_pitch += sig.turn_tilt
 
         target_yaw = self._clamp(target_yaw, -45.0, 45.0)
         target_pitch = self._clamp(target_pitch + nod, -20.0, 20.0)
@@ -272,9 +276,9 @@ class PresenceLoop:
     def _do_thinking(self, t: float) -> None:
         # Look slightly away and up — the "pondering" pose
         now = time.monotonic()
-        think_yaw = 15.0 + math.sin(t * 0.5) * 5.0
+        think_yaw = 15.0 + self.signals.turn_glance_yaw + math.sin(t * 0.5) * 5.0
         think_pitch = 5.0 + math.sin(t * 0.7) * 2.0
-        think_roll = math.sin(t * 0.4) * 3.0 + math.sin(t * 1.6) * 1.2
+        think_roll = self.signals.turn_tilt + math.sin(t * 0.4) * 3.0 + math.sin(t * 1.6) * 1.2
         if t - self._t0 > 1.0:
             think_yaw += math.sin(t * 0.9) * 6.0
             think_pitch += math.sin(t * 0.5) * 2.5
@@ -283,7 +287,7 @@ class PresenceLoop:
         think_pitch += self._tool_feedback_nod(t, now)
         self._pitch = self._blend(self._pitch, think_pitch, 0.08)
         self._roll = self._blend(self._roll, think_roll, 0.05)
-        self._z = self._blend(self._z, 0.0, 0.05)
+        self._z = self._blend(self._z, self.signals.turn_lean * 0.25, 0.05)
         self._x = self._blend(self._x, 0.0, 0.05)
         self._y = self._blend(self._y, 0.0, 0.05)
         self._idle_choreo_until = 0.0
@@ -295,7 +299,7 @@ class PresenceLoop:
         self._idle_choreo_until = 0.0
 
         # Add any LLM-requested intent
-        target_yaw += sig.intent_glance_yaw
+        target_yaw += sig.intent_glance_yaw + sig.turn_glance_yaw
         if sig.intent_bow > 0.0 and t >= self._bow_active_until:
             self._bow_active_until = t + 0.7
         if sig.intent_nod > 0.0 and t >= self._nod_next_allowed:
@@ -305,7 +309,7 @@ class PresenceLoop:
             target_pitch += self._intent_nod_offset(t, sig.intent_nod, sig.intent_nod_style)
         if t <= self._bow_active_until:
             target_pitch += (1.0 - math.cos(t * 3.2)) * 3.0 * sig.intent_bow
-        target_roll = sig.intent_tilt
+        target_roll = sig.intent_tilt + sig.turn_tilt
         target_pitch += self._tool_feedback_nod(t, now)
 
         self._speech_energy = self._blend(self._speech_energy, sig.speech_energy, 0.2)
@@ -315,7 +319,7 @@ class PresenceLoop:
         target_roll += math.sin(t * SPEECH_SWAY_FREQ_ROLL) * SPEECH_SWAY_ROLL_DEG * sway
         target_x = math.sin(t * SPEECH_SWAY_FREQ_X) * SPEECH_SWAY_X_MM * sway
         target_y = math.sin(t * SPEECH_SWAY_FREQ_Y) * SPEECH_SWAY_Y_MM * sway
-        target_z = 1.0 + math.sin(t * SPEECH_SWAY_FREQ_Z) * SPEECH_SWAY_Z_MM * sway
+        target_z = 1.0 + (sig.turn_lean * 0.3) + math.sin(t * SPEECH_SWAY_FREQ_Z) * SPEECH_SWAY_Z_MM * sway
 
         target_yaw = self._clamp(target_yaw, -45.0, 45.0)
         target_pitch = self._clamp(target_pitch, -20.0, 20.0)

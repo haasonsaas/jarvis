@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from jarvis.__main__ import Jarvis, TELEMETRY_SERVICE_ERROR_DETAILS, TELEMETRY_STORAGE_ERROR_DETAILS
+from jarvis.presence import State
 from jarvis.voice_attention import VoiceAttentionConfig, VoiceAttentionController
 
 
@@ -110,6 +111,38 @@ def test_looks_like_user_correction():
     assert Jarvis._looks_like_user_correction("Actually, I meant the bedroom lamp.") is True
     assert Jarvis._looks_like_user_correction("No, I meant tomorrow morning.") is True
     assert Jarvis._looks_like_user_correction("What time is it?") is False
+
+
+def test_apply_turn_choreography_sets_presence_bias_fields():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis.presence = SimpleNamespace(signals=SimpleNamespace(turn_lean=0.0, turn_tilt=0.0, turn_glance_yaw=0.0))
+    jarvis._turn_choreography = {}
+    jarvis._observability = None
+
+    Jarvis._apply_turn_choreography(jarvis, State.THINKING)
+    assert jarvis.presence.signals.turn_lean == 0.5
+    assert jarvis.presence.signals.turn_tilt == 2.0
+    assert jarvis.presence.signals.turn_glance_yaw == 8.0
+
+    snapshot = Jarvis._turn_choreography_snapshot(jarvis)
+    assert snapshot["phase"] == "thinking"
+    assert snapshot["label"] == "think_glance_away"
+
+
+def test_publish_voice_status_includes_turn_choreography():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._voice_attention = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))
+    jarvis.presence = SimpleNamespace(signals=SimpleNamespace(state=State.LISTENING))
+    jarvis._turn_choreography = {}
+    jarvis._observability = None
+
+    with patch("jarvis.__main__.set_runtime_voice_state") as set_runtime:
+        Jarvis._publish_voice_status(jarvis)
+
+    payload = set_runtime.call_args.args[0]
+    assert payload["presence_state"] == "listening"
+    assert payload["turn_choreography"]["phase"] == "listening"
+    assert payload["turn_choreography"]["label"] == "listen_lean_in"
 
 
 def test_start_requires_sounddevice_for_local_tts_playback():

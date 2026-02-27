@@ -129,6 +129,13 @@ CORRECTION_TERMS = {
     "rather",
     "change that",
 }
+TURN_CHOREOGRAPHY_CUES: dict[State, dict[str, float | str]] = {
+    State.IDLE: {"label": "idle_reset", "turn_lean": 0.0, "turn_tilt": 0.0, "turn_glance_yaw": 0.0},
+    State.LISTENING: {"label": "listen_lean_in", "turn_lean": 1.5, "turn_tilt": -1.0, "turn_glance_yaw": -3.0},
+    State.THINKING: {"label": "think_glance_away", "turn_lean": 0.5, "turn_tilt": 2.0, "turn_glance_yaw": 8.0},
+    State.SPEAKING: {"label": "answer_lock_on", "turn_lean": 1.0, "turn_tilt": 0.0, "turn_glance_yaw": 0.0},
+    State.MUTED: {"label": "muted_privacy", "turn_lean": 0.0, "turn_tilt": 0.0, "turn_glance_yaw": 0.0},
+}
 
 
 def _require_sounddevice(feature: str) -> None:
@@ -289,6 +296,14 @@ class Jarvis:
         self._last_doa_speech: bool | None = None
         self._awaiting_confirmation = False
         self._pending_text: str | None = None
+        self._turn_choreography: dict[str, Any] = {
+            "phase": str(State.IDLE.value),
+            "label": "idle_reset",
+            "turn_lean": 0.0,
+            "turn_tilt": 0.0,
+            "turn_glance_yaw": 0.0,
+            "updated_at": time.time(),
+        }
 
         self._tts_queue: asyncio.Queue[tuple[int, str, bool, float]] = asyncio.Queue()
         self._tts_task: asyncio.Task[None] | None = None
@@ -446,14 +461,71 @@ class Jarvis:
         voice = self._voice_controller()
         status = voice.status()
         try:
-            status["presence_state"] = str(self.presence.signals.state.value)
+            state = self.presence.signals.state
+            status["presence_state"] = str(state.value)
+            self._apply_turn_choreography(state)
         except Exception:
             status["presence_state"] = "unknown"
+        status["turn_choreography"] = self._turn_choreography_snapshot()
         set_runtime_voice_state(status)
         observability = getattr(self, "_observability", None)
         if observability is not None:
             with suppress(Exception):
                 observability.record_state_transition(status.get("presence_state", "unknown"), reason="presence_state")
+
+    def _apply_turn_choreography(self, state: State) -> None:
+        cues = TURN_CHOREOGRAPHY_CUES.get(state)
+        if cues is None:
+            return
+        label = str(cues.get("label", "unknown"))
+        phase = str(state.value)
+        current = getattr(self, "_turn_choreography", {})
+        if isinstance(current, dict) and current.get("phase") == phase and current.get("label") == label:
+            return
+        signals = getattr(self.presence, "signals", None)
+        if signals is None:
+            return
+        turn_lean = float(cues.get("turn_lean", 0.0))
+        turn_tilt = float(cues.get("turn_tilt", 0.0))
+        turn_glance_yaw = float(cues.get("turn_glance_yaw", 0.0))
+        signals.turn_lean = turn_lean
+        signals.turn_tilt = turn_tilt
+        signals.turn_glance_yaw = turn_glance_yaw
+        updated_at = time.time()
+        self._turn_choreography = {
+            "phase": phase,
+            "label": label,
+            "turn_lean": turn_lean,
+            "turn_tilt": turn_tilt,
+            "turn_glance_yaw": turn_glance_yaw,
+            "updated_at": updated_at,
+        }
+        observability = getattr(self, "_observability", None)
+        if observability is not None:
+            with suppress(Exception):
+                observability.record_event(
+                    "turn_choreography",
+                    {
+                        "phase": phase,
+                        "label": label,
+                        "turn_lean": turn_lean,
+                        "turn_tilt": turn_tilt,
+                        "turn_glance_yaw": turn_glance_yaw,
+                    },
+                )
+
+    def _turn_choreography_snapshot(self) -> dict[str, Any]:
+        current = getattr(self, "_turn_choreography", None)
+        if isinstance(current, dict):
+            return {str(key): value for key, value in current.items()}
+        return {
+            "phase": str(State.IDLE.value),
+            "label": "idle_reset",
+            "turn_lean": 0.0,
+            "turn_tilt": 0.0,
+            "turn_glance_yaw": 0.0,
+            "updated_at": 0.0,
+        }
 
     def _publish_skills_status(self) -> None:
         skills = getattr(self, "_skills", None)

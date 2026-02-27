@@ -91,6 +91,20 @@ class TestPresenceLoop:
 
         assert abs(presence._roll) > 0.2
 
+    def test_turn_choreography_bias_affects_listening_pose(self, presence):
+        sig = presence.signals
+        sig.state = State.LISTENING
+        sig.turn_lean = 2.0
+        sig.turn_tilt = 1.5
+        sig.turn_glance_yaw = 6.0
+
+        for i in range(60):
+            presence._do_listening(float(i) * 0.033, sig)
+
+        assert presence._z > 1.0
+        assert presence._yaw > 1.0
+        assert presence._pitch > 0.0
+
     def test_listening_uses_doa_when_no_face(self, presence):
         sig = presence.signals
         sig.state = State.LISTENING

@@ -2324,14 +2324,26 @@ def _identity_status_snapshot() -> dict[str, Any]:
 
 
 def _voice_attention_snapshot() -> dict[str, Any]:
+    default_choreography = {
+        "phase": "idle",
+        "label": "idle_reset",
+        "turn_lean": 0.0,
+        "turn_tilt": 0.0,
+        "turn_glance_yaw": 0.0,
+        "updated_at": 0.0,
+    }
     if not _runtime_voice_state:
         return {
             "mode": "unknown",
             "followup_active": False,
             "sleeping": False,
             "active_room": "unknown",
+            "turn_choreography": default_choreography,
         }
-    return {str(key): value for key, value in _runtime_voice_state.items()}
+    snapshot = {str(key): value for key, value in _runtime_voice_state.items()}
+    if not isinstance(snapshot.get("turn_choreography"), dict):
+        snapshot["turn_choreography"] = default_choreography
+    return snapshot
 
 
 def _observability_snapshot() -> dict[str, Any]:
@@ -5290,6 +5302,15 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "followup_active",
             "sleeping",
             "active_room",
+            "turn_choreography",
+        ],
+        "voice_attention_turn_choreography_required": [
+            "phase",
+            "label",
+            "turn_lean",
+            "turn_tilt",
+            "turn_glance_yaw",
+            "updated_at",
         ],
         "turn_timeouts_required": [
             "watchdog_enabled",
