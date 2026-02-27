@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 46 (Trust Memory Decomposition)
+# Jarvis TODO — Wave 47 (Integrations Ops Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,73 +8,73 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 30
-- Completed: 30
+- Total items: 31
+- Completed: 31
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W46-A01` Confirm Wave 45 merged and branch baseline clean.
-- [x] `W46-A02` Re-profile largest remaining domain modules.
-- [x] `W46-A03` Select `services_domains/trust_memory.py` for decomposition.
-- [x] `W46-A04` Preserve compatibility import surface.
+- [x] `W47-A01` Confirm Wave 46 merged and branch baseline clean.
+- [x] `W47-A02` Re-profile largest remaining service-domain modules.
+- [x] `W47-A03` Select `services_domains/integrations_ops.py` for decomposition.
+- [x] `W47-A04` Preserve compatibility API, including private calendar helper exports.
 
 ## B) Decomposition design
 
-- [x] `W46-B01` Define `trust_memory_ops.py` for add/update/forget.
-- [x] `W46-B02` Define `trust_memory_query.py` for search/status/recent.
-- [x] `W46-B03` Define `trust_memory_summary.py` for summary add/list.
-- [x] `W46-B04` Define `trust_memory_governance.py` for quality audit/cleanup controls.
-- [x] `W46-B05` Retain lazy `services` lookup and no behavior changes.
+- [x] `W47-B01` Define `integrations_weather.py` for weather handler.
+- [x] `W47-B02` Define `integrations_webhook.py` for webhook trigger + inbound list/clear.
+- [x] `W47-B03` Define `integrations_calendar.py` for calendar helpers and event queries.
+- [x] `W47-B04` Define `integrations_deadletter.py` for dead-letter list/replay.
+- [x] `W47-B05` Keep runtime behavior and lazy services binding unchanged.
 
 ## C) Extraction implementation
 
-- [x] `W46-C01` Create `services_domains/trust_memory_ops.py`.
-- [x] `W46-C02` Move `memory_add`, `memory_update`, `memory_forget`.
-- [x] `W46-C03` Create `services_domains/trust_memory_query.py`.
-- [x] `W46-C04` Move `memory_search`, `memory_status`, `memory_recent`.
-- [x] `W46-C05` Create `services_domains/trust_memory_summary.py`.
-- [x] `W46-C06` Move `memory_summary_add`, `memory_summary_list`.
-- [x] `W46-C07` Create `services_domains/trust_memory_governance.py`.
-- [x] `W46-C08` Move `_memory_quality_audit` and `memory_governance`.
+- [x] `W47-C01` Create `services_domains/integrations_weather.py`.
+- [x] `W47-C02` Move `weather_lookup`.
+- [x] `W47-C03` Create `services_domains/integrations_webhook.py`.
+- [x] `W47-C04` Move `webhook_trigger`, `webhook_inbound_list`, `webhook_inbound_clear`.
+- [x] `W47-C05` Create `services_domains/integrations_calendar.py`.
+- [x] `W47-C06` Move `_calendar_fetch_events`, `_parse_calendar_window`, `calendar_events`, `calendar_next_event`.
+- [x] `W47-C07` Create `services_domains/integrations_deadletter.py`.
+- [x] `W47-C08` Move `dead_letter_list`, `dead_letter_replay`.
 
 ## D) Compatibility and boundaries
 
-- [x] `W46-D01` Replace `services_domains/trust_memory.py` with compatibility exports.
-- [x] `W46-D02` Keep imports expected by `services.py` and `services_server.py` stable.
-- [x] `W46-D03` Add import-boundary check for `trust_memory_ops`.
-- [x] `W46-D04` Add import-boundary check for `trust_memory_query`.
-- [x] `W46-D05` Add import-boundary check for `trust_memory_summary`.
-- [x] `W46-D06` Add import-boundary check for `trust_memory_governance`.
+- [x] `W47-D01` Replace `services_domains/integrations_ops.py` with compatibility exports.
+- [x] `W47-D02` Keep `services_domains/integrations.py` compatibility imports intact.
+- [x] `W47-D03` Add import-boundary check for `integrations_weather`.
+- [x] `W47-D04` Add import-boundary check for `integrations_webhook`.
+- [x] `W47-D05` Add import-boundary check for `integrations_calendar`.
+- [x] `W47-D06` Add import-boundary check for `integrations_deadletter`.
 
 ## E) Validation
 
-- [x] `W46-E01` Run focused lint on touched trust-memory modules + boundary test.
-- [x] `W46-E02` Run targeted pytest for trust-memory handlers + boundaries.
-- [x] `W46-E03` Run full `make check`.
-- [x] `W46-E04` Run full `make security-gate`.
-- [x] `W46-E05` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W47-E01` Run focused lint on changed integration modules + boundary tests.
+- [x] `W47-E02` Run targeted pytest for integrations handlers + boundaries.
+- [x] `W47-E03` Run full `make check`.
+- [x] `W47-E04` Run full `make security-gate`.
+- [x] `W47-E05` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W46-F01` Capture post-split line-count outcomes.
-- [x] `W46-F02` Commit and push Wave 46.
+- [x] `W47-F01` Capture post-split line-count outcomes.
+- [x] `W47-F02` Commit and push Wave 47.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Trust-memory decomposition:
-  - `services_domains/trust_memory.py`: `600 -> 31` lines (compatibility exports)
-  - New `services_domains/trust_memory_ops.py`: `160` lines
-  - New `services_domains/trust_memory_query.py`: `243` lines
-  - New `services_domains/trust_memory_summary.py`: `70` lines
-  - New `services_domains/trust_memory_governance.py`: `160` lines
+- Integrations-ops decomposition:
+  - `services_domains/integrations_ops.py`: `786 -> 33` lines (compatibility exports)
+  - New `services_domains/integrations_weather.py`: `149` lines
+  - New `services_domains/integrations_webhook.py`: `268` lines
+  - New `services_domains/integrations_calendar.py`: `240` lines
+  - New `services_domains/integrations_deadletter.py`: `162` lines
 - Boundary enforcement:
-  - Added import-boundary coverage for all new trust-memory modules.
+  - Added import-boundary coverage for all new integrations operation modules.
 - Validation status:
-  - `make check`: `628 passed`
-  - `make security-gate`: `628 passed`; fault subset `3 passed`
+  - `make check`: `632 passed`
+  - `make security-gate`: `632 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
