@@ -229,13 +229,13 @@ from jarvis.tools.services_action_facade_runtime import (
     retry_backoff_delay as _facade_retry_backoff_delay,
     touch_action as _facade_touch_action,
 )
-from jarvis.tools.services_coercion_runtime import (
-    as_bool as _runtime_as_bool,
-    as_exact_int as _runtime_as_exact_int,
-    as_float as _runtime_as_float,
-    as_int as _runtime_as_int,
-    as_str_list as _runtime_as_str_list,
-    effective_act_timeout as _runtime_effective_act_timeout,
+from jarvis.tools.services_coercion_facade_runtime import (
+    as_bool as _facade_as_bool,
+    as_exact_int as _facade_as_exact_int,
+    as_float as _facade_as_float,
+    as_int as _facade_as_int,
+    as_str_list as _facade_as_str_list,
+    effective_act_timeout as _facade_effective_act_timeout,
 )
 from jarvis.tools.services_home_policy_runtime import (
     extract_area_from_entity as _runtime_extract_area_from_entity,
@@ -631,30 +631,11 @@ def _now_local() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
 
-def _as_bool(value: Any, default: bool = False) -> bool:
-    return _runtime_as_bool(value, default=default)
-
-
-def _as_int(value: Any, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
-    return _runtime_as_int(value, default, minimum=minimum, maximum=maximum)
-
-
-def _as_exact_int(value: Any) -> int | None:
-    return _runtime_as_exact_int(value)
-
-
-def _as_float(
-    value: Any,
-    default: float,
-    *,
-    minimum: float | None = None,
-    maximum: float | None = None,
-) -> float:
-    return _runtime_as_float(value, default, minimum=minimum, maximum=maximum)
-
-
-def _effective_act_timeout(total_sec: Any, *, minimum: float = 0.1, maximum: float = 120.0) -> float:
-    return _runtime_effective_act_timeout(_services_module(), total_sec, minimum=minimum, maximum=maximum)
+_as_bool = _facade_as_bool
+_as_int = _facade_as_int
+_as_exact_int = _facade_as_exact_int
+_as_float = _facade_as_float
+_effective_act_timeout = _facade_effective_act_timeout
 
 
 _integration_for_tool = _facade_integration_for_tool
@@ -803,8 +784,7 @@ def _retry_backoff_delay(
     )
 
 
-def _as_str_list(value: Any, *, lower: bool = False, allow_none: bool = False) -> list[str] | None:
-    return _runtime_as_str_list(value, lower=lower, allow_none=allow_none)
+_as_str_list = _facade_as_str_list
 
 
 _action_key = _facade_action_key
