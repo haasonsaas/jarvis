@@ -19,7 +19,7 @@ import smtplib
 import sys
 import time
 from contextlib import suppress  # noqa: F401  # accessed by domain modules via services module alias
-from datetime import datetime, timezone
+from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
@@ -135,6 +135,21 @@ from jarvis.tools.services_audit_runtime import (
     rotate_audit_log_if_needed as _runtime_rotate_audit_log_if_needed,
     sanitize_inbound_headers as _runtime_sanitize_inbound_headers,
     sanitize_inbound_payload as _runtime_sanitize_inbound_payload,
+)
+from jarvis.tools.services_schedule_runtime import (
+    allocate_reminder_id as _runtime_allocate_reminder_id,
+    allocate_timer_id as _runtime_allocate_timer_id,
+    duration_seconds as _runtime_duration_seconds,
+    format_duration as _runtime_format_duration,
+    load_reminders_from_store as _runtime_load_reminders_from_store,
+    load_timers_from_store as _runtime_load_timers_from_store,
+    local_timezone as _runtime_local_timezone,
+    parse_datetime_text as _runtime_parse_datetime_text,
+    parse_due_timestamp as _runtime_parse_due_timestamp,
+    prune_timers as _runtime_prune_timers,
+    reminder_status as _runtime_reminder_status,
+    timer_status as _runtime_timer_status,
+    timestamp_to_iso_utc as _runtime_timestamp_to_iso_utc,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -1196,143 +1211,35 @@ async def _capture_note_notion(*, title: str, content: str) -> tuple[dict[str, A
 
 
 def _duration_seconds(value: Any) -> float | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, (int, float)):
-        seconds = float(value)
-        if not math.isfinite(seconds) or seconds <= 0.0:
-            return None
-        return min(seconds, TIMER_MAX_SECONDS)
-    if not isinstance(value, str):
-        return None
-    text = value.strip().lower()
-    if not text:
-        return None
-    try:
-        parsed = float(text)
-        if math.isfinite(parsed) and parsed > 0.0:
-            return min(parsed, TIMER_MAX_SECONDS)
-    except ValueError:
-        pass
-    total = 0.0
-    cursor = 0
-    for match in _DURATION_SEGMENT_RE.finditer(text):
-        if match.start() != cursor and text[cursor:match.start()].strip():
-            return None
-        value_part = float(match.group("value"))
-        unit = match.group("unit").lower()
-        if unit.startswith("h"):
-            total += value_part * 3600.0
-        elif unit.startswith("m"):
-            total += value_part * 60.0
-        else:
-            total += value_part
-        cursor = match.end()
-    if cursor != len(text) and text[cursor:].strip():
-        return None
-    if total <= 0.0:
-        return None
-    return min(total, TIMER_MAX_SECONDS)
+    return _runtime_duration_seconds(_services_module(), value)
 
 
 def _local_timezone():
-    tz = datetime.now().astimezone().tzinfo
-    return tz if tz is not None else timezone.utc
+    return _runtime_local_timezone()
 
 
 def _parse_datetime_text(value: str) -> datetime | None:
-    text = value.strip()
-    if not text:
-        return None
-    if text.endswith(("Z", "z")):
-        text = f"{text[:-1]}+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        parsed = None
-    if parsed is None:
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
-            try:
-                parsed = datetime.strptime(text, fmt)
-                break
-            except ValueError:
-                continue
-    if parsed is None:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=_local_timezone())
-    return parsed
+    return _runtime_parse_datetime_text(value)
 
 
 def _parse_due_timestamp(value: Any, *, now_ts: float | None = None) -> float | None:
-    now = time.time() if now_ts is None else float(now_ts)
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        candidate = float(value)
-        if not math.isfinite(candidate) or candidate <= 0.0:
-            return None
-        if candidate >= 1_000_000_000.0:
-            return candidate
-        return now + min(candidate, TIMER_MAX_SECONDS)
-    if not isinstance(value, str):
-        return None
-    text = value.strip()
-    if not text:
-        return None
-    lowered = text.lower()
-    numeric = None
-    try:
-        numeric = float(text)
-    except ValueError:
-        numeric = None
-    if numeric is not None and math.isfinite(numeric) and numeric > 0.0:
-        if numeric >= 1_000_000_000.0:
-            return numeric
-        return now + min(numeric, TIMER_MAX_SECONDS)
-    if lowered.startswith("in "):
-        relative = _duration_seconds(lowered[3:])
-        if relative is not None:
-            return now + relative
-    relative = _duration_seconds(text)
-    if relative is not None:
-        return now + relative
-    parsed = _parse_datetime_text(text)
-    if parsed is None:
-        return None
-    return parsed.timestamp()
+    return _runtime_parse_due_timestamp(_services_module(), value, now_ts=now_ts)
 
 
 def _timestamp_to_iso_utc(ts: float) -> str:
-    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    return _runtime_timestamp_to_iso_utc(ts)
 
 
 def _format_duration(seconds: float) -> str:
-    remaining = max(0, int(round(seconds)))
-    hours, rem = divmod(remaining, 3600)
-    minutes, secs = divmod(rem, 60)
-    parts: list[str] = []
-    if hours:
-        parts.append(f"{hours}h")
-    if minutes:
-        parts.append(f"{minutes}m")
-    if secs or not parts:
-        parts.append(f"{secs}s")
-    return " ".join(parts)
+    return _runtime_format_duration(seconds)
 
 
 def _allocate_timer_id() -> int:
-    global _timer_id_seq
-    timer_id = _timer_id_seq
-    _timer_id_seq += 1
-    return timer_id
+    return _runtime_allocate_timer_id(_services_module())
 
 
 def _allocate_reminder_id() -> int:
-    global _reminder_id_seq
-    reminder_id = _reminder_id_seq
-    _reminder_id_seq += 1
-    return reminder_id
+    return _runtime_allocate_reminder_id(_services_module())
 
 
 def _retry_backoff_delay(
@@ -1531,124 +1438,23 @@ def _apply_retention_policies() -> None:
 
 
 def _prune_timers(now_mono: float | None = None) -> None:
-    if _memory is not None:
-        try:
-            _memory.expire_timers(now=time.time())
-        except Exception:
-            log.warning("Failed to expire persisted timers", exc_info=True)
-    if not _timers:
-        return
-    current = time.monotonic() if now_mono is None else now_mono
-    expired = [timer_id for timer_id, payload in _timers.items() if float(payload.get("due_mono", 0.0)) <= current]
-    for timer_id in expired:
-        _timers.pop(timer_id, None)
+    _runtime_prune_timers(_services_module(), now_mono=now_mono)
 
 
 def _timer_status() -> dict[str, Any]:
-    _prune_timers()
-    if not _timers:
-        return {"active_count": 0, "next_due_in_sec": None}
-    now = time.monotonic()
-    next_due = min(float(payload.get("due_mono", now)) for payload in _timers.values())
-    return {
-        "active_count": len(_timers),
-        "next_due_in_sec": max(0.0, next_due - now),
-    }
+    return _runtime_timer_status(_services_module())
 
 
 def _load_timers_from_store() -> None:
-    global _timer_id_seq
-    if _memory is None:
-        return
-    now_wall = time.time()
-    now_mono = time.monotonic()
-    try:
-        _memory.expire_timers(now=now_wall)
-        rows = _memory.list_timers(status="active", include_expired=False, now=now_wall, limit=TIMER_MAX_ACTIVE)
-    except Exception:
-        log.warning("Failed to load persisted timers", exc_info=True)
-        return
-    max_id = 0
-    for row in rows:
-        remaining = float(row.due_at) - now_wall
-        if remaining <= 0.0:
-            continue
-        timer_id = int(row.id)
-        max_id = max(max_id, timer_id)
-        _timers[timer_id] = {
-            "id": timer_id,
-            "label": row.label,
-            "duration_sec": float(row.duration_sec),
-            "created_at": float(row.created_at),
-            "due_at": float(row.due_at),
-            "due_mono": now_mono + remaining,
-        }
-    if max_id >= _timer_id_seq:
-        _timer_id_seq = max_id + 1
+    _runtime_load_timers_from_store(_services_module())
 
 
 def _reminder_status() -> dict[str, Any]:
-    now = time.time()
-    if _memory is not None:
-        try:
-            counts = _memory.reminder_counts()
-            pending = _memory.list_reminders(status="pending", now=now, limit=REMINDER_MAX_ACTIVE)
-        except Exception:
-            return {"pending_count": 0, "completed_count": 0, "due_count": 0, "next_due_in_sec": None}
-        due_count = sum(1 for entry in pending if float(entry.due_at) <= now)
-        next_due_in = None
-        if pending:
-            next_due = min(float(entry.due_at) for entry in pending)
-            next_due_in = max(0.0, next_due - now)
-        return {
-            "pending_count": int(counts.get("pending", 0)),
-            "completed_count": int(counts.get("completed", 0)),
-            "due_count": int(due_count),
-            "next_due_in_sec": next_due_in,
-        }
-    pending = [payload for payload in _reminders.values() if str(payload.get("status", "pending")) == "pending"]
-    completed_count = sum(
-        1 for payload in _reminders.values() if str(payload.get("status", "pending")) == "completed"
-    )
-    due_count = sum(1 for payload in pending if float(payload.get("due_at", 0.0)) <= now)
-    next_due_in = None
-    if pending:
-        next_due = min(float(payload.get("due_at", now)) for payload in pending)
-        next_due_in = max(0.0, next_due - now)
-    return {
-        "pending_count": len(pending),
-        "completed_count": int(completed_count),
-        "due_count": int(due_count),
-        "next_due_in_sec": next_due_in,
-    }
+    return _runtime_reminder_status(_services_module())
 
 
 def _load_reminders_from_store() -> None:
-    global _reminder_id_seq
-    if _memory is None:
-        return
-    now = time.time()
-    try:
-        pending = _memory.list_reminders(status="pending", now=now, limit=REMINDER_MAX_ACTIVE)
-        completed = _memory.list_reminders(status="completed", limit=REMINDER_MAX_ACTIVE)
-    except Exception:
-        log.warning("Failed to load persisted reminders", exc_info=True)
-        return
-    max_id = 0
-    for row in [*pending, *completed]:
-        reminder_id = int(row.id)
-        max_id = max(max_id, reminder_id)
-        _reminders[reminder_id] = {
-            "id": reminder_id,
-            "text": str(row.text),
-            "due_at": float(row.due_at),
-            "created_at": float(row.created_at),
-            "status": str(row.status),
-            "completed_at": float(row.completed_at) if row.completed_at is not None else None,
-            "notified_at": float(row.notified_at) if row.notified_at is not None else None,
-        }
-    if max_id >= _reminder_id_seq:
-        _reminder_id_seq = max_id + 1
+    _runtime_load_reminders_from_store(_services_module())
 
 
 def _ha_headers() -> dict[str, str]:
