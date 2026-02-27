@@ -124,6 +124,10 @@ from jarvis.runtime_conversation import (
     respond_and_speak as _runtime_respond_and_speak,
     run as _runtime_run,
 )
+from jarvis.runtime_lifecycle import (
+    start as _runtime_start,
+    stop as _runtime_stop,
+)
 from jarvis.runtime_audio_output import (
     clear_tts_queue as _runtime_clear_tts_queue,
     flush_output as _runtime_flush_output,
@@ -411,78 +415,36 @@ class Jarvis:
         self._publish_skills_status()
         self._publish_observability_status()
 
+    def _build_face_tracker(self) -> Any:
+        from jarvis.vision.face_tracker import FaceTracker
+
+        return FaceTracker(
+            presence=self.presence,
+            get_frame=self.robot.get_frame,
+            model_path=self.config.yolo_model,
+            fps=self.config.face_track_fps,
+        )
+
+    def _build_hand_tracker(self) -> Any:
+        from jarvis.vision.hand_tracker import HandTracker
+
+        return HandTracker(
+            presence=self.presence,
+            get_frame=self.robot.get_frame,
+            fps=self.config.face_track_fps,
+        )
+
     def start(self) -> None:
         """Initialize all subsystems."""
-        if self._started:
-            return
-        self._started = True
-        try:
-            blockers = self._startup_blockers()
-            if blockers:
-                raise RuntimeError("; ".join(blockers))
-
-            with suppress(Exception):
-                self._skills.discover()
-            self._publish_skills_status()
-
-            observability = getattr(self, "_observability", None)
-            if observability is not None:
-                observability.start()
-                observability.record_event("startup", {"mode": "simulation" if self.robot.sim else "hardware"})
-                self._publish_observability_status()
-
-            self.robot.connect()
-            if self.config.motion_enabled:
-                self.presence.start()
-
-            self._use_robot_audio = not self.robot.sim
-
-            if not self.args.no_vision and not self.robot.sim:
-                from jarvis.vision.face_tracker import FaceTracker
-                self.face_tracker = FaceTracker(
-                    presence=self.presence,
-                    get_frame=self.robot.get_frame,
-                    model_path=self.config.yolo_model,
-                    fps=self.config.face_track_fps,
-                )
-                self.face_tracker.start()
-
-                if self.config.hand_track_enabled:
-                    from jarvis.vision.hand_tracker import HandTracker
-                    self.hand_tracker = HandTracker(
-                        presence=self.presence,
-                        get_frame=self.robot.get_frame,
-                        fps=self.config.face_track_fps,
-                    )
-                    self.hand_tracker.start()
-
-            if self._use_robot_audio:
-                self.robot.start_audio(recording=True, playing=self.tts is not None)
-                time.sleep(0.2)  # give media pipelines a moment to warm up
-                self._robot_input_sr = self.robot.get_input_audio_samplerate() or self.config.sample_rate
-                self._robot_output_sr = self.robot.get_output_audio_samplerate() or self.config.sample_rate
-                log.info(
-                    "Using Reachy Mini media audio (in=%dHz out=%dHz)",
-                    self._robot_input_sr,
-                    self._robot_output_sr,
-                )
-            else:
-                if self.tts is not None:
-                    _require_sounddevice("local audio playback")
-                    # Open persistent audio output stream
-                    self._output_stream = sd.OutputStream(
-                        samplerate=self.config.sample_rate,
-                        channels=1,
-                        dtype="float32",
-                    )
-                    self._output_stream.start()
-
-            log.info("Jarvis is online.")
-            self._publish_voice_status()
-            self._publish_observability_status()
-        except Exception:
-            self.stop()
-            raise
+        _runtime_start(
+            self,
+            require_sounddevice_fn=_require_sounddevice,
+            sd_module=sd,
+            build_face_tracker_fn=self._build_face_tracker,
+            build_hand_tracker_fn=self._build_hand_tracker,
+            sleep_fn=time.sleep,
+            logger=log,
+        )
 
     def _startup_summary_lines(self) -> list[str]:
         tts_enabled = bool(self.tts is not None)
@@ -1098,53 +1060,7 @@ class Jarvis:
 
     def stop(self) -> None:
         """Shut down all subsystems."""
-        if not self._started:
-            return
-        self._save_runtime_state()
-        observability = getattr(self, "_observability", None)
-        if observability is not None:
-            self._publish_observability_snapshot(force=True)
-            with suppress(Exception):
-                observability.record_event("shutdown", {"reason": "stop_called"})
-            with suppress(Exception):
-                observability.stop()
-            with suppress(Exception):
-                observability.close()
-        if self._output_stream:
-            with suppress(Exception):
-                self._output_stream.stop()
-            with suppress(Exception):
-                self._output_stream.close()
-            self._output_stream = None
-        if self.face_tracker:
-            with suppress(Exception):
-                self.face_tracker.stop()
-            self.face_tracker = None
-        if self._use_robot_audio:
-            with suppress(Exception):
-                self.robot.stop_audio(recording=True, playing=True)
-        if self.hand_tracker:
-            with suppress(Exception):
-                self.hand_tracker.stop()
-            self.hand_tracker = None
-        if self.config.motion_enabled:
-            with suppress(Exception):
-                self.presence.stop()
-        with suppress(Exception):
-            self.robot.disconnect()
-        self._started = False
-        set_runtime_voice_state(
-            {
-                "mode": "offline",
-                "followup_active": False,
-                "sleeping": False,
-                "active_room": "unknown",
-                "stt_diagnostics": self._default_stt_diagnostics(),
-            }
-        )
-        self._publish_observability_status()
-        self._publish_skills_status()
-        log.info("Jarvis offline.")
+        _runtime_stop(self, logger=log)
 
     async def run(self) -> None:
         await _runtime_run(self)

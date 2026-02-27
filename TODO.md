@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/98 Runtime Decomposition
+# Jarvis TODO — Wave 74/99 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 215
-- Completed: 215
+- Total items: 223
+- Completed: 223
 - Remaining: 0
 
 ---
@@ -314,6 +314,17 @@ Last updated: 2026-02-27
 - [x] `W98-AB07` Run full quality/security/readiness gates.
 - [x] `W98-AB08` Update TODO + tranche snapshot.
 
+## AC) Wave 99 (completed): __main__ lifecycle runtime extraction
+
+- [x] `W99-AC01` Profile startup/shutdown concentration in `Jarvis.start`/`Jarvis.stop`.
+- [x] `W99-AC02` Create `runtime_lifecycle.py` for startup/shutdown orchestration helpers.
+- [x] `W99-AC03` Rewire `Jarvis.start`/`Jarvis.stop` to runtime lifecycle helpers.
+- [x] `W99-AC04` Keep sounddevice guard and vision tracker lazy-construction behavior unchanged.
+- [x] `W99-AC05` Add focused unit coverage for runtime lifecycle helper paths.
+- [x] `W99-AC06` Extend import-boundary coverage for `runtime_lifecycle`.
+- [x] `W99-AC07` Run full quality/security/readiness gates.
+- [x] `W99-AC08` Update TODO + tranche snapshot.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -341,6 +352,7 @@ Last updated: 2026-02-27
   - `runtime_conversation_trace.py`
   - `runtime_operator_server.py`
   - `runtime_audio_output.py`
+  - `runtime_lifecycle.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -370,6 +382,7 @@ Last updated: 2026-02-27
   - Added repeatable reliability soak entrypoint `scripts/test_soak_reliability.sh` and `make test-soak-reliability` target.
   - Operator-server provider/lifecycle logic moved from `Jarvis` method bodies into `runtime_operator_server.py`.
   - Audio output + TTS stream loop logic moved from `Jarvis` method bodies into `runtime_audio_output.py`.
+  - Startup/shutdown orchestration moved from `Jarvis.start`/`Jarvis.stop` into `runtime_lifecycle.py`.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -397,7 +410,9 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_runtime_operator_server.py tests/test_main_lifecycle.py tests/test_runtime_operator_status.py tests/test_import_boundaries.py -k "operator_server or operator_metrics_provider or operator_events_provider or startup_diagnostics_provider"`: `5 passed`.
   - `uv run pytest -q tests/test_runtime_audio_output.py tests/test_main_audio.py tests/test_import_boundaries.py -k "runtime_audio_output or tts_loop or play_audio_chunk or clear_tts_queue or import_boundary"`: `198 passed, 6 deselected`.
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_main_audio.py tests/test_runtime_operator_server.py tests/test_import_boundaries.py`: `244 passed`.
+  - `uv run pytest -q tests/test_runtime_lifecycle.py tests/test_main_lifecycle.py tests/test_main_audio.py tests/test_import_boundaries.py -k "runtime_lifecycle or start or stop or sounddevice or import_boundary"`: `201 passed, 44 deselected`.
+  - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_operator_server.py tests/test_runtime_audio_output.py tests/test_import_boundaries.py`: `243 passed`.
   - `./scripts/test_soak_reliability.sh 2`: accepted; `cycles_completed=2/2`, `phase_count=8`, `failed_count=0`, artifact `.artifacts/quality/soak-profile-fast-repeat2.json`.
-  - `make check`: `798 passed`.
-  - `make security-gate`: `798 passed`; fault subset `3 passed`.
+  - `make check`: `803 passed`.
+  - `make security-gate`: `803 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

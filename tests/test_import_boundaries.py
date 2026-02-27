@@ -18,6 +18,7 @@ import pytest
         ("jarvis.runtime_operator_status", "jarvis.__main__"),
         ("jarvis.runtime_operator_server", "jarvis.__main__"),
         ("jarvis.runtime_audio_output", "jarvis.__main__"),
+        ("jarvis.runtime_lifecycle", "jarvis.__main__"),
         ("jarvis.runtime_observability_status", "jarvis.__main__"),
         ("jarvis.runtime_memory_correction", "jarvis.__main__"),
         ("jarvis.runtime_conversation_trace", "jarvis.__main__"),
