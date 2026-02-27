@@ -60,7 +60,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 - [ ] `IX01` Add session-level identity confidence score from voice context + operator hints. `P0`
 - [ ] `IX02` Add per-user trust policies for high-risk domains (locks, alarms, purchases, external messages). `P0`
-- [ ] `IX03` Add step-up verification path for high-risk requests (spoken code or operator approval). `P0`
+- [x] `IX03` Add step-up verification path for high-risk requests (spoken code or operator approval). `P0`
 - [ ] `IX04` Add "guest mode" with constrained capabilities and automatic expiry. `P1`
 - [ ] `IX05` Add household profile management in operator UI (users, roles, trust, exceptions). `P1`
 - [ ] `IX06` Add audit explainability: record why an action was allowed/blocked in user-readable terms. `P1`
@@ -72,7 +72,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [ ] `HX03` Add area-level policy constraints (e.g., no loud actions in bedroom after quiet hours). `P0`
 - [ ] `HX04` Add Home Assistant automation suggestion mode with review before creation. `P1`
 - [ ] `HX05` Add long-running home task tracking (start, in-progress, completed) in status and operator UI. `P1`
-- [ ] `HX06` Add idempotent action guardrails to avoid repeated toggles during ambiguous dialogue. `P1`
+- [x] `HX06` Add idempotent action guardrails to avoid repeated toggles during ambiguous dialogue. `P1`
 
 ## 7) Operator Surfaces and Control (6 items)
 
@@ -156,8 +156,8 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q04` Implement `RX04` turn-phase timeout budgets and status exposure.
 - [x] `Q05` Implement `PX03` nudge/interrupt policy + quiet windows.
 - [x] `Q06` Implement `MX03` memory correction voice commands.
-- [ ] `Q07` Implement `IX03` step-up verification flow.
-- [ ] `Q08` Implement `HX06` idempotent home-action guardrail.
+- [x] `Q07` Implement `IX03` step-up verification flow.
+- [x] `Q08` Implement `HX06` idempotent home-action guardrail.
 - [ ] `Q09` Implement `OX04` global safe-mode toggle.
 - [ ] `Q10` Implement `EX01` intent-level success metrics.
 - [ ] `Q11` Implement `BX02` turn choreography pass.
