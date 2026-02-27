@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 32 (Runtime Decomposition Continued)
+# Jarvis TODO — Wave 33 (Voice Profile Runtime Extraction)
 
 Last updated: 2026-02-27
 
@@ -8,62 +8,58 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 24
-- Completed: 22
+- Total items: 22
+- Completed: 20
 - Remaining: 2
 
 ---
 
-## A) Runtime architecture decomposition
+## A) Runtime decomposition (continued)
 
-- [x] `W32-A01` Create `src/jarvis/runtime_state.py` for runtime-state lifecycle helpers.
-- [x] `W32-A02` Extract runtime state load logic from `Jarvis._load_runtime_state`.
-- [x] `W32-A03` Extract runtime state save logic from `Jarvis._save_runtime_state`.
-- [x] `W32-A04` Extract runtime invariant snapshot/check helpers.
-- [x] `W32-A05` Extract runtime profile snapshot/apply helpers.
-- [x] `W32-A06` Extract control preset profile/apply helpers.
-- [x] `W32-A07` Preserve backwards-compatible `Jarvis` method wrappers.
-- [x] `W32-A08` Reduce `src/jarvis/__main__.py` line count by at least 300 lines.
+- [x] `W33-A01` Add `src/jarvis/runtime_voice_profile.py` for control parsing + voice profile helpers.
+- [x] `W33-A02` Extract `parse_control_bool` helper from `Jarvis` runtime class.
+- [x] `W33-A03` Extract `parse_control_choice` helper from `Jarvis` runtime class.
+- [x] `W33-A04` Extract active voice user selection helper.
+- [x] `W33-A05` Extract active voice profile resolution helper.
+- [x] `W33-A06` Extract voice-profile guidance text helper.
+- [x] `W33-A07` Keep `Jarvis` wrappers for compatibility with existing tests/importers.
+- [x] `W33-A08` Reduce `src/jarvis/__main__.py` further while preserving behavior.
 
-## B) Telemetry decomposition
+## B) Boundary and regression tests
 
-- [x] `W32-B01` Extract tool error counter summarization into `runtime_telemetry.py`.
-- [x] `W32-B02` Extract telemetry snapshot shaping into `runtime_telemetry.py`.
-- [x] `W32-B03` Wire `Jarvis._refresh_tool_error_counters` through extracted helper.
-- [x] `W32-B04` Wire `Jarvis._telemetry_snapshot` through extracted helper.
+- [x] `W33-B01` Add `tests/test_runtime_voice_profile.py`.
+- [x] `W33-B02` Add parse bool/choice behavior tests.
+- [x] `W33-B03` Add active voice user/profile selection tests.
+- [x] `W33-B04` Add voice profile guidance append/no-op tests.
+- [x] `W33-B05` Extend import-boundary tests with `jarvis.runtime_voice_profile`.
+- [x] `W33-B06` Re-run targeted lifecycle tests covering profile + telemetry + runtime-state flows.
 
-## C) Test coverage and boundaries
+## C) Validation gates
 
-- [x] `W32-C01` Add new runtime-state-focused test module `tests/test_runtime_state.py`.
-- [x] `W32-C02` Add runtime state round-trip persistence/restore test.
-- [x] `W32-C03` Add runtime invariant auto-heal behavior test.
-- [x] `W32-C04` Add runtime profile apply/persist behavior test.
-- [x] `W32-C05` Add runtime profile snapshot sanitization test.
-- [x] `W32-C06` Extend `tests/test_import_boundaries.py` with `jarvis.runtime_state` boundary assertion.
-- [x] `W32-C07` Run targeted runtime/telemetry lifecycle tests.
+- [x] `W33-C01` Run `make check` after extraction changes.
+- [x] `W33-C02` Run `make security-gate` after extraction changes.
+- [x] `W33-C03` Run `./scripts/jarvis_readiness.sh fast` after extraction changes.
+- [x] `W33-C04` Verify strict eval contract remains `151/151` pass.
 
-## D) Validation and readiness
+## D) Hygiene and reporting
 
-- [x] `W32-D01` Run `make check` after decomposition changes.
-- [x] `W32-D02` Run `make security-gate` after decomposition changes.
-- [x] `W32-D03` Run `./scripts/jarvis_readiness.sh fast` to verify readiness contract.
-
-## E) Hygiene and release loop
-
-- [x] `W32-E01` Update TODO outcome snapshot with post-change metrics.
-- [ ] `W32-E02` Commit Wave 32 runtime decomposition checkpoint.
-- [ ] `W32-E03` Push Wave 32 checkpoint to `origin/main`.
+- [x] `W33-D01` Update TODO metrics and outcome snapshot with current line counts and gate outputs.
+- [ ] `W33-D02` Commit Wave 33 checkpoint.
+- [ ] `W33-D03` Push Wave 33 checkpoint to `origin/main`.
 
 ---
 
 ## Outcome snapshot (in progress)
 
-- `src/jarvis/__main__.py`: `2,677` -> `2,278` lines.
-- New runtime module: `src/jarvis/runtime_state.py` (`560` lines).
-- `runtime_telemetry.py` expanded to include telemetry snapshot + error summarization helpers.
-- New tests: `tests/test_runtime_state.py` (`8` passing tests).
-- Expanded import-boundary assertions include `jarvis.runtime_state`.
-- Validation currently green:
-  - `make check` (`563 passed`)
-  - `make security-gate` (`563 passed`; fault subset `3 passed`)
-  - `./scripts/jarvis_readiness.sh fast` (release acceptance fast + strict eval `151/151`)
+- `src/jarvis/__main__.py`: `2,278` -> `2,241` lines this wave (`2,677` -> `2,241` across Waves 32-33).
+- Added new runtime modules this cycle:
+  - `src/jarvis/runtime_state.py`
+  - `src/jarvis/runtime_voice_profile.py`
+- Expanded telemetry/runtime helper decomposition in `src/jarvis/runtime_telemetry.py`.
+- New test coverage modules:
+  - `tests/test_runtime_state.py` (`8` tests)
+  - `tests/test_runtime_voice_profile.py` (`5` tests)
+- Gate status:
+  - `make check`: `569 passed`
+  - `make security-gate`: `569 passed`; fault subset `3 passed`
+  - `./scripts/jarvis_readiness.sh fast`: pass, strict eval `151/151`

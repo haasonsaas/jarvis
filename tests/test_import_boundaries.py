@@ -13,6 +13,7 @@ import pytest
         ("jarvis.tools.services_domains.integrations_runtime", "jarvis.tools.services"),
         ("jarvis.runtime_telemetry", "jarvis.__main__"),
         ("jarvis.runtime_state", "jarvis.__main__"),
+        ("jarvis.runtime_voice_profile", "jarvis.__main__"),
     ],
 )
 def test_runtime_module_import_boundary(module_name: str, blocked_module: str) -> None:

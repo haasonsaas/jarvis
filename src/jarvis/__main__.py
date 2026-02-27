@@ -90,6 +90,13 @@ from jarvis.runtime_state import (
     runtime_profile_snapshot as _runtime_runtime_profile_snapshot,
     save_runtime_state as _runtime_save_runtime_state,
 )
+from jarvis.runtime_voice_profile import (
+    active_voice_profile as _runtime_active_voice_profile,
+    active_voice_user as _runtime_active_voice_user,
+    parse_control_bool as _runtime_parse_control_bool,
+    parse_control_choice as _runtime_parse_control_choice,
+    with_voice_profile_guidance as _runtime_with_voice_profile_guidance,
+)
 from jarvis.runtime_constants import (
     ATTENTION_RECENCY_SEC,
     CONFIRMATION_PHRASE,
@@ -769,56 +776,27 @@ class Jarvis:
         return fallback
 
     def _active_voice_user(self) -> str:
-        config = getattr(self, "config", None)
-        user = str(getattr(config, "identity_default_user", "operator")).strip().lower()
-        return user or "operator"
+        return _runtime_active_voice_user(self)
 
     def _active_voice_profile(self, *, user: str | None = None) -> dict[str, str]:
-        profile = {
-            "verbosity": "normal",
-            "confirmations": "standard",
-            "pace": "normal",
-            "tone": "auto",
-        }
-        key = str(user or self._active_voice_user()).strip().lower()
-        profiles = getattr(self, "_voice_user_profiles", None)
-        if isinstance(profiles, dict):
-            raw = profiles.get(key)
-            if isinstance(raw, dict):
-                verbosity = self._parse_control_choice(raw.get("verbosity"), VALID_VOICE_PROFILE_VERBOSITY)
-                confirmations = self._parse_control_choice(raw.get("confirmations"), VALID_VOICE_PROFILE_CONFIRMATIONS)
-                pace = self._parse_control_choice(raw.get("pace"), VALID_VOICE_PROFILE_PACE)
-                tone = self._parse_control_choice(raw.get("tone"), VALID_VOICE_PROFILE_TONE)
-                if verbosity is not None:
-                    profile["verbosity"] = verbosity
-                if confirmations is not None:
-                    profile["confirmations"] = confirmations
-                if pace is not None:
-                    profile["pace"] = pace
-                if tone is not None:
-                    profile["tone"] = tone
-        return profile
+        return _runtime_active_voice_profile(
+            self,
+            user=user,
+            valid_voice_profile_verbosity=VALID_VOICE_PROFILE_VERBOSITY,
+            valid_voice_profile_confirmations=VALID_VOICE_PROFILE_CONFIRMATIONS,
+            valid_voice_profile_pace=VALID_VOICE_PROFILE_PACE,
+            valid_voice_profile_tone=VALID_VOICE_PROFILE_TONE,
+        )
 
     def _with_voice_profile_guidance(self, text: str) -> str:
-        profile = self._active_voice_profile()
-        guidance: list[str] = []
-        verbosity = profile.get("verbosity", "normal")
-        if verbosity == "brief":
-            guidance.append("User voice preference: keep responses concise unless safety requires detail.")
-        elif verbosity == "detailed":
-            guidance.append("User voice preference: provide fuller detail and explicit steps.")
-        tone = profile.get("tone", "auto")
-        if tone == "formal":
-            guidance.append("User voice preference: use formal, composed phrasing and avoid slang.")
-        elif tone == "witty":
-            guidance.append("User voice preference: allow occasional dry wit, but keep it brief and situational.")
-        elif tone == "empathetic":
-            guidance.append("User voice preference: lead with empathy before solution steps when appropriate.")
-        elif tone == "direct":
-            guidance.append("User voice preference: use direct task language with minimal social framing.")
-        if not guidance:
-            return text
-        return f"{text}\n\nVoice profile preference:\n" + "\n".join(f"- {line}" for line in guidance)
+        return _runtime_with_voice_profile_guidance(
+            self,
+            text,
+            valid_voice_profile_verbosity=VALID_VOICE_PROFILE_VERBOSITY,
+            valid_voice_profile_confirmations=VALID_VOICE_PROFILE_CONFIRMATIONS,
+            valid_voice_profile_pace=VALID_VOICE_PROFILE_PACE,
+            valid_voice_profile_tone=VALID_VOICE_PROFILE_TONE,
+        )
 
     def _runtime_invariant_snapshot(self) -> dict[str, Any]:
         return _runtime_runtime_invariant_snapshot(self)
@@ -1098,26 +1076,11 @@ class Jarvis:
 
     @staticmethod
     def _parse_control_bool(value: Any) -> bool | None:
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, int) and value in {0, 1}:
-            return bool(value)
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"1", "true", "yes", "y", "on"}:
-                return True
-            if normalized in {"0", "false", "no", "n", "off"}:
-                return False
-        return None
+        return _runtime_parse_control_bool(value)
 
     @staticmethod
     def _parse_control_choice(value: Any, allowed: set[str]) -> str | None:
-        if not isinstance(value, str):
-            return None
-        normalized = value.strip().lower()
-        if normalized in allowed:
-            return normalized
-        return None
+        return _runtime_parse_control_choice(value, allowed)
 
     @staticmethod
     def _parse_memory_correction_command(text: str) -> tuple[str, dict[str, Any]] | None:
