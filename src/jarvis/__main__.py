@@ -55,6 +55,7 @@ from jarvis.audio.runtime_audio import (
     resample_audio as _audio_resample,
 )
 from jarvis.runtime_operator_control import handle_operator_control as _runtime_handle_operator_control
+from jarvis.runtime_operator_status import operator_status_provider as _runtime_operator_status_provider
 from jarvis.runtime_turn import (
     classify_user_intent as _turn_classify_user_intent,
     completion_success_from_summaries as _turn_completion_success_from_summaries,
@@ -94,6 +95,11 @@ from jarvis.runtime_startup import (
     operator_control_schema as _runtime_operator_control_schema,
     startup_blockers as _runtime_startup_blockers,
 )
+from jarvis.runtime_conversation import (
+    listen_loop as _runtime_listen_loop,
+    respond_and_speak as _runtime_respond_and_speak,
+    run as _runtime_run,
+)
 from jarvis.runtime_voice_profile import (
     active_voice_profile as _runtime_active_voice_profile,
     active_voice_user as _runtime_active_voice_user,
@@ -103,7 +109,6 @@ from jarvis.runtime_voice_profile import (
 )
 from jarvis.runtime_constants import (
     ATTENTION_RECENCY_SEC,
-    CONFIRMATION_PHRASE,
     CONVERSATION_TRACE_MAXLEN,
     EPISODIC_TIMELINE_MAXLEN,
     INTENDED_QUERY_MIN_ATTENTION,
@@ -113,9 +118,7 @@ from jarvis.runtime_constants import (
     REPAIR_CONFIRMATION_TEMPLATE,
     REPAIR_CONFIDENCE_THRESHOLD,
     REPAIR_MIN_WORDS,
-    REPAIR_REPEAT_PROMPT,
     RUNTIME_INVARIANT_HISTORY_MAXLEN,
-    TELEMETRY_LOG_EVERY_TURNS,
     TELEMETRY_SERVICE_ERROR_DETAILS,
     TELEMETRY_STORAGE_ERROR_DETAILS,
     THINKING_FILLER_DELAY,
@@ -923,64 +926,12 @@ class Jarvis:
             await asyncio.sleep(WATCHDOG_POLL_SEC)
 
     async def _operator_status_provider(self) -> dict[str, Any]:
-        try:
-            payload = await service_tools.system_status({})
-            text = payload.get("content", [{}])[0].get("text", "{}")
-            status = json.loads(text) if isinstance(text, str) else {}
-            if not isinstance(status, dict):
-                status = {}
-        except Exception as exc:
-            status = {"error": str(exc)}
-        latest = self._operator_conversation_trace_provider(limit=1)
-        latest_turn_id = int(latest[0].get("turn_id", 0)) if latest and isinstance(latest[0], dict) else 0
-        status["operator"] = {
-            "enabled": bool(self.config.operator_server_enabled),
-            "host": self.config.operator_server_host,
-            "port": int(self.config.operator_server_port),
-            "auth_mode": str(getattr(self.config, "operator_auth_mode", "token")).strip().lower(),
-            "auth_required": str(getattr(self.config, "operator_auth_mode", "token")).strip().lower() != "off",
-            "auth_token_configured": bool(str(getattr(self.config, "operator_auth_token", "")).strip()),
-        }
-        mode = status["operator"]["auth_mode"]
-        if mode not in VALID_OPERATOR_AUTH_MODES:
-            mode = "token"
-            status["operator"]["auth_mode"] = mode
-        token_set = bool(status["operator"]["auth_token_configured"])
-        if mode == "off":
-            status["operator"]["auth_risk"] = "high"
-        elif not token_set:
-            status["operator"]["auth_risk"] = "high"
-        elif mode == "session":
-            status["operator"]["auth_risk"] = "low"
-        else:
-            status["operator"]["auth_risk"] = "medium"
-        status["conversation_trace"] = {
-            "recent_count": len(self._conversation_traces),
-            "latest_turn_id": latest_turn_id,
-        }
-        episodes = self._operator_episodic_timeline_provider(limit=20)
-        latest_episode_id = int(episodes[0].get("episode_id", 0)) if episodes and isinstance(episodes[0], dict) else 0
-        status["episodic_timeline"] = {
-            "recent_count": len(getattr(self, "_episodic_timeline", [])),
-            "latest_episode_id": latest_episode_id,
-            "recent": episodes,
-        }
-        preview = getattr(self, "_personality_preview_snapshot", None)
-        status["personality_preview"] = {
-            "active": isinstance(preview, dict),
-            "baseline": dict(preview) if isinstance(preview, dict) else None,
-            "current": {
-                "persona_style": str(getattr(self.config, "persona_style", "unknown")),
-                "backchannel_style": str(getattr(self.config, "backchannel_style", "unknown")),
-            },
-        }
-        status["operator_controls"] = {
-            "active_control_preset": str(getattr(self, "_active_control_preset", "custom")),
-            "available_control_presets": sorted(VALID_CONTROL_PRESETS),
-            "runtime_profile": self._runtime_profile_snapshot(),
-        }
-        status["runtime_invariants"] = self._runtime_invariant_snapshot()
-        return status
+        return await _runtime_operator_status_provider(
+            self,
+            valid_operator_auth_modes=VALID_OPERATOR_AUTH_MODES,
+            valid_control_presets=VALID_CONTROL_PRESETS,
+            system_status_fn=service_tools.system_status,
+        )
 
     def _startup_diagnostics_provider(self) -> list[str]:
         warnings = list(getattr(self.config, "startup_warnings", []))
@@ -1356,336 +1307,7 @@ class Jarvis:
         log.info("Jarvis offline.")
 
     async def run(self) -> None:
-        """Main conversation loop."""
-        try:
-            self.start()
-            if self.tts is not None:
-                self._tts_task = asyncio.create_task(self._tts_loop(), name="tts")
-            self._listen_task = asyncio.create_task(self._listen_loop(), name="listen")
-            if self.config.watchdog_enabled:
-                self._watchdog_task = asyncio.create_task(self._watchdog_loop(), name="watchdog")
-            await self._start_operator_server()
-            print("\n  JARVIS is online. Speak to begin.\n")
-            print("  Press Ctrl+C to exit.\n")
-            for line in self._startup_summary_lines():
-                print(f"  {line}")
-            for warning in getattr(self.config, "startup_warnings", []):
-                print(f"  WARNING: {warning}")
-            print("")
-
-            while True:
-                utterance = await self._utterance_queue.get()
-
-                # Transcribe (run in executor to not block event loop)
-                self.presence.signals.state = State.THINKING
-                text = await asyncio.get_event_loop().run_in_executor(
-                    None, self._transcribe_with_fallback, utterance
-                )
-                stt_elapsed = time.monotonic() - self._last_doa_update if self._last_doa_update else None
-                stt_latency_ms = (stt_elapsed * 1000.0) if stt_elapsed is not None else None
-                if stt_elapsed is not None:
-                    log.info("STT latency: %.0fms", stt_elapsed * 1000.0)
-                    self._telemetry["stt_latency_total_ms"] += stt_elapsed * 1000.0
-                    self._telemetry["stt_latency_count"] += 1.0
-                self._publish_voice_status()
-                if not text.strip():
-                    self.presence.signals.state = State.IDLE
-                    self._publish_voice_status()
-                    continue
-
-                decision = self._voice_controller().process_transcript(text)
-                if decision.reply:
-                    if self.tts:
-                        await self._tts_queue.put((self._active_response_id, decision.reply, True, 0.0))
-                    else:
-                        print(f"  JARVIS: {decision.reply}")
-                if not decision.accepted:
-                    self.presence.signals.state = State.IDLE
-                    self._publish_voice_status()
-                    continue
-                text = decision.text
-                utterance_duration_sec = float(len(utterance)) / float(self.config.sample_rate)
-                turn_count = max(1.0, float(self._telemetry.get("turns", 0.0)))
-                interruption_likelihood = float(self._telemetry.get("barge_ins", 0.0)) / turn_count
-                self._voice_controller().register_utterance(
-                    text,
-                    duration_sec=utterance_duration_sec,
-                    interruption_likelihood=interruption_likelihood,
-                )
-
-                repair_resolved_this_turn = False
-                if self._awaiting_confirmation:
-                    normalized = text.strip().lower()
-                    intent = self._voice_controller().confirmation_intent(normalized)
-                    if intent == "confirm" and self._pending_text:
-                        self._awaiting_confirmation = False
-                        text = self._pending_text
-                        self._pending_text = None
-                    elif intent == "deny":
-                        self._awaiting_confirmation = False
-                        self._pending_text = None
-                        if self.tts:
-                            await self._tts_queue.put((self._active_response_id, "Understood.", True, 0.0))
-                        else:
-                            print("  JARVIS: Understood.")
-                        self.presence.signals.state = State.IDLE
-                        self._publish_voice_status()
-                        continue
-                    elif intent == "repeat":
-                        if self.tts:
-                            await self._tts_queue.put(
-                                (
-                                    self._active_response_id,
-                                    "Please say confirm to proceed or deny to cancel.",
-                                    True,
-                                    0.0,
-                                )
-                            )
-                        else:
-                            print("  JARVIS: Please say confirm to proceed or deny to cancel.")
-                        self.presence.signals.state = State.LISTENING
-                        self._awaiting_confirmation = True
-                        self._publish_voice_status()
-                        continue
-                    else:
-                        self._awaiting_confirmation = False
-                        self._pending_text = None
-
-                if self._awaiting_repair_confirmation:
-                    normalized = text.strip().lower()
-                    intent = self._voice_controller().confirmation_intent(normalized)
-                    words = re.findall(r"[a-z0-9']+", normalized)
-                    if intent == "confirm" and self._repair_candidate_text:
-                        text = self._repair_candidate_text
-                        self._awaiting_repair_confirmation = False
-                        self._repair_candidate_text = None
-                        repair_resolved_this_turn = True
-                    elif intent in {"deny", "repeat"} and len(words) <= 2:
-                        if self.tts:
-                            await self._tts_queue.put((self._active_response_id, REPAIR_REPEAT_PROMPT, True, 0.0))
-                        else:
-                            print(f"  JARVIS: {REPAIR_REPEAT_PROMPT}")
-                        self.presence.signals.state = State.LISTENING
-                        self._awaiting_repair_confirmation = True
-                        self._publish_voice_status()
-                        continue
-                    else:
-                        self._awaiting_repair_confirmation = False
-                        self._repair_candidate_text = None
-                        repair_resolved_this_turn = True
-
-                intent_class = self._classify_user_intent(text)
-                self._telemetry["intent_turns_total"] += 1.0
-                if intent_class == "action":
-                    self._telemetry["intent_action_turns"] += 1.0
-                elif intent_class == "hybrid":
-                    self._telemetry["intent_hybrid_turns"] += 1.0
-                else:
-                    self._telemetry["intent_answer_turns"] += 1.0
-                looks_like_correction = self._looks_like_user_correction(text)
-                if looks_like_correction:
-                    self._telemetry["intent_corrections"] += 1.0
-
-                turn_started_at = time.time()
-                if not repair_resolved_this_turn and self._requires_stt_repair(text, intent_class):
-                    self._awaiting_repair_confirmation = True
-                    self._repair_candidate_text = text
-                    prompt = self._repair_prompt(text)
-                    if self.tts:
-                        await self._tts_queue.put((self._active_response_id, prompt, True, 0.0))
-                    else:
-                        print(f"  JARVIS: {prompt}")
-                    self.presence.signals.state = State.LISTENING
-                    self._publish_voice_status()
-                    self._record_conversation_trace(
-                        user_text=text,
-                        intent_class=intent_class,
-                        turn_started_at=turn_started_at,
-                        stt_latency_ms=stt_latency_ms,
-                        llm_first_sentence_ms=0.0,
-                        tts_first_audio_ms=0.0,
-                        response_success=None,
-                        tool_summaries=[],
-                        lifecycle="repair_requested",
-                        used_brain_response=False,
-                        followup_carryover_applied=False,
-                    )
-                    continue
-
-                memory_correction = self._parse_memory_correction_command(text)
-                if memory_correction is not None:
-                    tool_name, payload = memory_correction
-                    if tool_name == "memory_forget":
-                        result = await service_tools.memory_forget(payload)
-                    else:
-                        result = await service_tools.memory_update(payload)
-                    if not looks_like_correction:
-                        self._telemetry["intent_corrections"] += 1.0
-                    turn_tool_summaries = self._turn_tool_summaries_since(turn_started_at)
-                    completion_outcome = self._completion_success_from_summaries(turn_tool_summaries)
-                    if completion_outcome is not None:
-                        self._telemetry["intent_completion_total"] += 1.0
-                        if completion_outcome:
-                            self._telemetry["intent_completion_success"] += 1.0
-                    correction_succeeded = not bool(result.get("isError", False))
-                    self._update_followup_carryover(
-                        text,
-                        intent_class,
-                        resolved=correction_succeeded,
-                        now_ts=turn_started_at,
-                    )
-                    reply = str(result.get("content", [{}])[0].get("text", "")).strip() or "Done."
-                    if self.tts:
-                        await self._tts_queue.put((self._active_response_id, reply, True, 0.0))
-                    else:
-                        print(f"  JARVIS: {reply}")
-                    self.presence.signals.state = State.IDLE
-                    self._publish_voice_status()
-                    self._record_conversation_trace(
-                        user_text=text,
-                        intent_class=intent_class,
-                        turn_started_at=turn_started_at,
-                        stt_latency_ms=stt_latency_ms,
-                        llm_first_sentence_ms=0.0,
-                        tts_first_audio_ms=0.0,
-                        response_success=True,
-                        tool_summaries=turn_tool_summaries,
-                        lifecycle="memory_correction",
-                        used_brain_response=False,
-                        followup_carryover_applied=False,
-                    )
-                    continue
-
-                if self._requires_confirmation(time.monotonic()):
-                    self._awaiting_confirmation = True
-                    self._pending_text = text
-                    self._telemetry["fallback_responses"] += 1.0
-                    self._update_followup_carryover(
-                        text,
-                        intent_class,
-                        resolved=False,
-                        now_ts=turn_started_at,
-                    )
-                    if self.tts:
-                        await self._tts_queue.put((self._active_response_id, CONFIRMATION_PHRASE, True, 0.0))
-                    else:
-                        print(f"  JARVIS: {CONFIRMATION_PHRASE}")
-                    self.presence.signals.state = State.LISTENING
-                    self._publish_voice_status()
-                    self._record_conversation_trace(
-                        user_text=text,
-                        intent_class=intent_class,
-                        turn_started_at=turn_started_at,
-                        stt_latency_ms=stt_latency_ms,
-                        llm_first_sentence_ms=0.0,
-                        tts_first_audio_ms=0.0,
-                        response_success=None,
-                        tool_summaries=[],
-                        lifecycle="confirmation_requested",
-                        used_brain_response=False,
-                        followup_carryover_applied=False,
-                    )
-                    continue
-
-                # Get response from Claude and play it
-                self._telemetry["turns"] += 1.0
-                response_prompt_text, followup_carryover_applied = self._with_followup_carryover(
-                    text,
-                    now_ts=turn_started_at,
-                )
-                response_prompt_text = self._with_voice_profile_guidance(response_prompt_text)
-                await self._respond_and_speak(response_prompt_text)
-                response_success = bool(self._response_started and not self._barge_in.is_set())
-                llm_first_sentence_ms = (
-                    (self._first_sentence_at - self._response_start_at) * 1000.0
-                    if self._first_sentence_at is not None and self._response_start_at is not None
-                    else 0.0
-                )
-                tts_first_audio_ms = (
-                    (self._first_audio_at - self._response_start_at) * 1000.0
-                    if self._first_audio_at is not None and self._response_start_at is not None
-                    else 0.0
-                )
-                turn_tool_summaries = self._turn_tool_summaries_since(turn_started_at)
-                if intent_class in {"answer", "hybrid"}:
-                    self._telemetry["intent_answer_total"] += 1.0
-                    if response_success:
-                        self._telemetry["intent_answer_success"] += 1.0
-                completion_outcome: bool | None = None
-                if intent_class in {"action", "hybrid"}:
-                    completion_outcome = self._completion_success_from_summaries(turn_tool_summaries)
-                    if completion_outcome is not None:
-                        self._telemetry["intent_completion_total"] += 1.0
-                        if completion_outcome:
-                            self._telemetry["intent_completion_success"] += 1.0
-                if intent_class in {"action", "hybrid"}:
-                    resolved: bool | None = completion_outcome is True
-                else:
-                    resolved = True
-                self._update_followup_carryover(
-                    text,
-                    intent_class,
-                    resolved=resolved,
-                    now_ts=turn_started_at,
-                )
-                self._record_conversation_trace(
-                    user_text=text,
-                    intent_class=intent_class,
-                    turn_started_at=turn_started_at,
-                    stt_latency_ms=stt_latency_ms,
-                    llm_first_sentence_ms=llm_first_sentence_ms,
-                    tts_first_audio_ms=tts_first_audio_ms,
-                    response_success=response_success,
-                    tool_summaries=turn_tool_summaries,
-                    lifecycle="completed",
-                    used_brain_response=True,
-                    followup_carryover_applied=followup_carryover_applied,
-                )
-                if int(self._telemetry["turns"]) % TELEMETRY_LOG_EVERY_TURNS == 0:
-                    self._refresh_tool_error_counters()
-                    snapshot = self._telemetry_snapshot()
-                    attention_source = self.presence.attention_source()
-                    log.info(
-                        "Telemetry turns=%d barge_ins=%d stt=%.0fms llm=%.0fms tts=%.0fms service_errors=%d storage_errors=%d fallbacks=%d attention=%s",
-                        int(snapshot["turns"]),
-                        int(snapshot["barge_ins"]),
-                        snapshot["avg_stt_latency_ms"],
-                        snapshot["avg_llm_first_sentence_ms"],
-                        snapshot["avg_tts_first_audio_ms"],
-                        int(snapshot["service_errors"]),
-                        int(snapshot["storage_errors"]),
-                        int(snapshot["fallback_responses"]),
-                        attention_source,
-                    )
-                self._publish_observability_snapshot()
-
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await self._stop_operator_server()
-            if self._listen_task is not None:
-                self._listen_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await self._listen_task
-                self._listen_task = None
-            if getattr(self, "_watchdog_task", None) is not None:
-                self._watchdog_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await self._watchdog_task
-                self._watchdog_task = None
-            if self._tts_task is not None:
-                self._tts_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await self._tts_task
-                self._tts_task = None
-            if self._filler_task is not None:
-                self._filler_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await self._filler_task
-                self._filler_task = None
-            with suppress(Exception):
-                await self.brain.close()
-            self.stop()
+        await _runtime_run(self)
 
     async def _enqueue_utterance(self, audio: np.ndarray) -> None:
         try:
@@ -1696,143 +1318,15 @@ class Jarvis:
             await self._utterance_queue.put(audio)
 
     async def _listen_loop(self) -> None:
-        """Continuously segment microphone audio into utterances.
-
-        Runs during the entire app lifetime so barge-in works while Jarvis is speaking.
-        """
-
-        chunks: list[np.ndarray] = []
-        silence_start: float | None = None
-        recording = False
-
-        async def process_chunk(chunk_16k: np.ndarray) -> None:
-            nonlocal chunks, silence_start, recording
-
-            # Presence signals
-            conf = self.vad.confidence(chunk_16k)
-            self.presence.signals.vad_energy = max(0.0, min(1.0, conf))
-            doa_angle, doa_speech = self.robot.get_doa()
-            now = time.monotonic()
-            self._last_doa_speech = doa_speech
-            self._voice_controller().update_room_from_doa(doa_angle)
-            if doa_angle is not None:
-                if doa_speech is None or doa_speech:
-                    if self._last_doa_angle is None or abs(doa_angle - self._last_doa_angle) >= self.config.doa_change_threshold:
-                        self._last_doa_angle = doa_angle
-                        self._last_doa_update = now
-                        self.presence.signals.doa_angle = doa_angle
-                        self.presence.signals.doa_last_seen = now
-                else:
-                    if self._last_doa_update and (now - self._last_doa_update) > self.config.doa_timeout:
-                        self.presence.signals.doa_angle = None
-                        self._last_doa_angle = None
-            else:
-                if self._last_doa_update and (now - self._last_doa_update) > self.config.doa_timeout:
-                    self.presence.signals.doa_angle = None
-                    self._last_doa_angle = None
-
-            with self._lock:
-                assistant_busy = self._speaking
-
-            is_speech = self._compute_turn_taking(
-                conf=conf,
-                doa_speech=doa_speech,
-                assistant_busy=assistant_busy,
-                now=now,
-            )
-
-            if is_speech:
-                if not recording:
-                    recording = True
-                    self.presence.signals.state = State.LISTENING
-                    log.debug("Speech detected")
-                silence_start = None
-                chunks.append(chunk_16k)
-
-                if assistant_busy and not self._barge_in.is_set():
-                    self._barge_in.set()
-                    self._flush_output()
-                    self._clear_tts_queue()
-                    self.presence.signals.state = State.LISTENING
-                    self._telemetry["barge_ins"] += 1.0
-                    log.info("Barge-in detected")
-
-            elif recording:
-                chunks.append(chunk_16k)
-                if silence_start is None:
-                    silence_start = time.monotonic()
-                elif time.monotonic() - silence_start > self._voice_controller().silence_timeout():
-                    audio = np.concatenate(chunks) if chunks else np.array([], dtype=np.float32)
-
-                    # Reset for the next utterance.
-                    self.vad.reset()
-                    self.presence.signals.vad_energy = 0.0
-                    chunks = []
-                    silence_start = None
-                    recording = False
-
-                    if audio.size == 0:
-                        return
-
-                    duration = len(audio) / self.config.sample_rate
-                    if duration >= MIN_UTTERANCE:
-                        await self._enqueue_utterance(audio)
-
-            self._publish_voice_status()
-
-        if not self._use_robot_audio:
-            _require_sounddevice("local microphone capture")
-            with sd.InputStream(
-                samplerate=self.config.sample_rate,
-                channels=1,
-                dtype="float32",
-                blocksize=CHUNK_SAMPLES,
-            ) as stream:
-                while True:
-                    data, overflowed = await asyncio.to_thread(stream.read, CHUNK_SAMPLES)
-                    if overflowed:
-                        log.warning("Audio input buffer overflowed")
-                    await process_chunk(data[:, 0])
-                    await asyncio.sleep(0)
-
-        else:
-            pending_chunks: deque[np.ndarray] = deque()
-            pending_len = 0
-            while True:
-                raw = self.robot.get_audio_sample()
-                if raw is None:
-                    await asyncio.sleep(0.005)
-                    continue
-
-                mono = _to_mono(raw)
-                mono_16k = _resample_audio(mono, self._robot_input_sr, self.config.sample_rate)
-                if mono_16k.size == 0:
-                    await asyncio.sleep(0)
-                    continue
-
-                pending_chunks.append(mono_16k)
-                pending_len += int(mono_16k.size)
-
-                while pending_len >= CHUNK_SAMPLES:
-                    needed = CHUNK_SAMPLES
-                    parts: list[np.ndarray] = []
-                    while needed > 0 and pending_chunks:
-                        head = pending_chunks[0]
-                        if head.size <= needed:
-                            parts.append(head)
-                            pending_chunks.popleft()
-                            needed -= int(head.size)
-                        else:
-                            parts.append(head[:needed])
-                            pending_chunks[0] = head[needed:]
-                            needed = 0
-                    if not parts:
-                        break
-                    chunk = parts[0] if len(parts) == 1 else np.concatenate(parts)
-                    pending_len -= CHUNK_SAMPLES
-                    await process_chunk(chunk)
-
-                await asyncio.sleep(0)
+        await _runtime_listen_loop(
+            self,
+            require_sounddevice_fn=_require_sounddevice,
+            sd_module=sd,
+            to_mono_fn=_to_mono,
+            resample_audio_fn=_resample_audio,
+            chunk_samples=CHUNK_SAMPLES,
+            min_utterance=MIN_UTTERANCE,
+        )
 
     def _flush_output(self) -> None:
         if self._use_robot_audio:
@@ -1873,67 +1367,7 @@ class Jarvis:
                 log.warning("Audio output write failed: %s", e)
 
     async def _respond_and_speak(self, text: str) -> None:
-        """Get Claude's response and stream TTS with barge-in support."""
-        self._barge_in.clear()
-        self._clear_tts_queue()
-        self._response_id += 1
-        self._active_response_id = self._response_id
-        self._response_started = False
-        self._first_sentence_at = None
-        self._first_audio_at = None
-        self._response_start_at = time.monotonic()
-        self._tts_gain = 1.0
-
-        if self._filler_task is not None:
-            self._filler_task.cancel()
-        if self.tts is not None:
-            self._filler_task = asyncio.create_task(self._thinking_filler(), name="thinking-filler")
-
-        with self._lock:
-            self._speaking = True
-
-        response_iter = self.brain.respond(text)
-
-        try:
-            async for sentence in response_iter:
-                if self._barge_in.is_set():
-                    log.info("Barge-in — stopping response")
-                    self._flush_output()
-                    self._clear_tts_queue()
-                    self.robot.stop_sequence()
-                    break
-
-                if not self._response_started:
-                    self._response_started = True
-                    self._first_sentence_at = time.monotonic()
-                    if self._response_start_at is not None:
-                        latency_ms = (self._first_sentence_at - self._response_start_at) * 1000.0
-                        self._telemetry["llm_first_sentence_total_ms"] += latency_ms
-                        self._telemetry["llm_first_sentence_count"] += 1.0
-                        log.info(
-                            "LLM first sentence latency: %.0fms",
-                            latency_ms,
-                        )
-                    if self._filler_task is not None:
-                        self._filler_task.cancel()
-
-                if self.tts:
-                    pause = self._confidence_pause(sentence)
-                    await self._tts_queue.put((self._active_response_id, sentence, False, pause))
-                else:
-                    print(f"  JARVIS: {sentence}")
-
-        finally:
-            with suppress(Exception):
-                await response_iter.aclose()
-            with self._lock:
-                self._speaking = False
-            if not self._barge_in.is_set():
-                self.presence.signals.state = State.IDLE
-                self._voice_controller().continue_listening()
-            if self._filler_task is not None:
-                self._filler_task.cancel()
-            self._publish_voice_status()
+        await _runtime_respond_and_speak(self, text)
 
     async def _tts_loop(self) -> None:
         """Consume sentences and play TTS in order, with barge-in support."""

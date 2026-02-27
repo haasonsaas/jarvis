@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 34 (Startup + Operator Schema Extraction)
+# Jarvis TODO — Wave 35 (Run Loop + Listen Loop + Operator Status Extraction)
 
 Last updated: 2026-02-27
 
@@ -8,55 +8,77 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 18
-- Completed: 18
-- Remaining: 0
+- Total items: 32
+- Completed: 30
+- Remaining: 2
 
 ---
 
-## A) Runtime decomposition (startup path)
+## A) Planning and baseline
 
-- [x] `W34-A01` Add `src/jarvis/runtime_startup.py` for startup/runtime schema helpers.
-- [x] `W34-A02` Extract operator control schema builder from `Jarvis._operator_control_schema`.
-- [x] `W34-A03` Extract startup strict blocker validation from `Jarvis._startup_blockers`.
-- [x] `W34-A04` Keep `Jarvis` wrappers to preserve compatibility for existing callers/tests.
-- [x] `W34-A05` Reduce `src/jarvis/__main__.py` below 2,200 LOC.
+- [x] `W35-A01` Capture current baseline metrics for `src/jarvis/__main__.py`, tests, and gates.
+- [x] `W35-A02` Identify all dependencies needed to safely extract `run`, `_listen_loop`, and `_operator_status_provider`.
+- [x] `W35-A03` Define module boundaries for conversation runtime, audio/listen runtime, and operator status runtime.
+- [x] `W35-A04` Keep backwards-compatible wrappers on `Jarvis` methods so existing callers/tests do not break.
 
-## B) Test and boundary coverage
+## B) Run-loop extraction
 
-- [x] `W34-B01` Add `tests/test_runtime_startup.py` for extracted startup/schema helpers.
-- [x] `W34-B02` Validate schema action + enum coverage in unit tests.
-- [x] `W34-B03` Validate startup strict blocker enforcement in unit tests.
-- [x] `W34-B04` Extend `tests/test_import_boundaries.py` with `jarvis.runtime_startup`.
-- [x] `W34-B05` Re-run targeted lifecycle tests for runtime-state, telemetry, and voice-profile paths.
+- [x] `W35-B01` Create `src/jarvis/runtime_conversation.py`.
+- [x] `W35-B02` Extract `Jarvis.run` logic into `runtime_conversation.run(runtime)`.
+- [x] `W35-B03` Preserve startup, task scheduling, and shutdown/cancellation semantics in extracted function.
+- [x] `W35-B04` Preserve telemetry updates and lifecycle trace recording paths from run loop.
+- [x] `W35-B05` Preserve repair/confirmation/follow-up carryover branches from run loop.
+- [x] `W35-B06` Preserve memory correction fast-path handling from run loop.
 
-## C) Validation gates
+## C) Listen and response extraction
 
-- [x] `W34-C01` Run `make check` after startup extraction.
-- [x] `W34-C02` Run `make security-gate` after startup extraction.
-- [x] `W34-C03` Run `./scripts/jarvis_readiness.sh fast` after startup extraction.
-- [x] `W34-C04` Confirm strict eval contract still passes (`151/151`).
+- [x] `W35-C01` Extract `_listen_loop` into `runtime_conversation.listen_loop(...)`.
+- [x] `W35-C02` Parameterize listen loop with audio adapters (`sounddevice`, resample, mono conversion).
+- [x] `W35-C03` Preserve robot-audio and local-microphone behavior parity.
+- [x] `W35-C04` Preserve barge-in and VAD/DOA signal updates in extracted listen flow.
+- [x] `W35-C05` Extract `_respond_and_speak` into `runtime_conversation.respond_and_speak(runtime, text)`.
+- [x] `W35-C06` Preserve filler-task, first-token/audio latency tracking, and TTS queue behavior.
 
-## D) Hygiene and release loop
+## D) Operator status extraction
 
-- [x] `W34-D01` Refresh TODO metrics/outcome snapshot with current counts and gate outputs.
-- [x] `W34-D02` Commit Wave 34 checkpoint.
-- [x] `W34-D03` Push Wave 34 checkpoint to `origin/main`.
+- [x] `W35-D01` Create `src/jarvis/runtime_operator_status.py`.
+- [x] `W35-D02` Extract `_operator_status_provider` enrichment logic into runtime helper.
+- [x] `W35-D03` Preserve auth-risk classification logic and mode normalization.
+- [x] `W35-D04` Preserve episodic timeline and conversation trace status aggregation.
+- [x] `W35-D05` Preserve operator control preset/runtime-profile status fields.
+
+## E) Test coverage and boundaries
+
+- [x] `W35-E01` Add `tests/test_runtime_conversation.py` for extracted run/listen/response helpers where practical.
+- [x] `W35-E02` Add tests for operator status helper output shaping.
+- [x] `W35-E03` Extend `tests/test_import_boundaries.py` for new runtime modules.
+- [x] `W35-E04` Re-run targeted lifecycle tests affected by extraction.
+- [x] `W35-E05` Ensure existing operator/runtime lifecycle tests remain green.
+
+## F) Quality gates and release loop
+
+- [x] `W35-F01` Run `make check`.
+- [x] `W35-F02` Run `make security-gate`.
+- [x] `W35-F03` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W35-F04` Verify strict eval dataset acceptance remains `151/151`.
+- [x] `W35-F05` Update TODO completion summary and outcome snapshot with final metrics.
+- [ ] `W35-F06` Commit extraction checkpoint(s) with clear messages.
+- [ ] `W35-F07` Push all Wave 35 commits to `origin/main`.
 
 ---
 
-## Outcome snapshot (in progress)
+## Outcome snapshot (pending)
 
-- `src/jarvis/__main__.py`: `2,241` -> `2,170` lines this wave (`2,677` -> `2,170` across Waves 32-34).
-- New runtime helper modules added across recent waves:
-  - `src/jarvis/runtime_state.py`
-  - `src/jarvis/runtime_voice_profile.py`
-  - `src/jarvis/runtime_startup.py`
-- New unit coverage modules added across recent waves:
-  - `tests/test_runtime_state.py`
-  - `tests/test_runtime_voice_profile.py`
-  - `tests/test_runtime_startup.py`
-- Current gate status:
-  - `make check`: `573 passed`
-  - `make security-gate`: `573 passed`; fault subset `3 passed`
+- `src/jarvis/__main__.py`: `2,170` -> `1,604` lines.
+- New runtime modules added:
+  - `src/jarvis/runtime_conversation.py`
+  - `src/jarvis/runtime_operator_status.py`
+- New tests added:
+  - `tests/test_runtime_conversation.py`
+  - `tests/test_runtime_operator_status.py`
+- Extended import boundaries:
+  - `tests/test_import_boundaries.py` includes `runtime_conversation` and `runtime_operator_status`.
+- Validation status:
+  - `make check`: `579 passed`
+  - `make security-gate`: `579 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass, strict eval `151/151`
