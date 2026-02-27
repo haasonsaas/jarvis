@@ -153,6 +153,12 @@ class TestConfig:
         c = Config(weather_units="kelvin")
         assert c.weather_units == "metric"
 
+    def test_operator_auth_mode_normalizes(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        from jarvis.config import Config
+        c = Config(operator_auth_mode="browser")
+        assert c.operator_auth_mode == "token"
+
     def test_invalid_audit_retention_raises(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
         from jarvis.config import Config
@@ -189,6 +195,7 @@ class TestConfig:
         monkeypatch.setenv("EMAIL_PERMISSION_PROFILE", "send-all")
         monkeypatch.setenv("EMAIL_TIMEOUT_SEC", "0")
         monkeypatch.setenv("WEATHER_UNITS", "kelvin")
+        monkeypatch.setenv("OPERATOR_AUTH_MODE", "browser")
         from jarvis.config import Config
 
         c = Config()
@@ -219,6 +226,7 @@ class TestConfig:
         assert "EMAIL_PERMISSION_PROFILE invalid" in text
         assert "EMAIL_TIMEOUT_SEC invalid" in text
         assert "WEATHER_UNITS invalid" in text
+        assert "OPERATOR_AUTH_MODE invalid" in text
 
     def test_invalid_bool_env_falls_back_to_default_behavior(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
@@ -538,6 +546,27 @@ class TestConfig:
         c = Config()
         text = "\n".join(c.startup_warnings)
         assert "OPERATOR_AUTH_TOKEN appears unusually short" in text
+
+    def test_startup_warning_for_operator_auth_mode_off_risk(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("OPERATOR_AUTH_MODE", "off")
+        monkeypatch.setenv("OPERATOR_SERVER_HOST", "0.0.0.0")
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "OPERATOR_AUTH_MODE=off (risk: high)" in text
+        assert "OPERATOR_AUTH_MODE=off on non-loopback OPERATOR_SERVER_HOST (risk: critical)." in text
+
+    def test_startup_warning_for_operator_auth_session_without_token(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("OPERATOR_AUTH_MODE", "session")
+        monkeypatch.delenv("OPERATOR_AUTH_TOKEN", raising=False)
+        from jarvis.config import Config
+
+        c = Config()
+        text = "\n".join(c.startup_warnings)
+        assert "OPERATOR_AUTH_MODE=session without OPERATOR_AUTH_TOKEN (risk: high)." in text
 
     def test_startup_warning_when_inbound_enabled_but_operator_disabled(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

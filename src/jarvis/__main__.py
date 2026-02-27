@@ -99,6 +99,7 @@ VALID_VOICE_PROFILE_VERBOSITY = {"brief", "normal", "detailed"}
 VALID_VOICE_PROFILE_CONFIRMATIONS = {"minimal", "standard", "strict"}
 VALID_VOICE_PROFILE_PACE = {"slow", "normal", "fast"}
 VALID_CONTROL_PRESETS = {"quiet_hours", "demo_mode", "maintenance_mode"}
+VALID_OPERATOR_AUTH_MODES = {"off", "token", "session"}
 MEMORY_FORGET_RE = re.compile(
     r"^(?:please\s+)?(?:forget|delete|remove)\s+(?:memory\s*)?(?:id\s*)?(?P<memory_id>\d+)\s*$",
     re.IGNORECASE,
@@ -483,8 +484,21 @@ class Jarvis:
         skills = getattr(self, "_skills", None)
         skills_enabled = bool(skills.enabled) if skills is not None else False
         observability = getattr(self, "_observability", None)
-        operator_auth_enabled = bool(str(getattr(self.config, "operator_auth_token", "")).strip())
-        operator_auth = "auth-required" if operator_auth_enabled else "no-auth"
+        operator_auth_mode = str(getattr(self.config, "operator_auth_mode", "token")).strip().lower()
+        if operator_auth_mode not in VALID_OPERATOR_AUTH_MODES:
+            operator_auth_mode = "token"
+        operator_token_set = bool(str(getattr(self.config, "operator_auth_token", "")).strip())
+        if operator_auth_mode == "off":
+            operator_auth_risk = "high"
+        elif not operator_token_set:
+            operator_auth_risk = "high"
+        elif operator_auth_mode == "session":
+            operator_auth_risk = "low"
+        else:
+            operator_auth_risk = "medium"
+        operator_auth = f"mode={operator_auth_mode} risk={operator_auth_risk}"
+        if operator_auth_mode in {"token", "session"}:
+            operator_auth = f"{operator_auth} token={'set' if operator_token_set else 'missing'}"
         return [
             f"Mode: {'simulation' if self.robot.sim else 'hardware'}",
             f"Motion: {'on' if self.config.motion_enabled else 'off'} | Vision: {'on' if not self.args.no_vision and not self.robot.sim else 'off'} | Hands: {'on' if self.config.hand_track_enabled else 'off'}",
@@ -733,12 +747,24 @@ class Jarvis:
         ).strip():
             blockers.append("STARTUP_STRICT: OPERATOR_SERVER_HOST cannot be empty.")
         operator_host = str(getattr(self.config, "operator_server_host", "")).strip().lower()
+        operator_auth_mode = str(getattr(self.config, "operator_auth_mode", "token")).strip().lower()
+        if operator_auth_mode not in VALID_OPERATOR_AUTH_MODES:
+            operator_auth_mode = "token"
+        operator_token = str(getattr(self.config, "operator_auth_token", "")).strip()
         if (
             bool(getattr(self.config, "operator_server_enabled", False))
-            and operator_host not in {"127.0.0.1", "localhost", "::1"}
-            and not str(getattr(self.config, "operator_auth_token", "")).strip()
+            and operator_auth_mode in {"token", "session"}
+            and not operator_token
         ):
-            blockers.append("STARTUP_STRICT: non-loopback OPERATOR_SERVER_HOST requires OPERATOR_AUTH_TOKEN.")
+            blockers.append(
+                f"STARTUP_STRICT: OPERATOR_AUTH_MODE={operator_auth_mode} requires OPERATOR_AUTH_TOKEN."
+            )
+        if (
+            bool(getattr(self.config, "operator_server_enabled", False))
+            and operator_auth_mode == "off"
+            and operator_host not in {"127.0.0.1", "localhost", "::1"}
+        ):
+            blockers.append("STARTUP_STRICT: OPERATOR_AUTH_MODE=off is not allowed on non-loopback OPERATOR_SERVER_HOST.")
         if bool(getattr(self.config, "skills_require_signature", False)) and not str(
             getattr(self.config, "skills_signature_key", "")
         ).strip():
@@ -1589,8 +1615,23 @@ class Jarvis:
             "enabled": bool(self.config.operator_server_enabled),
             "host": self.config.operator_server_host,
             "port": int(self.config.operator_server_port),
-            "auth_required": bool(str(getattr(self.config, "operator_auth_token", "")).strip()),
+            "auth_mode": str(getattr(self.config, "operator_auth_mode", "token")).strip().lower(),
+            "auth_required": str(getattr(self.config, "operator_auth_mode", "token")).strip().lower() != "off",
+            "auth_token_configured": bool(str(getattr(self.config, "operator_auth_token", "")).strip()),
         }
+        mode = status["operator"]["auth_mode"]
+        if mode not in VALID_OPERATOR_AUTH_MODES:
+            mode = "token"
+            status["operator"]["auth_mode"] = mode
+        token_set = bool(status["operator"]["auth_token_configured"])
+        if mode == "off":
+            status["operator"]["auth_risk"] = "high"
+        elif not token_set:
+            status["operator"]["auth_risk"] = "high"
+        elif mode == "session":
+            status["operator"]["auth_risk"] = "low"
+        else:
+            status["operator"]["auth_risk"] = "medium"
         status["conversation_trace"] = {
             "recent_count": len(self._conversation_traces),
             "latest_turn_id": latest_turn_id,
@@ -2407,6 +2448,7 @@ class Jarvis:
             ),
             inbound_enabled=self.config.webhook_inbound_enabled,
             inbound_token=self.config.webhook_inbound_token or self.config.webhook_auth_token,
+            operator_auth_mode=self.config.operator_auth_mode,
             operator_auth_token=self.config.operator_auth_token,
         )
         try:

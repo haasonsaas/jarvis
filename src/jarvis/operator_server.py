@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import secrets
 import time
 from collections import deque
 from pathlib import Path
@@ -24,6 +25,8 @@ _ACTION_REDACT_TOKENS = {
 }
 _ACTION_MAX_STRING_CHARS = 512
 _AUDIT_TAIL_SCAN_MULTIPLIER = 6
+_SESSION_COOKIE_NAME = "jarvis_operator_session"
+_SESSION_TTL_SEC = 8 * 60 * 60
 
 
 def _extract_bearer_token(header_value: str | None) -> str:
@@ -97,7 +100,7 @@ def _sanitize_action_value(value: Any, *, key_hint: str | None = None, depth: in
     return text
 
 
-def _dashboard_html() -> str:
+def _dashboard_html(auth_mode: str = "token") -> str:
     return """<!doctype html>
 <html lang=\"en\">
 <head>
@@ -158,6 +161,7 @@ def _dashboard_html() -> str:
 </head>
 <body>
   <h1>Jarvis Operator Console</h1>
+  <p><strong>Auth mode:</strong> __AUTH_MODE__</p>
   <div class=\"grid\">
     <section class=\"card\">
       <h2>Runtime Status</h2>
@@ -243,6 +247,8 @@ def _dashboard_html() -> str:
       <div>
         <input id=\"operator-token\" type=\"password\" placeholder=\"Operator token (optional)\" />
         <button onclick=\"saveToken()\">Save Token</button>
+        <button onclick=\"sessionLogin()\">Session Login</button>
+        <button onclick=\"sessionLogout()\">Session Logout</button>
         <button data-danger=\"true\" onclick=\"clearToken()\">Clear Token</button>
       </div>
       <pre id=\"control-result\">ready</pre>
@@ -273,10 +279,11 @@ def _dashboard_html() -> str:
     </section>
   </div>
   <script>
+    const authMode = '__AUTH_MODE__';
     let operatorToken = localStorage.getItem('jarvisOperatorToken') || '';
     function authHeaders(extra) {
       const headers = Object.assign({}, extra || {});
-      if (operatorToken) headers['x-operator-token'] = operatorToken;
+      if (operatorToken && authMode === 'token') headers['x-operator-token'] = operatorToken;
       return headers;
     }
     function saveToken() {
@@ -297,9 +304,49 @@ def _dashboard_html() -> str:
     async function json(url, opts) {
       const options = Object.assign({}, opts || {});
       options.headers = authHeaders(options.headers || {});
+      options.credentials = 'same-origin';
       const res = await fetch(url, options);
       if (!res.ok) throw new Error(`${url}: ${res.status}`);
       return await res.json();
+    }
+    async function sessionLogin() {
+      if (authMode !== 'session') {
+        document.getElementById('control-result').textContent = 'Session login is only available in session auth mode.';
+        return;
+      }
+      const token = (document.getElementById('operator-token').value || '').trim();
+      try {
+        const res = await fetch('/api/session/login', {
+          method: 'POST',
+          headers: {'content-type': 'application/json'},
+          credentials: 'same-origin',
+          body: JSON.stringify({token}),
+        });
+        if (!res.ok) throw new Error(`/api/session/login: ${res.status}`);
+        const payload = await res.json();
+        document.getElementById('control-result').textContent = JSON.stringify(payload, null, 2);
+        await refresh();
+      } catch (err) {
+        document.getElementById('control-result').textContent = String(err);
+      }
+    }
+    async function sessionLogout() {
+      if (authMode !== 'session') {
+        document.getElementById('control-result').textContent = 'Session logout is only available in session auth mode.';
+        return;
+      }
+      try {
+        const res = await fetch('/api/session/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+        });
+        if (!res.ok) throw new Error(`/api/session/logout: ${res.status}`);
+        const payload = await res.json();
+        document.getElementById('control-result').textContent = JSON.stringify(payload, null, 2);
+        await refresh();
+      } catch (err) {
+        document.getElementById('control-result').textContent = String(err);
+      }
     }
     async function refresh() {
       try {
@@ -345,7 +392,7 @@ def _dashboard_html() -> str:
   </script>
 </body>
 </html>
-"""
+""".replace("__AUTH_MODE__", auth_mode)
 
 
 class OperatorServer:
@@ -364,6 +411,7 @@ class OperatorServer:
         inbound_enabled: bool,
         inbound_token: str,
         operator_auth_token: str,
+        operator_auth_mode: str = "",
         conversation_trace_provider: Callable[[int], list[dict[str, Any]]] | None = None,
     ) -> None:
         self._host = host
@@ -379,12 +427,24 @@ class OperatorServer:
         self._inbound_enabled = bool(inbound_enabled)
         self._inbound_token = str(inbound_token).strip()
         self._operator_auth_token = str(operator_auth_token).strip()
+        self._operator_auth_mode = self._normalize_operator_auth_mode(
+            operator_auth_mode,
+            token_present=bool(self._operator_auth_token),
+        )
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
         self._actions: list[dict[str, Any]] = []
         self._last_action_signature = ""
+        self._sessions: dict[str, float] = {}
         key_source = self._operator_auth_token or self._inbound_token or "jarvis-operator-audit"
         self._action_chain_key = str(key_source).encode("utf-8")
+
+    @staticmethod
+    def _normalize_operator_auth_mode(mode: str, *, token_present: bool) -> str:
+        normalized = str(mode or "").strip().lower()
+        if normalized in {"off", "token", "session"}:
+            return normalized
+        return "token" if token_present else "off"
 
     def _sign_operator_action(self, payload: dict[str, Any], previous_signature: str) -> str:
         canonical = json.dumps(
@@ -397,6 +457,29 @@ class OperatorServer:
             default=str,
         )
         return hmac.new(self._action_chain_key, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def _prune_sessions(self) -> None:
+        now = time.time()
+        expired = [token for token, expires_at in self._sessions.items() if expires_at <= now]
+        for token in expired:
+            self._sessions.pop(token, None)
+
+    def _issue_session(self) -> tuple[str, int]:
+        self._prune_sessions()
+        token = secrets.token_urlsafe(32)
+        ttl_sec = int(_SESSION_TTL_SEC)
+        self._sessions[token] = time.time() + float(ttl_sec)
+        return token, ttl_sec
+
+    def _session_valid(self, token: str) -> bool:
+        self._prune_sessions()
+        expires_at = self._sessions.get(token)
+        if expires_at is None:
+            return False
+        if expires_at <= time.time():
+            self._sessions.pop(token, None)
+            return False
+        return True
 
     async def start(self) -> None:
         if self._runner is not None:
@@ -411,6 +494,8 @@ class OperatorServer:
         app.router.add_get("/api/conversation-trace", self._handle_conversation_trace)
         app.router.add_get("/api/control-schema", self._handle_control_schema)
         app.router.add_post("/api/control", self._handle_control)
+        app.router.add_post("/api/session/login", self._handle_session_login)
+        app.router.add_post("/api/session/logout", self._handle_session_logout)
         app.router.add_get("/metrics", self._handle_metrics)
         app.router.add_get("/events", self._handle_events)
         app.router.add_post("/api/webhook/inbound", self._handle_inbound_webhook)
@@ -428,18 +513,69 @@ class OperatorServer:
         self._site = None
 
     async def _handle_dashboard(self, request: web.Request) -> web.Response:
-        return web.Response(text=_dashboard_html(), content_type="text/html")
+        return web.Response(text=_dashboard_html(self._operator_auth_mode), content_type="text/html")
 
     def _require_operator_auth(self, request: web.Request) -> None:
-        if not self._operator_auth_token:
+        if self._operator_auth_mode == "off":
             return
-        provided = request.headers.get("X-Operator-Token", "").strip()
-        if not provided:
-            provided = _extract_bearer_token(request.headers.get("Authorization"))
-        if not provided:
+        if not self._operator_auth_token:
+            raise web.HTTPServiceUnavailable(text="operator auth token not configured")
+        if self._operator_auth_mode == "token":
+            provided = request.headers.get("X-Operator-Token", "").strip()
+            if not provided:
+                provided = _extract_bearer_token(request.headers.get("Authorization"))
+            if not provided:
+                raise web.HTTPUnauthorized(text="operator token required")
+            if not _secure_token_match(self._operator_auth_token, provided):
+                raise web.HTTPForbidden(text="invalid operator token")
+            return
+        session_token = request.cookies.get(_SESSION_COOKIE_NAME, "").strip()
+        if not session_token:
+            raise web.HTTPUnauthorized(text="operator session required")
+        if not self._session_valid(session_token):
+            raise web.HTTPForbidden(text="invalid or expired operator session")
+
+    async def _handle_session_login(self, request: web.Request) -> web.Response:
+        if self._operator_auth_mode != "session":
+            raise web.HTTPNotFound()
+        if not self._operator_auth_token:
+            raise web.HTTPServiceUnavailable(text="operator auth token not configured")
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+        token = ""
+        if isinstance(body, dict):
+            token = str(body.get("token", "")).strip()
+        if not token:
+            token = request.headers.get("X-Operator-Token", "").strip()
+        if not token:
+            token = _extract_bearer_token(request.headers.get("Authorization"))
+        if not token:
             raise web.HTTPUnauthorized(text="operator token required")
-        if not _secure_token_match(self._operator_auth_token, provided):
+        if not _secure_token_match(self._operator_auth_token, token):
             raise web.HTTPForbidden(text="invalid operator token")
+        session_token, ttl_sec = self._issue_session()
+        response = web.json_response({"ok": True, "mode": "session", "expires_in_sec": ttl_sec})
+        response.set_cookie(
+            _SESSION_COOKIE_NAME,
+            session_token,
+            max_age=ttl_sec,
+            httponly=True,
+            samesite="Lax",
+            path="/",
+        )
+        return response
+
+    async def _handle_session_logout(self, request: web.Request) -> web.Response:
+        if self._operator_auth_mode != "session":
+            raise web.HTTPNotFound()
+        token = request.cookies.get(_SESSION_COOKIE_NAME, "").strip()
+        if token:
+            self._sessions.pop(token, None)
+        response = web.json_response({"ok": True})
+        response.del_cookie(_SESSION_COOKIE_NAME, path="/")
+        return response
 
     async def _handle_status(self, request: web.Request) -> web.Response:
         self._require_operator_auth(request)

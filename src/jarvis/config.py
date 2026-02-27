@@ -160,6 +160,7 @@ class Config:
     operator_server_enabled: bool = field(default_factory=lambda: _env_bool("OPERATOR_SERVER_ENABLED") is not False)
     operator_server_host: str = field(default_factory=lambda: os.environ.get("OPERATOR_SERVER_HOST", "127.0.0.1"))
     operator_server_port: int = field(default_factory=lambda: _env_int("OPERATOR_SERVER_PORT", 8765))
+    operator_auth_mode: str = field(default_factory=lambda: os.environ.get("OPERATOR_AUTH_MODE", ""))
     operator_auth_token: str = field(default_factory=lambda: os.environ.get("OPERATOR_AUTH_TOKEN", ""))
     webhook_inbound_enabled: bool = field(default_factory=lambda: _env_bool("WEBHOOK_INBOUND_ENABLED") or False)
     webhook_inbound_token: str = field(default_factory=lambda: os.environ.get("WEBHOOK_INBOUND_TOKEN", ""))
@@ -353,6 +354,8 @@ class Config:
             raise ValueError("memory_retention_days must be >= 0")
         if self.audit_retention_days < 0.0:
             raise ValueError("audit_retention_days must be >= 0")
+        if not str(self.operator_auth_mode).strip():
+            self.operator_auth_mode = "token" if self.operator_auth_token.strip() else "off"
         self.startup_warnings = self._collect_startup_warnings()
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
@@ -360,6 +363,7 @@ class Config:
         self.wake_calibration_profile = self._normalize_wake_calibration_profile(self.wake_calibration_profile)
         self.voice_timeout_profile = self._normalize_voice_timeout_profile(self.voice_timeout_profile)
         self.model_secondary_mode = self._normalize_model_secondary_mode(self.model_secondary_mode)
+        self.operator_auth_mode = self._normalize_operator_auth_mode(self.operator_auth_mode)
         self.home_permission_profile = self._normalize_home_permission_profile(self.home_permission_profile)
         self.home_conversation_permission_profile = self._normalize_home_conversation_permission_profile(
             self.home_conversation_permission_profile
@@ -399,6 +403,10 @@ class Config:
             raw = os.environ.get("MODEL_SECONDARY_MODE", "")
             if raw.strip().lower() not in {"offline_stub", "retry_once"}:
                 self.startup_warnings.append("MODEL_SECONDARY_MODE invalid; using offline_stub.")
+        if _env_is_set("OPERATOR_AUTH_MODE") and self.operator_auth_mode == "token":
+            raw = os.environ.get("OPERATOR_AUTH_MODE", "")
+            if raw.strip().lower() not in {"off", "token", "session"}:
+                self.startup_warnings.append("OPERATOR_AUTH_MODE invalid; using token.")
         if _env_is_set("HOME_PERMISSION_PROFILE") and self.home_permission_profile == "control":
             raw = os.environ.get("HOME_PERMISSION_PROFILE", "")
             if raw.strip().lower() not in {"readonly", "control"}:
@@ -501,6 +509,13 @@ class Config:
         if normalized in {"offline_stub", "retry_once"}:
             return normalized
         return "offline_stub"
+
+    @staticmethod
+    def _normalize_operator_auth_mode(mode: str) -> str:
+        normalized = (mode or "token").strip().lower()
+        if normalized in {"off", "token", "session"}:
+            return normalized
+        return "token"
 
     @staticmethod
     def _normalize_home_permission_profile(profile: str) -> str:
@@ -666,20 +681,27 @@ class Config:
                 "WEBHOOK_INBOUND_ENABLED=true without WEBHOOK_INBOUND_TOKEN/WEBHOOK_AUTH_TOKEN; inbound endpoint is unauthenticated."
             )
         operator_host = (self.operator_server_host or "").strip().lower()
-        if self.operator_server_enabled and operator_host and operator_host not in {"127.0.0.1", "localhost", "::1"}:
+        operator_non_loopback = (
+            self.operator_server_enabled and operator_host and operator_host not in {"127.0.0.1", "localhost", "::1"}
+        )
+        operator_auth_mode = self._normalize_operator_auth_mode(self.operator_auth_mode)
+        operator_token = self.operator_auth_token.strip()
+        if operator_non_loopback:
             warnings.append(
                 "OPERATOR_SERVER_HOST is non-loopback; operator endpoints may be remotely reachable."
             )
-        if (
-            self.operator_server_enabled
-            and operator_host
-            and operator_host not in {"127.0.0.1", "localhost", "::1"}
-            and not self.operator_auth_token.strip()
-        ):
+        if self.operator_server_enabled:
+            if operator_auth_mode == "off":
+                warnings.append("OPERATOR_AUTH_MODE=off (risk: high); operator API routes are unauthenticated.")
+                if operator_non_loopback:
+                    warnings.append("OPERATOR_AUTH_MODE=off on non-loopback OPERATOR_SERVER_HOST (risk: critical).")
+            elif not operator_token:
+                warnings.append(f"OPERATOR_AUTH_MODE={operator_auth_mode} without OPERATOR_AUTH_TOKEN (risk: high).")
+        if operator_non_loopback and not operator_token:
             warnings.append(
                 "OPERATOR_AUTH_TOKEN should be set when OPERATOR_SERVER_HOST is non-loopback."
             )
-        if self.operator_auth_token.strip() and len(self.operator_auth_token.strip()) < 8:
+        if operator_token and len(operator_token) < 8:
             warnings.append("OPERATOR_AUTH_TOKEN appears unusually short; use at least 8 characters.")
         if self.slack_webhook_url.strip() and not self.slack_webhook_url.strip().lower().startswith("https://"):
             warnings.append("SLACK_WEBHOOK_URL should use https.")

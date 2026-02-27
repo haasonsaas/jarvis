@@ -103,7 +103,7 @@ cp .env.example .env
 # Optional: WAKE_MODE / WAKE_CALIBRATION_PROFILE / WAKE_WORDS / WAKE_WORD_SENSITIVITY / VOICE_TIMEOUT_PROFILE
 # Optional: STT_FALLBACK_ENABLED / WHISPER_MODEL_FALLBACK / TTS_FALLBACK_TEXT_ONLY
 # Optional: MODEL_FAILOVER_ENABLED / MODEL_SECONDARY_MODE / WATCHDOG_* / TURN_TIMEOUT_ACT_SEC / STARTUP_STRICT
-# Optional: OPERATOR_SERVER_ENABLED / OPERATOR_SERVER_HOST / OPERATOR_SERVER_PORT / OPERATOR_AUTH_TOKEN
+# Optional: OPERATOR_SERVER_ENABLED / OPERATOR_SERVER_HOST / OPERATOR_SERVER_PORT / OPERATOR_AUTH_MODE / OPERATOR_AUTH_TOKEN
 # Optional: WEBHOOK_INBOUND_ENABLED / WEBHOOK_INBOUND_TOKEN
 # Optional: RECOVERY_JOURNAL_PATH (persistent interrupted-action journal)
 # Optional: OBSERVABILITY_* (DB/state/event paths, burst threshold, snapshot interval)
@@ -172,8 +172,14 @@ Smart home safety defaults:
   - audit entries include `decision_outcome`, `decision_reason`, and `decision_explanation`.
   - this makes allow/deny/failure rationale machine-filterable and human-readable in `/api/audit`.
 - Operator console/API security:
+  - `OPERATOR_AUTH_MODE=off|token|session` controls operator auth strategy:
+    - `off`: no auth challenge (highest risk)
+    - `token`: per-request bearer/header token
+    - `session`: login endpoint creates short-lived browser session cookie
+    - if unset, mode auto-selects `token` when `OPERATOR_AUTH_TOKEN` is set, otherwise `off`
   - Set `OPERATOR_AUTH_TOKEN` when binding `OPERATOR_SERVER_HOST` to a non-loopback interface.
-  - When token is set, `/api/*`, `/metrics`, and `/events` require `X-Operator-Token` or `Authorization: Bearer <token>`.
+  - `token` mode protects `/api/*`, `/metrics`, and `/events` via `X-Operator-Token` or `Authorization: Bearer <token>`.
+  - `session` mode protects the same endpoints via `POST /api/session/login` + `jarvis_operator_session` cookie.
   - The dashboard root (`/`) remains reachable and supports token entry for browser-based API calls.
   - `GET /api/control-schema` returns action/payload requirements for automation clients.
   - `GET /api/conversation-trace` returns live turn flow/tool/policy/latency trace rows used by the dashboard panel.

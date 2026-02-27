@@ -42,11 +42,12 @@ async def test_operator_server_routes_and_control_log(tmp_path):
         port = int(sockets[0].getsockname()[1])
         base = f"http://127.0.0.1:{port}"
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
             dashboard = await (await session.get(f"{base}/")).text()
             assert "@media (max-width: 920px)" in dashboard
             assert "Control Schema" in dashboard
             assert "Conversation Trace" in dashboard
+            assert "Auth mode:" in dashboard
             assert "STT Confidence" in dashboard
             assert "Commit Preview" in dashboard
             assert "Operator Brief Profile" in dashboard
@@ -148,7 +149,7 @@ async def test_operator_server_inbound_webhook_token_enforcement():
         port = int(sockets[0].getsockname()[1])
         base = f"http://127.0.0.1:{port}"
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
             forbidden = await session.post(f"{base}/api/webhook/inbound", json={"x": 1})
             assert forbidden.status == 403
 
@@ -263,6 +264,94 @@ async def test_operator_server_auth_protects_api_endpoints():
                 headers={"Authorization": "Bearer op-secret"},
             )
             assert allowed_bearer.status == 200
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_operator_server_session_auth_login_logout_flow():
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=lambda a, p: _awaitable({"ok": True}),
+        control_schema_provider=lambda: {"actions": {}},
+        metrics_provider=lambda: "jarvis_uptime_seconds 1\n",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="op-secret",
+        operator_auth_mode="session",
+    )
+    await server.start()
+
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+
+        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
+            unauthorized = await session.get(f"{base}/api/status")
+            assert unauthorized.status == 401
+
+            header_only = await session.get(f"{base}/api/status", headers={"X-Operator-Token": "op-secret"})
+            assert header_only.status == 401
+
+            wrong_login = await session.post(f"{base}/api/session/login", json={"token": "wrong"})
+            assert wrong_login.status == 403
+
+            login = await session.post(f"{base}/api/session/login", json={"token": "op-secret"})
+            assert login.status == 200
+            payload = await login.json()
+            assert payload["ok"] is True
+            assert payload["mode"] == "session"
+            assert "jarvis_operator_session" in login.cookies
+
+            allowed = await session.get(f"{base}/api/status")
+            assert allowed.status == 200
+
+            logout = await session.post(f"{base}/api/session/logout")
+            assert logout.status == 200
+
+            after_logout = await session.get(f"{base}/api/status")
+            assert after_logout.status == 401
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_operator_server_auth_off_mode_allows_unauthenticated_api():
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=lambda a, p: _awaitable({"ok": True}),
+        control_schema_provider=lambda: {"actions": {}},
+        metrics_provider=lambda: "jarvis_uptime_seconds 1\n",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="",
+        operator_auth_mode="off",
+    )
+    await server.start()
+
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+
+        async with aiohttp.ClientSession() as session:
+            status = await session.get(f"{base}/api/status")
+            assert status.status == 200
+            metrics = await session.get(f"{base}/metrics")
+            assert metrics.status == 200
     finally:
         await server.stop()
 

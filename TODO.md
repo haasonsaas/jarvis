@@ -76,7 +76,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 ## 7) Operator Surfaces and Control (6 items)
 
-- [ ] `OX01` Add operator auth mode options (`off`, `token`, `session`) with explicit startup warnings by risk level. `P0`
+- [x] `OX01` Add operator auth mode options (`off`, `token`, `session`) with explicit startup warnings by risk level. `P0`
 - [x] `OX02` Add signed operator action records for tamper-evident operations trail. `P1`
 - [x] `OX03` Add live "conversation trace" panel (turn flow, tool calls, policy decisions, latencies). `P1`
 - [x] `OX04` Add operator "safe mode" toggle that forces dry-run behavior globally. `P0`
