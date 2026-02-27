@@ -9,8 +9,8 @@ Last updated: 2026-02-27
 
 ## Completion summary
 - Total items: 47
-- Completed: 39
-- Remaining: 8
+- Completed: 47
+- Remaining: 0
 
 ---
 
@@ -72,16 +72,16 @@ Last updated: 2026-02-27
 - [x] `W76-F05` Add unit coverage for helper behavior matrix.
 - [x] `W76-F06` Run full quality/security/readiness gates.
 
-## G) Wave 77 (next): services wrapper concentration reduction
+## G) Wave 77 (completed): services wrapper concentration reduction
 
-- [ ] `W77-G01` Profile largest contiguous wrapper region in `src/jarvis/tools/services.py`.
-- [ ] `W77-G02` Select one wrapper family (audit/identity/preview/circuit/recovery) for extraction.
-- [ ] `W77-G03` Preserve `services.py` compatibility exports consumed by domain modules.
-- [ ] `W77-G04` Add/extend import-boundary coverage for any new extraction module(s).
-- [ ] `W77-G05` Add focused regression tests around extracted wrapper family.
-- [ ] `W77-G06` Run `make check`.
-- [ ] `W77-G07` Run `make security-gate`.
-- [ ] `W77-G08` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W77-G01` Profile largest contiguous wrapper region in `src/jarvis/tools/services.py`.
+- [x] `W77-G02` Select one wrapper family (audit/identity/preview/circuit/recovery) for extraction.
+- [x] `W77-G03` Preserve `services.py` compatibility exports consumed by domain modules.
+- [x] `W77-G04` Add/extend import-boundary coverage for any new extraction module(s).
+- [x] `W77-G05` Add focused regression tests around extracted wrapper family.
+- [x] `W77-G06` Run `make check`.
+- [x] `W77-G07` Run `make security-gate`.
+- [x] `W77-G08` Run `./scripts/jarvis_readiness.sh fast`.
 
 ---
 
@@ -90,17 +90,20 @@ Last updated: 2026-02-27
 - New modules:
   - `services_defaults.py`
   - `runtime_observability_status.py`
+  - `services_preview_facade_runtime.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
   - `services.re` export preserved for domain-module compatibility.
   - `Jarvis._publish_observability_status` now uses a shared default snapshot helper for both disabled-observability and exception fallback paths.
   - Operator auth mode normalization and risk classification are now shared helpers used by both runtime status payloads and startup summary lines.
+  - Plan-preview wrapper family moved behind `services_preview_facade_runtime.py` with `services.py` compatibility aliases maintained.
 - Validation (Wave 75D/E):
-  - `uv run pytest -q tests/test_import_boundaries.py`: `170 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py`: `171 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py -k "publish_observability_status"`: `2 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "preview_only_returns_plan_preview or strict_preview_ack_requires_token_then_executes or plan_preview"`: `2 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_main_audio.py tests/test_runtime_state.py`: `54 passed`.
-  - `make check`: `768 passed`.
-  - `make security-gate`: `768 passed`; fault subset `3 passed`.
+  - `make check`: `769 passed`.
+  - `make security-gate`: `769 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
