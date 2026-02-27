@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 67 (State + Email + Task-Plan Decomposition)
+# Jarvis TODO — Wave 68 (Status/Governance/Recovery Runtime Decomposition)
 
 Last updated: 2026-02-27
 
@@ -16,78 +16,78 @@ Last updated: 2026-02-27
 
 ## A) Scope and baseline
 
-- [x] `W67-A01` Profile current largest remaining modules.
-- [x] `W67-A02` Select `home_state.py` for action split.
-- [x] `W67-A03` Select `comms_email.py` for action split.
-- [x] `W67-A04` Select `planner_taskplan.py` for action split.
-- [x] `W67-A05` Preserve behavior and message contract compatibility.
+- [x] `W68-A01` Profile largest remaining runtime hotspots in `src/jarvis/tools`.
+- [x] `W68-A02` Select `services_status_runtime.py` for split.
+- [x] `W68-A03` Select `services_governance_runtime.py` for split.
+- [x] `W68-A04` Select `services_recovery_runtime.py` for split.
+- [x] `W68-A05` Keep import API stable for `services.py` callers.
 
-## B) Home state split
+## B) Status runtime split
 
-- [x] `W67-B01` Create `home_state_smart_state.py`.
-- [x] `W67-B02` Move `smart_home_state` implementation.
-- [x] `W67-B03` Create `home_state_capabilities_action.py`.
-- [x] `W67-B04` Move `home_assistant_capabilities` implementation.
-- [x] `W67-B05` Reduce `home_state.py` to export wrapper.
+- [x] `W68-B01` Create `services_status_snapshots_runtime.py`.
+- [x] `W68-B02` Move integration/identity/voice snapshot helpers.
+- [x] `W68-B03` Move observability/skills/expansion snapshot helpers.
+- [x] `W68-B04` Move `health_rollup` helper.
+- [x] `W68-B05` Create `services_status_scorecard_runtime.py`.
+- [x] `W68-B06` Move scorecard helpers (`score_label`, row extraction, p95, scorecard payload).
+- [x] `W68-B07` Reduce `services_status_runtime.py` to compatibility wrapper.
 
-## C) Email split
+## C) Governance runtime split
 
-- [x] `W67-C01` Create `comms_email_send_action.py`.
-- [x] `W67-C02` Move `email_send` implementation.
-- [x] `W67-C03` Create `comms_email_summary_action.py`.
-- [x] `W67-C04` Move `email_summary` implementation.
-- [x] `W67-C05` Reduce `comms_email.py` to export wrapper.
+- [x] `W68-C01` Create `services_governance_status_payload.py`.
+- [x] `W68-C02` Move tool-policy/scorecard-context payload helpers.
+- [x] `W68-C03` Create `services_governance_contract.py`.
+- [x] `W68-C04` Move system-status contract field map + payload helper.
+- [x] `W68-C05` Reduce `services_governance_runtime.py` to compatibility wrapper.
 
-## D) Task-plan split
+## D) Recovery runtime split
 
-- [x] `W67-D01` Create `planner_taskplan_create_action.py`.
-- [x] `W67-D02` Move `task_plan_create` implementation.
-- [x] `W67-D03` Create `planner_taskplan_list_update_actions.py`.
-- [x] `W67-D04` Move `task_plan_list` implementation.
-- [x] `W67-D05` Move `task_plan_update` implementation.
-- [x] `W67-D06` Create `planner_taskplan_summary_next_actions.py`.
-- [x] `W67-D07` Move `task_plan_summary` implementation.
-- [x] `W67-D08` Move `task_plan_next` implementation.
-- [x] `W67-D09` Reduce `planner_taskplan.py` to export wrapper.
+- [x] `W68-D01` Create `services_recovery_journal_runtime.py`.
+- [x] `W68-D02` Move journal read/write/start/finish helpers.
+- [x] `W68-D03` Move `RecoveryOperation` context manager and reconcile/status helpers.
+- [x] `W68-D04` Create `services_dead_letter_runtime.py`.
+- [x] `W68-D05` Move dead-letter read/write/enqueue/status helpers.
+- [x] `W68-D06` Create `services_recovery_response_runtime.py`.
+- [x] `W68-D07` Move tool-response text/success evaluators.
+- [x] `W68-D08` Reduce `services_recovery_runtime.py` to compatibility wrapper.
 
-## E) Boundaries and validation
+## E) Boundaries and verification
 
-- [x] `W67-E01` Extend import-boundary coverage for home state split modules.
-- [x] `W67-E02` Extend import-boundary coverage for email split modules.
-- [x] `W67-E03` Extend import-boundary coverage for task-plan split modules.
-- [x] `W67-E04` Run focused lint on changed modules.
-- [x] `W67-E05` Run targeted pytest for smart_home_state/capabilities, email, task-plan flows.
-- [x] `W67-E06` Run `tests/test_import_boundaries.py`.
-- [x] `W67-E07` Run full `make check`.
-- [x] `W67-E08` Run full `make security-gate`.
-- [x] `W67-E09` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W68-E01` Extend import-boundary coverage for new status runtime modules.
+- [x] `W68-E02` Extend import-boundary coverage for new governance runtime modules.
+- [x] `W68-E03` Extend import-boundary coverage for new recovery runtime modules.
+- [x] `W68-E04` Run focused lint for changed runtime files.
+- [x] `W68-E05` Run `uv run pytest -q tests/test_import_boundaries.py`.
+- [x] `W68-E06` Run targeted status/recovery governance tool tests.
+- [x] `W68-E07` Run full `make check`.
+- [x] `W68-E08` Run full `make security-gate`.
+- [x] `W68-E09` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W67-F01` Record line-count outcomes for wrapper reductions.
-- [x] `W67-F02` Commit Wave 67 tranche.
-- [x] `W67-F03` Push Wave 67 to origin/main.
+- [x] `W68-F01` Record wrapper reductions and extracted module counts.
+- [x] `W68-F02` Commit Wave 68 tranche.
+- [x] `W68-F03` Push Wave 68 to `origin/main`.
 
 ---
 
 ## Outcome snapshot (completed)
 
 - Wrapper concentration reductions:
-  - `home_state.py`: `186 -> 8`
-  - `comms_email.py`: `186 -> 8`
-  - `planner_taskplan.py`: `179 -> 21`
+  - `services_status_runtime.py`: `628 -> 33`
+  - `services_governance_runtime.py`: `496 -> 17`
+  - `services_recovery_runtime.py`: `419 -> 45`
 - New extracted modules:
-  - `home_state_smart_state.py`
-  - `home_state_capabilities_action.py`
-  - `comms_email_send_action.py`
-  - `comms_email_summary_action.py`
-  - `planner_taskplan_create_action.py`
-  - `planner_taskplan_list_update_actions.py`
-  - `planner_taskplan_summary_next_actions.py`
+  - `services_status_snapshots_runtime.py`
+  - `services_status_scorecard_runtime.py`
+  - `services_governance_status_payload.py`
+  - `services_governance_contract.py`
+  - `services_recovery_journal_runtime.py`
+  - `services_dead_letter_runtime.py`
+  - `services_recovery_response_runtime.py`
 - Validation status:
-  - Focused lint: pass.
-  - Targeted pytest: `29 passed`.
-  - `tests/test_import_boundaries.py`: pass.
-  - `make check`: `715 passed`.
-  - `make security-gate`: `715 passed`; fault subset `3 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py`: `135 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "system_status or jarvis_scorecard or dead_letter or recovery_journal"`: `9 passed`.
+  - `make check`: `724 passed`.
+  - `make security-gate`: `724 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
