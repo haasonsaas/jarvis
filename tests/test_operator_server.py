@@ -50,6 +50,8 @@ async def test_operator_server_routes_and_control_log(tmp_path):
             assert "STT Confidence" in dashboard
             assert "Commit Preview" in dashboard
             assert "Operator Brief Profile" in dashboard
+            assert "Preset Quiet Hours" in dashboard
+            assert "Export Runtime Profile" in dashboard
 
             bad_control = await session.post(
                 f"{base}/api/control",
@@ -85,11 +87,26 @@ async def test_operator_server_routes_and_control_log(tmp_path):
             ).json()
             assert control["ok"] is True
 
+            second = await (
+                await session.post(
+                    f"{base}/api/control",
+                    json={"action": "set_mode", "payload": {"mode": "always_listening"}},
+                )
+            ).json()
+            assert second["ok"] is True
+
             actions = await (await session.get(f"{base}/api/operator-actions")).json()
-            assert len(actions) == 1
-            assert actions[0]["action"] == "set_mode"
-            assert actions[0]["payload"]["token"] == "***REDACTED***"
-            assert calls == [("set_mode", {"mode": "wake_word", "token": "secret-token"})]
+            assert len(actions) == 2
+            newest, oldest = actions[0], actions[1]
+            assert oldest["action"] == "set_mode"
+            assert oldest["payload"]["token"] == "***REDACTED***"
+            assert "signature" in oldest
+            assert oldest["signature_alg"] == "hmac-sha256"
+            assert newest["previous_signature"] == oldest["signature"]
+            assert calls == [
+                ("set_mode", {"mode": "wake_word", "token": "secret-token"}),
+                ("set_mode", {"mode": "always_listening"}),
+            ]
     finally:
         await server.stop()
 

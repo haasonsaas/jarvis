@@ -2906,10 +2906,42 @@ def _observability_snapshot() -> dict[str, Any]:
             "restart_count": 0,
             "alerts": [],
             "intent_metrics": default_intent_metrics,
+            "latency_dashboards": {
+                "sample_count": 0,
+                "overall_total_ms": {"p50": 0.0, "p95": 0.0, "p99": 0.0},
+                "by_intent": {},
+                "by_tool_mix": {},
+                "by_wake_mode": {},
+            },
+            "policy_decision_analytics": {
+                "decision_count": 0,
+                "by_tool": {},
+                "by_status": {},
+                "by_reason": {},
+                "by_user": {},
+                "by_user_tool": {},
+            },
         }
     snapshot = {str(key): value for key, value in _runtime_observability_state.items()}
     if not isinstance(snapshot.get("intent_metrics"), dict):
         snapshot["intent_metrics"] = default_intent_metrics
+    if not isinstance(snapshot.get("latency_dashboards"), dict):
+        snapshot["latency_dashboards"] = {
+            "sample_count": 0,
+            "overall_total_ms": {"p50": 0.0, "p95": 0.0, "p99": 0.0},
+            "by_intent": {},
+            "by_tool_mix": {},
+            "by_wake_mode": {},
+        }
+    if not isinstance(snapshot.get("policy_decision_analytics"), dict):
+        snapshot["policy_decision_analytics"] = {
+            "decision_count": 0,
+            "by_tool": {},
+            "by_status": {},
+            "by_reason": {},
+            "by_user": {},
+            "by_user_tool": {},
+        }
     return snapshot
 
 
@@ -6313,6 +6345,8 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "restart_count",
             "intent_metrics",
             "alerts",
+            "latency_dashboards",
+            "policy_decision_analytics",
         ],
         "observability_intent_metrics_required": [
             "turn_count",
@@ -6325,6 +6359,26 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "completion_success_rate",
             "correction_count",
             "correction_frequency",
+        ],
+        "observability_latency_dashboards_required": [
+            "sample_count",
+            "overall_total_ms",
+            "by_intent",
+            "by_tool_mix",
+            "by_wake_mode",
+        ],
+        "observability_latency_bucket_required": [
+            "p50",
+            "p95",
+            "p99",
+        ],
+        "observability_policy_decision_analytics_required": [
+            "decision_count",
+            "by_tool",
+            "by_status",
+            "by_reason",
+            "by_user",
+            "by_user_tool",
         ],
         "scorecard_required": [
             "overall",

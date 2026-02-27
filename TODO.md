@@ -77,11 +77,11 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 ## 7) Operator Surfaces and Control (6 items)
 
 - [ ] `OX01` Add operator auth mode options (`off`, `token`, `session`) with explicit startup warnings by risk level. `P0`
-- [ ] `OX02` Add signed operator action records for tamper-evident operations trail. `P1`
+- [x] `OX02` Add signed operator action records for tamper-evident operations trail. `P1`
 - [x] `OX03` Add live "conversation trace" panel (turn flow, tool calls, policy decisions, latencies). `P1`
 - [x] `OX04` Add operator "safe mode" toggle that forces dry-run behavior globally. `P0`
-- [ ] `OX05` Add control presets (`quiet hours`, `demo mode`, `maintenance mode`) with one-click activation. `P1`
-- [ ] `OX06` Add export/import for operator settings and runtime profiles. `P2`
+- [x] `OX05` Add control presets (`quiet hours`, `demo mode`, `maintenance mode`) with one-click activation. `P1`
+- [x] `OX06` Add export/import for operator settings and runtime profiles. `P2`
 
 ## 8) Skills Ecosystem and Extensibility (6 items)
 
@@ -113,8 +113,8 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 ## 11) Observability and Evaluation (6 items)
 
 - [x] `EX01` Add intent-level success metrics (answer quality, completion success, correction frequency). `P0`
-- [ ] `EX02` Add percentile dashboards for end-to-end turn latency by mode and tool mix. `P1`
-- [ ] `EX03` Add policy-decision analytics (allow/deny reason distribution by user and tool). `P1`
+- [x] `EX02` Add percentile dashboards for end-to-end turn latency by mode and tool mix. `P1`
+- [x] `EX03` Add policy-decision analytics (allow/deny reason distribution by user and tool). `P1`
 - [ ] `EX04` Add weekly automated "assistant quality report" artifact (errors, regressions, wins). `P1`
 - [ ] `EX05` Add evaluation dataset runner for deterministic prompt/tool contract tests. `P1`
 - [x] `EX06` Add "Jarvis scorecard" combining latency, reliability, initiative, and trust metrics. `P1`

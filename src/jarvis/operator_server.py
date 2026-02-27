@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 import time
@@ -225,6 +226,15 @@ def _dashboard_html() -> str:
         <button data-danger=\"true\" onclick=\"control('clear_voice_profile',{user:'operator'})\">Clear Operator Profile</button>
       </div>
       <div>
+        <button onclick=\"control('apply_control_preset',{preset:'quiet_hours'})\">Preset Quiet Hours</button>
+        <button onclick=\"control('apply_control_preset',{preset:'demo_mode'})\">Preset Demo</button>
+        <button onclick=\"control('apply_control_preset',{preset:'maintenance_mode'})\">Preset Maintenance</button>
+      </div>
+      <div>
+        <button onclick=\"control('export_runtime_profile',{})\">Export Runtime Profile</button>
+        <button onclick=\"control('import_runtime_profile',{profile:{wake_mode:'wake_word',sleeping:false,timeout_profile:'normal',push_to_talk_active:false,motion_enabled:true,home_enabled:true,safe_mode_enabled:false,tts_enabled:true,persona_style:'composed',backchannel_style:'balanced'}})\">Import Baseline Profile</button>
+      </div>
+      <div>
         <button onclick=\"control('skills_reload',{})\">Reload Skills</button>
       </div>
       <div>
@@ -372,6 +382,21 @@ class OperatorServer:
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
         self._actions: list[dict[str, Any]] = []
+        self._last_action_signature = ""
+        key_source = self._operator_auth_token or self._inbound_token or "jarvis-operator-audit"
+        self._action_chain_key = str(key_source).encode("utf-8")
+
+    def _sign_operator_action(self, payload: dict[str, Any], previous_signature: str) -> str:
+        canonical = json.dumps(
+            {
+                "previous_signature": str(previous_signature or ""),
+                "payload": payload,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        return hmac.new(self._action_chain_key, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
     async def start(self) -> None:
         if self._runner is not None:
@@ -496,13 +521,22 @@ class OperatorServer:
             error = str(result.get("error", "")).strip().lower()
             if error in {"invalid_action", "unknown_action", "invalid_payload"}:
                 status = 400
-        log_item = {
+        payload_item = {
             "timestamp": time.time(),
             "action": action,
             "payload": _sanitize_action_value(payload),
             "result": _sanitize_action_value(result),
             "source": request.remote or "operator",
         }
+        previous_signature = self._last_action_signature
+        signature = self._sign_operator_action(payload_item, previous_signature)
+        log_item = {
+            **payload_item,
+            "previous_signature": previous_signature,
+            "signature": signature,
+            "signature_alg": "hmac-sha256",
+        }
+        self._last_action_signature = signature
         self._actions.append(log_item)
         if len(self._actions) > 500:
             del self._actions[:-500]

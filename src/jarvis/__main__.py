@@ -98,6 +98,7 @@ VALID_BACKCHANNEL_STYLES = {"quiet", "balanced", "expressive"}
 VALID_VOICE_PROFILE_VERBOSITY = {"brief", "normal", "detailed"}
 VALID_VOICE_PROFILE_CONFIRMATIONS = {"minimal", "standard", "strict"}
 VALID_VOICE_PROFILE_PACE = {"slow", "normal", "fast"}
+VALID_CONTROL_PRESETS = {"quiet_hours", "demo_mode", "maintenance_mode"}
 MEMORY_FORGET_RE = re.compile(
     r"^(?:please\s+)?(?:forget|delete|remove)\s+(?:memory\s*)?(?:id\s*)?(?P<memory_id>\d+)\s*$",
     re.IGNORECASE,
@@ -390,6 +391,7 @@ class Jarvis:
         self._episodic_timeline: deque[dict[str, Any]] = deque(maxlen=EPISODIC_TIMELINE_MAXLEN)
         self._episode_seq = 0
         self._voice_user_profiles: dict[str, dict[str, str]] = {}
+        self._active_control_preset = "custom"
         self._personality_preview_snapshot: dict[str, str] | None = None
         self._stt_diagnostics: dict[str, Any] = self._default_stt_diagnostics()
         self._load_runtime_state()
@@ -515,6 +517,7 @@ class Jarvis:
         status["voice_profile_user"] = self._active_voice_user()
         status["voice_profile"] = self._active_voice_profile()
         status["voice_profile_count"] = len(getattr(self, "_voice_user_profiles", {}))
+        status["control_preset"] = str(getattr(self, "_active_control_preset", "custom"))
         set_runtime_voice_state(status)
         observability = getattr(self, "_observability", None)
         if observability is not None:
@@ -603,6 +606,21 @@ class Jarvis:
                         "correction_count": 0.0,
                         "correction_frequency": 0.0,
                     },
+                    "latency_dashboards": {
+                        "sample_count": 0,
+                        "overall_total_ms": {"p50": 0.0, "p95": 0.0, "p99": 0.0},
+                        "by_intent": {},
+                        "by_tool_mix": {},
+                        "by_wake_mode": {},
+                    },
+                    "policy_decision_analytics": {
+                        "decision_count": 0,
+                        "by_tool": {},
+                        "by_status": {},
+                        "by_reason": {},
+                        "by_user": {},
+                        "by_user_tool": {},
+                    },
                 }
             )
             return
@@ -626,7 +644,25 @@ class Jarvis:
                     "correction_count": 0.0,
                     "correction_frequency": 0.0,
                 },
+                "latency_dashboards": {
+                    "sample_count": 0,
+                    "overall_total_ms": {"p50": 0.0, "p95": 0.0, "p99": 0.0},
+                    "by_intent": {},
+                    "by_tool_mix": {},
+                    "by_wake_mode": {},
+                },
+                "policy_decision_analytics": {
+                    "decision_count": 0,
+                    "by_tool": {},
+                    "by_status": {},
+                    "by_reason": {},
+                    "by_user": {},
+                    "by_user_tool": {},
+                },
             }
+        if isinstance(snapshot, dict):
+            snapshot["latency_dashboards"] = self._conversation_latency_analytics()
+            snapshot["policy_decision_analytics"] = self._policy_decision_analytics()
         set_runtime_observability_state(snapshot)
 
     def _operator_control_schema(self) -> dict[str, Any]:
@@ -669,6 +705,9 @@ class Jarvis:
                 },
                 "clear_voice_profile": {"required": ["user"], "types": {"user": "string"}},
                 "list_voice_profiles": {"required": []},
+                "apply_control_preset": {"required": ["preset"], "enum": {"preset": sorted(VALID_CONTROL_PRESETS)}},
+                "export_runtime_profile": {"required": []},
+                "import_runtime_profile": {"required": ["profile"], "types": {"profile": "object"}},
                 "skills_reload": {"required": []},
                 "skills_enable": {"required": ["name"], "types": {"name": "string"}},
                 "skills_disable": {"required": ["name"], "types": {"name": "string"}},
@@ -782,6 +821,8 @@ class Jarvis:
                     if profile:
                         parsed_profiles[user] = profile
                 self._voice_user_profiles = parsed_profiles
+            preset = str(runtime_state.get("active_control_preset", "custom")).strip().lower()
+            self._active_control_preset = preset if preset in VALID_CONTROL_PRESETS else "custom"
         service_tools.set_safe_mode(bool(getattr(self.config, "safe_mode_enabled", False)))
         self._awaiting_confirmation = bool(payload.get("awaiting_confirmation", False))
         pending = payload.get("pending_text")
@@ -872,6 +913,7 @@ class Jarvis:
                 "persona_style": persisted_persona_style,
                 "backchannel_style": persisted_backchannel_style,
                 "voice_user_profiles": getattr(self, "_voice_user_profiles", {}),
+                "active_control_preset": str(getattr(self, "_active_control_preset", "custom")),
             },
             "awaiting_confirmation": bool(getattr(self, "_awaiting_confirmation", False)),
             "pending_text": getattr(self, "_pending_text", None),
@@ -892,7 +934,8 @@ class Jarvis:
         return fallback
 
     def _active_voice_user(self) -> str:
-        user = str(getattr(self.config, "identity_default_user", "operator")).strip().lower()
+        config = getattr(self, "config", None)
+        user = str(getattr(config, "identity_default_user", "operator")).strip().lower()
         return user or "operator"
 
     def _active_voice_profile(self, *, user: str | None = None) -> dict[str, str]:
@@ -927,6 +970,275 @@ class Jarvis:
         else:
             return text
         return f"{text}\n\nVoice profile preference:\n{guidance}"
+
+    @staticmethod
+    def _percentile(values: list[float], q: float) -> float:
+        if not values:
+            return 0.0
+        if q <= 0.0:
+            return float(values[0])
+        if q >= 1.0:
+            return float(values[-1])
+        idx = (len(values) - 1) * q
+        lo = int(math.floor(idx))
+        hi = int(math.ceil(idx))
+        if lo == hi:
+            return float(values[lo])
+        frac = idx - lo
+        return float(values[lo] + ((values[hi] - values[lo]) * frac))
+
+    def _conversation_latency_analytics(self) -> dict[str, Any]:
+        traces = list(getattr(self, "_conversation_traces", []))
+        if not traces:
+            return {
+                "sample_count": 0,
+                "overall_total_ms": {"p50": 0.0, "p95": 0.0, "p99": 0.0},
+                "by_intent": {},
+                "by_tool_mix": {},
+                "by_wake_mode": {},
+            }
+
+        def extract_total(item: dict[str, Any]) -> float:
+            if not isinstance(item, dict):
+                return 0.0
+            latencies = item.get("latencies_ms")
+            if not isinstance(latencies, dict):
+                return 0.0
+            try:
+                value = float(latencies.get("total", 0.0))
+            except (TypeError, ValueError):
+                return 0.0
+            if not math.isfinite(value) or value < 0.0:
+                return 0.0
+            return value
+
+        def pack(values: list[float]) -> dict[str, float]:
+            ordered = sorted(v for v in values if math.isfinite(v) and v >= 0.0)
+            return {
+                "p50": self._percentile(ordered, 0.5),
+                "p95": self._percentile(ordered, 0.95),
+                "p99": self._percentile(ordered, 0.99),
+            }
+
+        overall_values = [extract_total(item) for item in traces]
+        by_intent: dict[str, list[float]] = {}
+        by_tool_mix: dict[str, list[float]] = {}
+        by_wake_mode: dict[str, list[float]] = {}
+        for item in traces:
+            if not isinstance(item, dict):
+                continue
+            total = extract_total(item)
+            intent = str(item.get("intent", "unknown")).strip().lower() or "unknown"
+            by_intent.setdefault(intent, []).append(total)
+            tools = item.get("tool_calls")
+            tool_count = len(tools) if isinstance(tools, list) else 0
+            if tool_count <= 0:
+                tool_mix = "none"
+            elif tool_count == 1:
+                tool_mix = "single"
+            else:
+                tool_mix = "multi"
+            by_tool_mix.setdefault(tool_mix, []).append(total)
+            wake_mode = str(item.get("wake_mode", "unknown")).strip().lower() or "unknown"
+            by_wake_mode.setdefault(wake_mode, []).append(total)
+
+        return {
+            "sample_count": len(overall_values),
+            "overall_total_ms": pack(overall_values),
+            "by_intent": {name: pack(values) for name, values in sorted(by_intent.items())},
+            "by_tool_mix": {name: pack(values) for name, values in sorted(by_tool_mix.items())},
+            "by_wake_mode": {name: pack(values) for name, values in sorted(by_wake_mode.items())},
+        }
+
+    def _policy_decision_analytics(self) -> dict[str, Any]:
+        traces = list(getattr(self, "_conversation_traces", []))
+        totals_by_tool: dict[str, int] = {}
+        totals_by_reason: dict[str, int] = {}
+        totals_by_status: dict[str, int] = {}
+        totals_by_user: dict[str, int] = {}
+        by_user_tool: dict[str, dict[str, int]] = {}
+        total_decisions = 0
+        for item in traces:
+            if not isinstance(item, dict):
+                continue
+            requester = str(item.get("requester_user", "unknown")).strip().lower() or "unknown"
+            decisions = item.get("policy_decisions")
+            if not isinstance(decisions, list):
+                continue
+            for decision in decisions:
+                if not isinstance(decision, dict):
+                    continue
+                total_decisions += 1
+                tool = str(decision.get("tool", "unknown")).strip().lower() or "unknown"
+                status = str(decision.get("status", "unknown")).strip().lower() or "unknown"
+                reason = str(decision.get("detail", "unknown")).strip().lower() or "unknown"
+                totals_by_tool[tool] = totals_by_tool.get(tool, 0) + 1
+                totals_by_status[status] = totals_by_status.get(status, 0) + 1
+                totals_by_reason[reason] = totals_by_reason.get(reason, 0) + 1
+                totals_by_user[requester] = totals_by_user.get(requester, 0) + 1
+                if requester not in by_user_tool:
+                    by_user_tool[requester] = {}
+                user_tool = by_user_tool[requester]
+                user_tool[tool] = user_tool.get(tool, 0) + 1
+
+        return {
+            "decision_count": total_decisions,
+            "by_tool": {name: totals_by_tool[name] for name in sorted(totals_by_tool)},
+            "by_status": {name: totals_by_status[name] for name in sorted(totals_by_status)},
+            "by_reason": {name: totals_by_reason[name] for name in sorted(totals_by_reason)},
+            "by_user": {name: totals_by_user[name] for name in sorted(totals_by_user)},
+            "by_user_tool": {
+                user: {tool: by_user_tool[user][tool] for tool in sorted(by_user_tool[user])}
+                for user in sorted(by_user_tool)
+            },
+        }
+
+    def _runtime_profile_snapshot(self) -> dict[str, Any]:
+        voice = self._voice_controller()
+        return {
+            "wake_mode": str(getattr(voice, "mode", "wake_word")),
+            "sleeping": bool(getattr(voice, "sleeping", False)),
+            "timeout_profile": str(getattr(voice, "timeout_profile", "normal")),
+            "push_to_talk_active": bool(getattr(voice, "push_to_talk_active", False)),
+            "motion_enabled": bool(getattr(self.config, "motion_enabled", False)),
+            "home_enabled": bool(getattr(self.config, "home_enabled", False)),
+            "safe_mode_enabled": bool(getattr(self.config, "safe_mode_enabled", False)),
+            "tts_enabled": bool(getattr(self, "_tts_output_enabled", True)),
+            "persona_style": str(getattr(self.config, "persona_style", "composed")),
+            "backchannel_style": str(getattr(self.config, "backchannel_style", "balanced")),
+            "voice_user_profiles": {
+                str(name): dict(profile)
+                for name, profile in getattr(self, "_voice_user_profiles", {}).items()
+                if isinstance(profile, dict)
+            },
+            "active_control_preset": str(getattr(self, "_active_control_preset", "custom")),
+        }
+
+    def _apply_runtime_profile(self, profile: dict[str, Any], *, mark_custom: bool = True) -> dict[str, Any]:
+        voice = self._voice_controller()
+        wake_mode = self._parse_control_choice(profile.get("wake_mode"), VALID_WAKE_MODES)
+        if wake_mode is not None:
+            voice.set_mode(wake_mode)
+        sleeping = self._parse_control_bool(profile.get("sleeping"))
+        if sleeping is not None:
+            voice.sleeping = sleeping
+            if not sleeping:
+                voice.continue_listening()
+        timeout_profile = self._parse_control_choice(profile.get("timeout_profile"), VALID_TIMEOUT_PROFILES)
+        if timeout_profile is not None:
+            voice.set_timeout_profile(timeout_profile)
+        push_to_talk = self._parse_control_bool(profile.get("push_to_talk_active"))
+        if push_to_talk is not None:
+            voice.set_push_to_talk_active(push_to_talk)
+
+        motion_enabled = self._parse_control_bool(profile.get("motion_enabled"))
+        if motion_enabled is not None:
+            self.config.motion_enabled = motion_enabled
+            if motion_enabled:
+                with suppress(Exception):
+                    self.presence.start()
+            else:
+                with suppress(Exception):
+                    self.presence.stop()
+        home_enabled = self._parse_control_bool(profile.get("home_enabled"))
+        if home_enabled is not None:
+            self.config.home_enabled = home_enabled
+        safe_mode_enabled = self._parse_control_bool(profile.get("safe_mode_enabled"))
+        if safe_mode_enabled is not None:
+            self.config.safe_mode_enabled = safe_mode_enabled
+            service_tools.set_safe_mode(safe_mode_enabled)
+        tts_enabled = self._parse_control_bool(profile.get("tts_enabled"))
+        if tts_enabled is not None:
+            self._tts_output_enabled = tts_enabled
+
+        persona_style = self._parse_control_choice(profile.get("persona_style"), VALID_PERSONA_STYLES)
+        if persona_style is not None:
+            self._set_persona_style(persona_style)
+        backchannel_style = self._parse_control_choice(profile.get("backchannel_style"), VALID_BACKCHANNEL_STYLES)
+        if backchannel_style is not None:
+            self.config.backchannel_style = backchannel_style
+            self.presence.set_backchannel_style(backchannel_style)
+
+        raw_profiles = profile.get("voice_user_profiles")
+        if isinstance(raw_profiles, dict):
+            parsed_profiles: dict[str, dict[str, str]] = {}
+            for raw_user, raw_profile in raw_profiles.items():
+                user = str(raw_user).strip().lower()
+                if not user or not isinstance(raw_profile, dict):
+                    continue
+                parsed: dict[str, str] = {}
+                verbosity = self._parse_control_choice(raw_profile.get("verbosity"), VALID_VOICE_PROFILE_VERBOSITY)
+                confirmations = self._parse_control_choice(raw_profile.get("confirmations"), VALID_VOICE_PROFILE_CONFIRMATIONS)
+                pace = self._parse_control_choice(raw_profile.get("pace"), VALID_VOICE_PROFILE_PACE)
+                if verbosity is not None:
+                    parsed["verbosity"] = verbosity
+                if confirmations is not None:
+                    parsed["confirmations"] = confirmations
+                if pace is not None:
+                    parsed["pace"] = pace
+                if parsed:
+                    parsed_profiles[user] = parsed
+            self._voice_user_profiles = parsed_profiles
+
+        if mark_custom:
+            self._active_control_preset = "custom"
+        self._publish_voice_status()
+        self._persist_runtime_state_safe()
+        return self._runtime_profile_snapshot()
+
+    def _preset_profile(self, preset: str) -> dict[str, Any]:
+        name = str(preset or "").strip().lower()
+        if name == "quiet_hours":
+            return {
+                "wake_mode": "wake_word",
+                "sleeping": False,
+                "timeout_profile": "short",
+                "push_to_talk_active": False,
+                "motion_enabled": bool(getattr(self.config, "motion_enabled", False)),
+                "home_enabled": False,
+                "safe_mode_enabled": True,
+                "tts_enabled": True,
+                "persona_style": "composed",
+                "backchannel_style": "quiet",
+            }
+        if name == "demo_mode":
+            return {
+                "wake_mode": "always_listening",
+                "sleeping": False,
+                "timeout_profile": "long",
+                "push_to_talk_active": False,
+                "motion_enabled": True,
+                "home_enabled": False,
+                "safe_mode_enabled": True,
+                "tts_enabled": True,
+                "persona_style": "friendly",
+                "backchannel_style": "expressive",
+            }
+        if name == "maintenance_mode":
+            return {
+                "wake_mode": "push_to_talk",
+                "sleeping": True,
+                "timeout_profile": "short",
+                "push_to_talk_active": True,
+                "motion_enabled": False,
+                "home_enabled": False,
+                "safe_mode_enabled": True,
+                "tts_enabled": False,
+                "persona_style": "terse",
+                "backchannel_style": "quiet",
+            }
+        return {}
+
+    def _apply_control_preset(self, preset: str) -> dict[str, Any] | None:
+        name = str(preset or "").strip().lower()
+        if name not in VALID_CONTROL_PRESETS:
+            return None
+        profile = self._preset_profile(name)
+        applied = self._apply_runtime_profile(profile, mark_custom=False)
+        self._active_control_preset = name
+        self._publish_voice_status()
+        self._persist_runtime_state_safe()
+        return applied
 
     def _refresh_tool_error_counters(self) -> None:
         try:
@@ -1299,6 +1611,11 @@ class Jarvis:
                 "backchannel_style": str(getattr(self.config, "backchannel_style", "unknown")),
             },
         }
+        status["operator_controls"] = {
+            "active_control_preset": str(getattr(self, "_active_control_preset", "custom")),
+            "available_control_presets": sorted(VALID_CONTROL_PRESETS),
+            "runtime_profile": self._runtime_profile_snapshot(),
+        }
         return status
 
     def _startup_diagnostics_provider(self) -> list[str]:
@@ -1635,6 +1952,8 @@ class Jarvis:
             "policy_decisions": policy_decisions,
             "completion_success": completion_success,
             "response_success": response_success,
+            "wake_mode": str(getattr(self._voice_controller(), "mode", "unknown")),
+            "requester_user": self._active_voice_user(),
             "attention_source": self.presence.attention_source(),
             "turn_choreography": self._turn_choreography_snapshot(),
         }
@@ -1753,6 +2072,7 @@ class Jarvis:
                     "expected": sorted(VALID_WAKE_MODES),
                 }
             mode = voice.set_mode(mode)
+            self._active_control_preset = "custom"
             self._publish_voice_status()
             self._persist_runtime_state_safe()
             return {"ok": True, "mode": mode}
@@ -1763,6 +2083,7 @@ class Jarvis:
             voice.sleeping = sleeping
             if not sleeping:
                 voice.continue_listening()
+            self._active_control_preset = "custom"
             self._publish_voice_status()
             self._persist_runtime_state_safe()
             return {"ok": True, "sleeping": voice.sleeping}
@@ -1776,6 +2097,7 @@ class Jarvis:
                     "expected": sorted(VALID_TIMEOUT_PROFILES),
                 }
             profile = voice.set_timeout_profile(profile)
+            self._active_control_preset = "custom"
             self._publish_voice_status()
             self._persist_runtime_state_safe()
             return {"ok": True, "timeout_profile": profile}
@@ -1784,6 +2106,7 @@ class Jarvis:
             if active is None:
                 return {"ok": False, "error": "invalid_payload", "field": "active", "expected": "boolean"}
             voice.set_push_to_talk_active(active)
+            self._active_control_preset = "custom"
             self._publish_voice_status()
             self._persist_runtime_state_safe()
             return {"ok": True, "push_to_talk_active": active}
@@ -1798,6 +2121,7 @@ class Jarvis:
             else:
                 with suppress(Exception):
                     self.presence.stop()
+            self._active_control_preset = "custom"
             self._persist_runtime_state_safe()
             return {"ok": True, "motion_enabled": enabled}
         if command == "set_home_enabled":
@@ -1805,6 +2129,7 @@ class Jarvis:
             if enabled is None:
                 return {"ok": False, "error": "invalid_payload", "field": "enabled", "expected": "boolean"}
             self.config.home_enabled = enabled
+            self._active_control_preset = "custom"
             self._persist_runtime_state_safe()
             return {"ok": True, "home_enabled": enabled}
         if command == "set_safe_mode":
@@ -1813,6 +2138,7 @@ class Jarvis:
                 return {"ok": False, "error": "invalid_payload", "field": "enabled", "expected": "boolean"}
             self.config.safe_mode_enabled = enabled
             service_tools.set_safe_mode(enabled)
+            self._active_control_preset = "custom"
             self._persist_runtime_state_safe()
             return {"ok": True, "safe_mode_enabled": enabled}
         if command == "set_tts_enabled":
@@ -1820,6 +2146,7 @@ class Jarvis:
             if enabled is None:
                 return {"ok": False, "error": "invalid_payload", "field": "enabled", "expected": "boolean"}
             self._tts_output_enabled = enabled
+            self._active_control_preset = "custom"
             self._persist_runtime_state_safe()
             return {"ok": True, "tts_enabled": enabled}
         if command == "set_persona_style":
@@ -1833,6 +2160,7 @@ class Jarvis:
                 }
             self._set_persona_style(style)
             self._personality_preview_snapshot = None
+            self._active_control_preset = "custom"
             self._persist_runtime_state_safe()
             return {"ok": True, "persona_style": style}
         if command == "set_backchannel_style":
@@ -1847,6 +2175,7 @@ class Jarvis:
             self.config.backchannel_style = style
             self.presence.set_backchannel_style(style)
             self._personality_preview_snapshot = None
+            self._active_control_preset = "custom"
             self._persist_runtime_state_safe()
             return {"ok": True, "backchannel_style": style}
         if command == "set_voice_profile":
@@ -1899,6 +2228,7 @@ class Jarvis:
             merged = {**entry, **profile_patch}
             profiles[user] = merged
             self._voice_user_profiles = profiles
+            self._active_control_preset = "custom"
             self._persist_runtime_state_safe()
             self._publish_voice_status()
             return {"ok": True, "user": user, "profile": merged}
@@ -1912,6 +2242,7 @@ class Jarvis:
                 profiles.pop(user, None)
                 removed = True
             self._voice_user_profiles = profiles if isinstance(profiles, dict) else {}
+            self._active_control_preset = "custom"
             self._persist_runtime_state_safe()
             self._publish_voice_status()
             return {"ok": True, "user": user, "removed": removed}
@@ -1929,6 +2260,32 @@ class Jarvis:
                 "active_profile": self._active_voice_profile(user=active_user),
                 "profiles": snapshot,
             }
+        if command == "apply_control_preset":
+            preset = self._parse_control_choice(data.get("preset"), VALID_CONTROL_PRESETS)
+            if preset is None:
+                return {
+                    "ok": False,
+                    "error": "invalid_payload",
+                    "field": "preset",
+                    "expected": sorted(VALID_CONTROL_PRESETS),
+                }
+            applied = self._apply_control_preset(preset)
+            if applied is None:
+                return {
+                    "ok": False,
+                    "error": "invalid_payload",
+                    "field": "preset",
+                    "expected": sorted(VALID_CONTROL_PRESETS),
+                }
+            return {"ok": True, "preset": preset, "runtime_profile": applied}
+        if command == "export_runtime_profile":
+            return {"ok": True, "runtime_profile": self._runtime_profile_snapshot()}
+        if command == "import_runtime_profile":
+            profile = data.get("profile")
+            if not isinstance(profile, dict):
+                return {"ok": False, "error": "invalid_payload", "field": "profile", "expected": "object"}
+            applied = self._apply_runtime_profile(profile, mark_custom=True)
+            return {"ok": True, "runtime_profile": applied}
         if command == "preview_personality":
             persona_style = self._parse_control_choice(data.get("persona_style"), VALID_PERSONA_STYLES)
             backchannel_style = self._parse_control_choice(data.get("backchannel_style"), VALID_BACKCHANNEL_STYLES)
@@ -1952,6 +2309,7 @@ class Jarvis:
             if backchannel_style is not None:
                 self.config.backchannel_style = backchannel_style
                 self.presence.set_backchannel_style(backchannel_style)
+            self._active_control_preset = "custom"
             return {
                 "ok": True,
                 "preview_active": True,
@@ -1962,6 +2320,7 @@ class Jarvis:
         if command == "commit_personality_preview":
             was_active = isinstance(getattr(self, "_personality_preview_snapshot", None), dict)
             self._personality_preview_snapshot = None
+            self._active_control_preset = "custom"
             self._persist_runtime_state_safe()
             return {
                 "ok": True,
@@ -1988,6 +2347,7 @@ class Jarvis:
                 self.config.backchannel_style = backchannel_style
                 self.presence.set_backchannel_style(backchannel_style)
             self._personality_preview_snapshot = None
+            self._active_control_preset = "custom"
             return {
                 "ok": True,
                 "rolled_back": True,

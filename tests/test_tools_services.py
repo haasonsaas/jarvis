@@ -3167,6 +3167,10 @@ class TestServicesTools:
         assert "observability" in payload
         assert "intent_metrics" in payload["observability"]
         assert "correction_frequency" in payload["observability"]["intent_metrics"]
+        assert "latency_dashboards" in payload["observability"]
+        assert "overall_total_ms" in payload["observability"]["latency_dashboards"]
+        assert "policy_decision_analytics" in payload["observability"]
+        assert "decision_count" in payload["observability"]["policy_decision_analytics"]
         assert "scorecard" in payload
         assert "overall" in payload["scorecard"]
         assert "dimensions" in payload["scorecard"]
@@ -3246,8 +3250,16 @@ class TestServicesTools:
         assert "skills_required" in payload
         assert "observability_required" in payload
         assert "intent_metrics" in payload["observability_required"]
+        assert "latency_dashboards" in payload["observability_required"]
+        assert "policy_decision_analytics" in payload["observability_required"]
         assert "observability_intent_metrics_required" in payload
         assert "completion_success_rate" in payload["observability_intent_metrics_required"]
+        assert "observability_latency_dashboards_required" in payload
+        assert "by_tool_mix" in payload["observability_latency_dashboards_required"]
+        assert "observability_latency_bucket_required" in payload
+        assert "p95" in payload["observability_latency_bucket_required"]
+        assert "observability_policy_decision_analytics_required" in payload
+        assert "by_reason" in payload["observability_policy_decision_analytics_required"]
         assert "scorecard_required" in payload
         assert "overall" in payload["scorecard_required"]
         assert "scorecard_dimensions_required" in payload

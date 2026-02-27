@@ -157,6 +157,8 @@ Smart home safety defaults:
 - Automation consumers can use:
   - `system_status` (includes `schema_version`)
   - `system_status.scorecard` (unified latency/reliability/initiative/trust scoring)
+  - `system_status.observability.latency_dashboards` (p50/p95/p99 total-turn latency with intent/tool-mix/wake-mode breakdowns)
+  - `system_status.observability.policy_decision_analytics` (allow/deny reason counts by tool/user/status)
   - `system_status.turn_timeouts` (listen/think/speak/act timeout budgets)
   - `system_status.integrations.*.circuit_breaker` (open/remaining/failure state per integration)
   - `system_status.recovery_journal` (interrupted-action reconciliation summary)
@@ -176,8 +178,13 @@ Smart home safety defaults:
   - `GET /api/control-schema` returns action/payload requirements for automation clients.
   - `GET /api/conversation-trace` returns live turn flow/tool/policy/latency trace rows used by the dashboard panel.
   - `/api/status` now includes `episodic_timeline` snapshots for recent important turns/actions.
+  - `/api/status` now includes `operator_controls` with `active_control_preset`, available presets, and the current runtime profile snapshot.
+  - Operator control actions support one-click presets/profile portability:
+    - `apply_control_preset` (`quiet_hours`, `demo_mode`, `maintenance_mode`)
+    - `export_runtime_profile` / `import_runtime_profile`
   - Control actions include explicit sleep/wake toggles via `set_sleeping` (`sleeping=true|false`).
   - Personality controls support live preview and rollback: `preview_personality`, `commit_personality_preview`, `rollback_personality_preview`.
+  - `/api/operator-actions` now records tamper-evident chained signatures (`previous_signature`, `signature`, `signature_alg`).
 - Release checklist: [`docs/operations/release-checklist.md`](docs/operations/release-checklist.md).
 - Security maintenance: [`docs/operations/security-maintenance.md`](docs/operations/security-maintenance.md).
 - Error taxonomy: [`docs/operations/error-taxonomy.md`](docs/operations/error-taxonomy.md).

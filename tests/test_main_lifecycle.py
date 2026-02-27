@@ -277,6 +277,42 @@ def test_record_conversation_trace_writes_episodic_snapshot_for_action_turn():
     assert episode["tool_count"] == 1
 
 
+def test_conversation_latency_and_policy_decision_analytics():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._conversation_traces = deque(
+        [
+            {
+                "latencies_ms": {"total": 400.0},
+                "intent": "action",
+                "wake_mode": "wake_word",
+                "tool_calls": [{"name": "smart_home_control"}],
+                "policy_decisions": [{"tool": "smart_home_control", "status": "denied", "detail": "policy"}],
+                "requester_user": "operator",
+            },
+            {
+                "latencies_ms": {"total": 150.0},
+                "intent": "answer",
+                "wake_mode": "always_listening",
+                "tool_calls": [],
+                "policy_decisions": [],
+                "requester_user": "operator",
+            },
+        ],
+        maxlen=20,
+    )
+
+    latency = Jarvis._conversation_latency_analytics(jarvis)
+    assert latency["sample_count"] == 2
+    assert latency["overall_total_ms"]["p95"] >= latency["overall_total_ms"]["p50"]
+    assert "action" in latency["by_intent"]
+    assert "single" in latency["by_tool_mix"]
+
+    policy = Jarvis._policy_decision_analytics(jarvis)
+    assert policy["decision_count"] == 1
+    assert policy["by_tool"]["smart_home_control"] == 1
+    assert policy["by_user"]["operator"] == 1
+
+
 def test_apply_turn_choreography_sets_presence_bias_fields():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis.presence = SimpleNamespace(signals=SimpleNamespace(turn_lean=0.0, turn_tilt=0.0, turn_glance_yaw=0.0))
@@ -300,6 +336,7 @@ def test_publish_voice_status_includes_turn_choreography():
     jarvis._turn_choreography = {}
     jarvis.config = SimpleNamespace(identity_default_user="operator")
     jarvis._voice_user_profiles = {}
+    jarvis._active_control_preset = "custom"
     jarvis._observability = None
 
     with patch("jarvis.__main__.set_runtime_voice_state") as set_runtime:
@@ -313,6 +350,7 @@ def test_publish_voice_status_includes_turn_choreography():
     assert payload["stt_diagnostics"]["confidence_band"] == "unknown"
     assert payload["voice_profile_user"] == "operator"
     assert payload["voice_profile"]["verbosity"] == "normal"
+    assert payload["control_preset"] == "custom"
 
 
 def test_start_requires_sounddevice_for_local_tts_playback():
@@ -566,6 +604,7 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     jarvis.brain = SimpleNamespace(_memory=None)
     jarvis._personality_preview_snapshot = None
     jarvis._voice_user_profiles = {}
+    jarvis._active_control_preset = "custom"
     jarvis._skills = SimpleNamespace(
         discover=MagicMock(),
         status_snapshot=lambda: {"enabled": True},
@@ -703,6 +742,28 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     )
     assert clear_voice_profile == {"ok": True, "user": "operator", "removed": True}
 
+    preset_result = await Jarvis._operator_control_handler(
+        jarvis,
+        "apply_control_preset",
+        {"preset": "quiet_hours"},
+    )
+    assert preset_result["ok"] is True
+    assert preset_result["preset"] == "quiet_hours"
+    assert jarvis._active_control_preset == "quiet_hours"
+
+    export_result = await Jarvis._operator_control_handler(jarvis, "export_runtime_profile", {})
+    assert export_result["ok"] is True
+    assert export_result["runtime_profile"]["active_control_preset"] == "quiet_hours"
+
+    import_result = await Jarvis._operator_control_handler(
+        jarvis,
+        "import_runtime_profile",
+        {"profile": {"persona_style": "friendly", "backchannel_style": "balanced", "tts_enabled": True}},
+    )
+    assert import_result["ok"] is True
+    assert import_result["runtime_profile"]["persona_style"] == "friendly"
+    assert jarvis._active_control_preset == "custom"
+
     unknown = await Jarvis._operator_control_handler(jarvis, "nope", {})
     assert unknown["ok"] is False
     assert unknown["error"] == "invalid_action"
@@ -732,6 +793,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     save_target._voice_user_profiles = {
         "operator": {"verbosity": "brief", "confirmations": "minimal", "pace": "fast"}
     }
+    save_target._active_control_preset = "quiet_hours"
     save_target._tts_output_enabled = False
     save_target._awaiting_confirmation = True
     save_target._pending_text = "arm the system"
@@ -764,6 +826,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     assert payload["runtime"]["persona_style"] == "friendly"
     assert payload["runtime"]["backchannel_style"] == "expressive"
     assert payload["runtime"]["voice_user_profiles"]["operator"]["verbosity"] == "brief"
+    assert payload["runtime"]["active_control_preset"] == "quiet_hours"
     assert payload["awaiting_repair_confirmation"] is True
     assert payload["repair_candidate_text"] == "turn on the porch lights"
     assert payload["episodic_timeline_seq"] == 4
@@ -788,6 +851,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     load_target._awaiting_repair_confirmation = False
     load_target._repair_candidate_text = None
     load_target._voice_user_profiles = {}
+    load_target._active_control_preset = "custom"
     load_target._episode_seq = 0
     load_target._episodic_timeline = deque(maxlen=200)
     with patch("jarvis.__main__.service_tools.set_safe_mode") as set_safe_mode:
@@ -809,6 +873,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     assert load_target._awaiting_repair_confirmation is True
     assert load_target._repair_candidate_text == "turn on the porch lights"
     assert load_target._voice_user_profiles["operator"]["verbosity"] == "brief"
+    assert load_target._active_control_preset == "quiet_hours"
     assert load_target._episode_seq == 4
     assert len(load_target._episodic_timeline) == 1
     assert load_target._episodic_timeline[0]["summary"].startswith("Turn on the porch lights")
