@@ -1,0 +1,57 @@
+{
+  "operator": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8080,
+    "auth_mode": "session",
+    "auth_required": true,
+    "auth_token_configured": true,
+    "auth_risk": "low"
+  },
+  "conversation_trace": {
+    "recent_count": 1,
+    "latest_turn_id": 11
+  },
+  "episodic_timeline": {
+    "recent_count": 1,
+    "latest_episode_id": 7,
+    "recent": [
+      {
+        "episode_id": 7
+      }
+    ]
+  },
+  "personality_preview": {
+    "active": true,
+    "baseline": {
+      "persona_style": "composed"
+    },
+    "current": {
+      "persona_style": "friendly",
+      "backchannel_style": "balanced"
+    }
+  },
+  "operator_controls": {
+    "active_control_preset": "custom",
+    "available_control_presets": [
+      "custom"
+    ],
+    "runtime_profile": {
+      "wake_mode": "wake_word"
+    }
+  },
+  "runtime_invariants": {
+    "total_violations": 0
+  },
+  "operator_recommendations": {
+    "severity": "low",
+    "count": 1,
+    "recommended": [
+      {
+        "severity": "low",
+        "code": "healthy",
+        "message": "No immediate operator action required."
+      }
+    ]
+  }
+}

@@ -15,6 +15,7 @@ on:
           - network
           - storage
           - contract
+          - chaos
 
 concurrency:
   group: fault-profiles-${{ github.workflow }}-${{ github.ref }}
@@ -27,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.profile != 'all' && fromJSON(format('["{0}"]', github.event.inputs.profile)) || fromJSON('["quick","network","storage","contract"]') }}
+        profile: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.profile != 'all' && fromJSON(format('["{0}"]', github.event.inputs.profile)) || fromJSON('["quick","network","storage","contract","chaos"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -47,7 +48,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .artifacts/fault-profiles
-          ./scripts/run_fault_profiles.sh "${{ matrix.profile }}" | tee ".artifacts/fault-profiles/${{ matrix.profile }}.log"
+          if [[ "${{ matrix.profile }}" == "chaos" ]]; then
+            ./scripts/test_fault_chaos.sh quick,network,storage,contract 2 | tee ".artifacts/fault-profiles/${{ matrix.profile }}.log"
+          else
+            ./scripts/run_fault_profiles.sh "${{ matrix.profile }}" | tee ".artifacts/fault-profiles/${{ matrix.profile }}.log"
+          fi
 
       - name: Upload profile artifact
         if: always()

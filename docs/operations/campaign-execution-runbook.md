@@ -12,9 +12,11 @@ Defines standard soak/fault campaign cadence, command set, and artifact retentio
 - Pre-release: medium campaign
   - `make test-soak-campaign`
   - `make test-fault-campaign`
+  - `make test-fault-chaos`
 - Release candidate: extended campaign
   - `./scripts/test_soak_campaign.sh live 2`
   - `./scripts/test_fault_campaign.sh all 2`
+  - `./scripts/test_fault_chaos.sh quick,network,storage,contract 3`
 
 ## Artifact Contract
 

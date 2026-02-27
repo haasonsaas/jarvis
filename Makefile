@@ -1,4 +1,4 @@
-.PHONY: check test-fast test-sim test-sim-acceptance test-faults test-fault-profiles test-fault-campaign test-soak test-soak-reliability test-soak-extended test-soak-campaign test-personality security-gate \
+.PHONY: check test-fast test-sim test-sim-acceptance test-faults test-fault-profiles test-fault-campaign test-fault-chaos test-soak test-soak-reliability test-soak-extended test-soak-campaign test-personality security-gate \
 	bootstrap quality-report eval-dataset quality-trend-gate release-channel-check release-acceptance readiness
 
 check:
@@ -22,6 +22,9 @@ test-fault-profiles:
 
 test-fault-campaign:
 	./scripts/test_fault_campaign.sh quick,network,storage,contract 2
+
+test-fault-chaos:
+	./scripts/test_fault_chaos.sh quick,network,storage,contract 2
 
 test-soak:
 	./scripts/test_soak.sh

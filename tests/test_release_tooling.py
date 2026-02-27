@@ -173,6 +173,44 @@ def test_run_fault_campaign_profile_matrix_contract():
     assert phases[0][1] == ["./scripts/run_fault_profiles.sh", "quick"]
 
 
+def test_run_fault_chaos_permutations_and_plan_contract():
+    project_root = Path(__file__).resolve().parents[1]
+    module = _load_script_module("run_fault_chaos_script", project_root / "scripts" / "run_fault_chaos.py")
+
+    assert module._normalize_profiles("quick,network,quick") == ["quick", "network"]
+    with pytest.raises(ValueError):
+        module._normalize_profiles("quick,invalid")
+
+    orders = module._permuted_orders(["quick", "network", "storage"], permutations=3)
+    assert orders[0] == ["quick", "network", "storage"]
+    assert orders[1] == ["quick", "storage", "network"]
+    assert len(orders) == 3
+
+    plan = module._phase_plan(orders=orders[:1])
+    phase_names = [name for name, _ in plan]
+    assert phase_names == [
+        "fault_quick_p1",
+        "fault_network_p1",
+        "fault_storage_p1",
+        "recovery_idempotence_p1",
+    ]
+
+    checks = module._artifact_checks(
+        [
+            {
+                "phase": "fault_quick_p1",
+                "status": "passed",
+                "started_at": 1.0,
+                "finished_at": 2.0,
+            }
+        ],
+        expected_phase_count=4,
+    )
+    assert checks["all_status_valid"] is True
+    assert checks["all_timestamps_present"] is True
+    assert checks["expected_phase_count"] == 4
+
+
 def test_check_quality_trends_builds_delta_checks():
     project_root = Path(__file__).resolve().parents[1]
     module = _load_script_module("check_quality_trends_script", project_root / "scripts" / "check_quality_trends.py")

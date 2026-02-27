@@ -10,6 +10,7 @@ run_core() {
     tests/test_voice_attention.py \
     tests/test_turn_taking.py \
     tests/test_tools_services.py -k "system_status or scorecard or identity"
+  uv run pytest -q tests/test_runtime_operator_status.py -k "snapshot_contract_paths_stable or recommendation_codes_stress_contract"
   ./scripts/test_sim_acceptance.sh fast 1
 }
 

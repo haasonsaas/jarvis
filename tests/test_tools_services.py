@@ -3938,6 +3938,7 @@ class TestServicesTools:
         assert "integration_hub" in integrations_doc
         assert "make test-soak-campaign" in campaign_doc
         assert "make test-fault-campaign" in campaign_doc
+        assert "make test-fault-chaos" in campaign_doc
         assert "make test-sim-acceptance" in hardware_doc
         assert "make quality-trend-gate" in hardware_doc
         assert "--no-motion" in hardware_doc
@@ -4529,7 +4530,9 @@ class TestServicesTools:
         assert (project_root / "scripts" / "check_release_channel.py").exists()
         assert (project_root / "scripts" / "jarvis_readiness.sh").exists()
         assert (project_root / "scripts" / "run_fault_campaign.py").exists()
+        assert (project_root / "scripts" / "run_fault_chaos.py").exists()
         assert (project_root / "scripts" / "test_fault_campaign.sh").exists()
+        assert (project_root / "scripts" / "test_fault_chaos.sh").exists()
         assert (project_root / "scripts" / "test_soak_campaign.sh").exists()
         assert (project_root / "scripts" / "run_sim_acceptance.py").exists()
         assert (project_root / "scripts" / "test_sim_acceptance.sh").exists()
@@ -4547,4 +4550,5 @@ class TestServicesTools:
         assert "readiness" in makefile_text
         assert "test-sim-acceptance" in makefile_text
         assert "test-fault-campaign" in makefile_text
+        assert "test-fault-chaos" in makefile_text
         assert "test-soak-campaign" in makefile_text
