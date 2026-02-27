@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 60 (Webhook Integration Decomposition)
+# Jarvis TODO — Wave 61 (Five Hotspot Decomposition Sweep)
 
 Last updated: 2026-02-27
 
@@ -8,67 +8,114 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 23
-- Completed: 23
+- Total items: 40
+- Completed: 40
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W60-A01` Re-profile next integration hotspots after Wave 59.
-- [x] `W60-A02` Select `services_domains/integrations_webhook.py` for decomposition.
-- [x] `W60-A03` Preserve API contract for `webhook_trigger`, `webhook_inbound_list`, and `webhook_inbound_clear`.
+- [x] `W61-A01` Confirm baseline and identify remaining highest-concentration service-domain modules.
+- [x] `W61-A02` Select 5-module hotspot sweep:
+- [x] `W61-A03` `home_orch_automation.py`
+- [x] `W61-A04` `home_ha_conversation.py`
+- [x] `W61-A05` `comms_notify_webhooks.py`
+- [x] `W61-A06` `planner_engine_autonomy.py`
+- [x] `W61-A07` `trust_memory_query.py`
+- [x] `W61-A08` Preserve public function contracts and existing behavior/messages.
 
-## B) Decomposition design
+## B) Home automation split
 
-- [x] `W60-B01` Extract outbound delivery flow to `integrations_webhook_trigger.py`.
-- [x] `W60-B02` Extract inbound event list/clear flow to `integrations_webhook_inbound.py`.
-- [x] `W60-B03` Keep `integrations_webhook.py` as export facade.
+- [x] `W61-B01` Create `home_orch_automation_suggest_create.py`.
+- [x] `W61-B02` Move `home_orch_automation_suggest`.
+- [x] `W61-B03` Move `home_orch_automation_create`.
+- [x] `W61-B04` Create `home_orch_automation_apply_status.py`.
+- [x] `W61-B05` Move `home_orch_automation_apply`.
+- [x] `W61-B06` Move `home_orch_automation_rollback`.
+- [x] `W61-B07` Move `home_orch_automation_status`.
+- [x] `W61-B08` Reduce `home_orch_automation.py` to exports.
 
-## C) Extraction implementation
+## C) Conversation split
 
-- [x] `W60-C01` Create `services_domains/integrations_webhook_trigger.py`.
-- [x] `W60-C02` Move policy + allowlist + preview + delivery + dead-letter logic.
-- [x] `W60-C03` Create `services_domains/integrations_webhook_inbound.py`.
-- [x] `W60-C04` Move inbound list and clear handlers.
-- [x] `W60-C05` Replace `integrations_webhook.py` with thin exports.
+- [x] `W61-C01` Create `home_ha_conversation_preflight.py`.
+- [x] `W61-C02` Move policy/guard/preview checks.
+- [x] `W61-C03` Create `home_ha_conversation_execute.py`.
+- [x] `W61-C04` Move HA conversation request/response handling.
+- [x] `W61-C05` Reduce `home_ha_conversation.py` to orchestrator wrapper.
 
-## D) Boundaries and quality
+## D) Notifications split
 
-- [x] `W60-D01` Add import-boundary check for `integrations_webhook_trigger`.
-- [x] `W60-D02` Add import-boundary check for `integrations_webhook_inbound`.
-- [x] `W60-D03` Keep lazy service-helper access in extracted modules.
+- [x] `W61-D01` Create `comms_notify_slack.py`.
+- [x] `W61-D02` Move `slack_notify`.
+- [x] `W61-D03` Create `comms_notify_discord.py`.
+- [x] `W61-D04` Move `discord_notify`.
+- [x] `W61-D05` Reduce `comms_notify_webhooks.py` to exports.
 
-## E) Validation
+## E) Planner autonomy split
 
-- [x] `W60-E01` Run focused lint for changed webhook modules + boundary test file.
-- [x] `W60-E02` Run targeted webhook tests from `test_tools_services.py`.
-- [x] `W60-E03` Run `tests/test_import_boundaries.py`.
-- [x] `W60-E04` Run full `make check`.
-- [x] `W60-E05` Run full `make security-gate`.
-- [x] `W60-E06` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W61-E01` Create `planner_engine_autonomy_schedule_checkpoint.py`.
+- [x] `W61-E02` Move `planner_autonomy_schedule`.
+- [x] `W61-E03` Move `planner_autonomy_checkpoint`.
+- [x] `W61-E04` Create `planner_engine_autonomy_cycle.py`.
+- [x] `W61-E05` Move `planner_autonomy_cycle`.
+- [x] `W61-E06` Create `planner_engine_autonomy_status.py`.
+- [x] `W61-E07` Move `planner_autonomy_status`.
+- [x] `W61-E08` Reduce `planner_engine_autonomy.py` to exports.
 
-## F) Release loop
+## F) Trust memory query split
 
-- [x] `W60-F01` Capture post-split line-count outcomes.
-- [x] `W60-F02` Commit Wave 60 changes.
-- [x] `W60-F03` Push Wave 60 to remote.
+- [x] `W61-F01` Create `trust_memory_search.py`.
+- [x] `W61-F02` Move `memory_search`.
+- [x] `W61-F03` Create `trust_memory_recent.py`.
+- [x] `W61-F04` Move `memory_recent`.
+- [x] `W61-F05` Create `trust_memory_status_view.py`.
+- [x] `W61-F06` Move `memory_status`.
+- [x] `W61-F07` Reduce `trust_memory_query.py` to exports.
+
+## G) Boundaries and validation
+
+- [x] `W61-G01` Extend import-boundary coverage for all newly extracted modules.
+- [x] `W61-G02` Run focused lint for all changed modules.
+- [x] `W61-G03` Run targeted pytest for affected behavior clusters.
+- [x] `W61-G04` Run `tests/test_import_boundaries.py`.
+- [x] `W61-G05` Run full `make check`.
+- [x] `W61-G06` Run full `make security-gate`.
+- [x] `W61-G07` Run `./scripts/jarvis_readiness.sh fast`.
+
+## H) Release loop
+
+- [x] `W61-H01` Record post-split line-count outcomes.
+- [x] `W61-H02` Commit Wave 61.
+- [x] `W61-H03` Push Wave 61.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Webhook integration decomposition:
-  - `services_domains/integrations_webhook.py`: `268 -> 11` lines (thin exports).
-  - New `services_domains/integrations_webhook_trigger.py`: `233` lines.
-  - New `services_domains/integrations_webhook_inbound.py`: `50` lines.
-- Boundary enforcement:
-  - Added import-boundary coverage for both extracted webhook modules.
+- Five hotspot modules decomposed to facades/wrappers:
+  - `home_orch_automation.py`: `288 -> 21`
+  - `home_ha_conversation.py`: `268 -> 30`
+  - `comms_notify_webhooks.py`: `257 -> 8`
+  - `planner_engine_autonomy.py`: `254 -> 17`
+  - `trust_memory_query.py`: `243 -> 9`
+- New extracted modules (selected):
+  - `home_orch_automation_suggest_create.py` (`99`)
+  - `home_orch_automation_apply_status.py` (`204`)
+  - `home_ha_conversation_preflight.py` (`172`)
+  - `home_ha_conversation_execute.py` (`140`)
+  - `comms_notify_slack.py` (`133`)
+  - `comms_notify_discord.py` (`138`)
+  - `planner_engine_autonomy_schedule_checkpoint.py` (`121`)
+  - `planner_engine_autonomy_cycle.py` (`115`)
+  - `planner_engine_autonomy_status.py` (`46`)
+  - `trust_memory_search.py` (`134`)
+  - `trust_memory_recent.py` (`72`)
+  - `trust_memory_status_view.py` (`59`)
 - Validation status:
   - Focused lint: pass.
-  - Targeted webhook tests: pass (`4 passed`, `218 deselected`).
-  - `tests/test_import_boundaries.py`: pass (`73 passed`).
-  - `make check`: `662 passed`.
-  - `make security-gate`: `662 passed`; fault subset `3 passed`.
+  - Focused pytest clusters: pass.
+  - `tests/test_import_boundaries.py`: `85 passed`.
+  - `make check`: `674 passed`.
+  - `make security-gate`: `674 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
