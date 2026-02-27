@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 48 (Planner Schedule Decomposition)
+# Jarvis TODO — Wave 49 (Comms Notification Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,64 +8,62 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 27
-- Completed: 27
+- Total items: 25
+- Completed: 25
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W48-A01` Confirm Wave 47 merged and branch baseline clean.
-- [x] `W48-A02` Re-profile largest remaining service-domain modules.
-- [x] `W48-A03` Select `services_domains/planner_schedule.py` for decomposition.
-- [x] `W48-A04` Preserve API compatibility via export shim.
+- [x] `W49-A01` Confirm Wave 48 merged locally and baseline status.
+- [x] `W49-A02` Re-profile largest domain modules after planner split.
+- [x] `W49-A03` Select `services_domains/comms_notifications.py` for further decomposition.
+- [x] `W49-A04` Preserve existing compatibility import surface.
 
 ## B) Decomposition design
 
-- [x] `W48-B01` Define `planner_timers.py` for timer handlers.
-- [x] `W48-B02` Define `planner_reminders.py` for reminder handlers and reminder payload helpers.
-- [x] `W48-B03` Keep runtime behavior and lazy services binding unchanged.
+- [x] `W49-B01` Define `comms_notify_webhooks.py` for Slack/Discord handlers.
+- [x] `W49-B02` Define `comms_notify_pushover.py` for Pushover handler.
+- [x] `W49-B03` Keep lazy `services` binding and existing behavior unchanged.
 
 ## C) Extraction implementation
 
-- [x] `W48-C01` Create `services_domains/planner_timers.py`.
-- [x] `W48-C02` Move `timer_create`, `timer_list`, `timer_cancel`.
-- [x] `W48-C03` Create `services_domains/planner_reminders.py`.
-- [x] `W48-C04` Move `_list_reminder_payloads`, `_due_unnotified_reminder_payloads`.
-- [x] `W48-C05` Move `reminder_create`, `reminder_list`, `reminder_complete`, `reminder_notify_due`.
+- [x] `W49-C01` Create `services_domains/comms_notify_webhooks.py`.
+- [x] `W49-C02` Move `slack_notify` and `discord_notify`.
+- [x] `W49-C03` Create `services_domains/comms_notify_pushover.py`.
+- [x] `W49-C04` Move `pushover_notify`.
+- [x] `W49-C05` Replace `services_domains/comms_notifications.py` with compatibility exports.
 
-## D) Compatibility and boundaries
+## D) Boundaries
 
-- [x] `W48-D01` Replace `services_domains/planner_schedule.py` with compatibility exports.
-- [x] `W48-D02` Keep imports used by `services_domains/planner.py` stable.
-- [x] `W48-D03` Add import-boundary check for `planner_timers`.
-- [x] `W48-D04` Add import-boundary check for `planner_reminders`.
+- [x] `W49-D01` Add import-boundary check for `comms_notify_webhooks`.
+- [x] `W49-D02` Add import-boundary check for `comms_notify_pushover`.
 
 ## E) Validation
 
-- [x] `W48-E01` Run focused lint on planner schedule modules + boundary test file.
-- [x] `W48-E02` Run targeted pytest for timer/reminder handlers + boundaries.
-- [x] `W48-E03` Run full `make check`.
-- [x] `W48-E04` Run full `make security-gate`.
-- [x] `W48-E05` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W49-E01` Run focused lint on touched comms notification modules + boundary test file.
+- [x] `W49-E02` Run targeted pytest for Slack/Discord/Pushover handlers + boundaries.
+- [x] `W49-E03` Run full `make check`.
+- [x] `W49-E04` Run full `make security-gate`.
+- [x] `W49-E05` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W48-F01` Capture post-split line-count outcomes.
-- [x] `W48-F02` Commit and push Wave 48.
+- [x] `W49-F01` Capture post-split line-count outcomes.
+- [x] `W49-F02` Commit and push Wave 49.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Planner schedule decomposition:
-  - `services_domains/planner_schedule.py`: `535 -> 25` lines (compatibility exports)
-  - New `services_domains/planner_timers.py`: `201` lines
-  - New `services_domains/planner_reminders.py`: `346` lines
+- Comms notification decomposition:
+  - `services_domains/comms_notifications.py`: `415 -> 15` lines (compatibility exports)
+  - New `services_domains/comms_notify_webhooks.py`: `257` lines
+  - New `services_domains/comms_notify_pushover.py`: `169` lines
 - Boundary enforcement:
-  - Added import-boundary coverage for new planner timer/reminder modules.
+  - Added import-boundary coverage for new comms notification modules.
 - Validation status:
-  - `make check`: `634 passed`
-  - `make security-gate`: `634 passed`; fault subset `3 passed`
+  - `make check`: `636 passed`
+  - `make security-gate`: `636 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
