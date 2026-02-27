@@ -9,8 +9,8 @@ Last updated: 2026-02-27
 
 ## Completion summary
 - Total items: 33
-- Completed: 17
-- Remaining: 16
+- Completed: 26
+- Remaining: 7
 
 ---
 
@@ -42,17 +42,17 @@ Last updated: 2026-02-27
 
 ---
 
-## D) Wave 75 (next): services constants/bootstrap extraction
+## D) Wave 75 (completed): services constants/bootstrap extraction
 
-- [ ] `W75-D01` Profile top-level concentration in `src/jarvis/tools/services.py`.
-- [ ] `W75-D02` Extract static defaults/constants into `services_defaults.py`.
-- [ ] `W75-D03` Keep all existing constant names available via `services.py` compatibility re-exports.
-- [ ] `W75-D04` Validate no behavioral change for path defaults and policy constants.
-- [ ] `W75-D05` Add/extend import-boundary test coverage for new defaults module.
-- [ ] `W75-D06` Run focused tests for status/governance and home/comms tools.
-- [ ] `W75-D07` Run `make check`.
-- [ ] `W75-D08` Run `make security-gate`.
-- [ ] `W75-D09` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W75-D01` Profile top-level concentration in `src/jarvis/tools/services.py`.
+- [x] `W75-D02` Extract static defaults/constants into `services_defaults.py`.
+- [x] `W75-D03` Keep all existing constant names available via `services.py` compatibility re-exports.
+- [x] `W75-D04` Validate no behavioral change for path defaults and policy constants.
+- [x] `W75-D05` Add/extend import-boundary test coverage for new defaults module.
+- [x] `W75-D06` Run focused tests for status/governance and home/comms tools.
+- [x] `W75-D07` Run `make check`.
+- [x] `W75-D08` Run `make security-gate`.
+- [x] `W75-D09` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## E) Wave 75 (next): __main__ observability snapshot dedupe
 
@@ -65,16 +65,18 @@ Last updated: 2026-02-27
 
 ---
 
-## Outcome snapshot (latest completed wave)
+## Outcome snapshot (latest completed tranche)
 
-- `services_governance_contract.py`: reduced to wrapper that composes field catalogs.
-- New modules:
-  - `services_governance_contract_core_fields.py`
-  - `services_governance_contract_operational_fields.py`
-  - `services_governance_contract_expansion_fields.py`
-- Validation (Wave 74):
-  - `uv run pytest -q tests/test_import_boundaries.py`: `168 passed`.
-  - `uv run pytest -q tests/test_tools_services.py -k "system_status_contract_payload_includes_tool_policy_keys or system_status_contract_payload_includes_observability_requirements or system_status_reports_snapshot"`: `1 passed`.
-  - `make check`: `757 passed`.
-  - `make security-gate`: `757 passed`; fault subset `3 passed`.
+- New module:
+  - `services_defaults.py`
+- Compatibility preservation:
+  - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
+  - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
+  - `services.re` export preserved for domain-module compatibility.
+- Validation (Wave 75D):
+  - `uv run pytest -q tests/test_import_boundaries.py`: `169 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "system_status or jarvis_scorecard or skills_governance or quality_evaluator or embodiment_presence"`: `7 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "smart_home or media_control or todoist or email_send or slack_notify or discord_notify or pushover_notify"`: `87 passed`.
+  - `make check`: `758 passed`.
+  - `make security-gate`: `758 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

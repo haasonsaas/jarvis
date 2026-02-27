@@ -1,0 +1,133 @@
+"""Shared services defaults and static constants."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+# Audit log in user's home dir for predictable location.
+AUDIT_LOG = Path.home() / ".jarvis" / "audit.jsonl"
+DEFAULT_RECOVERY_JOURNAL = Path.home() / ".jarvis" / "recovery-journal.jsonl"
+DEFAULT_DEAD_LETTER_QUEUE = Path.home() / ".jarvis" / "dead-letter-queue.jsonl"
+DEFAULT_EXPANSION_STATE = Path.home() / ".jarvis" / "expansion-state.json"
+DEFAULT_RELEASE_CHANNEL_CONFIG = Path("config/release-channels.json")
+QUALITY_REPORT_DIR_DEFAULT = Path.home() / ".jarvis" / "quality-reports"
+NOTES_CAPTURE_DIR_DEFAULT = Path.home() / ".jarvis" / "notes"
+
+ACTION_COOLDOWN_SEC = 2.0
+ACTION_HISTORY_RETENTION_SEC = 3600.0
+ACTION_HISTORY_MAX_ENTRIES = 2000
+HA_STATE_CACHE_TTL_SEC = 2.0
+TODOIST_LIST_MAX_RETRIES = 2
+RETRY_BASE_DELAY_SEC = 0.2
+RETRY_MAX_DELAY_SEC = 1.0
+RETRY_JITTER_RATIO = 0.2
+SYSTEM_STATUS_CONTRACT_VERSION = "2.0"
+HA_CONVERSATION_MAX_TEXT_CHARS = 600
+TIMER_MAX_SECONDS = 86_400.0
+TIMER_MAX_ACTIVE = 200
+REMINDER_MAX_ACTIVE = 500
+CALENDAR_DEFAULT_WINDOW_HOURS = 24.0
+CALENDAR_MAX_WINDOW_HOURS = 24.0 * 31.0
+PLAN_PREVIEW_TTL_SEC = 300.0
+PLAN_PREVIEW_MAX_PENDING = 1000
+CACHED_QUALITY_REPORT_MAX = 32
+GUEST_SESSION_DEFAULT_TTL_SEC = 3600.0
+GUEST_SESSION_MAX_TTL_SEC = 24.0 * 3600.0
+HOME_TASK_MAX_TRACKED = 400
+PLANNER_TASK_GRAPH_MAX = 300
+DEFERRED_ACTION_MAX = 500
+NUDGE_RECENT_DISPATCH_MAX = 500
+HOME_AUTOMATION_MAX_TRACKED = 300
+AUTONOMY_CYCLE_HISTORY_MAX = 200
+RELEASE_CHANNELS = {"dev", "beta", "stable"}
+NOTION_API_VERSION = "2022-06-28"
+SKILL_SANDBOX_TEMPLATES: dict[str, dict[str, Any]] = {
+    "read-only": {
+        "filesystem": "read_only",
+        "network": "allow",
+        "writes": [],
+        "description": "Read-only filesystem with normal outbound access.",
+    },
+    "network-limited": {
+        "filesystem": "read_write",
+        "network": "allowlist",
+        "writes": ["workspace"],
+        "description": "Write-capable workspace with explicit outbound allowlist.",
+    },
+    "local-only": {
+        "filesystem": "read_write",
+        "network": "deny",
+        "writes": ["workspace"],
+        "description": "No outbound networking; local operations only.",
+    },
+}
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3
+CIRCUIT_BREAKER_BASE_COOLDOWN_SEC = 15.0
+CIRCUIT_BREAKER_MAX_COOLDOWN_SEC = 300.0
+CIRCUIT_BREAKER_ERROR_CODES = {
+    "timeout",
+    "cancelled",
+    "network_client_error",
+    "http_error",
+    "api_error",
+    "auth",
+    "unexpected",
+}
+_DURATION_SEGMENT_RE = re.compile(
+    r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)",
+    re.IGNORECASE,
+)
+_PII_PATTERNS = [
+    re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),  # US SSN
+    re.compile(r"\b(?:\d[ -]*?){13,16}\b"),  # payment-card-like sequence
+    re.compile(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"),  # phone-like sequence
+    re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),  # email
+]
+
+
+def default_proactive_state() -> dict[str, Any]:
+    return {
+        "pending_follow_through": [],
+        "digest_snoozed_until": 0.0,
+        "last_briefing_at": 0.0,
+        "last_digest_at": 0.0,
+        "nudge_decisions_total": 0,
+        "nudge_interrupt_total": 0,
+        "nudge_notify_total": 0,
+        "nudge_defer_total": 0,
+        "nudge_deduped_total": 0,
+        "last_nudge_decision_at": 0.0,
+        "last_nudge_dedupe_at": 0.0,
+        "nudge_recent_dispatches": [],
+    }
+
+
+def default_privacy_posture() -> dict[str, Any]:
+    return {
+        "state": "normal",
+        "reason": "startup",
+        "updated_at": 0.0,
+    }
+
+
+def default_motion_safety_envelope() -> dict[str, Any]:
+    return {
+        "proximity_limit_cm": 35.0,
+        "max_yaw_deg": 45.0,
+        "max_pitch_deg": 20.0,
+        "max_roll_deg": 15.0,
+        "hardware_state": "normal",
+        "updated_at": 0.0,
+    }
+
+
+def default_release_channel_state() -> dict[str, Any]:
+    return {
+        "active_channel": "dev",
+        "last_check_at": 0.0,
+        "last_check_channel": "",
+        "last_check_passed": False,
+        "migration_checks": [],
+    }

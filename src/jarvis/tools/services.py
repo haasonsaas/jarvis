@@ -12,7 +12,7 @@ import hmac  # noqa: F401  # accessed by domain modules via services module alia
 import json  # noqa: F401  # accessed by domain modules via services module alias
 import logging
 import math
-import re
+import re  # noqa: F401  # accessed by domain modules via services module alias
 import smtplib  # noqa: F401  # accessed by domain modules via services module alias
 import sys
 import time
@@ -53,6 +53,7 @@ from jarvis.tools.service_schemas import (
     SERVICE_RUNTIME_REQUIRED_FIELDS,  # noqa: F401  # compatibility export for tests/importers
     SERVICE_TOOL_SCHEMAS,  # noqa: F401  # compatibility export for tests/importers
 )
+from jarvis.tools import services_defaults as _services_defaults
 from jarvis.tools.services_server import create_services_server  # noqa: F401  # compatibility export for callers
 from jarvis.tools.services_runtime_state import (
     append_quality_report as _runtime_append_quality_report,
@@ -328,85 +329,51 @@ except Exception:  # pragma: no cover - optional dependency fallback
 
 log = logging.getLogger(__name__)
 
-# Audit log in user's home dir for predictable location
-AUDIT_LOG = Path.home() / ".jarvis" / "audit.jsonl"
-DEFAULT_RECOVERY_JOURNAL = Path.home() / ".jarvis" / "recovery-journal.jsonl"
-DEFAULT_DEAD_LETTER_QUEUE = Path.home() / ".jarvis" / "dead-letter-queue.jsonl"
-DEFAULT_EXPANSION_STATE = Path.home() / ".jarvis" / "expansion-state.json"
-DEFAULT_RELEASE_CHANNEL_CONFIG = Path("config/release-channels.json")
+# Re-export static defaults for compatibility with runtime/domain helpers that
+# access them through the `jarvis.tools.services` module alias.
+AUDIT_LOG = _services_defaults.AUDIT_LOG
+DEFAULT_RECOVERY_JOURNAL = _services_defaults.DEFAULT_RECOVERY_JOURNAL
+DEFAULT_DEAD_LETTER_QUEUE = _services_defaults.DEFAULT_DEAD_LETTER_QUEUE
+DEFAULT_EXPANSION_STATE = _services_defaults.DEFAULT_EXPANSION_STATE
+DEFAULT_RELEASE_CHANNEL_CONFIG = _services_defaults.DEFAULT_RELEASE_CHANNEL_CONFIG
+QUALITY_REPORT_DIR_DEFAULT = _services_defaults.QUALITY_REPORT_DIR_DEFAULT
+NOTES_CAPTURE_DIR_DEFAULT = _services_defaults.NOTES_CAPTURE_DIR_DEFAULT
 
-ACTION_COOLDOWN_SEC = 2.0
-ACTION_HISTORY_RETENTION_SEC = 3600.0
-ACTION_HISTORY_MAX_ENTRIES = 2000
-HA_STATE_CACHE_TTL_SEC = 2.0
-TODOIST_LIST_MAX_RETRIES = 2
-RETRY_BASE_DELAY_SEC = 0.2
-RETRY_MAX_DELAY_SEC = 1.0
-RETRY_JITTER_RATIO = 0.2
-SYSTEM_STATUS_CONTRACT_VERSION = "2.0"
-HA_CONVERSATION_MAX_TEXT_CHARS = 600
-TIMER_MAX_SECONDS = 86_400.0
-TIMER_MAX_ACTIVE = 200
-REMINDER_MAX_ACTIVE = 500
-CALENDAR_DEFAULT_WINDOW_HOURS = 24.0
-CALENDAR_MAX_WINDOW_HOURS = 24.0 * 31.0
-PLAN_PREVIEW_TTL_SEC = 300.0
-PLAN_PREVIEW_MAX_PENDING = 1000
-CACHED_QUALITY_REPORT_MAX = 32
-GUEST_SESSION_DEFAULT_TTL_SEC = 3600.0
-GUEST_SESSION_MAX_TTL_SEC = 24.0 * 3600.0
-HOME_TASK_MAX_TRACKED = 400
-PLANNER_TASK_GRAPH_MAX = 300
-DEFERRED_ACTION_MAX = 500
-NUDGE_RECENT_DISPATCH_MAX = 500
-HOME_AUTOMATION_MAX_TRACKED = 300
-AUTONOMY_CYCLE_HISTORY_MAX = 200
-QUALITY_REPORT_DIR_DEFAULT = Path.home() / ".jarvis" / "quality-reports"
-NOTES_CAPTURE_DIR_DEFAULT = Path.home() / ".jarvis" / "notes"
-RELEASE_CHANNELS = {"dev", "beta", "stable"}
-NOTION_API_VERSION = "2022-06-28"
-SKILL_SANDBOX_TEMPLATES: dict[str, dict[str, Any]] = {
-    "read-only": {
-        "filesystem": "read_only",
-        "network": "allow",
-        "writes": [],
-        "description": "Read-only filesystem with normal outbound access.",
-    },
-    "network-limited": {
-        "filesystem": "read_write",
-        "network": "allowlist",
-        "writes": ["workspace"],
-        "description": "Write-capable workspace with explicit outbound allowlist.",
-    },
-    "local-only": {
-        "filesystem": "read_write",
-        "network": "deny",
-        "writes": ["workspace"],
-        "description": "No outbound networking; local operations only.",
-    },
-}
-CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3
-CIRCUIT_BREAKER_BASE_COOLDOWN_SEC = 15.0
-CIRCUIT_BREAKER_MAX_COOLDOWN_SEC = 300.0
-CIRCUIT_BREAKER_ERROR_CODES = {
-    "timeout",
-    "cancelled",
-    "network_client_error",
-    "http_error",
-    "api_error",
-    "auth",
-    "unexpected",
-}
-_DURATION_SEGMENT_RE = re.compile(
-    r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)",
-    re.IGNORECASE,
-)
-_PII_PATTERNS = [
-    re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),  # US SSN
-    re.compile(r"\b(?:\d[ -]*?){13,16}\b"),  # payment-card-like sequence
-    re.compile(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"),  # phone-like sequence
-    re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),  # email
-]
+ACTION_COOLDOWN_SEC = _services_defaults.ACTION_COOLDOWN_SEC
+ACTION_HISTORY_RETENTION_SEC = _services_defaults.ACTION_HISTORY_RETENTION_SEC
+ACTION_HISTORY_MAX_ENTRIES = _services_defaults.ACTION_HISTORY_MAX_ENTRIES
+HA_STATE_CACHE_TTL_SEC = _services_defaults.HA_STATE_CACHE_TTL_SEC
+TODOIST_LIST_MAX_RETRIES = _services_defaults.TODOIST_LIST_MAX_RETRIES
+RETRY_BASE_DELAY_SEC = _services_defaults.RETRY_BASE_DELAY_SEC
+RETRY_MAX_DELAY_SEC = _services_defaults.RETRY_MAX_DELAY_SEC
+RETRY_JITTER_RATIO = _services_defaults.RETRY_JITTER_RATIO
+SYSTEM_STATUS_CONTRACT_VERSION = _services_defaults.SYSTEM_STATUS_CONTRACT_VERSION
+HA_CONVERSATION_MAX_TEXT_CHARS = _services_defaults.HA_CONVERSATION_MAX_TEXT_CHARS
+TIMER_MAX_SECONDS = _services_defaults.TIMER_MAX_SECONDS
+TIMER_MAX_ACTIVE = _services_defaults.TIMER_MAX_ACTIVE
+REMINDER_MAX_ACTIVE = _services_defaults.REMINDER_MAX_ACTIVE
+CALENDAR_DEFAULT_WINDOW_HOURS = _services_defaults.CALENDAR_DEFAULT_WINDOW_HOURS
+CALENDAR_MAX_WINDOW_HOURS = _services_defaults.CALENDAR_MAX_WINDOW_HOURS
+PLAN_PREVIEW_TTL_SEC = _services_defaults.PLAN_PREVIEW_TTL_SEC
+PLAN_PREVIEW_MAX_PENDING = _services_defaults.PLAN_PREVIEW_MAX_PENDING
+CACHED_QUALITY_REPORT_MAX = _services_defaults.CACHED_QUALITY_REPORT_MAX
+GUEST_SESSION_DEFAULT_TTL_SEC = _services_defaults.GUEST_SESSION_DEFAULT_TTL_SEC
+GUEST_SESSION_MAX_TTL_SEC = _services_defaults.GUEST_SESSION_MAX_TTL_SEC
+HOME_TASK_MAX_TRACKED = _services_defaults.HOME_TASK_MAX_TRACKED
+PLANNER_TASK_GRAPH_MAX = _services_defaults.PLANNER_TASK_GRAPH_MAX
+DEFERRED_ACTION_MAX = _services_defaults.DEFERRED_ACTION_MAX
+NUDGE_RECENT_DISPATCH_MAX = _services_defaults.NUDGE_RECENT_DISPATCH_MAX
+HOME_AUTOMATION_MAX_TRACKED = _services_defaults.HOME_AUTOMATION_MAX_TRACKED
+AUTONOMY_CYCLE_HISTORY_MAX = _services_defaults.AUTONOMY_CYCLE_HISTORY_MAX
+RELEASE_CHANNELS = _services_defaults.RELEASE_CHANNELS
+NOTION_API_VERSION = _services_defaults.NOTION_API_VERSION
+SKILL_SANDBOX_TEMPLATES = _services_defaults.SKILL_SANDBOX_TEMPLATES
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = _services_defaults.CIRCUIT_BREAKER_FAILURE_THRESHOLD
+CIRCUIT_BREAKER_BASE_COOLDOWN_SEC = _services_defaults.CIRCUIT_BREAKER_BASE_COOLDOWN_SEC
+CIRCUIT_BREAKER_MAX_COOLDOWN_SEC = _services_defaults.CIRCUIT_BREAKER_MAX_COOLDOWN_SEC
+CIRCUIT_BREAKER_ERROR_CODES = _services_defaults.CIRCUIT_BREAKER_ERROR_CODES
+_DURATION_SEGMENT_RE = _services_defaults._DURATION_SEGMENT_RE
+_PII_PATTERNS = _services_defaults._PII_PATTERNS
 
 _config: Config | None = None
 _memory: MemoryStore | None = None
@@ -483,20 +450,7 @@ _expansion_state_path: Path = DEFAULT_EXPANSION_STATE
 _release_channel_config_path: Path = DEFAULT_RELEASE_CHANNEL_CONFIG
 _quality_report_dir: Path = QUALITY_REPORT_DIR_DEFAULT
 _notes_capture_dir: Path = NOTES_CAPTURE_DIR_DEFAULT
-_proactive_state: dict[str, Any] = {
-    "pending_follow_through": [],
-    "digest_snoozed_until": 0.0,
-    "last_briefing_at": 0.0,
-    "last_digest_at": 0.0,
-    "nudge_decisions_total": 0,
-    "nudge_interrupt_total": 0,
-    "nudge_notify_total": 0,
-    "nudge_defer_total": 0,
-    "nudge_deduped_total": 0,
-    "last_nudge_decision_at": 0.0,
-    "last_nudge_dedupe_at": 0.0,
-    "nudge_recent_dispatches": [],
-}
+_proactive_state: dict[str, Any] = _services_defaults.default_proactive_state()
 _memory_partition_overlays: dict[str, dict[str, Any]] = {}
 _memory_quality_last: dict[str, Any] = {}
 _identity_trust_policies: dict[str, dict[str, Any]] = {}
@@ -519,26 +473,9 @@ _quality_reports: list[dict[str, Any]] = []
 _micro_expression_library: dict[str, dict[str, Any]] = {}
 _gaze_calibrations: dict[str, dict[str, Any]] = {}
 _gesture_envelopes: dict[str, dict[str, Any]] = {}
-_privacy_posture: dict[str, Any] = {
-    "state": "normal",
-    "reason": "startup",
-    "updated_at": 0.0,
-}
-_motion_safety_envelope: dict[str, Any] = {
-    "proximity_limit_cm": 35.0,
-    "max_yaw_deg": 45.0,
-    "max_pitch_deg": 20.0,
-    "max_roll_deg": 15.0,
-    "hardware_state": "normal",
-    "updated_at": 0.0,
-}
-_release_channel_state: dict[str, Any] = {
-    "active_channel": "dev",
-    "last_check_at": 0.0,
-    "last_check_channel": "",
-    "last_check_passed": False,
-    "migration_checks": [],
-}
+_privacy_posture: dict[str, Any] = _services_defaults.default_privacy_posture()
+_motion_safety_envelope: dict[str, Any] = _services_defaults.default_motion_safety_envelope()
+_release_channel_state: dict[str, Any] = _services_defaults.default_release_channel_state()
 # Backward compatibility for existing imports/tests.
 SERVICE_ERROR_CODES = TOOL_SERVICE_ERROR_CODES
 
