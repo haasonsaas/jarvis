@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 72 (Service Schema Domain Decomposition)
+# Jarvis TODO — Wave 73 (HA HTTP + Runtime Persistence Decomposition)
 
 Last updated: 2026-02-27
 
@@ -16,70 +16,69 @@ Last updated: 2026-02-27
 
 ## A) Scope and baseline
 
-- [x] `W72-A01` Profile next non-runtime concentration point after Wave 71.
-- [x] `W72-A02` Select `service_schemas.py` for schema decomposition.
-- [x] `W72-A03` Preserve `SERVICE_TOOL_SCHEMAS` API consumed by `services.py` and `services_server.py`.
-- [x] `W72-A04` Preserve `SERVICE_RUNTIME_REQUIRED_FIELDS` contract consumed by tests/callers.
-- [x] `W72-A05` Keep JSON-schema parity behavior stable.
+- [x] `W73-A01` Profile next runtime concentration points after Wave 72.
+- [x] `W73-A02` Select `services_ha_http_runtime.py` for split.
+- [x] `W73-A03` Select `services_runtime_state_persistence.py` for split.
+- [x] `W73-A04` Preserve all existing imports consumed by wrappers/callers.
+- [x] `W73-A05` Keep behavior and error-code semantics unchanged.
 
-## B) Home schema split
+## B) HA HTTP split
 
-- [x] `W72-B01` Create `service_schemas_home.py`.
-- [x] `W72-B02` Move home/media-oriented schema entries into home module constant.
-- [x] `W72-B03` Preserve high-risk confirmation/identity schema fields for home tools.
-- [x] `W72-B04` Preserve required-field declarations for home/media tools.
-- [x] `W72-B05` Ensure module imports remain lightweight and isolated.
+- [x] `W73-B01` Create `services_ha_http_state_runtime.py`.
+- [x] `W73-B02` Move `ha_get_state` implementation.
+- [x] `W73-B03` Move `ha_get_domain_services` implementation.
+- [x] `W73-B04` Create `services_ha_http_actions_runtime.py`.
+- [x] `W73-B05` Move `ha_call_service` implementation.
+- [x] `W73-B06` Move `ha_get_json` implementation.
+- [x] `W73-B07` Move `ha_request_json` implementation.
+- [x] `W73-B08` Move `ha_render_template` implementation.
+- [x] `W73-B09` Reduce `services_ha_http_runtime.py` to compatibility wrapper.
 
-## C) Comms/integration schema split
+## C) Runtime persistence split
 
-- [x] `W72-C01` Create `service_schemas_comms.py`.
-- [x] `W72-C02` Move weather/webhook/notifications/email/dead-letter schemas.
-- [x] `W72-C03` Move timers/reminders/calendar/todoist/pushover/get_time/status schemas.
-- [x] `W72-C04` Preserve integer/number field declarations used by schema tests.
-- [x] `W72-C05` Preserve required-field declarations for communication and scheduling tools.
+- [x] `W73-C01` Create `services_runtime_state_serialize_runtime.py`.
+- [x] `W73-C02` Move `json_safe_clone` and `replace_state_dict` helpers.
+- [x] `W73-C03` Move `expansion_state_payload` implementation.
+- [x] `W73-C04` Move `persist_expansion_state` implementation.
+- [x] `W73-C05` Create `services_runtime_state_load_runtime.py`.
+- [x] `W73-C06` Move `load_expansion_state` implementation.
+- [x] `W73-C07` Wire load module to serialize helpers.
+- [x] `W73-C08` Reduce `services_runtime_state_persistence.py` to compatibility wrapper.
 
-## D) Memory/advanced schema split
+## D) Boundaries and focused verification
 
-- [x] `W72-D01` Create `service_schemas_memory.py`.
-- [x] `W72-D02` Move memory/task-plan/tool-summary/skills baseline schemas.
-- [x] `W72-D03` Create `service_schemas_advanced.py`.
-- [x] `W72-D04` Move proactive/governance/orchestrator/planner/embodiment/integration-hub schemas.
-- [x] `W72-D05` Preserve action-field contracts for advanced orchestration domains.
+- [x] `W73-D01` Extend import-boundary coverage for HA HTTP split modules.
+- [x] `W73-D02` Extend import-boundary coverage for runtime persistence split modules.
+- [x] `W73-D03` Run focused lint on changed modules.
+- [x] `W73-D04` Run `uv run pytest -q tests/test_import_boundaries.py`.
+- [x] `W73-D05` Run targeted HA/home/media + expansion-state tests.
+- [x] `W73-D06` Run targeted bind/system-status sanity tests.
 
-## E) Aggregation and contracts
+## E) Full validation and release
 
-- [x] `W72-E01` Reduce `service_schemas.py` to wrapper + domain aggregation.
-- [x] `W72-E02` Build `SERVICE_TOOL_SCHEMAS` by stable ordered merge of domain fragments.
-- [x] `W72-E03` Generate `SERVICE_RUNTIME_REQUIRED_FIELDS` from each schema `required` list.
-- [x] `W72-E04` Preserve parity semantics for tools with empty/omitted required fields.
-- [x] `W72-E05` Ensure no caller-side API changes.
-
-## F) Validation and release
-
-- [x] `W72-F01` Extend import-boundary coverage for new schema modules.
-- [x] `W72-F02` Run focused schema parity/integer/identity field tests.
-- [x] `W72-F03` Run `uv run pytest -q tests/test_import_boundaries.py`.
-- [x] `W72-F04` Run full `make check`.
-- [x] `W72-F05` Run full `make security-gate`.
-- [x] `W72-F06` Run `./scripts/jarvis_readiness.sh fast`.
-- [x] `W72-F07` Record concentration reduction and module inventory.
-- [x] `W72-F08` Commit and push Wave 72.
+- [x] `W73-E01` Run full `make check`.
+- [x] `W73-E02` Run full `make security-gate`.
+- [x] `W73-E03` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W73-E04` Record wrapper reductions and extracted-module inventory.
+- [x] `W73-E05` Commit Wave 73 tranche.
+- [x] `W73-E06` Push Wave 73 to `origin/main`.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Wrapper concentration reduction:
-  - `service_schemas.py`: `783 -> 35`
+- Wrapper concentration reductions:
+  - `services_ha_http_runtime.py`: `270 -> 23`
+  - `services_runtime_state_persistence.py`: `287 -> 19`
 - New extracted modules:
-  - `service_schemas_home.py`
-  - `service_schemas_comms.py`
-  - `service_schemas_memory.py`
-  - `service_schemas_advanced.py`
+  - `services_ha_http_state_runtime.py`
+  - `services_ha_http_actions_runtime.py`
+  - `services_runtime_state_serialize_runtime.py`
+  - `services_runtime_state_load_runtime.py`
 - Validation status:
-  - `uv run pytest -q tests/test_tools_services.py -k "service_schema_runtime_required_fields_parity or service_schema_integer_fields_are_declared_integer or service_schema_identity_fields_present_for_mutating_tools"`: `3 passed`.
-  - `uv run pytest -q tests/test_tools_services.py -k "service_schema or system_status_contract_reports_expected_fields"`: `4 passed`.
-  - `uv run pytest -q tests/test_import_boundaries.py`: `161 passed`.
-  - `make check`: `750 passed`.
-  - `make security-gate`: `750 passed`; fault subset `3 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py`: `165 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "home_assistant or media_control or expansion_state_persists_across_bind or integration_hub_release_channel_actions"`: `26 passed`.
+  - `uv run pytest -q tests/test_tools_services.py -k "bind_clears_action_history or system_status_reports_snapshot"`: `2 passed`.
+  - `make check`: `754 passed`.
+  - `make security-gate`: `754 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
