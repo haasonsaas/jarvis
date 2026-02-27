@@ -28,6 +28,11 @@ import pytest
         ("jarvis.tools.services_domains.home_control", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_mutation", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_ha_tools", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.integrations_hub", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.integrations_ops", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.planner_engine_domain", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.planner_schedule", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.planner_taskplan", "jarvis.tools.services"),
     ],
 )
 def test_runtime_module_import_boundary(module_name: str, blocked_module: str) -> None:

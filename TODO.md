@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 41 (Home Control Subdomain Split)
+# Jarvis TODO — Wave 42 (Integrations + Planner Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,69 +8,77 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 22
-- Completed: 22
+- Total items: 30
+- Completed: 30
 - Remaining: 0
 
 ---
 
-## A) Scope and rationale
+## A) Scope and baseline
 
-- [x] `W41-A01` Re-evaluate Wave 40 output and identify largest remaining home-domain file.
-- [x] `W41-A02` Select `services_domains/home_control.py` for second-level split.
-- [x] `W41-A03` Define split boundary: mutating control vs HA utility tools.
+- [x] `W42-A01` Identify highest remaining service-domain concentration after Wave 41.
+- [x] `W42-A02` Select `integrations.py` and `planner.py` for parallel decomposition.
+- [x] `W42-A03` Preserve existing import/registration API surface via compatibility modules.
 
-## B) Subdomain extraction
+## B) Integrations decomposition
 
-- [x] `W41-B01` Create `services_domains/home_mutation.py`.
-- [x] `W41-B02` Move `smart_home` into `home_mutation.py`.
-- [x] `W41-B03` Create `services_domains/home_ha_tools.py`.
-- [x] `W41-B04` Move `home_assistant_conversation` into `home_ha_tools.py`.
-- [x] `W41-B05` Move `home_assistant_todo` into `home_ha_tools.py`.
-- [x] `W41-B06` Move `home_assistant_timer` into `home_ha_tools.py`.
-- [x] `W41-B07` Move `home_assistant_area_entities` into `home_ha_tools.py`.
-- [x] `W41-B08` Move `media_control` into `home_ha_tools.py`.
+- [x] `W42-B01` Create `services_domains/integrations_hub.py`.
+- [x] `W42-B02` Move `integration_hub` into `integrations_hub.py`.
+- [x] `W42-B03` Create `services_domains/integrations_ops.py`.
+- [x] `W42-B04` Move `weather_lookup` into `integrations_ops.py`.
+- [x] `W42-B05` Move `webhook_trigger` into `integrations_ops.py`.
+- [x] `W42-B06` Move calendar helpers (`_calendar_fetch_events`, `_parse_calendar_window`) into `integrations_ops.py`.
+- [x] `W42-B07` Move `calendar_events` and `calendar_next_event` into `integrations_ops.py`.
+- [x] `W42-B08` Move webhook-inbound and dead-letter handlers into `integrations_ops.py`.
+- [x] `W42-B09` Replace `integrations.py` with compatibility exports, including private helper export used by `services.py`.
 
-## C) Compatibility surface
+## C) Planner decomposition
 
-- [x] `W41-C01` Convert `services_domains/home_control.py` into compatibility re-exports.
-- [x] `W41-C02` Preserve existing import path behavior for upstream modules/tests.
-- [x] `W41-C03` Add explicit `__all__` export contract for home-control compatibility module.
+- [x] `W42-C01` Create `services_domains/planner_engine_domain.py`.
+- [x] `W42-C02` Move `planner_engine` into `planner_engine_domain.py`.
+- [x] `W42-C03` Create `services_domains/planner_schedule.py`.
+- [x] `W42-C04` Move timer handlers into `planner_schedule.py`.
+- [x] `W42-C05` Move reminder handlers and reminder payload helpers into `planner_schedule.py`.
+- [x] `W42-C06` Create `services_domains/planner_taskplan.py`.
+- [x] `W42-C07` Move task-plan handlers into `planner_taskplan.py`.
+- [x] `W42-C08` Replace `planner.py` with compatibility exports.
 
-## D) Safety and test boundaries
+## D) Boundaries and compatibility
 
-- [x] `W41-D01` Add import-boundary test for `home_mutation` module.
-- [x] `W41-D02` Add import-boundary test for `home_ha_tools` module.
-- [x] `W41-D03` Re-run targeted home tool tests for moved handlers.
+- [x] `W42-D01` Add import-boundary checks for `integrations_hub`.
+- [x] `W42-D02` Add import-boundary checks for `integrations_ops`.
+- [x] `W42-D03` Add import-boundary checks for `planner_engine_domain`.
+- [x] `W42-D04` Add import-boundary checks for `planner_schedule`.
+- [x] `W42-D05` Add import-boundary checks for `planner_taskplan`.
+- [x] `W42-D06` Confirm existing service registration paths still resolve through compatibility modules.
 
-## E) Quality gates
+## E) Validation
 
-- [x] `W41-E01` Run focused lint for changed files.
-- [x] `W41-E02` Run `make check` full suite.
-- [x] `W41-E03` Run `make security-gate`.
-- [x] `W41-E04` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W42-E01` Run focused lint for decomposed modules.
+- [x] `W42-E02` Run targeted pytest selection covering integrations/planner handlers and import boundaries.
+- [x] `W42-E03` Run `make check` full suite.
+- [x] `W42-E04` Run `make security-gate`.
+- [x] `W42-E05` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W41-F01` Capture resulting line-count deltas.
-- [x] `W41-F02` Commit and push Wave 41.
+- [x] `W42-F01` Capture decomposition line-count outcomes.
+- [x] `W42-F02` Commit and push Wave 42.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Additional decomposition completed:
-  - `services_domains/home_control.py`: `1242 -> 21` lines (compatibility exports)
-  - New `services_domains/home_mutation.py`: `373` lines
-  - New `services_domains/home_ha_tools.py`: `882` lines
-- Combined home domain structure after Wave 41:
-  - `home.py` (compat): `29` lines
-  - `home_state.py`: `186` lines
-  - `home_orchestrator.py`: `398` lines
-  - `home_control.py` (compat): `21` lines
-  - `home_mutation.py`: `373` lines
-  - `home_ha_tools.py`: `882` lines
+- Integrations decomposition:
+  - `services_domains/integrations.py`: `1134 -> 31` lines (compatibility exports)
+  - New `services_domains/integrations_hub.py`: `360` lines
+  - New `services_domains/integrations_ops.py`: `786` lines
+- Planner decomposition:
+  - `services_domains/planner.py`: `1105 -> 37` lines (compatibility exports)
+  - New `services_domains/planner_engine_domain.py`: `415` lines
+  - New `services_domains/planner_schedule.py`: `535` lines
+  - New `services_domains/planner_taskplan.py`: `179` lines
 - Validation status:
-  - `make check`: `608 passed`
-  - `make security-gate`: `608 passed`; fault subset `3 passed`
+  - `make check`: `613 passed`
+  - `make security-gate`: `613 passed`; fault subset `3 passed`
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
