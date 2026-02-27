@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 43 (Comms Decomposition)
+# Jarvis TODO — Wave 44 (Home HA Tools Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,77 +8,73 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 28
-- Completed: 28
+- Total items: 29
+- Completed: 29
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W43-A01` Confirm Wave 42 is merged and working tree is clean.
-- [x] `W43-A02` Identify next largest service-domain concentration after Wave 42.
-- [x] `W43-A03` Select `services_domains/comms.py` for decomposition.
-- [x] `W43-A04` Preserve current import surface with compatibility exports.
+- [x] `W44-A01` Confirm Wave 43 merged and working tree baseline.
+- [x] `W44-A02` Re-profile domain module sizes after comms decomposition.
+- [x] `W44-A03` Select `services_domains/home_ha_tools.py` as next hotspot.
+- [x] `W44-A04` Preserve existing import/registration API via compatibility module.
 
-## B) Module extraction plan
+## B) Decomposition design
 
-- [x] `W43-B01` Define notifications split (`slack_notify`, `discord_notify`, `pushover_notify`).
-- [x] `W43-B02` Define email split (`email_send`, `email_summary`).
-- [x] `W43-B03` Define Todoist split (`todoist_add_task`, `todoist_list_tasks`).
-- [x] `W43-B04` Keep runtime lazy-binding pattern (`_services`) per module.
+- [x] `W44-B01` Define conversation-only module boundary.
+- [x] `W44-B02` Define to-do-only module boundary.
+- [x] `W44-B03` Define timer-only module boundary.
+- [x] `W44-B04` Define area/media module boundary.
+- [x] `W44-B05` Retain lazy `services` binding pattern inside each module.
 
-## C) Implement notifications module
+## C) Module extraction
 
-- [x] `W43-C01` Create `services_domains/comms_notifications.py`.
-- [x] `W43-C02` Move `slack_notify` without behavioral changes.
-- [x] `W43-C03` Move `discord_notify` without behavioral changes.
-- [x] `W43-C04` Move `pushover_notify` without behavioral changes.
+- [x] `W44-C01` Create `services_domains/home_ha_conversation.py`.
+- [x] `W44-C02` Move `home_assistant_conversation` without behavior changes.
+- [x] `W44-C03` Create `services_domains/home_ha_todo.py`.
+- [x] `W44-C04` Move `home_assistant_todo` without behavior changes.
+- [x] `W44-C05` Create `services_domains/home_ha_timer.py`.
+- [x] `W44-C06` Move `home_assistant_timer` without behavior changes.
+- [x] `W44-C07` Create `services_domains/home_ha_area_media.py`.
+- [x] `W44-C08` Move `home_assistant_area_entities` and `media_control` without behavior changes.
 
-## D) Implement email module
+## D) Compatibility and boundaries
 
-- [x] `W43-D01` Create `services_domains/comms_email.py`.
-- [x] `W43-D02` Move `email_send` without behavioral changes.
-- [x] `W43-D03` Move `email_summary` without behavioral changes.
+- [x] `W44-D01` Replace `services_domains/home_ha_tools.py` with compatibility exports.
+- [x] `W44-D02` Keep `home_control.py` and `home.py` import behavior unchanged.
+- [x] `W44-D03` Add import-boundary check for `home_ha_conversation`.
+- [x] `W44-D04` Add import-boundary check for `home_ha_todo`.
+- [x] `W44-D05` Add import-boundary check for `home_ha_timer`.
+- [x] `W44-D06` Add import-boundary check for `home_ha_area_media`.
 
-## E) Implement Todoist module
+## E) Validation
 
-- [x] `W43-E01` Create `services_domains/comms_todoist.py`.
-- [x] `W43-E02` Move `todoist_add_task` without behavioral changes.
-- [x] `W43-E03` Move `todoist_list_tasks` without behavioral changes.
+- [x] `W44-E01` Run focused lint on new Home HA modules + boundary test file.
+- [x] `W44-E02` Run targeted pytest selection for Home HA handlers + boundaries.
+- [x] `W44-E03` Run full `make check`.
+- [x] `W44-E04` Run full `make security-gate`.
+- [x] `W44-E05` Run `./scripts/jarvis_readiness.sh fast`.
 
-## F) Compatibility and boundaries
+## F) Release loop
 
-- [x] `W43-F01` Replace `services_domains/comms.py` with compatibility re-exports.
-- [x] `W43-F02` Keep import paths used by `services.py` and `services_server.py` stable.
-- [x] `W43-F03` Add import-boundary check for `comms_notifications`.
-- [x] `W43-F04` Add import-boundary check for `comms_email`.
-- [x] `W43-F05` Add import-boundary check for `comms_todoist`.
-
-## G) Validation
-
-- [x] `W43-G01` Run focused lint on touched domain modules and boundary test file.
-- [x] `W43-G02` Run targeted pytest selection for comms handlers and boundaries.
-- [x] `W43-G03` Run full `make check` suite.
-- [x] `W43-G04` Run `make security-gate`.
-- [x] `W43-G05` Run `./scripts/jarvis_readiness.sh fast`.
-
-## H) Release loop
-
-- [x] `W43-H01` Record line-count outcomes for decomposed comms domain.
-- [x] `W43-H02` Commit and push Wave 43.
+- [x] `W44-F01` Capture post-split line-count outcomes.
+- [x] `W44-F02` Commit and push Wave 44.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Comms decomposition:
-  - `services_domains/comms.py`: `913 -> 27` lines (compatibility exports)
-  - New `services_domains/comms_notifications.py`: `415` lines
-  - New `services_domains/comms_email.py`: `186` lines
-  - New `services_domains/comms_todoist.py`: `332` lines
+- Home HA decomposition:
+  - `services_domains/home_ha_tools.py`: `882 -> 19` lines (compatibility exports)
+  - New `services_domains/home_ha_conversation.py`: `268` lines
+  - New `services_domains/home_ha_todo.py`: `189` lines
+  - New `services_domains/home_ha_timer.py`: `171` lines
+  - New `services_domains/home_ha_area_media.py`: `290` lines
 - Boundary enforcement:
-  - Added import-boundary coverage for new comms domain modules.
+  - Added import-boundary coverage for all new Home HA modules.
 - Validation status:
-  - Focused lint complete.
-  - Remaining validation gates tracked above and executed in this wave.
+  - `make check`: `620 passed`
+  - `make security-gate`: `620 passed`; fault subset `3 passed`
+  - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
