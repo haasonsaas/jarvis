@@ -286,6 +286,13 @@ AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
     "reminder_list": {"text"},
     "reminder_notify_due": {"text", "message", "title"},
 }
+MEMORY_SCOPE_TAG_PREFIX = "scope:"
+MEMORY_SCOPES = {"preferences", "people", "projects", "household_rules"}
+MEMORY_QUERY_SCOPE_HINTS: dict[str, set[str]] = {
+    "people": {"who", "person", "people", "contact", "name", "family"},
+    "projects": {"project", "projects", "task", "deadline", "repo", "sprint", "milestone"},
+    "household_rules": {"home", "house", "rule", "rules", "quiet", "bedtime", "routine", "thermostat"},
+}
 AUDIT_REASON_MESSAGES: dict[str, str] = {
     "policy": "blocked by global tool policy configuration",
     "identity_policy": "blocked by identity and trust policy",
@@ -643,6 +650,10 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "text": {"type": "string"},
             "kind": {"type": "string", "description": "note, profile, summary, task, etc."},
+            "scope": {
+                "type": "string",
+                "description": "Memory scope: preferences, people, projects, or household_rules.",
+            },
             "tags": {"type": "array", "items": {"type": "string"}},
             "importance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "sensitivity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
@@ -680,6 +691,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "mmr_enabled": {"type": "boolean"},
             "mmr_lambda": {"type": "number"},
             "sources": {"type": "array", "items": {"type": "string"}},
+            "scopes": {"type": "array", "items": {"type": "string"}},
         },
         "required": ["query"],
     },
@@ -698,6 +710,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "limit": {"type": "integer"},
             "kind": {"type": "string"},
             "sources": {"type": "array", "items": {"type": "string"}},
+            "scopes": {"type": "array", "items": {"type": "string"}},
         },
     },
     "memory_summary_add": {
@@ -6363,6 +6376,96 @@ async def jarvis_scorecard(args: dict[str, Any]) -> dict[str, Any]:
 
 # ── Memory + planning ───────────────────────────────────────
 
+def _normalize_memory_scope(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    if text in MEMORY_SCOPES:
+        return text
+    return None
+
+
+def _memory_scope_tag(scope: str) -> str:
+    return f"{MEMORY_SCOPE_TAG_PREFIX}{scope}"
+
+
+def _memory_scope_from_tags(tags: list[str] | None) -> str | None:
+    for tag in tags or []:
+        text = str(tag).strip().lower()
+        if text.startswith(MEMORY_SCOPE_TAG_PREFIX):
+            scope = text[len(MEMORY_SCOPE_TAG_PREFIX):]
+            if scope in MEMORY_SCOPES:
+                return scope
+    return None
+
+
+def _infer_memory_scope(*, kind: str, source: str) -> str:
+    kind_text = str(kind or "").strip().lower()
+    source_text = str(source or "").strip().lower()
+    if kind_text in {"person", "contact", "people"}:
+        return "people"
+    if kind_text in {"project", "plan", "task", "task_plan"}:
+        return "projects"
+    if kind_text in {"rule", "household_rule", "policy"}:
+        return "household_rules"
+    if source_text in {"profile", "user"} or kind_text in {"profile", "preference"}:
+        return "preferences"
+    if source_text.startswith("integration.home") or source_text.startswith("integration.hass"):
+        return "household_rules"
+    return "preferences"
+
+
+def _memory_scope_for_add(*, kind: str, source: str, tags: list[str], requested_scope: Any) -> str:
+    explicit = _normalize_memory_scope(requested_scope)
+    if explicit:
+        return explicit
+    tagged = _memory_scope_from_tags(tags)
+    if tagged:
+        return tagged
+    return _infer_memory_scope(kind=kind, source=source)
+
+
+def _memory_scope_tags(tags: list[str], scope: str) -> list[str]:
+    cleaned = [str(tag).strip() for tag in tags if str(tag).strip()]
+    filtered = [tag for tag in cleaned if not tag.lower().startswith(MEMORY_SCOPE_TAG_PREFIX)]
+    filtered.append(_memory_scope_tag(scope))
+    return filtered
+
+
+def _memory_visible_tags(tags: list[str]) -> list[str]:
+    return [tag for tag in tags if not str(tag).strip().lower().startswith(MEMORY_SCOPE_TAG_PREFIX)]
+
+
+def _memory_entry_scope(entry: MemoryEntry) -> str:
+    tagged = _memory_scope_from_tags(entry.tags)
+    if tagged:
+        return tagged
+    return _infer_memory_scope(kind=str(entry.kind), source=str(entry.source))
+
+
+def _memory_policy_scopes_for_query(query: str) -> list[str]:
+    tokens = {token for token in re.findall(r"[a-z0-9_']+", str(query or "").lower()) if token}
+    if not tokens:
+        return sorted(MEMORY_SCOPES)
+    for scope, hints in MEMORY_QUERY_SCOPE_HINTS.items():
+        if tokens & hints:
+            return sorted({scope, "preferences"})
+    return sorted(MEMORY_SCOPES)
+
+
+def _memory_requested_scopes(scopes_value: Any, *, query: str = "") -> list[str]:
+    if isinstance(scopes_value, list):
+        cleaned = []
+        for item in scopes_value:
+            scope = _normalize_memory_scope(item)
+            if scope and scope not in cleaned:
+                cleaned.append(scope)
+        if cleaned:
+            return cleaned
+    fallback_single = _normalize_memory_scope(scopes_value)
+    if fallback_single:
+        return [fallback_single]
+    return _memory_policy_scopes_for_query(query)
+
+
 def _memory_confidence_score(entry: MemoryEntry, *, now_ts: float | None = None) -> float:
     now = time.time() if now_ts is None else float(now_ts)
     age_days = max(0.0, (now - float(entry.created_at)) / 86_400.0)
@@ -6426,6 +6529,13 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
     importance = _as_float(args.get("importance", 0.5), 0.5, minimum=0.0, maximum=1.0)
     sensitivity = _as_float(args.get("sensitivity", 0.0), 0.0, minimum=0.0, maximum=1.0)
     source = str(args.get("source", "user"))
+    requested_scope = args.get("scope")
+    if requested_scope is not None and _normalize_memory_scope(requested_scope) is None:
+        _record_service_error("memory_add", start_time, "invalid_data")
+        scopes_text = ", ".join(sorted(MEMORY_SCOPES))
+        return {"content": [{"type": "text", "text": f"scope must be one of: {scopes_text}."}]}
+    scope = _memory_scope_for_add(kind=kind, source=source, tags=tags, requested_scope=requested_scope)
+    tags = _memory_scope_tags(tags, scope)
     try:
         memory_id = _memory.add_memory(
             text,
@@ -6439,7 +6549,7 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("memory_add", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory add failed: {e}"}]}
     record_summary("memory_add", "ok", start_time)
-    return {"content": [{"type": "text", "text": f"Memory stored (id={memory_id})."}]}
+    return {"content": [{"type": "text", "text": f"Memory stored (id={memory_id}, scope={scope})."}]}
 
 
 async def memory_update(args: dict[str, Any]) -> dict[str, Any]:
@@ -6551,6 +6661,7 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
         maximum=1.0,
     )
     source_list = _as_str_list(args.get("sources"))
+    scoped_policy = _memory_requested_scopes(args.get("scopes"), query=query)
     try:
         results = _memory.search_v2(
             query,
@@ -6580,23 +6691,32 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         _record_service_error("memory_search", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory search failed: {e}"}]}
+    scoped_results = []
+    for entry in results:
+        if _memory_entry_scope(entry) in scoped_policy:
+            scoped_results.append(entry)
+        if len(scoped_results) >= limit:
+            break
+    results = scoped_results
     if not results:
         record_summary("memory_search", "empty", start_time)
-        return {"content": [{"type": "text", "text": "No relevant memories found."}]}
-    lines = []
+        return {"content": [{"type": "text", "text": f"No relevant memories found in scopes={','.join(scoped_policy)}."}]}
+    lines = [f"Retrieval policy scopes={','.join(scoped_policy)}"]
     now_ts = time.time()
     for entry in results:
-        tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
+        visible_tags = _memory_visible_tags(entry.tags)
+        tags = f" tags={','.join(visible_tags)}" if visible_tags else ""
         snippet = entry.text[:200]
         confidence_score = _memory_confidence_score(entry, now_ts=now_ts)
         confidence_label = _memory_confidence_label(confidence_score)
         source = str(entry.source).strip() or "unknown"
+        scope = _memory_entry_scope(entry)
         trail = _memory_source_trail(entry)
         lines.append(
             f"[{entry.id}] ({entry.kind}) confidence={confidence_label}({confidence_score:.2f}) "
-            f"source={source} score={entry.score:.2f} trail={trail} {snippet}{tags}"
+            f"scope={scope} source={source} score={entry.score:.2f} trail={trail} {snippet}{tags}"
         )
-    record_summary("memory_search", "ok", start_time)
+    record_summary("memory_search", "ok", start_time, effect=f"scopes={','.join(scoped_policy)}")
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
 
@@ -6623,6 +6743,12 @@ async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
                 "version": "v1",
                 "inputs": ["retrieval_score", "recency", "source", "sensitivity"],
             }
+            status["scope_policy"] = {
+                "supported_scopes": sorted(MEMORY_SCOPES),
+                "tag_prefix": MEMORY_SCOPE_TAG_PREFIX,
+                "query_hints": {scope: sorted(hints) for scope, hints in MEMORY_QUERY_SCOPE_HINTS.items()},
+                "default_scope": "preferences",
+            }
     except Exception as e:
         _record_service_error("memory_status", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory status failed: {e}"}]}
@@ -6641,28 +6767,38 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
     limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
     kind = args.get("kind")
     source_list = _as_str_list(args.get("sources"))
+    scoped_policy = _memory_requested_scopes(args.get("scopes"), query=str(args.get("query", "")))
     try:
         results = _memory.recent(limit=limit, kind=str(kind) if kind else None, sources=source_list)
     except Exception as e:
         _record_service_error("memory_recent", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory recent failed: {e}"}]}
+    scoped_results = []
+    for entry in results:
+        if _memory_entry_scope(entry) in scoped_policy:
+            scoped_results.append(entry)
+        if len(scoped_results) >= limit:
+            break
+    results = scoped_results
     if not results:
         record_summary("memory_recent", "empty", start_time)
-        return {"content": [{"type": "text", "text": "No recent memories found."}]}
-    lines = []
+        return {"content": [{"type": "text", "text": f"No recent memories found in scopes={','.join(scoped_policy)}."}]}
+    lines = [f"Retrieval policy scopes={','.join(scoped_policy)}"]
     now_ts = time.time()
     for entry in results:
-        tags = f" tags={','.join(entry.tags)}" if entry.tags else ""
+        visible_tags = _memory_visible_tags(entry.tags)
+        tags = f" tags={','.join(visible_tags)}" if visible_tags else ""
         snippet = entry.text[:200]
         confidence_score = _memory_confidence_score(entry, now_ts=now_ts)
         confidence_label = _memory_confidence_label(confidence_score)
         source = str(entry.source).strip() or "unknown"
+        scope = _memory_entry_scope(entry)
         trail = _memory_source_trail(entry)
         lines.append(
             f"[{entry.id}] ({entry.kind}) confidence={confidence_label}({confidence_score:.2f}) "
-            f"source={source} trail={trail} {snippet}{tags}"
+            f"scope={scope} source={source} trail={trail} {snippet}{tags}"
         )
-    record_summary("memory_recent", "ok", start_time)
+    record_summary("memory_recent", "ok", start_time, effect=f"scopes={','.join(scoped_policy)}")
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
 

@@ -49,7 +49,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 ## 4) Memory and Personalization (6 items)
 
-- [ ] `MX01` Add scoped long-term memory classes (`preferences`, `people`, `projects`, `household_rules`) with explicit retrieval policy. `P0`
+- [x] `MX01` Add scoped long-term memory classes (`preferences`, `people`, `projects`, `household_rules`) with explicit retrieval policy. `P0`
 - [x] `MX02` Add "memory confidence" and "source trail" to prevent stale or hallucinated recall. `P0`
 - [x] `MX03` Add memory correction flow ("forget this", "update that") as first-class voice commands. `P0`
 - [ ] `MX04` Add episodic timeline snapshots for recent important conversations/actions. `P1`

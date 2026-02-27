@@ -224,13 +224,19 @@ class TestServicesTools:
         store = MemoryStore(str(memory_path))
         services.bind(services._config, store)
 
-        created = await services.memory_add({"text": "Call me Boss.", "kind": "profile", "sensitivity": 0.2, "source": "profile"})
+        created = await services.memory_add(
+            {"text": "Call me Boss.", "kind": "profile", "scope": "preferences", "sensitivity": 0.2, "source": "profile"}
+        )
         assert "stored" in created["content"][0]["text"].lower()
         created_text = created["content"][0]["text"]
-        memory_id = int(created_text.split("id=")[1].split(")", 1)[0])
+        memory_id = int(created_text.split("id=")[1].split(",", 1)[0])
+        assert "scope=preferences" in created_text.lower()
 
         sensitive = await services.memory_add({"text": "My bank code is 1234", "kind": "note", "sensitivity": 0.9, "source": "secrets"})
         assert "stored" in sensitive["content"][0]["text"].lower()
+
+        invalid_scope = await services.memory_add({"text": "bad", "scope": "unknown_scope"})
+        assert "scope must be one of" in invalid_scope["content"][0]["text"].lower()
 
         updated = await services.memory_update({"memory_id": memory_id, "text": "Call me Commander.", "allow_pii": False})
         assert "updated" in updated["content"][0]["text"].lower()
@@ -238,7 +244,9 @@ class TestServicesTools:
         found = await services.memory_search({"query": "call me", "limit": 5, "sources": ["profile"]})
         assert "call me" in found["content"][0]["text"].lower()
         assert "commander" in found["content"][0]["text"].lower()
+        assert "retrieval policy scopes=" in found["content"][0]["text"].lower()
         assert "confidence=" in found["content"][0]["text"].lower()
+        assert "scope=preferences" in found["content"][0]["text"].lower()
         assert "source=profile" in found["content"][0]["text"].lower()
         assert "trail=" in found["content"][0]["text"].lower()
 
@@ -248,14 +256,21 @@ class TestServicesTools:
         included = await services.memory_search({"query": "bank", "limit": 5, "include_sensitive": True})
         assert "bank" in included["content"][0]["text"].lower()
 
+        projects_only = await services.memory_search({"query": "call me", "limit": 5, "scopes": ["projects"]})
+        assert "no relevant" in projects_only["content"][0]["text"].lower()
+
         status = await services.memory_status({"warm": True, "sync": True, "optimize": True, "vacuum": True})
         assert "entries" in status["content"][0]["text"].lower()
         status_payload = json.loads(status["content"][0]["text"])
         assert "confidence_model" in status_payload
         assert status_payload["confidence_model"]["version"] == "v1"
+        assert "scope_policy" in status_payload
+        assert "preferences" in status_payload["scope_policy"]["supported_scopes"]
 
         recent = await services.memory_recent({"limit": 1, "sources": ["secrets"]})
         assert "note" in recent["content"][0]["text"].lower()
+        assert "retrieval policy scopes=" in recent["content"][0]["text"].lower()
+        assert "scope=" in recent["content"][0]["text"].lower()
         assert "source=secrets" in recent["content"][0]["text"].lower()
         assert "trail=" in recent["content"][0]["text"].lower()
 

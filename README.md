@@ -152,8 +152,9 @@ Smart home safety defaults:
   - `jarvis_scorecard` (standalone scorecard payload for dashboards and alerts)
   - `system_status_contract` (stable required-field contract)
 - Memory retrieval now includes confidence/provenance details:
-  - `memory_search` and `memory_recent` lines expose `confidence=...`, `source=...`, and `trail=id/source/created_at`.
-  - `memory_status` includes `confidence_model` metadata for scoring transparency.
+  - scoped classes: `preferences`, `people`, `projects`, `household_rules` (tagged as `scope:<name>`).
+  - `memory_search` and `memory_recent` apply explicit scope policy (`scopes=...`) and expose `scope=...`, `confidence=...`, `source=...`, and `trail=id/source/created_at`.
+  - `memory_status` includes `confidence_model` and `scope_policy` metadata for retrieval transparency.
 - Audit logs now include readable authorization outcomes:
   - audit entries include `decision_outcome`, `decision_reason`, and `decision_explanation`.
   - this makes allow/deny/failure rationale machine-filterable and human-readable in `/api/audit`.
