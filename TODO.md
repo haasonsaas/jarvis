@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/97 Runtime Decomposition
+# Jarvis TODO — Wave 74/98 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 207
-- Completed: 207
+- Total items: 215
+- Completed: 215
 - Remaining: 0
 
 ---
@@ -303,6 +303,17 @@ Last updated: 2026-02-27
 - [x] `W97-AA07` Run full quality/security/readiness gates.
 - [x] `W97-AA08` Update TODO + tranche snapshot.
 
+## AB) Wave 98 (completed): __main__ audio-output runtime extraction
+
+- [x] `W98-AB01` Profile `Jarvis` audio output + TTS loop helper concentration in `src/jarvis/__main__.py`.
+- [x] `W98-AB02` Create `runtime_audio_output.py` for flush/play/queue-clear/TTS-loop helpers.
+- [x] `W98-AB03` Rewire `Jarvis._flush_output`, `_play_audio_chunk`, `_tts_loop`, and `_clear_tts_queue` to runtime helpers.
+- [x] `W98-AB04` Preserve existing barge-in, fallback text-only, telemetry, and observability side-effects.
+- [x] `W98-AB05` Add focused unit tests for runtime audio-output helpers.
+- [x] `W98-AB06` Extend import-boundary coverage for `runtime_audio_output`.
+- [x] `W98-AB07` Run full quality/security/readiness gates.
+- [x] `W98-AB08` Update TODO + tranche snapshot.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -329,6 +340,7 @@ Last updated: 2026-02-27
   - `runtime_memory_correction.py`
   - `runtime_conversation_trace.py`
   - `runtime_operator_server.py`
+  - `runtime_audio_output.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -357,6 +369,7 @@ Last updated: 2026-02-27
   - Conversation trace + episodic snapshot logic moved from `Jarvis` method bodies into `runtime_conversation_trace.py`.
   - Added repeatable reliability soak entrypoint `scripts/test_soak_reliability.sh` and `make test-soak-reliability` target.
   - Operator-server provider/lifecycle logic moved from `Jarvis` method bodies into `runtime_operator_server.py`.
+  - Audio output + TTS stream loop logic moved from `Jarvis` method bodies into `runtime_audio_output.py`.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -382,7 +395,9 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_main_audio.py tests/test_main_lifecycle.py tests/test_runtime_voice_profile.py tests/test_runtime_state.py -k "transcribe_with_fallback or parse_memory_correction_command or parse_control_bool or parse_control_choice or followup_carryover"`: `11 passed`.
   - `uv run pytest -q tests/test_main_lifecycle.py tests/test_runtime_operator_status.py tests/test_main_audio.py tests/test_import_boundaries.py`: `248 passed`.
   - `uv run pytest -q tests/test_runtime_operator_server.py tests/test_main_lifecycle.py tests/test_runtime_operator_status.py tests/test_import_boundaries.py -k "operator_server or operator_metrics_provider or operator_events_provider or startup_diagnostics_provider"`: `5 passed`.
+  - `uv run pytest -q tests/test_runtime_audio_output.py tests/test_main_audio.py tests/test_import_boundaries.py -k "runtime_audio_output or tts_loop or play_audio_chunk or clear_tts_queue or import_boundary"`: `198 passed, 6 deselected`.
+  - `uv run pytest -q tests/test_main_lifecycle.py tests/test_main_audio.py tests/test_runtime_operator_server.py tests/test_import_boundaries.py`: `244 passed`.
   - `./scripts/test_soak_reliability.sh 2`: accepted; `cycles_completed=2/2`, `phase_count=8`, `failed_count=0`, artifact `.artifacts/quality/soak-profile-fast-repeat2.json`.
-  - `make check`: `791 passed`.
-  - `make security-gate`: `791 passed`; fault subset `3 passed`.
+  - `make check`: `798 passed`.
+  - `make security-gate`: `798 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

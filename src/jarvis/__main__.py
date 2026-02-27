@@ -124,6 +124,12 @@ from jarvis.runtime_conversation import (
     respond_and_speak as _runtime_respond_and_speak,
     run as _runtime_run,
 )
+from jarvis.runtime_audio_output import (
+    clear_tts_queue as _runtime_clear_tts_queue,
+    flush_output as _runtime_flush_output,
+    play_audio_chunk as _runtime_play_audio_chunk,
+    tts_loop as _runtime_tts_loop,
+)
 from jarvis.runtime_voice_profile import (
     active_voice_profile as _runtime_active_voice_profile,
     active_voice_user as _runtime_active_voice_user,
@@ -1163,110 +1169,25 @@ class Jarvis:
         )
 
     def _flush_output(self) -> None:
-        if self._use_robot_audio:
-            self.robot.flush_audio_output()
-            return
-
-        if self._output_stream is None:
-            return
-
-        try:
-            self._output_stream.abort()
-        except Exception:
-            try:
-                self._output_stream.stop()
-            except Exception:
-                pass
-
-        try:
-            self._output_stream.start()
-        except Exception:
-            pass
+        _runtime_flush_output(self)
 
     def _play_audio_chunk(self, audio_16k: np.ndarray) -> None:
-        if audio_16k.size == 0:
-            return
-
-        if self._use_robot_audio:
-            audio_out = audio_16k
-            if self._robot_output_sr != self.config.sample_rate:
-                audio_out = _resample_audio(audio_16k, self.config.sample_rate, self._robot_output_sr)
-            self.robot.push_audio_sample(audio_out)
-            return
-
-        if self._output_stream is not None:
-            try:
-                self._output_stream.write(audio_16k.reshape(-1, 1))
-            except Exception as e:
-                log.warning("Audio output write failed: %s", e)
+        _runtime_play_audio_chunk(
+            self,
+            audio_16k,
+            resample_audio_fn=_resample_audio,
+            logger=log,
+        )
 
     async def _respond_and_speak(self, text: str) -> None:
         await _runtime_respond_and_speak(self, text)
 
     async def _tts_loop(self) -> None:
         """Consume sentences and play TTS in order, with barge-in support."""
-        assert self.tts is not None
-        while True:
-            response_id, sentence, is_filler, pause = await self._tts_queue.get()
-            if self._barge_in.is_set():
-                self._flush_output()
-                self.presence.signals.speech_energy = 0.0
-                continue
-
-            if not getattr(self, "_tts_output_enabled", True):
-                if not is_filler:
-                    print(f"  JARVIS: {sentence}")
-                if pause > 0:
-                    await asyncio.sleep(pause)
-                continue
-
-            try:
-                async for audio_chunk in self.tts.stream_chunks_async(sentence):
-                    if self._barge_in.is_set():
-                        self._flush_output()
-                        self.presence.signals.speech_energy = 0.0
-                        break
-                    if not is_filler and response_id == self._active_response_id and self._first_audio_at is None:
-                        self._first_audio_at = time.monotonic()
-                        if self._response_start_at is not None:
-                            latency_ms = (self._first_audio_at - self._response_start_at) * 1000.0
-                            self._telemetry["tts_first_audio_total_ms"] += latency_ms
-                            self._telemetry["tts_first_audio_count"] += 1.0
-                            log.info(
-                                "TTS first audio latency: %.0fms",
-                                latency_ms,
-                            )
-                    self.presence.signals.speech_energy = float(
-                        max(0.0, min(1.0, float(np.sqrt(np.mean(audio_chunk ** 2)) * 5.0)))
-                    )
-                    normalized = self._normalize_tts_chunk(audio_chunk)
-                    self._play_audio_chunk(normalized)
-                    await asyncio.sleep(0)
-            except Exception as e:
-                log.warning("TTS loop failed for sentence chunk: %s", e)
-                config = getattr(self, "config", None)
-                if bool(getattr(config, "tts_fallback_text_only", True)) and not is_filler:
-                    print(f"  JARVIS: {sentence}")
-                    telemetry = getattr(self, "_telemetry", None)
-                    if isinstance(telemetry, dict):
-                        telemetry["fallback_responses"] = float(telemetry.get("fallback_responses", 0.0) or 0.0) + 1.0
-                    observability = getattr(self, "_observability", None)
-                    if observability is not None:
-                        with suppress(Exception):
-                            observability.record_event(
-                                "tts_fallback_text_only",
-                                {"sentence_len": len(sentence)},
-                            )
-            self.presence.signals.speech_energy = 0.0
-            if pause > 0:
-                await asyncio.sleep(pause)
+        await _runtime_tts_loop(self, logger=log)
 
     def _clear_tts_queue(self) -> None:
-        while not self._tts_queue.empty():
-            try:
-                self._tts_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+        _runtime_clear_tts_queue(self)
 
     def _compute_turn_taking(
         self,
