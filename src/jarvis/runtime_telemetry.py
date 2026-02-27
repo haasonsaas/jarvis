@@ -405,6 +405,35 @@ def summarize_tool_error_counters(
     )
 
 
+def refresh_tool_error_counters(
+    runtime: Any,
+    *,
+    list_summaries_fn: Any,
+    tool_service_error_codes: set[str],
+    storage_error_details: set[str],
+    service_error_details: set[str],
+) -> None:
+    try:
+        recent = list_summaries_fn(limit=200)
+    except Exception:
+        return
+    (
+        service_errors,
+        storage_errors,
+        unknown_summary_details,
+        per_code,
+    ) = summarize_tool_error_counters(
+        recent,
+        tool_service_error_codes=tool_service_error_codes,
+        storage_error_details=storage_error_details,
+        service_error_details=service_error_details,
+    )
+    runtime._telemetry["service_errors"] = service_errors
+    runtime._telemetry["storage_errors"] = storage_errors
+    runtime._telemetry["unknown_summary_details"] = unknown_summary_details
+    runtime._telemetry_error_counts = per_code
+
+
 def telemetry_snapshot(
     telemetry: dict[str, float],
     *,

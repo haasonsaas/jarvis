@@ -47,3 +47,23 @@ def default_observability_status_snapshot() -> dict[str, Any]:
             "by_user_tool": {},
         },
     }
+
+
+def publish_observability_status(
+    runtime: Any,
+    *,
+    set_runtime_observability_state_fn: Any,
+    default_snapshot_fn: Any = default_observability_status_snapshot,
+) -> None:
+    observability = getattr(runtime, "_observability", None)
+    if observability is None:
+        set_runtime_observability_state_fn(default_snapshot_fn())
+        return
+    try:
+        snapshot = observability.status_snapshot()
+    except Exception:
+        snapshot = default_snapshot_fn()
+    if isinstance(snapshot, dict):
+        snapshot["latency_dashboards"] = runtime._conversation_latency_analytics()
+        snapshot["policy_decision_analytics"] = runtime._policy_decision_analytics()
+    set_runtime_observability_state_fn(snapshot)

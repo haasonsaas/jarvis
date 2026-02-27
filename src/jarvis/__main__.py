@@ -67,6 +67,7 @@ from jarvis.runtime_operator_server import (
 )
 from jarvis.runtime_observability_status import (
     default_observability_status_snapshot as _runtime_default_observability_status_snapshot,
+    publish_observability_status as _runtime_publish_observability_status,
 )
 from jarvis.runtime_observability_snapshot import (
     publish_observability_snapshot as _runtime_publish_observability_snapshot,
@@ -104,7 +105,7 @@ from jarvis.runtime_telemetry import (
     policy_decision_analytics as _runtime_policy_decision_analytics,
     stt_confidence_band as _runtime_stt_confidence_band,
     stt_diagnostics_snapshot as _runtime_stt_diagnostics_snapshot,
-    summarize_tool_error_counters as _runtime_summarize_tool_error_counters,
+    refresh_tool_error_counters as _runtime_refresh_tool_error_counters,
     telemetry_snapshot as _runtime_telemetry_snapshot,
     transcribe_with_fallback as _runtime_transcribe_with_fallback,
     transcribe_with_optional_diagnostics as _runtime_transcribe_with_optional_diagnostics,
@@ -498,18 +499,11 @@ class Jarvis:
         set_runtime_skills_state(skills.status_snapshot())
 
     def _publish_observability_status(self) -> None:
-        observability = getattr(self, "_observability", None)
-        if observability is None:
-            set_runtime_observability_state(_runtime_default_observability_status_snapshot())
-            return
-        try:
-            snapshot = observability.status_snapshot()
-        except Exception:
-            snapshot = _runtime_default_observability_status_snapshot()
-        if isinstance(snapshot, dict):
-            snapshot["latency_dashboards"] = self._conversation_latency_analytics()
-            snapshot["policy_decision_analytics"] = self._policy_decision_analytics()
-        set_runtime_observability_state(snapshot)
+        _runtime_publish_observability_status(
+            self,
+            set_runtime_observability_state_fn=set_runtime_observability_state,
+            default_snapshot_fn=_runtime_default_observability_status_snapshot,
+        )
 
     def _operator_control_schema(self) -> dict[str, Any]:
         return _runtime_operator_control_schema(
@@ -658,25 +652,13 @@ class Jarvis:
         )
 
     def _refresh_tool_error_counters(self) -> None:
-        try:
-            recent = list_summaries(limit=200)
-        except Exception:
-            return
-        (
-            service_errors,
-            storage_errors,
-            unknown_summary_details,
-            per_code,
-        ) = _runtime_summarize_tool_error_counters(
-            recent,
+        _runtime_refresh_tool_error_counters(
+            self,
+            list_summaries_fn=list_summaries,
             tool_service_error_codes=TOOL_SERVICE_ERROR_CODES,
             storage_error_details=TELEMETRY_STORAGE_ERROR_DETAILS,
             service_error_details=TELEMETRY_SERVICE_ERROR_DETAILS,
         )
-        self._telemetry["service_errors"] = service_errors
-        self._telemetry["storage_errors"] = storage_errors
-        self._telemetry["unknown_summary_details"] = unknown_summary_details
-        self._telemetry_error_counts = per_code
 
     def _telemetry_snapshot(self) -> dict[str, Any]:
         return _runtime_telemetry_snapshot(
