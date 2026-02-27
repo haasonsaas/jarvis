@@ -3359,3 +3359,30 @@ class TestServicesTools:
         assert headers["X-Webhook-Token"] == "***REDACTED***"
         assert headers["Cookie"] == "***REDACTED***"
         assert headers["X-Custom"] == "safe"
+
+    @pytest.mark.asyncio
+    async def test_inbound_webhook_event_sanitizes_payload_size_and_sensitive_keys(self):
+        from jarvis.tools import services
+
+        services._inbound_webhook_events.clear()
+        services._inbound_webhook_seq = 1
+        huge_secret = "x" * 5000
+        event_id = services.record_inbound_webhook_event(
+            payload={
+                "authorization": "Bearer should-hide",
+                "nested": {"api_key": "hide-this", "safe": huge_secret},
+                "items": list(range(200)),
+            },
+            headers={"X-Custom": "ok"},
+            source="test",
+            path="/hook",
+        )
+        assert event_id == 1
+
+        listed = await services.webhook_inbound_list({"limit": 1})
+        rows = json.loads(listed["content"][0]["text"])
+        payload = rows[0]["payload"]
+        assert payload["authorization"] == "***REDACTED***"
+        assert payload["nested"]["api_key"] == "***REDACTED***"
+        assert payload["nested"]["safe"].endswith("...<truncated>")
+        assert payload["items"][-1].startswith("<truncated_items:")

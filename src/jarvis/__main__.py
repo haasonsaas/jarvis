@@ -431,6 +431,10 @@ class Jarvis:
             or bool(getattr(self.config, "audit_encryption_enabled", False))
         ) and not str(getattr(self.config, "data_encryption_key", "")).strip():
             blockers.append("STARTUP_STRICT: JARVIS_DATA_KEY required when encryption is enabled.")
+        if bool(getattr(self.config, "webhook_inbound_enabled", False)) and not str(
+            getattr(self.config, "webhook_inbound_token", "") or getattr(self.config, "webhook_auth_token", "")
+        ).strip():
+            blockers.append("STARTUP_STRICT: WEBHOOK_INBOUND_ENABLED requires WEBHOOK_INBOUND_TOKEN or WEBHOOK_AUTH_TOKEN.")
         return blockers
 
     def _load_runtime_state(self) -> None:

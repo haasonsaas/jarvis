@@ -170,6 +170,8 @@ INBOUND_REDACT_HEADER_TOKENS = {
     "x-webhook-token",
     "set-cookie",
 }
+INBOUND_MAX_STRING_CHARS = 4000
+INBOUND_MAX_COLLECTION_ITEMS = 120
 AUDIT_REDACTED = "***REDACTED***"
 AUDIT_METADATA_ONLY_FORBIDDEN_FIELDS: dict[str, set[str]] = {
     "todoist_add_task": {"content", "description", "due_string", "message", "title"},
@@ -1000,6 +1002,40 @@ def _sanitize_inbound_headers(headers: dict[str, Any] | None) -> dict[str, str]:
             continue
         sanitized[key_text] = value_text
     return sanitized
+
+
+def _sanitize_inbound_payload(value: Any, *, key_hint: str | None = None, depth: int = 0) -> Any:
+    if depth > 8:
+        return "<max_depth>"
+    if key_hint:
+        lowered = key_hint.strip().lower()
+        if any(token in lowered for token in SENSITIVE_AUDIT_KEY_TOKENS):
+            return AUDIT_REDACTED
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for idx, (key, item) in enumerate(value.items()):
+            if idx >= INBOUND_MAX_COLLECTION_ITEMS:
+                out["<truncated_keys>"] = max(0, len(value) - INBOUND_MAX_COLLECTION_ITEMS)
+                break
+            key_text = str(key)
+            out[key_text] = _sanitize_inbound_payload(item, key_hint=key_text, depth=depth + 1)
+        return out
+    if isinstance(value, list):
+        limited = value[:INBOUND_MAX_COLLECTION_ITEMS]
+        out = [_sanitize_inbound_payload(item, key_hint=key_hint, depth=depth + 1) for item in limited]
+        if len(value) > INBOUND_MAX_COLLECTION_ITEMS:
+            out.append(f"<truncated_items:{len(value) - INBOUND_MAX_COLLECTION_ITEMS}>")
+        return out
+    if isinstance(value, str):
+        if len(value) > INBOUND_MAX_STRING_CHARS:
+            return value[:INBOUND_MAX_STRING_CHARS] + "...<truncated>"
+        return value
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    text = str(value)
+    if len(text) > INBOUND_MAX_STRING_CHARS:
+        return text[:INBOUND_MAX_STRING_CHARS] + "...<truncated>"
+    return text
 
 
 def _contains_pii(text: str) -> bool:
@@ -1928,7 +1964,7 @@ def record_inbound_webhook_event(
         "source": str(source),
         "path": str(path),
         "headers": _sanitize_inbound_headers(headers),
-        "payload": payload if isinstance(payload, (dict, list, str, int, float, bool, type(None))) else str(payload),
+        "payload": _sanitize_inbound_payload(payload),
     }
     _inbound_webhook_events.append(entry)
     if len(_inbound_webhook_events) > 500:

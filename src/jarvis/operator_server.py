@@ -11,6 +11,50 @@ from aiohttp import web
 from jarvis.tool_summary import list_summaries
 from jarvis.tools.services import AUDIT_LOG, decode_audit_entry_line
 
+_ACTION_REDACT_TOKENS = {
+    "token",
+    "secret",
+    "password",
+    "authorization",
+    "api_key",
+    "code",
+}
+_ACTION_MAX_STRING_CHARS = 512
+
+
+def _sanitize_action_value(value: Any, *, key_hint: str | None = None, depth: int = 0) -> Any:
+    if depth > 6:
+        return "<max_depth>"
+    if key_hint:
+        lowered = key_hint.strip().lower()
+        if any(token in lowered for token in _ACTION_REDACT_TOKENS):
+            return "***REDACTED***"
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for idx, (key, item) in enumerate(value.items()):
+            if idx >= 80:
+                sanitized["<truncated_keys>"] = max(0, len(value) - 80)
+                break
+            key_text = str(key)
+            sanitized[key_text] = _sanitize_action_value(item, key_hint=key_text, depth=depth + 1)
+        return sanitized
+    if isinstance(value, list):
+        limited = value[:80]
+        out = [_sanitize_action_value(item, key_hint=key_hint, depth=depth + 1) for item in limited]
+        if len(value) > 80:
+            out.append(f"<truncated_items:{len(value) - 80}>")
+        return out
+    if isinstance(value, str):
+        if len(value) > _ACTION_MAX_STRING_CHARS:
+            return value[:_ACTION_MAX_STRING_CHARS] + "...<truncated>"
+        return value
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    text = str(value)
+    if len(text) > _ACTION_MAX_STRING_CHARS:
+        return text[:_ACTION_MAX_STRING_CHARS] + "...<truncated>"
+    return text
+
 
 def _dashboard_html() -> str:
     return """<!doctype html>
@@ -294,8 +338,8 @@ class OperatorServer:
         log_item = {
             "timestamp": time.time(),
             "action": action,
-            "payload": payload,
-            "result": result,
+            "payload": _sanitize_action_value(payload),
+            "result": _sanitize_action_value(result),
             "source": request.remote or "operator",
         }
         self._actions.append(log_item)
@@ -347,6 +391,8 @@ class OperatorServer:
     async def _handle_inbound_webhook(self, request: web.Request) -> web.Response:
         if not self._inbound_enabled:
             raise web.HTTPNotFound()
+        if not self._inbound_token:
+            raise web.HTTPServiceUnavailable(text="inbound token not configured")
         provided_token = (
             request.headers.get("X-Webhook-Token", "").strip()
             or request.query.get("token", "").strip()
