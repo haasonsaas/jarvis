@@ -354,6 +354,7 @@ GUEST_SESSION_MAX_TTL_SEC = 24.0 * 3600.0
 HOME_TASK_MAX_TRACKED = 400
 PLANNER_TASK_GRAPH_MAX = 300
 DEFERRED_ACTION_MAX = 500
+NUDGE_RECENT_DISPATCH_MAX = 500
 HOME_AUTOMATION_MAX_TRACKED = 300
 AUTONOMY_CYCLE_HISTORY_MAX = 200
 QUALITY_REPORT_DIR_DEFAULT = Path.home() / ".jarvis" / "quality-reports"
@@ -487,7 +488,10 @@ _proactive_state: dict[str, Any] = {
     "nudge_interrupt_total": 0,
     "nudge_notify_total": 0,
     "nudge_defer_total": 0,
+    "nudge_deduped_total": 0,
     "last_nudge_decision_at": 0.0,
+    "last_nudge_dedupe_at": 0.0,
+    "nudge_recent_dispatches": [],
 }
 _memory_partition_overlays: dict[str, dict[str, Any]] = {}
 _memory_quality_last: dict[str, Any] = {}

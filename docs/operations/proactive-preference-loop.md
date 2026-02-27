@@ -15,9 +15,11 @@ Routing is deterministic and depends on:
 - candidate urgency inputs (`severity`, `due_at`, `expires_at`, `interrupt_allowed`)
 - optional `context` inputs (`user_busy`, `conversation_active`, `presence_confidence`)
 - `max_dispatch` capacity limit
+- dedupe suppression window (`dedupe_window_sec`, default 600 seconds)
 
 The response returns per-bucket rows plus summary counts and cumulative proactive counters.
 When context indicates an active/busy interaction or low presence confidence, non-critical interrupts are downgraded to `notify`/`defer`.
+Candidates recently dispatched within the dedupe window are downgraded to `defer` with reason `duplicate_recent_dispatch` to reduce notification spam.
 
 ## Preference Learning Loop
 

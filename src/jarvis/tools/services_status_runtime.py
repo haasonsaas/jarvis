@@ -344,7 +344,14 @@ def expansion_snapshot(services_module: Any) -> dict[str, Any]:
             "nudge_interrupt_total": int(s._proactive_state.get("nudge_interrupt_total", 0) or 0),
             "nudge_notify_total": int(s._proactive_state.get("nudge_notify_total", 0) or 0),
             "nudge_defer_total": int(s._proactive_state.get("nudge_defer_total", 0) or 0),
+            "nudge_deduped_total": int(s._proactive_state.get("nudge_deduped_total", 0) or 0),
             "last_nudge_decision_at": float(s._proactive_state.get("last_nudge_decision_at", 0.0) or 0.0),
+            "last_nudge_dedupe_at": float(s._proactive_state.get("last_nudge_dedupe_at", 0.0) or 0.0),
+            "nudge_recent_dispatch_count": (
+                len(s._proactive_state.get("nudge_recent_dispatches", []))
+                if isinstance(s._proactive_state.get("nudge_recent_dispatches"), list)
+                else 0
+            ),
         },
         "memory_governance": {
             "partition_overlay_count": len(s._memory_partition_overlays),

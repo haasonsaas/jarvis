@@ -1035,7 +1035,10 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "nudge_interrupt_total",
             "nudge_notify_total",
             "nudge_defer_total",
+            "nudge_deduped_total",
             "last_nudge_decision_at",
+            "last_nudge_dedupe_at",
+            "nudge_recent_dispatch_count",
         ],
         "expansion_memory_governance_required": [
             "partition_overlay_count",

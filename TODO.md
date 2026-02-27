@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 37 (Multimodal Grounding + Proactive Context + Endurance Soak)
+# Jarvis TODO — Wave 38 (Proactive Dedupe + Runtime Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,97 +8,92 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 33
-- Completed: 33
+- Total items: 32
+- Completed: 32
 - Remaining: 0
 
 ---
 
-## A) Planning and baseline
+## A) Wave framing
 
-- [x] `W37-A01` Capture baseline metrics (line counts, test totals, readiness totals).
-- [x] `W37-A02` Define Wave 37 scope around multimodal grounding, proactive context, and endurance soak.
-- [x] `W37-A03` Map each scope item to concrete tests and contract coverage.
+- [x] `W38-A01` Identify next high-risk behavior area after multimodal rollout.
+- [x] `W38-A02` Select proactive nudge routing as next hardening target.
+- [x] `W38-A03` Define decomposition goal: extract reusable proactive runtime helpers from trust domain.
 
-## B) Multimodal grounding quality
+## B) Proactive runtime decomposition
 
-- [x] `W37-B01` Add `src/jarvis/runtime_multimodal.py` for reusable grounding scoring helpers.
-- [x] `W37-B02` Implement modality signal extraction (face/hand/DOA/STT) with deterministic normalization.
-- [x] `W37-B03` Implement aggregate multimodal confidence scoring and confidence-band classification.
-- [x] `W37-B04` Add explicit reason-code generation for degraded grounding conditions.
-- [x] `W37-B05` Integrate multimodal grounding snapshot into runtime voice status publishing.
-- [x] `W37-B06` Persist multimodal snapshot in runtime voice state for system-status visibility.
-- [x] `W37-B07` Add per-turn multimodal telemetry counters in conversation runtime.
-- [x] `W37-B08` Include multimodal grounding metadata in conversation trace payloads.
+- [x] `W38-B01` Add `src/jarvis/tools/services_proactive_runtime.py`.
+- [x] `W38-B02` Move deterministic severity normalization into runtime helper.
+- [x] `W38-B03` Move nudge scoring function into runtime helper.
+- [x] `W38-B04` Move nudge bucket policy function into runtime helper.
+- [x] `W38-B05` Add candidate fingerprint helper for dedupe tracking.
+- [x] `W38-B06` Add recent-dispatch prune helper with bounded retention.
+- [x] `W38-B07` Add recent-dispatch lookup helper.
+- [x] `W38-B08` Add recent-dispatch append helper.
+- [x] `W38-B09` Add reason histogram helper for triage explainability.
 
-## C) Proactive decision quality improvements
+## C) Proactive anti-spam behavior
 
-- [x] `W37-C01` Extend `proactive_assistant(action="nudge_decision")` with contextual routing inputs.
-- [x] `W37-C02` Add context-aware downgrade logic for interrupts (`user_busy`, `conversation_active`, low-presence confidence).
-- [x] `W37-C03` Preserve high-urgency escalation semantics while context-aware downgrades are active.
-- [x] `W37-C04` Surface context-routing reasons in triage output for operator transparency.
-- [x] `W37-C05` Update service schema for new proactive context arguments.
+- [x] `W38-C01` Add `dedupe_window_sec` argument to `proactive_assistant(action="nudge_decision")`.
+- [x] `W38-C02` Implement duplicate suppression for interrupt/notify candidates.
+- [x] `W38-C03` Emit explicit defer reason `duplicate_recent_dispatch`.
+- [x] `W38-C04` Preserve capacity and urgency routing after dedupe pass.
+- [x] `W38-C05` Track per-call `dedupe_suppressed_count` in response payload.
+- [x] `W38-C06` Add `reason_counts` to nudge decision payload.
 
-## D) Observability and status contract
+## D) Proactive runtime state and status
 
-- [x] `W37-D01` Extend telemetry snapshot with `multimodal_metrics` aggregate fields.
-- [x] `W37-D02` Extend observability status defaults/normalization to include `multimodal_metrics`.
-- [x] `W37-D03` Extend system status contract required fields for multimodal observability/voice payloads.
-- [x] `W37-D04` Add operator recommendation rule for persistently low multimodal grounding confidence.
+- [x] `W38-D01` Extend proactive state defaults with dedupe counters/timestamps/cache.
+- [x] `W38-D02` Add proactive state reset support for new dedupe fields.
+- [x] `W38-D03` Add proactive state load-path normalization for dedupe fields.
+- [x] `W38-D04` Extend system expansion snapshot with dedupe metrics.
+- [x] `W38-D05` Extend status contract proactive-required fields for dedupe metrics.
 
-## E) Endurance soak improvements
+## E) Schema, docs, and eval dataset
 
-- [x] `W37-E01` Add repeat-cycle support to soak runner (`scripts/run_soak_profile.py`).
-- [x] `W37-E02` Add cycle-level metadata and artifact checks for repeated soak execution.
-- [x] `W37-E03` Preserve backwards compatibility for existing fast/full/live soak usage.
+- [x] `W38-E01` Extend proactive tool schema with `dedupe_window_sec`.
+- [x] `W38-E02` Update operations doc for dedupe routing behavior and reason codes.
+- [x] `W38-E03` Add eval case for proactive status dedupe metrics.
+- [x] `W38-E04` Add eval case for nudge dedupe payload contract.
 
-## F) Test coverage
+## F) Tests and boundaries
 
-- [x] `W37-F01` Add unit tests for runtime multimodal scoring/banding/reasons.
-- [x] `W37-F02` Add lifecycle tests verifying voice status includes multimodal grounding fields.
-- [x] `W37-F03` Add proactive context-routing tests for nudge-decision downgrade behavior.
-- [x] `W37-F04` Add operator status tests for multimodal-driven recommendation path.
-- [x] `W37-F05` Add contract/status tests for new multimodal required fields.
-- [x] `W37-F06` Extend release-tooling tests for soak repeat-cycle artifact metadata.
-- [x] `W37-F07` Extend import-boundary tests for new runtime module.
+- [x] `W38-F01` Add unit tests for proactive runtime helper module.
+- [x] `W38-F02` Add service-level dedupe behavior test for repeated candidates.
+- [x] `W38-F03` Extend status tests for proactive dedupe fields.
+- [x] `W38-F04` Extend contract tests for proactive dedupe required fields.
+- [x] `W38-F05` Extend schema tests for `dedupe_window_sec` type.
+- [x] `W38-F06` Add import-boundary guard for proactive runtime helper module.
 
-## G) Docs and eval alignment
+## G) Quality loop
 
-- [x] `W37-G01` Update operations docs for multimodal grounding and context-aware proactive routing.
-- [x] `W37-G02` Extend eval dataset contract cases for multimodal status/observability fields.
-
-## H) Quality and release loop
-
-- [x] `W37-H01` Run targeted pytest for new/changed runtime/services/release modules.
-- [x] `W37-H02` Run `make check`.
-- [x] `W37-H03` Run `make security-gate`.
-- [x] `W37-H04` Run `./scripts/jarvis_readiness.sh fast`.
-- [x] `W37-H05` Update TODO completion summary and outcome snapshot with final metrics.
-- [x] `W37-H06` Commit and push Wave 37 to `origin/main`.
+- [x] `W38-G01` Run focused lint + targeted pytest for proactive/status changes.
+- [x] `W38-G02` Run `make check`.
+- [x] `W38-G03` Run `make security-gate`.
+- [x] `W38-G04` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W38-G05` Commit and push Wave 38.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Core behavior additions:
-  - New runtime multimodal grounding helper in `src/jarvis/runtime_multimodal.py` with confidence scoring, modality signals, and reason codes.
-  - Voice/runtime status now includes `multimodal_grounding` payload.
-  - Conversation runtime now records per-turn multimodal telemetry and trace metadata.
+- Runtime decomposition:
+  - Added dedicated proactive runtime helpers in `src/jarvis/tools/services_proactive_runtime.py`.
+  - `trust.py` now delegates nudge score/bucket/fingerprint/dedupe utility logic to runtime helpers.
 - Proactive quality:
-  - `proactive_assistant(action="nudge_decision")` now supports `context` (`user_busy`, `conversation_active`, `presence_confidence`) and context-aware interrupt downgrade logic.
-- Observability/contract:
-  - Observability includes `multimodal_metrics`.
-  - System status contract includes multimodal required fields for voice and observability.
-  - Operator recommendations now include low-multimodal-confidence advisory.
-- Endurance soak:
-  - `scripts/run_soak_profile.py` now supports `--repeat N` with cycle metadata and expanded artifact checks.
-- New tests added:
-  - `tests/test_runtime_multimodal.py`
-- Validation status:
-  - `make check`: `594 passed`
-  - `make security-gate`: `594 passed`; fault subset `3 passed`
-  - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `157/157`
-- Size snapshot:
-  - `src/jarvis/__main__.py`: `1,770` lines
-  - `src/jarvis/tools/services.py`: `1,559` lines
-  - `src/jarvis/tools/services_domains/trust.py`: `1,159` lines
+  - `nudge_decision` now supports dedupe suppression window (`dedupe_window_sec`, default 600 sec).
+  - Duplicate recently-dispatched candidates are downgraded to `defer` with reason `duplicate_recent_dispatch`.
+  - Response now includes `dedupe_suppressed_count` and `reason_counts`.
+- Status and contract:
+  - Proactive expansion status now exposes:
+    - `nudge_deduped_total`
+    - `last_nudge_dedupe_at`
+    - `nudge_recent_dispatch_count`
+  - System status contract now requires those proactive fields.
+- Persistence:
+  - Proactive dedupe counters/history are reset + reloaded correctly through expansion state routines.
+- Validation results:
+  - Focused pytest/lint: pass
+  - `make check`: `600 passed`
+  - `make security-gate`: `600 passed`; fault subset `3 passed`
+  - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`

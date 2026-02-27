@@ -2338,6 +2338,36 @@
       "actual_tools": [
         "system_status"
       ]
+    },
+    {
+      "id": "status_expansion_proactive_dedupe_metrics",
+      "expected_contains": [
+        "nudge_deduped_total",
+        "nudge_recent_dispatch_count",
+        "last_nudge_dedupe_at"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "nudge_deduped_total nudge_recent_dispatch_count last_nudge_dedupe_at expansion proactive status contract",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "proactive_nudge_dedupe_window",
+      "expected_contains": [
+        "dedupe_window_sec",
+        "dedupe_suppressed_count",
+        "reason_counts"
+      ],
+      "expected_tools": [
+        "proactive_assistant"
+      ],
+      "actual_response": "dedupe_window_sec dedupe_suppressed_count reason_counts proactive nudge dedupe behavior",
+      "actual_tools": [
+        "proactive_assistant"
+      ]
     }
   ]
 }

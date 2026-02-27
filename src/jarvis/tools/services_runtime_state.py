@@ -157,7 +157,10 @@ def _reset_runtime_state(services_module: Any) -> None:
     s._proactive_state["nudge_interrupt_total"] = 0
     s._proactive_state["nudge_notify_total"] = 0
     s._proactive_state["nudge_defer_total"] = 0
+    s._proactive_state["nudge_deduped_total"] = 0
     s._proactive_state["last_nudge_decision_at"] = 0.0
+    s._proactive_state["last_nudge_dedupe_at"] = 0.0
+    s._proactive_state["nudge_recent_dispatches"] = []
     s._memory_partition_overlays.clear()
     s._memory_quality_last.clear()
     s._identity_trust_policies.clear()
@@ -328,11 +331,34 @@ def load_expansion_state(services_module: Any) -> None:
             0,
             minimum=0,
         )
+        s._proactive_state["nudge_deduped_total"] = s._as_int(
+            proactive.get("nudge_deduped_total", 0),
+            0,
+            minimum=0,
+        )
         s._proactive_state["last_nudge_decision_at"] = s._as_float(
             proactive.get("last_nudge_decision_at", 0.0),
             0.0,
             minimum=0.0,
         )
+        s._proactive_state["last_nudge_dedupe_at"] = s._as_float(
+            proactive.get("last_nudge_dedupe_at", 0.0),
+            0.0,
+            minimum=0.0,
+        )
+        recent_dispatches = proactive.get("nudge_recent_dispatches")
+        s._proactive_state["nudge_recent_dispatches"] = []
+        if isinstance(recent_dispatches, list):
+            for row in recent_dispatches[-s.NUDGE_RECENT_DISPATCH_MAX :]:
+                if not isinstance(row, dict):
+                    continue
+                fingerprint = str(row.get("fingerprint", "")).strip()
+                if not fingerprint:
+                    continue
+                dispatched_at = s._as_float(row.get("dispatched_at", 0.0), 0.0, minimum=0.0)
+                s._proactive_state["nudge_recent_dispatches"].append(
+                    {"fingerprint": fingerprint, "dispatched_at": dispatched_at}
+                )
 
     replace_state_dict(s, s._memory_partition_overlays, payload.get("memory_partition_overlays"))
     replace_state_dict(s, s._memory_quality_last, payload.get("memory_quality_last"))

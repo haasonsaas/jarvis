@@ -524,6 +524,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "quiet_window_active": {"type": "boolean"},
             "now": {"type": "number"},
             "max_dispatch": {"type": "integer"},
+            "dedupe_window_sec": {"type": "number"},
             "candidates": {"type": "array", "items": {"type": "object"}},
             "context": {"type": "object"},
         },

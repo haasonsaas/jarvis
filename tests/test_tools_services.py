@@ -3271,6 +3271,8 @@ class TestServicesTools:
         assert "expansion" in payload
         assert "proactive" in payload["expansion"]
         assert "nudge_decisions_total" in payload["expansion"]["proactive"]
+        assert "nudge_deduped_total" in payload["expansion"]["proactive"]
+        assert "nudge_recent_dispatch_count" in payload["expansion"]["proactive"]
         assert "last_nudge_decision_at" in payload["expansion"]["proactive"]
         assert "planner_engine" in payload["expansion"]
         assert "integration_hub" in payload["expansion"]
@@ -3381,6 +3383,8 @@ class TestServicesTools:
         assert "proactive" in payload["expansion_required"]
         assert "expansion_proactive_required" in payload
         assert "nudge_decisions_total" in payload["expansion_proactive_required"]
+        assert "nudge_deduped_total" in payload["expansion_proactive_required"]
+        assert "nudge_recent_dispatch_count" in payload["expansion_proactive_required"]
         assert "expansion_integration_hub_required" in payload
         assert "release_channel_config_path" in payload["expansion_integration_hub_required"]
         assert "last_release_channel_check_at" in payload["expansion_integration_hub_required"]
@@ -3806,6 +3810,7 @@ class TestServicesTools:
         assert schemas["tool_summary_text"]["properties"]["limit"]["type"] == "integer"
         assert schemas["proactive_assistant"]["properties"]["snooze_minutes"]["type"] == "integer"
         assert schemas["proactive_assistant"]["properties"]["max_dispatch"]["type"] == "integer"
+        assert schemas["proactive_assistant"]["properties"]["dedupe_window_sec"]["type"] == "number"
         assert schemas["memory_governance"]["properties"]["limit"]["type"] == "integer"
         assert schemas["skills_governance"]["properties"]["rate_per_min"]["type"] == "integer"
         assert schemas["planner_engine"]["properties"]["limit"]["type"] == "integer"
@@ -4158,6 +4163,46 @@ class TestServicesTools:
         assert payload["context"]["user_busy"] is True
 
     @pytest.mark.asyncio
+    async def test_proactive_nudge_decision_dedupes_recent_dispatches(self):
+        from jarvis.tools import services
+
+        first = await services.proactive_assistant(
+            {
+                "action": "nudge_decision",
+                "policy": "interrupt",
+                "quiet_window_active": False,
+                "dedupe_window_sec": 900,
+                "now": 1_000.0,
+                "candidates": [
+                    {"id": "wash-filter", "title": "Wash HVAC filter", "severity": "high"},
+                ],
+            }
+        )
+        first_payload = json.loads(first["content"][0]["text"])
+        assert first_payload["interrupt_count"] == 1
+        assert first_payload["dedupe_suppressed_count"] == 0
+
+        second = await services.proactive_assistant(
+            {
+                "action": "nudge_decision",
+                "policy": "interrupt",
+                "quiet_window_active": False,
+                "dedupe_window_sec": 900,
+                "now": 1_100.0,
+                "candidates": [
+                    {"id": "wash-filter", "title": "Wash HVAC filter", "severity": "high"},
+                ],
+            }
+        )
+        second_payload = json.loads(second["content"][0]["text"])
+        assert second_payload["interrupt_count"] == 0
+        assert second_payload["defer_count"] == 1
+        assert second_payload["dedupe_suppressed_count"] == 1
+        assert second_payload["defer"][0]["reason"] == "duplicate_recent_dispatch"
+        assert second_payload["counters"]["nudge_deduped_total"] >= 1
+        assert second_payload["counters"]["nudge_recent_dispatch_count"] >= 1
+
+    @pytest.mark.asyncio
     async def test_integration_hub_release_channel_actions(self):
         from jarvis.tools import services
 
@@ -4225,6 +4270,8 @@ class TestServicesTools:
         expansion = payload["expansion"]
         assert expansion["proactive"]["pending_follow_through_count"] == 1
         assert expansion["proactive"]["nudge_decisions_total"] >= 1
+        assert "nudge_deduped_total" in expansion["proactive"]
+        assert "nudge_recent_dispatch_count" in expansion["proactive"]
         assert expansion["identity_trust"]["trust_policy_count"] >= 1
         assert expansion["integration_hub"]["active_release_channel"] == "beta"
         assert expansion["embodiment_presence"]["privacy_posture"]["state"] == "muted"

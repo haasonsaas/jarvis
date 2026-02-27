@@ -4,63 +4,22 @@ from __future__ import annotations
 
 from typing import Any
 
+from jarvis.tools.services_proactive_runtime import (
+    has_recent_dispatch as _has_recent_dispatch,
+    nudge_bucket as _nudge_bucket,
+    nudge_fingerprint as _nudge_fingerprint,
+    nudge_reason_counts as _nudge_reason_counts,
+    nudge_row_score as _nudge_row_score,
+    nudge_severity as _nudge_severity,
+    prune_recent_dispatches as _prune_recent_dispatches,
+    record_recent_dispatch as _record_recent_dispatch,
+)
+
 
 def _services():
     from jarvis.tools import services as s
 
     return s
-
-
-def _nudge_severity(value: Any) -> tuple[str, int]:
-    text = str(value or "").strip().lower()
-    if text == "critical":
-        return "critical", 4
-    if text == "high":
-        return "high", 3
-    if text == "medium":
-        return "medium", 2
-    return "low", 1
-
-
-def _nudge_row_score(*, severity_rank: int, overdue_sec: float, due_soon_sec: float) -> float:
-    overdue_weight = min(7200.0, max(0.0, overdue_sec)) * 0.02
-    due_weight = 0.0
-    if due_soon_sec > 0.0:
-        due_weight = max(0.0, 900.0 - min(900.0, due_soon_sec)) * 0.01
-    return float(severity_rank * 100.0) + overdue_weight + due_weight
-
-
-def _nudge_bucket(
-    *,
-    policy: str,
-    quiet_active: bool,
-    severity_rank: int,
-    overdue_sec: float,
-    due_soon_sec: float,
-) -> tuple[str, str]:
-    if policy == "defer":
-        if severity_rank >= 4 or overdue_sec >= 3600.0:
-            return "interrupt", "critical_or_overdue"
-        return "defer", "policy_defer"
-    if policy == "interrupt":
-        if quiet_active and severity_rank <= 2 and overdue_sec < 600.0:
-            return "notify", "quiet_window_softened"
-        if severity_rank >= 2 or overdue_sec >= 300.0:
-            return "interrupt", "policy_interrupt"
-        return "notify", "policy_interrupt_soft"
-
-    # adaptive
-    if quiet_active:
-        if severity_rank >= 4 or overdue_sec >= 1800.0:
-            return "interrupt", "quiet_escalation"
-        if severity_rank >= 3 or overdue_sec >= 600.0:
-            return "notify", "quiet_notify"
-        return "defer", "quiet_defer"
-    if severity_rank >= 3 or overdue_sec >= 300.0:
-        return "interrupt", "adaptive_interrupt"
-    if severity_rank >= 2 or due_soon_sec <= 900.0:
-        return "notify", "adaptive_notify"
-    return "defer", "adaptive_defer"
 
 
 async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
@@ -77,6 +36,7 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
     _normalize_nudge_policy = s._normalize_nudge_policy
     _nudge_policy = s._nudge_policy
     _quiet_window_active = s._quiet_window_active
+    NUDGE_RECENT_DISPATCH_MAX = s.NUDGE_RECENT_DISPATCH_MAX
 
     start_time = time.monotonic()
     if not _tool_permitted("proactive_assistant"):
@@ -183,6 +143,7 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
         candidates = args.get("candidates") if isinstance(args.get("candidates"), list) else []
         max_dispatch = _as_int(args.get("max_dispatch", 5), 5, minimum=1, maximum=50)
         now = _as_float(args.get("now", time.time()), time.time(), minimum=0.0)
+        dedupe_window_sec = _as_float(args.get("dedupe_window_sec", 600.0), 600.0, minimum=0.0, maximum=86_400.0)
         policy = _normalize_nudge_policy(args.get("policy", _nudge_policy))
         context = args.get("context") if isinstance(args.get("context"), dict) else {}
         user_busy = _as_bool(context.get("user_busy"), default=False)
@@ -198,6 +159,13 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
             quiet_active = quiet_override
         else:
             quiet_active = _quiet_window_active(now_ts=now)
+        recent_dispatches = _prune_recent_dispatches(
+            _proactive_state.get("nudge_recent_dispatches", []),
+            now_ts=now,
+            dedupe_window_sec=dedupe_window_sec,
+            max_entries=NUDGE_RECENT_DISPATCH_MAX,
+        )
+        dedupe_suppressed = 0
 
         interrupt_rows: list[dict[str, Any]] = []
         notify_rows: list[dict[str, Any]] = []
@@ -236,11 +204,27 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
                 elif presence_confidence < 0.35 and severity_rank < 4:
                     bucket = "notify" if not quiet_active else "defer"
                     reason = "context_low_presence_confidence"
+            source = str(row.get("source", "unknown")).strip() or "unknown"
+            fingerprint = _nudge_fingerprint(
+                row=row,
+                title=title,
+                severity=severity,
+                source=source,
+            )
+            if bucket in {"interrupt", "notify"} and _has_recent_dispatch(
+                recent_dispatches,
+                fingerprint=fingerprint,
+                now_ts=now,
+                dedupe_window_sec=dedupe_window_sec,
+            ):
+                bucket = "defer"
+                reason = "duplicate_recent_dispatch"
+                dedupe_suppressed += 1
             item = {
                 "id": str(row.get("id", f"nudge-{index}")).strip() or f"nudge-{index}",
                 "title": title,
                 "severity": severity,
-                "source": str(row.get("source", "unknown")).strip() or "unknown",
+                "source": source,
                 "overdue_sec": overdue_sec,
                 "due_soon_sec": due_soon_sec,
                 "score": _nudge_row_score(
@@ -250,6 +234,7 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
                 ),
                 "bucket": bucket,
                 "reason": reason,
+                "_fingerprint": fingerprint,
             }
             if bucket == "interrupt":
                 interrupt_rows.append(item)
@@ -271,18 +256,37 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
             defer_rows.extend(overflow)
         interrupt = [row for row in dispatch_rows if str(row.get("bucket", "")) == "interrupt"]
         notify = [row for row in dispatch_rows if str(row.get("bucket", "")) == "notify"]
+        for row in interrupt + notify:
+            _record_recent_dispatch(
+                recent_dispatches,
+                fingerprint=str(row.get("_fingerprint", "")),
+                dispatched_at=now,
+            )
+        recent_dispatches = _prune_recent_dispatches(
+            recent_dispatches,
+            now_ts=now,
+            dedupe_window_sec=dedupe_window_sec,
+            max_entries=NUDGE_RECENT_DISPATCH_MAX,
+        )
         for row in interrupt:
             row.pop("bucket", None)
+            row.pop("_fingerprint", None)
         for row in notify:
             row.pop("bucket", None)
+            row.pop("_fingerprint", None)
         for row in defer_rows:
             row.pop("bucket", None)
+            row.pop("_fingerprint", None)
 
         _proactive_state["nudge_decisions_total"] = int(_proactive_state.get("nudge_decisions_total", 0) or 0) + 1
         _proactive_state["nudge_interrupt_total"] = int(_proactive_state.get("nudge_interrupt_total", 0) or 0) + len(interrupt)
         _proactive_state["nudge_notify_total"] = int(_proactive_state.get("nudge_notify_total", 0) or 0) + len(notify)
         _proactive_state["nudge_defer_total"] = int(_proactive_state.get("nudge_defer_total", 0) or 0) + len(defer_rows)
+        _proactive_state["nudge_deduped_total"] = int(_proactive_state.get("nudge_deduped_total", 0) or 0) + dedupe_suppressed
         _proactive_state["last_nudge_decision_at"] = now
+        if dedupe_suppressed > 0:
+            _proactive_state["last_nudge_dedupe_at"] = now
+        _proactive_state["nudge_recent_dispatches"] = recent_dispatches
 
         payload = {
             "action": action,
@@ -298,6 +302,13 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
             "interrupt_count": len(interrupt),
             "notify_count": len(notify),
             "defer_count": len(defer_rows),
+            "dedupe_window_sec": dedupe_window_sec,
+            "dedupe_suppressed_count": dedupe_suppressed,
+            "reason_counts": _nudge_reason_counts(
+                interrupt=interrupt,
+                notify=notify,
+                defer=defer_rows,
+            ),
             "interrupt": interrupt,
             "notify": notify,
             "defer": defer_rows,
@@ -306,7 +317,10 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
                 "nudge_interrupt_total": int(_proactive_state.get("nudge_interrupt_total", 0) or 0),
                 "nudge_notify_total": int(_proactive_state.get("nudge_notify_total", 0) or 0),
                 "nudge_defer_total": int(_proactive_state.get("nudge_defer_total", 0) or 0),
+                "nudge_deduped_total": int(_proactive_state.get("nudge_deduped_total", 0) or 0),
                 "last_nudge_decision_at": float(_proactive_state.get("last_nudge_decision_at", 0.0) or 0.0),
+                "last_nudge_dedupe_at": float(_proactive_state.get("last_nudge_dedupe_at", 0.0) or 0.0),
+                "nudge_recent_dispatch_count": len(recent_dispatches),
             },
         }
         risk = "medium" if interrupt else ("low" if not notify else "medium")
