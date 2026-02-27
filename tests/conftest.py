@@ -7,6 +7,7 @@ Tests should run without any external services or devices.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import pytest
 import numpy as np
 from unittest.mock import AsyncMock, MagicMock
@@ -20,6 +21,11 @@ os.environ.setdefault("ELEVENLABS_API_KEY", "test-key-not-real")
 def config(tmp_path, monkeypatch):
     """Config with test defaults."""
     monkeypatch.setenv("MEMORY_PATH", str(tmp_path / "memory.sqlite"))
+    monkeypatch.setenv("EXPANSION_STATE_PATH", str(tmp_path / "expansion-state.json"))
+    monkeypatch.setenv("NOTES_CAPTURE_DIR", str(tmp_path / "notes"))
+    monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path / "quality-reports"))
+    project_root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("RELEASE_CHANNEL_CONFIG_PATH", str(project_root / "config" / "release-channels.json"))
     from jarvis.config import Config
     return Config()
 

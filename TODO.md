@@ -1,172 +1,70 @@
-# Jarvis Next TODO (Broad Product Roadmap)
+# Jarvis TODO — Wave 3 (Release Readiness + Runtime Durability)
 
 Last updated: 2026-02-27
 
-This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvis" assistant: proactive behavior, stronger presence, richer multi-user trust, deeper home intelligence, and production-grade operations.
+This TODO captures the next practical gap-closure pass after the previous roadmap was completed.  
+Scope for this wave: make release operations safer, make expansion state durable across restarts, and tighten operator/CI readiness tooling.
 
 ## Status legend
 - `[ ]` Not started
 - `[-]` In progress
-- `[x]` Implemented
+- `[x]` Completed
 
-## Priority model
-- `P0`: must-have for daily "Jarvis" experience
-- `P1`: major capability expansion
-- `P2`: polish, scale, and ecosystem hardening
-
-## Previous backlog status
-- Prior hardening/integration backlog was completed before this roadmap.
-- This file now tracks only next-stage product expansion work.
+## Completion summary
+- Total items: 24
+- Completed: 24
+- Remaining: 0
 
 ---
 
-## 1) Core Jarvis Experience (6 items)
+## A) Runtime Persistence Hardening
 
-- [x] `JX01` Define a concrete "Jarvis interaction contract" (tone, brevity, initiative, boundaries) and enforce it in system prompts. `P0`
-- [x] `JX02` Add dynamic response mode switching (`brief`, `normal`, `deep`) based on user context and urgency. `P0`
-- [x] `JX03` Add context-aware first-response behavior (acknowledge, answer, act, or ask clarifying question). `P0`
-- [x] `JX04` Add confidence-aware language policy to avoid overconfident answers when uncertain. `P0`
-- [x] `JX05` Add "operator personality controls" with live preview and rollback. `P1`
-- [x] `JX06` Add "Jarvis quality bar" regression checks for tone/style consistency across common prompts. `P1`
+- [x] `W3-P01` Add dedicated expansion-state persistence path in config (`EXPANSION_STATE_PATH`).
+- [x] `W3-P02` Persist roadmap/runtime expansion state (proactive/trust/planner/embodiment/release) to disk.
+- [x] `W3-P03` Load persisted expansion state during service bind/restart.
+- [x] `W3-P04` Sanitize loaded guest sessions and prune expired sessions on load.
+- [x] `W3-P05` Persist expansion state after expansion tool updates.
+- [x] `W3-P06` Include richer release-channel state metadata in persisted expansion payload.
 
-## 2) Voice and Dialogue Quality (6 items)
+## B) Path Configurability and File Placement
 
-- [x] `VX01` Add robust wake-word false-trigger suppression with environment-specific calibration profiles. `P0`
-- [x] `VX02` Add adaptive end-of-turn timing based on speaking rate and interruption likelihood. `P0`
-- [x] `VX03` Add explicit "follow-up intent carryover" so multi-turn requests preserve unresolved slots. `P0`
-- [x] `VX04` Add per-user voice preferences (pace, verbosity, confirmations). `P1`
-- [x] `VX05` Add runtime STT confidence diagnostics in operator UI and status endpoints. `P1`
-- [x] `VX06` Add conversation repair loops ("I misheard X, did you mean Y?") with minimal friction. `P1`
+- [x] `W3-C01` Add release config path env support (`RELEASE_CHANNEL_CONFIG_PATH`).
+- [x] `W3-C02` Add notes capture directory env support (`NOTES_CAPTURE_DIR`).
+- [x] `W3-C03` Add quality report output directory env support (`QUALITY_REPORT_DIR`).
+- [x] `W3-C04` Wire new paths into services bind lifecycle and defaults.
+- [x] `W3-C05` Replace hardcoded notes/quality directories with configured runtime paths.
 
-## 3) Proactive Assistant Behavior (6 items)
+## C) Release Channel Operations (`integration_hub`)
 
-- [x] `PX01` Add proactive briefing engine (morning/evening) built from calendar, reminders, weather, and home state. `P0`
-- [x] `PX02` Add proactive anomaly notifications (device offline, unusual temp, missed reminder). `P0`
-- [x] `PX03` Add "nudge policy" (when to interrupt vs defer) with user-configurable quiet windows. `P0`
-- [x] `PX04` Add routine suggestions based on repeated behavior patterns (opt-in only). `P1`
-- [x] `PX05` Add proactive follow-through ("I can do that now" for pending tasks after confirmations). `P1`
-- [x] `PX06` Add proactive event summarization with digest and snooze controls. `P1`
+- [x] `W3-R01` Extend `integration_hub` schema with release channel actions.
+- [x] `W3-R02` Implement `release_channel_get` action.
+- [x] `W3-R03` Implement `release_channel_set` action with validation + immediate check snapshot.
+- [x] `W3-R04` Implement `release_channel_check` action with configurable workspace.
+- [x] `W3-R05` Evaluate release-channel checks using configured release-channel JSON.
+- [x] `W3-R06` Surface release check details (`last_check_*`, `migration_checks`) in `system_status.expansion.integration_hub`.
+- [x] `W3-R07` Update `system_status_contract` required-field map for new integration-hub release keys.
 
-## 4) Memory and Personalization (6 items)
+## D) Script and CI Quality Gates
 
-- [x] `MX01` Add scoped long-term memory classes (`preferences`, `people`, `projects`, `household_rules`) with explicit retrieval policy. `P0`
-- [x] `MX02` Add "memory confidence" and "source trail" to prevent stale or hallucinated recall. `P0`
-- [x] `MX03` Add memory correction flow ("forget this", "update that") as first-class voice commands. `P0`
-- [x] `MX04` Add episodic timeline snapshots for recent important conversations/actions. `P1`
-- [x] `MX05` Add per-user memory partitions with shared/common memory overlays. `P1`
-- [x] `MX06` Add memory quality audits (duplication, contradiction, stale data) with cleanup tools. `P1`
+- [x] `W3-S01` Enhance `run_eval_dataset.py` with threshold gates (`--min-pass-rate`, `--max-failed`).
+- [x] `W3-S02` Add explicit acceptance failure reasons to eval summary output.
+- [x] `W3-S03` Enhance `generate_quality_report.py` with baseline trend comparison support.
+- [x] `W3-S04` Add trend section to quality report markdown output.
+- [x] `W3-S05` Add combined readiness script (`scripts/jarvis_readiness.sh`).
+- [x] `W3-S06` Add `make readiness` target.
+- [x] `W3-S07` Add CI workflow to execute readiness gate (`.github/workflows/jarvis-readiness.yml`).
 
-## 5) Multi-User Identity and Trust (6 items)
+## E) Test and Documentation Coverage
 
-- [x] `IX01` Add session-level identity confidence score from voice context + operator hints. `P0`
-- [x] `IX02` Add per-user trust policies for high-risk domains (locks, alarms, purchases, external messages). `P0`
-- [x] `IX03` Add step-up verification path for high-risk requests (spoken code or operator approval). `P0`
-- [x] `IX04` Add "guest mode" with constrained capabilities and automatic expiry. `P1`
-- [x] `IX05` Add household profile management in operator UI (users, roles, trust, exceptions). `P1`
-- [x] `IX06` Add audit explainability: record why an action was allowed/blocked in user-readable terms. `P1`
-
-## 6) Home Intelligence and Automation (6 items)
-
-- [x] `HX01` Add intent-to-plan decomposition for complex home requests ("movie mode", "bedtime routine"). `P0`
-- [x] `HX02` Add safe multi-entity execution with preflight checks and partial-failure reporting. `P0`
-- [x] `HX03` Add area-level policy constraints (e.g., no loud actions in bedroom after quiet hours). `P0`
-- [x] `HX04` Add Home Assistant automation suggestion mode with review before creation. `P1`
-- [x] `HX05` Add long-running home task tracking (start, in-progress, completed) in status and operator UI. `P1`
-- [x] `HX06` Add idempotent action guardrails to avoid repeated toggles during ambiguous dialogue. `P1`
-
-## 7) Operator Surfaces and Control (6 items)
-
-- [x] `OX01` Add operator auth mode options (`off`, `token`, `session`) with explicit startup warnings by risk level. `P0`
-- [x] `OX02` Add signed operator action records for tamper-evident operations trail. `P1`
-- [x] `OX03` Add live "conversation trace" panel (turn flow, tool calls, policy decisions, latencies). `P1`
-- [x] `OX04` Add operator "safe mode" toggle that forces dry-run behavior globally. `P0`
-- [x] `OX05` Add control presets (`quiet hours`, `demo mode`, `maintenance mode`) with one-click activation. `P1`
-- [x] `OX06` Add export/import for operator settings and runtime profiles. `P2`
-
-## 8) Skills Ecosystem and Extensibility (6 items)
-
-- [x] `SX01` Add skill capability negotiation so planner can reason about tool quality and reliability. `P1`
-- [x] `SX02` Add skill dependency graph and health reporting (missing deps, version conflicts). `P1`
-- [x] `SX03` Add per-skill runtime quotas (rate, CPU time, outbound calls). `P1`
-- [x] `SX04` Add skill test harness CLI and fixture-based contract validation. `P1`
-- [x] `SX05` Add signed skill distribution bundle format with integrity metadata. `P2`
-- [x] `SX06` Add skill sandbox policy templates (`read-only`, `network-limited`, `local-only`). `P1`
-
-## 9) Planning and Autonomy (6 items)
-
-- [x] `AX01` Add explicit planner/executor split with retry policy and rollback hints. `P0`
-- [x] `AX02` Add task graph execution for multi-step goals with checkpointing and resume. `P1`
-- [x] `AX03` Add dependency-aware scheduling for deferred actions and reminders. `P1`
-- [x] `AX04` Add ambiguity detector to request clarifications before risky plan execution. `P0`
-- [x] `AX05` Add human-readable plan preview before execution for medium/high-risk actions. `P0`
-- [x] `AX06` Add planner self-critique pass for expensive/complex plans before commit. `P2`
-
-## 10) Reliability and Runtime Safety (6 items)
-
-- [x] `RX01` Add per-integration circuit breakers with cooldown/backoff state in status. `P0`
-- [x] `RX02` Add persistent recovery journal for interrupted actions and post-restart reconciliation. `P0`
-- [x] `RX03` Add dead-letter queue for failed outbound notifications/webhooks with replay controls. `P1`
-- [x] `RX04` Add stricter timeout budgets per turn phase (listen/think/speak/act). `P0`
-- [x] `RX05` Add chaos/fault profile runner in CI for scheduled resilience regression tests. `P1`
-- [x] `RX06` Add runtime invariant checks to detect impossible state combinations and auto-heal. `P1`
-
-## 11) Observability and Evaluation (6 items)
-
-- [x] `EX01` Add intent-level success metrics (answer quality, completion success, correction frequency). `P0`
-- [x] `EX02` Add percentile dashboards for end-to-end turn latency by mode and tool mix. `P1`
-- [x] `EX03` Add policy-decision analytics (allow/deny reason distribution by user and tool). `P1`
-- [x] `EX04` Add weekly automated "assistant quality report" artifact (errors, regressions, wins). `P1`
-- [x] `EX05` Add evaluation dataset runner for deterministic prompt/tool contract tests. `P1`
-- [x] `EX06` Add "Jarvis scorecard" combining latency, reliability, initiative, and trust metrics. `P1`
-
-## 12) Embodiment and Presence (6 items)
-
-- [x] `BX01` Add richer stateful micro-expression library mapped to dialogue intent and certainty. `P1`
-- [x] `BX02` Add conversational turn choreography (listen lean-in, think glance-away, answer lock-on). `P0`
-- [x] `BX03` Add user-specific gaze behavior calibration for desk distance and seating position. `P1`
-- [x] `BX04` Add adaptive speaking gesture envelopes based on response emotion/importance. `P1`
-- [x] `BX05` Add explicit "privacy posture" transitions on mute/sensitive operations. `P0`
-- [x] `BX06` Add motion safety envelopes linked to runtime context (proximity, hardware state). `P0`
-
-## 13) Integrations and Productivity Surface (6 items)
-
-- [x] `GX01` Add richer calendar actions (create/update/delete with confirmation policy). `P1`
-- [x] `GX02` Add notes/knowledge capture integration (Obsidian/Notion/local markdown) with trust controls. `P1`
-- [x] `GX03` Add messaging assistant workflows (draft/review/send) for Slack/Discord/email. `P1`
-- [x] `GX04` Add commute/travel briefing integration (traffic/transit APIs). `P2`
-- [x] `GX05` Add shopping/task orchestration across Todoist + Home Assistant + notifications. `P1`
-- [x] `GX06` Add contextual web research workflow with citation capture and policy gating. `P2`
-
-## 14) Packaging, Deployment, and Ecosystem Fit (6 items)
-
-- [x] `DX01` Add one-command local install/bootstrap script for clean hosts. `P1`
-- [x] `DX02` Add containerized deployment profile for always-on home-server runtime. `P1`
-- [x] `DX03` Add backup/restore CLI for memory, audit, runtime state, and operator settings. `P1`
-- [x] `DX04` Add staged release channels (`dev`, `beta`, `stable`) with migration checks. `P2`
-- [x] `DX05` Add Home Assistant add-on packaging path and setup guide. `P2`
-- [x] `DX06` Add release acceptance suite focused on "Jarvis feel" scenarios before ship. `P1`
+- [x] `W3-T01` Extend config tests for new path/env settings.
+- [x] `W3-T02` Add integration tests for `integration_hub` release-channel actions.
+- [x] `W3-T03` Add persistence regression test for expansion state across `bind()` reload.
+- [x] `W3-T04` Add script-level tests for eval thresholds and quality trend computation.
+- [x] `W3-T05` Update release tooling existence checks for new script/workflow/Make target.
+- [x] `W3-T06` Update README and `.env.example` for new env vars and readiness commands.
 
 ---
 
-## Immediate Execution Queue (First 20)
+## Remaining for this wave
 
-- [x] `Q01` Implement `JX01` interaction contract + prompt enforcement.
-- [x] `Q02` Implement `AX04` ambiguity detector for risky actions.
-- [x] `Q03` Implement `AX05` plan preview before medium/high-risk execution.
-- [x] `Q04` Implement `RX04` turn-phase timeout budgets and status exposure.
-- [x] `Q05` Implement `PX03` nudge/interrupt policy + quiet windows.
-- [x] `Q06` Implement `MX03` memory correction voice commands.
-- [x] `Q07` Implement `IX03` step-up verification flow.
-- [x] `Q08` Implement `HX06` idempotent home-action guardrail.
-- [x] `Q09` Implement `OX04` global safe-mode toggle.
-- [x] `Q10` Implement `EX01` intent-level success metrics.
-- [x] `Q11` Implement `BX02` turn choreography pass.
-- [x] `Q12` Implement `VX02` adaptive end-of-turn timing.
-- [x] `Q13` Implement `JX06` style consistency regression tests.
-- [x] `Q14` Implement `RX01` integration circuit breakers.
-- [x] `Q15` Implement `RX02` recovery journal and resume.
-- [x] `Q16` Implement `OX03` conversation trace panel.
-- [x] `Q17` Implement `MX02` memory confidence/source trail.
-- [x] `Q18` Implement `IX06` readable audit explainability.
-- [x] `Q19` Implement `DX03` backup/restore CLI.
-- [x] `Q20` Implement `EX06` unified Jarvis scorecard.
+All items above are implemented and validated in this pass.

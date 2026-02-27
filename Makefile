@@ -1,5 +1,5 @@
 .PHONY: check test-fast test-faults test-fault-profiles test-soak security-gate \
-	bootstrap quality-report eval-dataset release-channel-check release-acceptance
+	bootstrap quality-report eval-dataset release-channel-check release-acceptance readiness
 
 check:
 	uv run ruff check src tests
@@ -34,3 +34,6 @@ release-channel-check:
 
 release-acceptance:
 	./scripts/release_acceptance.sh fast
+
+readiness:
+	./scripts/jarvis_readiness.sh fast

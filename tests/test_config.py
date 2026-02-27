@@ -46,6 +46,25 @@ class TestConfig:
         assert config.motion_enabled is True
         assert config.home_enabled is True
         assert config.safe_mode_enabled is False
+        assert config.expansion_state_path.endswith("expansion-state.json")
+        assert config.release_channel_config_path.endswith("release-channels.json")
+        assert config.notes_capture_dir.endswith("notes")
+        assert config.quality_report_dir.endswith("quality-reports")
+
+    def test_release_and_expansion_paths_load_from_env(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+        monkeypatch.setenv("EXPANSION_STATE_PATH", "/tmp/jarvis-expansion.json")
+        monkeypatch.setenv("RELEASE_CHANNEL_CONFIG_PATH", "custom/release.json")
+        monkeypatch.setenv("NOTES_CAPTURE_DIR", "/tmp/jarvis-notes")
+        monkeypatch.setenv("QUALITY_REPORT_DIR", "/tmp/jarvis-quality")
+
+        from jarvis.config import Config
+
+        c = Config()
+        assert c.expansion_state_path == "/tmp/jarvis-expansion.json"
+        assert c.release_channel_config_path == "custom/release.json"
+        assert c.notes_capture_dir == "/tmp/jarvis-notes"
+        assert c.quality_report_dir == "/tmp/jarvis-quality"
 
     def test_invalid_sample_rate_raises(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test")

@@ -146,6 +146,24 @@ class Config:
     runtime_state_path: str = field(
         default_factory=lambda: os.environ.get("RUNTIME_STATE_PATH", os.path.expanduser("~/.jarvis/runtime-state.json"))
     )
+    expansion_state_path: str = field(
+        default_factory=lambda: os.environ.get(
+            "EXPANSION_STATE_PATH",
+            os.path.expanduser("~/.jarvis/expansion-state.json"),
+        )
+    )
+    release_channel_config_path: str = field(
+        default_factory=lambda: os.environ.get("RELEASE_CHANNEL_CONFIG_PATH", "config/release-channels.json")
+    )
+    notes_capture_dir: str = field(
+        default_factory=lambda: os.environ.get("NOTES_CAPTURE_DIR", os.path.expanduser("~/.jarvis/notes"))
+    )
+    quality_report_dir: str = field(
+        default_factory=lambda: os.environ.get(
+            "QUALITY_REPORT_DIR",
+            os.path.expanduser("~/.jarvis/quality-reports"),
+        )
+    )
     watchdog_enabled: bool = field(default_factory=lambda: _env_bool("WATCHDOG_ENABLED") is not False)
     watchdog_listening_timeout_sec: float = field(
         default_factory=lambda: _env_positive_float("WATCHDOG_LISTENING_TIMEOUT_SEC", 30.0)

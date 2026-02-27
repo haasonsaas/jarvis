@@ -34,32 +34,86 @@ def _evaluate_case(case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _evaluate_results(
+    *,
+    dataset_path: Path,
+    results: list[dict[str, Any]],
+    strict: bool,
+    min_pass_rate: float | None,
+    max_failed: int | None,
+) -> dict[str, Any]:
+    passed = sum(1 for row in results if bool(row.get("passed")))
+    failed = len(results) - passed
+    pass_rate = (passed / len(results)) if results else 0.0
+    accepted = (failed == 0) if strict else (passed >= failed)
+
+    failure_reasons: list[str] = []
+    if strict and failed > 0:
+        failure_reasons.append("strict_failed_cases")
+    if not strict and passed < failed:
+        failure_reasons.append("non_strict_majority_failed")
+    if min_pass_rate is not None and pass_rate < min_pass_rate:
+        accepted = False
+        failure_reasons.append("pass_rate_below_threshold")
+    if max_failed is not None and failed > max_failed:
+        accepted = False
+        failure_reasons.append("failed_count_above_threshold")
+
+    return {
+        "dataset": str(dataset_path),
+        "strict": strict,
+        "thresholds": {
+            "min_pass_rate": min_pass_rate,
+            "max_failed": max_failed,
+        },
+        "case_count": len(results),
+        "passed": passed,
+        "failed": failed,
+        "pass_rate": pass_rate,
+        "accepted": accepted,
+        "failure_reasons": failure_reasons,
+        "results": results,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run deterministic evaluation dataset checks.")
     parser.add_argument("dataset", help="Path to dataset JSON")
     parser.add_argument("--output", default="")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument(
+        "--min-pass-rate",
+        type=float,
+        default=None,
+        help="Optional minimum pass-rate acceptance threshold in [0.0, 1.0].",
+    )
+    parser.add_argument(
+        "--max-failed",
+        type=int,
+        default=None,
+        help="Optional maximum failed-case acceptance threshold (>= 0).",
+    )
     args = parser.parse_args()
 
     dataset_path = Path(args.dataset)
+    if args.min_pass_rate is not None and (args.min_pass_rate < 0.0 or args.min_pass_rate > 1.0):
+        raise SystemExit("--min-pass-rate must be between 0.0 and 1.0.")
+    if args.max_failed is not None and args.max_failed < 0:
+        raise SystemExit("--max-failed must be >= 0.")
+
     payload = json.loads(dataset_path.read_text(encoding="utf-8"))
     cases = payload.get("cases", []) if isinstance(payload, dict) else []
     if not isinstance(cases, list):
         raise SystemExit("Dataset format error: expected top-level object with 'cases' list.")
 
     results = [_evaluate_case(case) for case in cases if isinstance(case, dict)]
-    passed = sum(1 for row in results if row["passed"])
-    failed = len(results) - passed
-    summary = {
-        "dataset": str(dataset_path),
-        "strict": bool(args.strict),
-        "case_count": len(results),
-        "passed": passed,
-        "failed": failed,
-        "pass_rate": (passed / len(results)) if results else 0.0,
-        "accepted": (failed == 0) if args.strict else (passed >= failed),
-        "results": results,
-    }
+    summary = _evaluate_results(
+        dataset_path=dataset_path,
+        results=results,
+        strict=bool(args.strict),
+        min_pass_rate=args.min_pass_rate,
+        max_failed=args.max_failed,
+    )
 
     text = json.dumps(summary, indent=2)
     print(text)

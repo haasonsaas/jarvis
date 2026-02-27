@@ -106,6 +106,8 @@ cp .env.example .env
 # Optional: OPERATOR_SERVER_ENABLED / OPERATOR_SERVER_HOST / OPERATOR_SERVER_PORT / OPERATOR_AUTH_MODE / OPERATOR_AUTH_TOKEN
 # Optional: WEBHOOK_INBOUND_ENABLED / WEBHOOK_INBOUND_TOKEN
 # Optional: RECOVERY_JOURNAL_PATH / DEAD_LETTER_QUEUE_PATH (interrupted-action + failed-outbound journals)
+# Optional: EXPANSION_STATE_PATH / RELEASE_CHANNEL_CONFIG_PATH (roadmap + release-channel persistence/check config)
+# Optional: NOTES_CAPTURE_DIR / QUALITY_REPORT_DIR (integration capture + report artifact locations)
 # Optional: OBSERVABILITY_* (DB/state/event paths, burst threshold, snapshot interval)
 # Optional: SKILLS_ENABLED / SKILLS_DIR / SKILLS_ALLOWLIST / SKILLS_REQUIRE_SIGNATURE / SKILLS_SIGNATURE_KEY
 ```
@@ -206,8 +208,9 @@ Smart home safety defaults:
 - Incident response: [`docs/operations/incident-response.md`](docs/operations/incident-response.md).
 - Release acceptance: run `./scripts/release_acceptance.sh fast|full`.
 - Release channel checks: run `./scripts/check_release_channel.py --channel dev|beta|stable`.
-- Weekly quality artifact: run `./scripts/generate_quality_report.py --output-dir .artifacts/quality --markdown`.
-- Deterministic eval dataset runner: run `./scripts/run_eval_dataset.py docs/evals/assistant-contract.json --strict`.
+- Weekly quality artifact: run `./scripts/generate_quality_report.py --output-dir .artifacts/quality --markdown --compare-with .artifacts/quality/weekly-quality-<previous>.json`.
+- Deterministic eval dataset runner: run `./scripts/run_eval_dataset.py docs/evals/assistant-contract.json --strict --min-pass-rate 1.0 --max-failed 0`.
+- Unified readiness gate: run `./scripts/jarvis_readiness.sh fast|full` (or `make readiness`).
 - One-command host bootstrap: run `./scripts/bootstrap.sh`.
 - Container profile: `docker compose up --build` (simulation/no-vision default).
 - Home Assistant add-on starter path: [`deploy/home-assistant-addon`](deploy/home-assistant-addon).
@@ -261,6 +264,7 @@ Smart home safety defaults:
   - micro-expression library, user gaze calibration, adaptive gesture envelopes, privacy posture, motion safety envelope
 - Integration workflows (`integration_hub`):
   - calendar CRUD policy flow, notes capture backends, messaging draft/review/send flow, commute briefs, shopping orchestration, policy-gated research workflow
+  - release-channel operations: `release_channel_get`, `release_channel_set`, `release_channel_check`
 
 ### First-Time Operator Checklist
 
@@ -325,6 +329,9 @@ make test-soak
 # Deployment/security gate (lint + tests + fault subset + workflow pin checks)
 make security-gate
 
+# Combined release-readiness gate (lint + acceptance + release checks + strict eval)
+make readiness
+
 # Marker-based subsets
 uv run pytest -q -m fast
 uv run pytest -q -m fault
@@ -337,6 +344,7 @@ Equivalent scripts are available under `scripts/`:
 - `scripts/test_faults.sh`
 - `scripts/test_soak.sh`
 - `scripts/security_gate.sh`
+- `scripts/jarvis_readiness.sh`
 
 CI runs the same lint + test gates on every push and pull request via
 [`ci.yml`](.github/workflows/ci.yml).
@@ -344,6 +352,8 @@ Workflow linting and YAML hygiene run via
 [`workflow-sanity.yml`](.github/workflows/workflow-sanity.yml).
 Nightly soak coverage is scheduled in
 [`nightly-soak.yml`](.github/workflows/nightly-soak.yml).
+Readiness-gate automation is scheduled/on-demand in
+[`jarvis-readiness.yml`](.github/workflows/jarvis-readiness.yml).
 
 ### CI Workflow Intent and Failure Routing
 

@@ -47,6 +47,8 @@ log = logging.getLogger(__name__)
 AUDIT_LOG = Path.home() / ".jarvis" / "audit.jsonl"
 DEFAULT_RECOVERY_JOURNAL = Path.home() / ".jarvis" / "recovery-journal.jsonl"
 DEFAULT_DEAD_LETTER_QUEUE = Path.home() / ".jarvis" / "dead-letter-queue.jsonl"
+DEFAULT_EXPANSION_STATE = Path.home() / ".jarvis" / "expansion-state.json"
+DEFAULT_RELEASE_CHANNEL_CONFIG = Path("config/release-channels.json")
 
 # Domains that always default to dry_run
 SENSITIVE_DOMAINS = {"lock", "alarm_control_panel", "cover", "climate"}
@@ -240,6 +242,10 @@ _pending_plan_previews: dict[str, dict[str, Any]] = {}
 _integration_circuit_breakers: dict[str, dict[str, Any]] = {}
 _recovery_journal_path: Path = DEFAULT_RECOVERY_JOURNAL
 _dead_letter_queue_path: Path = DEFAULT_DEAD_LETTER_QUEUE
+_expansion_state_path: Path = DEFAULT_EXPANSION_STATE
+_release_channel_config_path: Path = DEFAULT_RELEASE_CHANNEL_CONFIG
+_quality_report_dir: Path = QUALITY_REPORT_DIR_DEFAULT
+_notes_capture_dir: Path = NOTES_CAPTURE_DIR_DEFAULT
 _proactive_state: dict[str, Any] = {
     "pending_follow_through": [],
     "digest_snoozed_until": 0.0,
@@ -279,6 +285,8 @@ _motion_safety_envelope: dict[str, Any] = {
 _release_channel_state: dict[str, Any] = {
     "active_channel": "dev",
     "last_check_at": 0.0,
+    "last_check_channel": "",
+    "last_check_passed": False,
     "migration_checks": [],
 }
 SENSITIVE_AUDIT_KEY_TOKENS = {
@@ -1026,7 +1034,14 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "integration_hub": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "description": "calendar_upsert | calendar_delete | notes_capture | messaging_flow | commute_brief | shopping_orchestrate | research_workflow"},
+            "action": {
+                "type": "string",
+                "description": (
+                    "calendar_upsert | calendar_delete | notes_capture | messaging_flow | commute_brief | "
+                    "shopping_orchestrate | research_workflow | release_channel_get | release_channel_set | "
+                    "release_channel_check"
+                ),
+            },
             "confirm": {"type": "boolean"},
             "event_id": {"type": "string"},
             "event": {"type": "object"},
@@ -1043,6 +1058,7 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "allow_web": {"type": "boolean"},
             "query": {"type": "string"},
             "citations": {"type": "array", "items": {"type": "string"}},
+            "workspace": {"type": "string"},
         },
         "required": ["action"],
     },
@@ -1169,6 +1185,7 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     global _memory_retention_days, _audit_retention_days
     global _memory_pii_guardrails_enabled, _audit_encryption_enabled, _data_encryption_key
     global _timer_id_seq, _reminder_id_seq, _integration_circuit_breakers, _recovery_journal_path, _dead_letter_queue_path
+    global _expansion_state_path, _release_channel_config_path, _quality_report_dir, _notes_capture_dir
     global _home_task_seq, _planner_task_seq, _deferred_action_seq
     _config = config
     _memory = memory_store
@@ -1257,6 +1274,24 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _dead_letter_queue_path = Path(
         str(getattr(config, "dead_letter_queue_path", str(DEFAULT_DEAD_LETTER_QUEUE)))
     ).expanduser()
+    _expansion_state_path = Path(
+        str(getattr(config, "expansion_state_path", str(DEFAULT_EXPANSION_STATE)))
+    ).expanduser()
+    _release_channel_config_path = Path(
+        str(getattr(config, "release_channel_config_path", str(DEFAULT_RELEASE_CHANNEL_CONFIG)))
+    ).expanduser()
+    _quality_report_dir = Path(
+        str(getattr(config, "quality_report_dir", str(QUALITY_REPORT_DIR_DEFAULT)))
+    ).expanduser()
+    _notes_capture_dir = Path(
+        str(getattr(config, "notes_capture_dir", str(NOTES_CAPTURE_DIR_DEFAULT)))
+    ).expanduser()
+    if not _release_channel_config_path.is_absolute():
+        _release_channel_config_path = (Path.cwd() / _release_channel_config_path).resolve()
+    if not _quality_report_dir.is_absolute():
+        _quality_report_dir = (Path.cwd() / _quality_report_dir).resolve()
+    if not _notes_capture_dir.is_absolute():
+        _notes_capture_dir = (Path.cwd() / _notes_capture_dir).resolve()
     _configure_audit_encryption(enabled=_audit_encryption_enabled, key=_data_encryption_key)
     _action_last_seen.clear()
     _ha_state_cache.clear()
@@ -1294,12 +1329,15 @@ def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
     _motion_safety_envelope["updated_at"] = 0.0
     _release_channel_state["active_channel"] = "dev"
     _release_channel_state["last_check_at"] = 0.0
+    _release_channel_state["last_check_channel"] = ""
+    _release_channel_state["last_check_passed"] = False
     _release_channel_state["migration_checks"] = []
     _home_task_seq = 1
     _planner_task_seq = 1
     _deferred_action_seq = 1
     for integration in sorted(set(INTEGRATION_TOOL_MAP.values())):
         _ensure_circuit_breaker_state(integration)
+    _load_expansion_state()
     _recovery_reconcile_interrupted()
     _load_timers_from_store()
     _load_reminders_from_store()
@@ -2250,6 +2288,8 @@ def _prune_guest_sessions(*, now_ts: float | None = None) -> None:
     ]
     for token in expired:
         _guest_sessions.pop(token, None)
+    if expired:
+        _persist_expansion_state()
 
 
 def _resolve_guest_session(token: str, *, now_ts: float | None = None) -> dict[str, Any] | None:
@@ -2369,6 +2409,305 @@ def _append_quality_report(report: dict[str, Any]) -> None:
     _quality_reports.append({str(key): value for key, value in report.items()})
     if len(_quality_reports) > CACHED_QUALITY_REPORT_MAX:
         del _quality_reports[: len(_quality_reports) - CACHED_QUALITY_REPORT_MAX]
+    _persist_expansion_state()
+
+
+def _json_safe_clone(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe_clone(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_clone(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _replace_state_dict(target: dict[str, Any], source: Any) -> None:
+    target.clear()
+    if not isinstance(source, dict):
+        return
+    target.update({str(key): _json_safe_clone(value) for key, value in source.items()})
+
+
+def _expansion_state_payload() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "saved_at": time.time(),
+        "proactive_state": _json_safe_clone(_proactive_state),
+        "memory_partition_overlays": _json_safe_clone(_memory_partition_overlays),
+        "memory_quality_last": _json_safe_clone(_memory_quality_last),
+        "identity_trust_policies": _json_safe_clone(_identity_trust_policies),
+        "guest_sessions": _json_safe_clone(_guest_sessions),
+        "household_profiles": _json_safe_clone(_household_profiles),
+        "home_area_policies": _json_safe_clone(_home_area_policies),
+        "home_task_runs": _json_safe_clone(_home_task_runs),
+        "home_task_seq": int(_home_task_seq),
+        "skill_quotas": _json_safe_clone(_skill_quotas),
+        "planner_task_graphs": _json_safe_clone(_planner_task_graphs),
+        "planner_task_seq": int(_planner_task_seq),
+        "deferred_actions": _json_safe_clone(_deferred_actions),
+        "deferred_action_seq": int(_deferred_action_seq),
+        "quality_reports": _json_safe_clone(_quality_reports[-CACHED_QUALITY_REPORT_MAX:]),
+        "micro_expression_library": _json_safe_clone(_micro_expression_library),
+        "gaze_calibrations": _json_safe_clone(_gaze_calibrations),
+        "gesture_envelopes": _json_safe_clone(_gesture_envelopes),
+        "privacy_posture": _json_safe_clone(_privacy_posture),
+        "motion_safety_envelope": _json_safe_clone(_motion_safety_envelope),
+        "release_channel_state": _json_safe_clone(_release_channel_state),
+    }
+
+
+def _persist_expansion_state() -> None:
+    path = _expansion_state_path
+    payload = _expansion_state_payload()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    except OSError:
+        log.warning("Failed to persist expansion state", exc_info=True)
+
+
+def _load_expansion_state() -> None:
+    path = _expansion_state_path
+    if not path.exists():
+        return
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        log.warning("Failed to load expansion state", exc_info=True)
+        return
+    if not isinstance(payload, dict):
+        return
+
+    proactive = payload.get("proactive_state")
+    if isinstance(proactive, dict):
+        pending = proactive.get("pending_follow_through")
+        _proactive_state["pending_follow_through"] = (
+            [_json_safe_clone(row) for row in pending if isinstance(row, dict)]
+            if isinstance(pending, list)
+            else []
+        )
+        _proactive_state["digest_snoozed_until"] = _as_float(
+            proactive.get("digest_snoozed_until", 0.0),
+            0.0,
+            minimum=0.0,
+        )
+        _proactive_state["last_briefing_at"] = _as_float(
+            proactive.get("last_briefing_at", 0.0),
+            0.0,
+            minimum=0.0,
+        )
+        _proactive_state["last_digest_at"] = _as_float(
+            proactive.get("last_digest_at", 0.0),
+            0.0,
+            minimum=0.0,
+        )
+
+    _replace_state_dict(_memory_partition_overlays, payload.get("memory_partition_overlays"))
+    _replace_state_dict(_memory_quality_last, payload.get("memory_quality_last"))
+    _replace_state_dict(_identity_trust_policies, payload.get("identity_trust_policies"))
+    _replace_state_dict(_household_profiles, payload.get("household_profiles"))
+    _replace_state_dict(_home_area_policies, payload.get("home_area_policies"))
+    _replace_state_dict(_home_task_runs, payload.get("home_task_runs"))
+    _replace_state_dict(_skill_quotas, payload.get("skill_quotas"))
+    _replace_state_dict(_planner_task_graphs, payload.get("planner_task_graphs"))
+    _replace_state_dict(_deferred_actions, payload.get("deferred_actions"))
+    _replace_state_dict(_micro_expression_library, payload.get("micro_expression_library"))
+    _replace_state_dict(_gaze_calibrations, payload.get("gaze_calibrations"))
+    _replace_state_dict(_gesture_envelopes, payload.get("gesture_envelopes"))
+
+    _guest_sessions.clear()
+    guest_sessions = payload.get("guest_sessions")
+    if isinstance(guest_sessions, dict):
+        now = time.time()
+        for raw_token, raw_row in guest_sessions.items():
+            token = str(raw_token).strip()
+            if not token or not isinstance(raw_row, dict):
+                continue
+            expires_at = _as_float(raw_row.get("expires_at", 0.0), 0.0, minimum=0.0)
+            if expires_at <= now:
+                continue
+            issued_at = _as_float(raw_row.get("issued_at", 0.0), 0.0, minimum=0.0)
+            guest_id = str(raw_row.get("guest_id", "guest")).strip().lower() or "guest"
+            capabilities = sorted(set(_as_str_list(raw_row.get("capabilities"), lower=True)))
+            _guest_sessions[token] = {
+                "token": token,
+                "guest_id": guest_id,
+                "capabilities": capabilities,
+                "issued_at": issued_at,
+                "expires_at": expires_at,
+            }
+
+    quality_rows = payload.get("quality_reports")
+    _quality_reports.clear()
+    if isinstance(quality_rows, list):
+        for row in quality_rows[-CACHED_QUALITY_REPORT_MAX:]:
+            if isinstance(row, dict):
+                _quality_reports.append({str(key): _json_safe_clone(value) for key, value in row.items()})
+
+    privacy_posture = payload.get("privacy_posture")
+    if isinstance(privacy_posture, dict):
+        _privacy_posture["state"] = str(privacy_posture.get("state", "normal")).strip().lower() or "normal"
+        _privacy_posture["reason"] = str(privacy_posture.get("reason", "startup")).strip() or "startup"
+        _privacy_posture["updated_at"] = _as_float(privacy_posture.get("updated_at", 0.0), 0.0, minimum=0.0)
+
+    motion_envelope = payload.get("motion_safety_envelope")
+    if isinstance(motion_envelope, dict):
+        _motion_safety_envelope["proximity_limit_cm"] = _as_float(
+            motion_envelope.get("proximity_limit_cm", _motion_safety_envelope.get("proximity_limit_cm", 35.0)),
+            _as_float(_motion_safety_envelope.get("proximity_limit_cm", 35.0), 35.0),
+            minimum=5.0,
+            maximum=300.0,
+        )
+        _motion_safety_envelope["max_yaw_deg"] = _as_float(
+            motion_envelope.get("max_yaw_deg", _motion_safety_envelope.get("max_yaw_deg", 45.0)),
+            _as_float(_motion_safety_envelope.get("max_yaw_deg", 45.0), 45.0),
+            minimum=0.0,
+            maximum=180.0,
+        )
+        _motion_safety_envelope["max_pitch_deg"] = _as_float(
+            motion_envelope.get("max_pitch_deg", _motion_safety_envelope.get("max_pitch_deg", 20.0)),
+            _as_float(_motion_safety_envelope.get("max_pitch_deg", 20.0), 20.0),
+            minimum=0.0,
+            maximum=90.0,
+        )
+        _motion_safety_envelope["max_roll_deg"] = _as_float(
+            motion_envelope.get("max_roll_deg", _motion_safety_envelope.get("max_roll_deg", 15.0)),
+            _as_float(_motion_safety_envelope.get("max_roll_deg", 15.0), 15.0),
+            minimum=0.0,
+            maximum=90.0,
+        )
+        _motion_safety_envelope["hardware_state"] = (
+            str(motion_envelope.get("hardware_state", "normal")).strip().lower() or "normal"
+        )
+        _motion_safety_envelope["updated_at"] = _as_float(
+            motion_envelope.get("updated_at", 0.0),
+            0.0,
+            minimum=0.0,
+        )
+
+    release_state = payload.get("release_channel_state")
+    if isinstance(release_state, dict):
+        channel = str(release_state.get("active_channel", "dev")).strip().lower()
+        if channel not in RELEASE_CHANNELS:
+            channel = "dev"
+        _release_channel_state["active_channel"] = channel
+        _release_channel_state["last_check_at"] = _as_float(
+            release_state.get("last_check_at", 0.0),
+            0.0,
+            minimum=0.0,
+        )
+        _release_channel_state["last_check_channel"] = (
+            str(release_state.get("last_check_channel", channel)).strip().lower() or channel
+        )
+        _release_channel_state["last_check_passed"] = bool(release_state.get("last_check_passed", False))
+        migration_checks = release_state.get("migration_checks")
+        _release_channel_state["migration_checks"] = (
+            [_json_safe_clone(row) for row in migration_checks if isinstance(row, dict)]
+            if isinstance(migration_checks, list)
+            else []
+        )
+
+    global _home_task_seq, _planner_task_seq, _deferred_action_seq
+    _home_task_seq = _as_int(payload.get("home_task_seq", 1), 1, minimum=1)
+    _planner_task_seq = _as_int(payload.get("planner_task_seq", 1), 1, minimum=1)
+    _deferred_action_seq = _as_int(payload.get("deferred_action_seq", 1), 1, minimum=1)
+    _prune_guest_sessions()
+
+
+def _run_release_channel_check(base: Path, check: dict[str, Any]) -> dict[str, Any]:
+    kind = str(check.get("type", "")).strip().lower()
+    path = str(check.get("path", "")).strip()
+    target = (base / path).resolve() if path else base
+
+    if kind == "file_exists":
+        ok = target.exists()
+        return {"type": kind, "path": path, "ok": ok, "detail": "exists" if ok else "missing"}
+
+    if kind == "text_contains":
+        needle = str(check.get("needle", "")).strip()
+        if not target.exists() or not target.is_file():
+            return {"type": kind, "path": path, "needle": needle, "ok": False, "detail": "missing_file"}
+        try:
+            text = target.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return {"type": kind, "path": path, "needle": needle, "ok": False, "detail": "read_failed"}
+        ok = needle in text
+        return {
+            "type": kind,
+            "path": path,
+            "needle": needle,
+            "ok": ok,
+            "detail": "found" if ok else "missing_needle",
+        }
+
+    return {"type": kind or "unknown", "path": path, "ok": False, "detail": "unsupported_check_type"}
+
+
+def _load_release_channel_config() -> tuple[dict[str, Any] | None, str]:
+    path = _release_channel_config_path
+    if not path.exists():
+        return None, f"release channel config missing: {path}"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None, f"release channel config unreadable: {path}"
+    if not isinstance(payload, dict):
+        return None, f"release channel config invalid format: {path}"
+    return payload, ""
+
+
+def _evaluate_release_channel(*, channel: str, workspace: Path | None = None) -> dict[str, Any]:
+    normalized_channel = str(channel or "").strip().lower()
+    if normalized_channel not in RELEASE_CHANNELS:
+        return {
+            "channel": normalized_channel,
+            "passed": False,
+            "check_count": 0,
+            "failed_count": 1,
+            "results": [],
+            "migration_checks": [],
+            "error": f"Unsupported release channel: {normalized_channel or '<empty>'}.",
+        }
+
+    config_payload, error = _load_release_channel_config()
+    if config_payload is None:
+        return {
+            "channel": normalized_channel,
+            "passed": False,
+            "check_count": 0,
+            "failed_count": 1,
+            "results": [],
+            "migration_checks": [],
+            "error": error,
+        }
+
+    channels = config_payload.get("channels", {}) if isinstance(config_payload, dict) else {}
+    channel_cfg = channels.get(normalized_channel, {}) if isinstance(channels, dict) else {}
+    checks = channel_cfg.get("required_checks", []) if isinstance(channel_cfg, dict) else []
+    root = (workspace or Path.cwd()).resolve()
+    results = [_run_release_channel_check(root, row) for row in checks if isinstance(row, dict)]
+    failed = [row for row in results if not bool(row.get("ok"))]
+    migration_checks = [
+        {
+            "id": f"{normalized_channel}-{idx + 1}",
+            "type": str(row.get("type", "unknown")),
+            "path": str(row.get("path", "")),
+            "status": "passed" if bool(row.get("ok")) else "failed",
+            "detail": str(row.get("detail", "")),
+        }
+        for idx, row in enumerate(results)
+    ]
+    return {
+        "channel": normalized_channel,
+        "passed": len(failed) == 0,
+        "check_count": len(results),
+        "failed_count": len(failed),
+        "results": results,
+        "migration_checks": migration_checks,
+        "config_path": str(_release_channel_config_path),
+        "workspace": str(root),
+    }
 
 
 def _write_quality_report_artifact(payload: dict[str, Any], *, report_path: str | None = None) -> str:
@@ -2376,7 +2715,7 @@ def _write_quality_report_artifact(payload: dict[str, Any], *, report_path: str 
         path = Path(report_path).expanduser()
     else:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        path = QUALITY_REPORT_DIR_DEFAULT / f"quality-report-{timestamp}.json"
+        path = _quality_report_dir / f"quality-report-{timestamp}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, default=str))
     return str(path)
@@ -2388,7 +2727,7 @@ def _capture_note(*, backend: str, title: str, content: str, path_hint: str = ""
     clean_content = str(content or "").strip()
     slug = re.sub(r"[^a-z0-9_-]+", "-", clean_title.lower()).strip("-") or "jarvis-note"
     if normalized_backend in {"obsidian", "local_markdown"}:
-        base = Path(path_hint).expanduser() if path_hint else NOTES_CAPTURE_DIR_DEFAULT
+        base = Path(path_hint).expanduser() if path_hint else _notes_capture_dir
         base.mkdir(parents=True, exist_ok=True)
         file_path = base / f"{slug}.md"
         body = f"# {clean_title}\n\n{clean_content}\n"
@@ -3762,9 +4101,18 @@ def _expansion_snapshot() -> dict[str, Any]:
         },
         "integration_hub": {
             "notes_backend_default": "local_markdown",
-            "notes_dir": str(NOTES_CAPTURE_DIR_DEFAULT),
+            "notes_dir": str(_notes_capture_dir),
             "release_channels": sorted(RELEASE_CHANNELS),
             "active_release_channel": str(_release_channel_state.get("active_channel", "dev")),
+            "release_channel_config_path": str(_release_channel_config_path),
+            "last_release_channel_check_at": float(_release_channel_state.get("last_check_at", 0.0) or 0.0),
+            "last_release_channel_check_channel": str(_release_channel_state.get("last_check_channel", "")),
+            "last_release_channel_check_passed": bool(_release_channel_state.get("last_check_passed", False)),
+            "migration_checks": [
+                _json_safe_clone(row)
+                for row in (_release_channel_state.get("migration_checks") or [])
+                if isinstance(row, dict)
+            ][:20],
         },
     }
 
@@ -7557,6 +7905,11 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "notes_dir",
             "release_channels",
             "active_release_channel",
+            "release_channel_config_path",
+            "last_release_channel_check_at",
+            "last_release_channel_check_channel",
+            "last_release_channel_check_passed",
+            "migration_checks",
         ],
         "health_required": [
             "health_level",
@@ -8427,6 +8780,11 @@ def _json_payload_response(payload: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": json.dumps(payload, default=str)}]}
 
 
+def _expansion_payload_response(payload: dict[str, Any]) -> dict[str, Any]:
+    _persist_expansion_state()
+    return _json_payload_response(payload)
+
+
 async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("proactive_assistant"):
@@ -8473,7 +8831,7 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
             ),
         }
         record_summary("proactive_assistant", "ok", start_time, effect=f"briefing:{mode}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "anomaly_scan":
         devices = args.get("devices") if isinstance(args.get("devices"), list) else []
@@ -8527,7 +8885,7 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
         }
         effect = "anomalies_detected" if anomalies else "no_anomalies"
         record_summary("proactive_assistant", "ok", start_time, effect=effect, risk="medium" if anomalies else "low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "routine_suggestions":
         if not _as_bool(args.get("opt_in"), default=False):
@@ -8558,7 +8916,7 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
             "suggestions": suggestions,
         }
         record_summary("proactive_assistant", "ok", start_time, effect=f"suggestions={len(suggestions)}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "follow_through":
         pending = args.get("pending_actions") if isinstance(args.get("pending_actions"), list) else []
@@ -8582,7 +8940,7 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
             "executed": executed,
         }
         record_summary("proactive_assistant", "ok", start_time, effect="follow_through", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "event_digest":
         snooze_minutes = _as_int(args.get("snooze_minutes", 0), 0, minimum=0, maximum=24 * 60)
@@ -8599,7 +8957,7 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
                 "remaining_sec": max(0.0, snoozed_until - now),
             }
             record_summary("proactive_assistant", "ok", start_time, effect="digest_snoozed", risk="low")
-            return _json_payload_response(payload)
+            return _expansion_payload_response(payload)
         payload = {
             "action": action,
             "status": "ready",
@@ -8608,7 +8966,7 @@ async def proactive_assistant(args: dict[str, Any]) -> dict[str, Any]:
             "snoozed_until": snoozed_until,
         }
         record_summary("proactive_assistant", "ok", start_time, effect="digest_ready", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     _record_service_error("proactive_assistant", start_time, "invalid_data")
     return {"content": [{"type": "text", "text": "Unknown proactive_assistant action."}]}
@@ -8694,7 +9052,7 @@ async def memory_governance(args: dict[str, Any]) -> dict[str, Any]:
             "overlay_count": len(_memory_partition_overlays),
         }
         record_summary("memory_governance", "ok", start_time, effect="partition_updated", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "quality_audit":
         if _memory is None:
@@ -8712,7 +9070,7 @@ async def memory_governance(args: dict[str, Any]) -> dict[str, Any]:
         _memory_quality_last.clear()
         _memory_quality_last.update(report)
         record_summary("memory_governance", "ok", start_time, effect="quality_audit", risk="low")
-        return _json_payload_response(report)
+        return _expansion_payload_response(report)
 
     if action == "cleanup":
         if _memory is None:
@@ -8736,7 +9094,7 @@ async def memory_governance(args: dict[str, Any]) -> dict[str, Any]:
             "candidate_ids": candidate_ids[:200],
         }
         record_summary("memory_governance", "ok", start_time, effect="cleanup_applied" if apply else "cleanup_preview", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     _record_service_error("memory_governance", start_time, "invalid_data")
     return {"content": [{"type": "text", "text": "Unknown memory_governance action."}]}
@@ -8777,7 +9135,7 @@ async def identity_trust(args: dict[str, Any]) -> dict[str, Any]:
             "operator_hint": operator_hint,
         }
         record_summary("identity_trust", "ok", start_time, effect=f"confidence:{band}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "policy_set":
         domain = str(args.get("domain", "")).strip().lower()
@@ -8798,7 +9156,7 @@ async def identity_trust(args: dict[str, Any]) -> dict[str, Any]:
             "policy_count": len(_identity_trust_policies),
         }
         record_summary("identity_trust", "ok", start_time, effect=f"policy_set:{domain}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "policy_get":
         domain = str(args.get("domain", "")).strip().lower()
@@ -8811,7 +9169,7 @@ async def identity_trust(args: dict[str, Any]) -> dict[str, Any]:
                 "policies": {name: dict(row) for name, row in sorted(_identity_trust_policies.items())},
             }
         record_summary("identity_trust", "ok", start_time, effect="policy_get", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "guest_start":
         guest_id = str(args.get("guest_id", "guest")).strip().lower() or "guest"
@@ -8829,24 +9187,24 @@ async def identity_trust(args: dict[str, Any]) -> dict[str, Any]:
         )
         payload = {"action": action, **row, "session_count": len(_guest_sessions)}
         record_summary("identity_trust", "ok", start_time, effect="guest_session_created", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "guest_validate":
         token = str(args.get("guest_session_token", "")).strip()
         row = _resolve_guest_session(token)
         if row is None:
             _record_service_error("identity_trust", start_time, "not_found")
-            return _json_payload_response({"action": action, "valid": False})
+            return _expansion_payload_response({"action": action, "valid": False})
         payload = {"action": action, "valid": True, **row}
         record_summary("identity_trust", "ok", start_time, effect="guest_session_valid", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "guest_end":
         token = str(args.get("guest_session_token", "")).strip()
         removed = _guest_sessions.pop(token, None)
         payload = {"action": action, "removed": removed is not None, "session_count": len(_guest_sessions)}
         record_summary("identity_trust", "ok", start_time, effect="guest_session_removed", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "household_upsert":
         user = str(args.get("user", "")).strip().lower()
@@ -8869,7 +9227,7 @@ async def identity_trust(args: dict[str, Any]) -> dict[str, Any]:
             "profile_count": len(_household_profiles),
         }
         record_summary("identity_trust", "ok", start_time, effect="household_upsert", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "household_list":
         payload = {
@@ -8878,14 +9236,14 @@ async def identity_trust(args: dict[str, Any]) -> dict[str, Any]:
             "profiles": {user: dict(row) for user, row in sorted(_household_profiles.items())},
         }
         record_summary("identity_trust", "ok", start_time, effect="household_list", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "household_remove":
         user = str(args.get("user", "")).strip().lower()
         removed = _household_profiles.pop(user, None) is not None
         payload = {"action": action, "removed": removed, "profile_count": len(_household_profiles)}
         record_summary("identity_trust", "ok", start_time, effect="household_remove", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     _record_service_error("identity_trust", start_time, "invalid_data")
     return {"content": [{"type": "text", "text": "Unknown identity_trust action."}]}
@@ -8935,7 +9293,7 @@ async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
             "steps": plan["steps"],
         }
         record_summary("home_orchestrator", "ok", start_time, effect=f"plan:{plan['label']}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "execute":
         actions = args.get("actions") if isinstance(args.get("actions"), list) else []
@@ -8977,7 +9335,7 @@ async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
             "results": results,
         }
         record_summary("home_orchestrator", "ok", start_time, effect=f"execute_ok={ok_count}_fail={fail_count}", risk="medium" if fail_count else "low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "area_policy_set":
         area = str(args.get("area", "")).strip().lower()
@@ -8993,7 +9351,7 @@ async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
         }
         payload = {"action": action, "area": area, "policy": dict(_home_area_policies[area]), "policy_count": len(_home_area_policies)}
         record_summary("home_orchestrator", "ok", start_time, effect="area_policy_set", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "area_policy_list":
         area = str(args.get("area", "")).strip().lower()
@@ -9002,7 +9360,7 @@ async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
         else:
             payload = {"action": action, "policy_count": len(_home_area_policies), "policies": {name: dict(row) for name, row in sorted(_home_area_policies.items())}}
         record_summary("home_orchestrator", "ok", start_time, effect="area_policy_list", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "automation_suggest":
         history = args.get("history") if isinstance(args.get("history"), list) else []
@@ -9034,7 +9392,7 @@ async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
         ][:5]
         payload = {"action": action, "suggestion_count": len(suggestions), "suggestions": suggestions}
         record_summary("home_orchestrator", "ok", start_time, effect=f"automation_suggestions={len(suggestions)}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "task_start":
         global _home_task_seq
@@ -9054,7 +9412,7 @@ async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
             for key, _ in oldest:
                 _home_task_runs.pop(key, None)
         record_summary("home_orchestrator", "ok", start_time, effect="task_start", risk="low")
-        return _json_payload_response({"action": action, "task": row, "task_count": len(_home_task_runs)})
+        return _expansion_payload_response({"action": action, "task": row, "task_count": len(_home_task_runs)})
 
     if action == "task_update":
         task_id = str(args.get("task_id", "")).strip()
@@ -9071,13 +9429,13 @@ async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
         row["notes"] = str(args.get("notes", row.get("notes", ""))).strip()
         row["updated_at"] = time.time()
         record_summary("home_orchestrator", "ok", start_time, effect="task_update", risk="low")
-        return _json_payload_response({"action": action, "task": dict(row)})
+        return _expansion_payload_response({"action": action, "task": dict(row)})
 
     if action == "task_list":
         limit = _as_int(args.get("limit", 50), 50, minimum=1, maximum=200)
         tasks = sorted(_home_task_runs.values(), key=lambda row: float(row.get("updated_at", 0.0)), reverse=True)[:limit]
         record_summary("home_orchestrator", "ok", start_time, effect="task_list", risk="low")
-        return _json_payload_response({"action": action, "task_count": len(_home_task_runs), "tasks": tasks})
+        return _expansion_payload_response({"action": action, "task_count": len(_home_task_runs), "tasks": tasks})
 
     _record_service_error("home_orchestrator", start_time, "invalid_data")
     return {"content": [{"type": "text", "text": "Unknown home_orchestrator action."}]}
@@ -9125,7 +9483,7 @@ async def skills_governance(args: dict[str, Any]) -> dict[str, Any]:
             "candidates": candidates[:10],
         }
         record_summary("skills_governance", "ok", start_time, effect="negotiate", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "dependency_health":
         rows = _skills_snapshot_rows()
@@ -9149,7 +9507,7 @@ async def skills_governance(args: dict[str, Any]) -> dict[str, Any]:
             )
         payload = {"action": action, "skills": health_rows, "degraded_count": sum(1 for row in health_rows if row["status"] != "healthy")}
         record_summary("skills_governance", "ok", start_time, effect="dependency_health", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "quota_set":
         name = str(args.get("name", "")).strip().lower()
@@ -9164,7 +9522,7 @@ async def skills_governance(args: dict[str, Any]) -> dict[str, Any]:
         }
         payload = {"action": action, "name": name, "quota": dict(_skill_quotas[name]), "quota_count": len(_skill_quotas)}
         record_summary("skills_governance", "ok", start_time, effect="quota_set", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "quota_get":
         name = str(args.get("name", "")).strip().lower()
@@ -9173,7 +9531,7 @@ async def skills_governance(args: dict[str, Any]) -> dict[str, Any]:
         else:
             payload = {"action": action, "quota_count": len(_skill_quotas), "quotas": {k: dict(v) for k, v in sorted(_skill_quotas.items())}}
         record_summary("skills_governance", "ok", start_time, effect="quota_get", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "quota_check":
         name = str(args.get("name", "")).strip().lower()
@@ -9197,7 +9555,7 @@ async def skills_governance(args: dict[str, Any]) -> dict[str, Any]:
             "quota": dict(quota),
         }
         record_summary("skills_governance", "ok", start_time, effect="quota_check", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "harness_run":
         fixtures = args.get("fixtures") if isinstance(args.get("fixtures"), list) else []
@@ -9220,7 +9578,7 @@ async def skills_governance(args: dict[str, Any]) -> dict[str, Any]:
                 results.append({"name": name, "status": "failed", "expected": expected})
         payload = {"action": action, "fixture_count": len(fixtures), "passed": passed, "failed": failed, "results": results[:200]}
         record_summary("skills_governance", "ok", start_time, effect=f"harness_passed={passed}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "bundle_sign":
         bundle = args.get("bundle") if isinstance(args.get("bundle"), dict) else {}
@@ -9239,7 +9597,7 @@ async def skills_governance(args: dict[str, Any]) -> dict[str, Any]:
             "integrity": "hmac-sha256" if signed else "sha256-only",
         }
         record_summary("skills_governance", "ok", start_time, effect="bundle_sign", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "sandbox_template":
         template = str(args.get("template", "")).strip().lower()
@@ -9248,7 +9606,7 @@ async def skills_governance(args: dict[str, Any]) -> dict[str, Any]:
         else:
             payload = {"action": action, "templates": {name: dict(cfg) for name, cfg in SKILL_SANDBOX_TEMPLATES.items()}}
         record_summary("skills_governance", "ok", start_time, effect="sandbox_template", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     _record_service_error("skills_governance", start_time, "invalid_data")
     return {"content": [{"type": "text", "text": "Unknown skills_governance action."}]}
@@ -9308,7 +9666,7 @@ async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
             },
         }
         record_summary("planner_engine", "ok", start_time, effect="plan_generated", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "task_graph_create":
         global _planner_task_seq
@@ -9351,7 +9709,7 @@ async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
             "ready_nodes": _planner_ready_nodes(graph),
         }
         record_summary("planner_engine", "ok", start_time, effect="graph_created", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "task_graph_update":
         graph_id = str(args.get("graph_id", "")).strip()
@@ -9381,7 +9739,7 @@ async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
             "ready_nodes": _planner_ready_nodes(graph),
         }
         record_summary("planner_engine", "ok", start_time, effect="graph_updated", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "task_graph_resume":
         graph_id = str(args.get("graph_id", "")).strip()
@@ -9407,7 +9765,7 @@ async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
                 ],
             }
         record_summary("planner_engine", "ok", start_time, effect="graph_resume", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "deferred_schedule":
         global _deferred_action_seq
@@ -9429,14 +9787,14 @@ async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
                 _deferred_actions.pop(key, None)
         payload = {"action": action, "scheduled": dict(_deferred_actions[action_id]), "deferred_count": len(_deferred_actions)}
         record_summary("planner_engine", "ok", start_time, effect="deferred_schedule", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "deferred_list":
         limit = _as_int(args.get("limit", 50), 50, minimum=1, maximum=200)
         rows = sorted(_deferred_actions.values(), key=lambda item: float(item.get("execute_at", 0.0)))[:limit]
         payload = {"action": action, "deferred_count": len(_deferred_actions), "items": rows}
         record_summary("planner_engine", "ok", start_time, effect="deferred_list", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "self_critique":
         plan = args.get("plan") if isinstance(args.get("plan"), dict) else {}
@@ -9456,7 +9814,7 @@ async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
             "recommendation": "approve" if not warnings else "revise",
         }
         record_summary("planner_engine", "ok", start_time, effect=f"critique:{payload['recommendation']}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     _record_service_error("planner_engine", start_time, "invalid_data")
     return {"content": [{"type": "text", "text": "Unknown planner_engine action."}]}
@@ -9492,7 +9850,7 @@ async def quality_evaluator(args: dict[str, Any]) -> dict[str, Any]:
         report["artifact_path"] = artifact_path
         _append_quality_report(report)
         record_summary("quality_evaluator", "ok", start_time, effect="weekly_report", risk="low")
-        return _json_payload_response({"action": action, **report})
+        return _expansion_payload_response({"action": action, **report})
 
     if action == "dataset_run":
         dataset = args.get("dataset") if isinstance(args.get("dataset"), list) else []
@@ -9525,13 +9883,13 @@ async def quality_evaluator(args: dict[str, Any]) -> dict[str, Any]:
             "results": rows[:300],
         }
         record_summary("quality_evaluator", "ok", start_time, effect=f"dataset_passed={passed}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "reports_list":
         limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=50)
         payload = {"action": action, "count": len(_quality_reports), "reports": _quality_reports_snapshot(limit=limit)}
         record_summary("quality_evaluator", "ok", start_time, effect="reports_list", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     _record_service_error("quality_evaluator", start_time, "invalid_data")
     return {"content": [{"type": "text", "text": "Unknown quality_evaluator action."}]}
@@ -9561,7 +9919,7 @@ async def embodiment_presence(args: dict[str, Any]) -> dict[str, Any]:
             "library": {key: dict(value) for key, value in sorted(_micro_expression_library.items())},
         }
         record_summary("embodiment_presence", "ok", start_time, effect="expression_library", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "gaze_calibrate":
         user = str(args.get("user", "")).strip().lower()
@@ -9576,7 +9934,7 @@ async def embodiment_presence(args: dict[str, Any]) -> dict[str, Any]:
         }
         payload = {"action": action, "calibration": dict(_gaze_calibrations[user]), "calibration_count": len(_gaze_calibrations)}
         record_summary("embodiment_presence", "ok", start_time, effect="gaze_calibrate", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "gesture_profile":
         emotion = str(args.get("emotion", "neutral")).strip().lower() or "neutral"
@@ -9590,7 +9948,7 @@ async def embodiment_presence(args: dict[str, Any]) -> dict[str, Any]:
         }
         payload = {"action": action, "profile_key": key, "profile": dict(_gesture_envelopes[key]), "profile_count": len(_gesture_envelopes)}
         record_summary("embodiment_presence", "ok", start_time, effect="gesture_profile", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "privacy_posture":
         _privacy_posture["state"] = str(args.get("state", "normal")).strip().lower() or "normal"
@@ -9598,7 +9956,7 @@ async def embodiment_presence(args: dict[str, Any]) -> dict[str, Any]:
         _privacy_posture["updated_at"] = time.time()
         payload = {"action": action, "privacy_posture": dict(_privacy_posture)}
         record_summary("embodiment_presence", "ok", start_time, effect=f"privacy:{_privacy_posture['state']}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "safety_envelope":
         _motion_safety_envelope["proximity_limit_cm"] = _as_float(
@@ -9611,13 +9969,13 @@ async def embodiment_presence(args: dict[str, Any]) -> dict[str, Any]:
         _motion_safety_envelope["updated_at"] = time.time()
         payload = {"action": action, "motion_safety_envelope": dict(_motion_safety_envelope)}
         record_summary("embodiment_presence", "ok", start_time, effect="safety_envelope", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "status":
         payload = _expansion_snapshot()["embodiment_presence"]
         payload["action"] = action
         record_summary("embodiment_presence", "ok", start_time, effect="status", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     _record_service_error("embodiment_presence", start_time, "invalid_data")
     return {"content": [{"type": "text", "text": "Unknown embodiment_presence action."}]}
@@ -9643,7 +10001,7 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
             "confirmation_policy": "explicit_confirm_required",
         }
         record_summary("integration_hub", "ok", start_time, effect="calendar_upsert", risk="medium")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "calendar_delete":
         if not _as_bool(args.get("confirm"), default=False):
@@ -9656,7 +10014,7 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
             "confirmation_policy": "explicit_confirm_required",
         }
         record_summary("integration_hub", "ok", start_time, effect="calendar_delete", risk="high")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "notes_capture":
         backend = str(args.get("backend", "local_markdown")).strip().lower() or "local_markdown"
@@ -9673,7 +10031,7 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
         )
         payload = {"action": action, **captured}
         record_summary("integration_hub", "ok", start_time, effect=f"notes:{backend}", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "messaging_flow":
         phase = str(args.get("phase", "draft")).strip().lower() or "draft"
@@ -9693,7 +10051,7 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
             "status": "queued_for_delivery" if phase == "send" else "draft_only",
         }
         record_summary("integration_hub", "ok", start_time, effect=f"messaging:{phase}", risk="medium" if phase == "send" else "low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "commute_brief":
         traffic = args.get("traffic") if isinstance(args.get("traffic"), dict) else {}
@@ -9712,7 +10070,7 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
             ),
         }
         record_summary("integration_hub", "ok", start_time, effect="commute_brief", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "shopping_orchestrate":
         items = _as_str_list(args.get("items"))
@@ -9723,7 +10081,7 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
         ]
         payload = {"action": action, "item_count": len(items), "items": items, "orchestration_steps": steps}
         record_summary("integration_hub", "ok", start_time, effect="shopping_orchestrate", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
 
     if action == "research_workflow":
         if not _as_bool(args.get("allow_web"), default=False):
@@ -9740,7 +10098,87 @@ async def integration_hub(args: dict[str, Any]) -> dict[str, Any]:
             "policy_gate": "allow_web",
         }
         record_summary("integration_hub", "ok", start_time, effect="research_workflow", risk="low")
-        return _json_payload_response(payload)
+        return _expansion_payload_response(payload)
+
+    if action == "release_channel_get":
+        payload = {
+            "action": action,
+            "release_channels": sorted(RELEASE_CHANNELS),
+            "active_channel": str(_release_channel_state.get("active_channel", "dev")),
+            "last_check_at": float(_release_channel_state.get("last_check_at", 0.0) or 0.0),
+            "last_check_channel": str(_release_channel_state.get("last_check_channel", "")),
+            "last_check_passed": bool(_release_channel_state.get("last_check_passed", False)),
+            "migration_checks": [
+                _json_safe_clone(row)
+                for row in (_release_channel_state.get("migration_checks") or [])
+                if isinstance(row, dict)
+            ][:50],
+            "release_channel_config_path": str(_release_channel_config_path),
+        }
+        record_summary("integration_hub", "ok", start_time, effect="release_channel_get", risk="low")
+        return _expansion_payload_response(payload)
+
+    if action == "release_channel_set":
+        channel = str(args.get("channel", "")).strip().lower()
+        if channel not in RELEASE_CHANNELS:
+            _record_service_error("integration_hub", start_time, "invalid_data")
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Unsupported channel '{channel or '<empty>'}'. Expected: dev|beta|stable.",
+                    }
+                ]
+            }
+        _release_channel_state["active_channel"] = channel
+        check_result = _evaluate_release_channel(channel=channel)
+        _release_channel_state["last_check_at"] = time.time()
+        _release_channel_state["last_check_channel"] = channel
+        _release_channel_state["last_check_passed"] = bool(check_result.get("passed", False))
+        _release_channel_state["migration_checks"] = [
+            _json_safe_clone(row)
+            for row in (check_result.get("migration_checks") or [])
+            if isinstance(row, dict)
+        ][:100]
+        payload = {
+            "action": action,
+            "active_channel": channel,
+            "check": check_result,
+            "release_channel_config_path": str(_release_channel_config_path),
+        }
+        record_summary("integration_hub", "ok", start_time, effect=f"release_channel_set:{channel}", risk="low")
+        return _expansion_payload_response(payload)
+
+    if action == "release_channel_check":
+        requested_channel = str(
+            args.get("channel", _release_channel_state.get("active_channel", "dev"))
+        ).strip().lower() or str(_release_channel_state.get("active_channel", "dev"))
+        workspace_text = str(args.get("workspace", "")).strip()
+        workspace = Path(workspace_text).expanduser() if workspace_text else Path.cwd()
+        if not workspace.is_absolute():
+            workspace = (Path.cwd() / workspace).resolve()
+        result = _evaluate_release_channel(channel=requested_channel, workspace=workspace)
+        _release_channel_state["last_check_at"] = time.time()
+        _release_channel_state["last_check_channel"] = requested_channel
+        _release_channel_state["last_check_passed"] = bool(result.get("passed", False))
+        _release_channel_state["migration_checks"] = [
+            _json_safe_clone(row)
+            for row in (result.get("migration_checks") or [])
+            if isinstance(row, dict)
+        ][:100]
+        payload = {
+            "action": action,
+            "active_channel": str(_release_channel_state.get("active_channel", "dev")),
+            **result,
+        }
+        record_summary(
+            "integration_hub",
+            "ok",
+            start_time,
+            effect=f"release_channel_check:{requested_channel}",
+            risk="low",
+        )
+        return _expansion_payload_response(payload)
 
     _record_service_error("integration_hub", start_time, "invalid_data")
     return {"content": [{"type": "text", "text": "Unknown integration_hub action."}]}
@@ -10120,7 +10558,7 @@ embodiment_presence_tool = tool(
 
 integration_hub_tool = tool(
     "integration_hub",
-    "Run calendar/notes/messaging/commute/shopping/research orchestration workflows with policy gates.",
+    "Run calendar/notes/messaging/commute/shopping/research orchestration workflows and release-channel operations.",
     SERVICE_TOOL_SCHEMAS["integration_hub"],
 )(integration_hub)
 

@@ -33,9 +33,14 @@ def _assert_audit_payload(
 
 class TestServicesTools:
     @pytest.fixture(autouse=True)
-    def setup_services(self, config, monkeypatch):
+    def setup_services(self, config, monkeypatch, tmp_path):
         monkeypatch.setenv("HASS_URL", "http://ha.test:8123")
         monkeypatch.setenv("HASS_TOKEN", "test-token")
+        monkeypatch.setenv("EXPANSION_STATE_PATH", str(tmp_path / "expansion-state.json"))
+        monkeypatch.setenv("NOTES_CAPTURE_DIR", str(tmp_path / "notes"))
+        monkeypatch.setenv("QUALITY_REPORT_DIR", str(tmp_path / "quality-reports"))
+        project_root = Path(__file__).resolve().parents[1]
+        monkeypatch.setenv("RELEASE_CHANNEL_CONFIG_PATH", str(project_root / "config" / "release-channels.json"))
 
         from jarvis.config import Config
         from jarvis.tools import services
@@ -3343,6 +3348,12 @@ class TestServicesTools:
         assert "expansion" in payload["top_level_required"]
         assert "expansion_required" in payload
         assert "proactive" in payload["expansion_required"]
+        assert "expansion_integration_hub_required" in payload
+        assert "release_channel_config_path" in payload["expansion_integration_hub_required"]
+        assert "last_release_channel_check_at" in payload["expansion_integration_hub_required"]
+        assert "last_release_channel_check_channel" in payload["expansion_integration_hub_required"]
+        assert "last_release_channel_check_passed" in payload["expansion_integration_hub_required"]
+        assert "migration_checks" in payload["expansion_integration_hub_required"]
 
     @pytest.mark.asyncio
     async def test_jarvis_scorecard_reports_unified_dimensions(self, tmp_path):
@@ -4028,6 +4039,69 @@ class TestServicesTools:
         assert Path(integration_payload["path"]).exists()
 
     @pytest.mark.asyncio
+    async def test_integration_hub_release_channel_actions(self):
+        from jarvis.tools import services
+
+        project_root = Path(__file__).resolve().parents[1]
+
+        current = await services.integration_hub({"action": "release_channel_get"})
+        current_payload = json.loads(current["content"][0]["text"])
+        assert current_payload["active_channel"] == "dev"
+
+        switched = await services.integration_hub({"action": "release_channel_set", "channel": "stable"})
+        switched_payload = json.loads(switched["content"][0]["text"])
+        assert switched_payload["active_channel"] == "stable"
+        assert switched_payload["check"]["channel"] == "stable"
+
+        checked = await services.integration_hub(
+            {"action": "release_channel_check", "channel": "stable", "workspace": str(project_root)}
+        )
+        checked_payload = json.loads(checked["content"][0]["text"])
+        assert checked_payload["channel"] == "stable"
+        assert checked_payload["passed"] is True
+        assert checked_payload["failed_count"] == 0
+
+        status = await services.system_status({})
+        status_payload = json.loads(status["content"][0]["text"])
+        integration = status_payload["expansion"]["integration_hub"]
+        assert integration["active_release_channel"] == "stable"
+        assert integration["last_release_channel_check_channel"] == "stable"
+        assert integration["last_release_channel_check_passed"] is True
+        assert isinstance(integration["migration_checks"], list)
+
+    @pytest.mark.asyncio
+    async def test_expansion_state_persists_across_bind(self):
+        from jarvis.config import Config
+        from jarvis.tools import services
+
+        await services.proactive_assistant(
+            {
+                "action": "follow_through",
+                "pending_actions": [{"task": "close the office blinds", "priority": "normal"}],
+            }
+        )
+        await services.identity_trust(
+            {
+                "action": "policy_set",
+                "domain": "locks",
+                "required_profile": "trusted",
+                "requires_step_up": True,
+            }
+        )
+        await services.integration_hub({"action": "release_channel_set", "channel": "beta"})
+        await services.embodiment_presence({"action": "privacy_posture", "state": "muted", "reason": "test"})
+
+        services.bind(Config())
+
+        status = await services.system_status({})
+        payload = json.loads(status["content"][0]["text"])
+        expansion = payload["expansion"]
+        assert expansion["proactive"]["pending_follow_through_count"] == 1
+        assert expansion["identity_trust"]["trust_policy_count"] >= 1
+        assert expansion["integration_hub"]["active_release_channel"] == "beta"
+        assert expansion["embodiment_presence"]["privacy_posture"]["state"] == "muted"
+
+    @pytest.mark.asyncio
     async def test_identity_guest_session_capability_enforced(self):
         from jarvis.tools import services
 
@@ -4083,9 +4157,12 @@ class TestServicesTools:
         assert (project_root / "scripts" / "run_eval_dataset.py").exists()
         assert (project_root / "scripts" / "release_acceptance.sh").exists()
         assert (project_root / "scripts" / "check_release_channel.py").exists()
+        assert (project_root / "scripts" / "jarvis_readiness.sh").exists()
         assert (project_root / ".github" / "workflows" / "assistant-quality-report.yml").exists()
         assert (project_root / ".github" / "workflows" / "release-acceptance.yml").exists()
+        assert (project_root / ".github" / "workflows" / "jarvis-readiness.yml").exists()
         makefile_text = (project_root / "Makefile").read_text()
         assert "quality-report" in makefile_text
         assert "eval-dataset" in makefile_text
         assert "release-acceptance" in makefile_text
+        assert "readiness" in makefile_text
