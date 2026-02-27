@@ -17,7 +17,6 @@ import smtplib  # noqa: F401  # accessed by domain modules via services module a
 import sys
 import time
 from contextlib import suppress  # noqa: F401  # accessed by domain modules via services module alias
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse  # noqa: F401  # accessed by domain modules via services module alias
@@ -145,20 +144,20 @@ from jarvis.tools.services_audit_facade_runtime import (
     sanitize_inbound_headers as _facade_sanitize_inbound_headers,
     sanitize_inbound_payload as _facade_sanitize_inbound_payload,
 )
-from jarvis.tools.services_schedule_runtime import (
-    allocate_reminder_id as _runtime_allocate_reminder_id,
-    allocate_timer_id as _runtime_allocate_timer_id,
-    duration_seconds as _runtime_duration_seconds,
-    format_duration as _runtime_format_duration,
-    load_reminders_from_store as _runtime_load_reminders_from_store,
-    load_timers_from_store as _runtime_load_timers_from_store,
-    local_timezone as _runtime_local_timezone,
-    parse_datetime_text as _runtime_parse_datetime_text,
-    parse_due_timestamp as _runtime_parse_due_timestamp,
-    prune_timers as _runtime_prune_timers,
-    reminder_status as _runtime_reminder_status,
-    timer_status as _runtime_timer_status,
-    timestamp_to_iso_utc as _runtime_timestamp_to_iso_utc,
+from jarvis.tools.services_schedule_facade_runtime import (
+    allocate_reminder_id as _facade_allocate_reminder_id,
+    allocate_timer_id as _facade_allocate_timer_id,
+    duration_seconds as _facade_duration_seconds,
+    format_duration as _facade_format_duration,
+    load_reminders_from_store as _facade_load_reminders_from_store,
+    load_timers_from_store as _facade_load_timers_from_store,
+    local_timezone as _facade_local_timezone,
+    parse_datetime_text as _facade_parse_datetime_text,
+    parse_due_timestamp as _facade_parse_due_timestamp,
+    prune_timers as _facade_prune_timers,
+    reminder_status as _facade_reminder_status,
+    timer_status as _facade_timer_status,
+    timestamp_to_iso_utc as _facade_timestamp_to_iso_utc,
 )
 from jarvis.tools.services_memory_runtime import (
     expansion_payload_response as _runtime_expansion_payload_response,
@@ -779,36 +778,14 @@ async def _capture_note_notion(*, title: str, content: str) -> tuple[dict[str, A
     )
 
 
-def _duration_seconds(value: Any) -> float | None:
-    return _runtime_duration_seconds(_services_module(), value)
-
-
-def _local_timezone():
-    return _runtime_local_timezone()
-
-
-def _parse_datetime_text(value: str) -> datetime | None:
-    return _runtime_parse_datetime_text(value)
-
-
-def _parse_due_timestamp(value: Any, *, now_ts: float | None = None) -> float | None:
-    return _runtime_parse_due_timestamp(_services_module(), value, now_ts=now_ts)
-
-
-def _timestamp_to_iso_utc(ts: float) -> str:
-    return _runtime_timestamp_to_iso_utc(ts)
-
-
-def _format_duration(seconds: float) -> str:
-    return _runtime_format_duration(seconds)
-
-
-def _allocate_timer_id() -> int:
-    return _runtime_allocate_timer_id(_services_module())
-
-
-def _allocate_reminder_id() -> int:
-    return _runtime_allocate_reminder_id(_services_module())
+_duration_seconds = _facade_duration_seconds
+_local_timezone = _facade_local_timezone
+_parse_datetime_text = _facade_parse_datetime_text
+_parse_due_timestamp = _facade_parse_due_timestamp
+_timestamp_to_iso_utc = _facade_timestamp_to_iso_utc
+_format_duration = _facade_format_duration
+_allocate_timer_id = _facade_allocate_timer_id
+_allocate_reminder_id = _facade_allocate_reminder_id
 
 
 def _retry_backoff_delay(
@@ -882,23 +859,19 @@ _apply_retention_policies = _facade_apply_retention_policies
 
 
 def _prune_timers(now_mono: float | None = None) -> None:
-    _runtime_prune_timers(_services_module(), now_mono=now_mono)
+    _facade_prune_timers(now_mono=now_mono)
 
 
-def _timer_status() -> dict[str, Any]:
-    return _runtime_timer_status(_services_module())
+_timer_status = _facade_timer_status
 
 
-def _load_timers_from_store() -> None:
-    _runtime_load_timers_from_store(_services_module())
+_load_timers_from_store = _facade_load_timers_from_store
 
 
-def _reminder_status() -> dict[str, Any]:
-    return _runtime_reminder_status(_services_module())
+_reminder_status = _facade_reminder_status
 
 
-def _load_reminders_from_store() -> None:
-    _runtime_load_reminders_from_store(_services_module())
+_load_reminders_from_store = _facade_load_reminders_from_store
 
 
 def _ha_headers() -> dict[str, str]:
