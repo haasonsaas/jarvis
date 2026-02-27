@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 74/88 Runtime Decomposition
+# Jarvis TODO — Wave 74/89 Runtime Decomposition
 
 Last updated: 2026-02-27
 
@@ -8,8 +8,8 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 135
-- Completed: 135
+- Total items: 143
+- Completed: 143
 - Remaining: 0
 
 ---
@@ -204,6 +204,17 @@ Last updated: 2026-02-27
 - [x] `W88-R07` Run `make security-gate`.
 - [x] `W88-R08` Run `./scripts/jarvis_readiness.sh fast`.
 
+## S) Wave 89 (completed): runtime-state wrapper extraction
+
+- [x] `W89-S01` Profile runtime-state wrapper block in `services.py`.
+- [x] `W89-S02` Create `services_state_facade_runtime.py` for runtime-state helper wrappers.
+- [x] `W89-S03` Preserve `services.py` compatibility names used by runtime/domain modules.
+- [x] `W89-S04` Extend import-boundary coverage for runtime-state facade module.
+- [x] `W89-S05` Run focused bind/expansion/quality-report regression tests.
+- [x] `W89-S06` Run `make check`.
+- [x] `W89-S07` Run `make security-gate`.
+- [x] `W89-S08` Run `./scripts/jarvis_readiness.sh fast`.
+
 ---
 
 ## Outcome snapshot (latest completed tranche)
@@ -223,6 +234,7 @@ Last updated: 2026-02-27
   - `services_status_facade_runtime.py`
   - `services_ha_facade_runtime.py`
   - `services_comms_facade_runtime.py`
+  - `services_state_facade_runtime.py`
 - Compatibility preservation:
   - `services.py` now re-exports defaults/constants via `_services_defaults` alias.
   - Mutable bootstrap defaults (`_proactive_state`, `_privacy_posture`, `_motion_safety_envelope`, `_release_channel_state`) now initialize from factory helpers.
@@ -241,6 +253,7 @@ Last updated: 2026-02-27
   - Status/scorecard wrapper family moved behind `services_status_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Home Assistant wrapper family moved behind `services_ha_facade_runtime.py` with `services.py` compatibility aliases maintained.
   - Webhook/email wrapper family moved behind `services_comms_facade_runtime.py` with `services.py` compatibility aliases maintained.
+  - Runtime-state wrapper family moved behind `services_state_facade_runtime.py` with `services.py` compatibility aliases maintained.
 - Validation (Wave 75D/E):
   - `uv run pytest -q tests/test_import_boundaries.py`: `177 passed`.
   - `uv run pytest -q tests/test_runtime_operator_status.py tests/test_main_lifecycle.py -k "operator_auth or startup_summary_lines_include_core_status"`: `8 passed`.
@@ -258,6 +271,7 @@ Last updated: 2026-02-27
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py tests/test_main_lifecycle.py -k "system_status or scorecard or observability or identity_status or voice_attention"`: `12 passed`.
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py -k "home_assistant or smart_home_state or media_control or calendar_events or calendar_next_event or home_orchestrator"`: `43 passed`.
   - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py -k "webhook or email_send or calendar_events or calendar_next_event"`: `25 passed`.
-  - `make check`: `780 passed`.
-  - `make security-gate`: `780 passed`; fault subset `3 passed`.
+  - `uv run pytest -q tests/test_import_boundaries.py tests/test_tools_services.py tests/test_main_lifecycle.py -k "bind or expansion or quality_report or release_channel"`: `11 passed`.
+  - `make check`: `781 passed`.
+  - `make security-gate`: `781 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.

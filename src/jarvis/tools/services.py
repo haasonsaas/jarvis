@@ -54,15 +54,15 @@ from jarvis.tools.service_schemas import (
 )
 from jarvis.tools import services_defaults as _services_defaults
 from jarvis.tools.services_server import create_services_server  # noqa: F401  # compatibility export for callers
-from jarvis.tools.services_runtime_state import (
-    append_quality_report as _runtime_append_quality_report,
-    bind_runtime_state as _runtime_bind_runtime_state,
-    expansion_state_payload as _runtime_expansion_state_payload,
-    json_safe_clone as _runtime_json_safe_clone,
-    load_expansion_state as _runtime_load_expansion_state,
-    persist_expansion_state as _runtime_persist_expansion_state,
-    quality_reports_snapshot as _runtime_quality_reports_snapshot,
-    replace_state_dict as _runtime_replace_state_dict,
+from jarvis.tools.services_state_facade_runtime import (
+    append_quality_report as _facade_append_quality_report,
+    bind_runtime_state as _facade_bind_runtime_state,
+    expansion_state_payload as _facade_expansion_state_payload,
+    json_safe_clone as _facade_json_safe_clone,
+    load_expansion_state as _facade_load_expansion_state,
+    persist_expansion_state as _facade_persist_expansion_state,
+    quality_reports_snapshot as _facade_quality_reports_snapshot,
+    replace_state_dict as _facade_replace_state_dict,
 )
 from jarvis.tools.services_integrations_runtime import (
     capture_note as _runtime_capture_note,
@@ -517,7 +517,7 @@ def set_skill_registry(registry: SkillRegistry | None) -> None:
 
 
 def bind(config: Config, memory_store: MemoryStore | None = None) -> None:
-    _runtime_bind_runtime_state(_services_module(), config, memory_store)
+    _facade_bind_runtime_state(config, memory_store)
 
 
 def _tool_permitted(name: str) -> bool:
@@ -703,31 +703,31 @@ def _home_area_policy_violation(
 
 
 def _quality_reports_snapshot(*, limit: int = 10) -> list[dict[str, Any]]:
-    return _runtime_quality_reports_snapshot(_services_module(), limit=limit)
+    return _facade_quality_reports_snapshot(limit=limit)
 
 
 def _append_quality_report(report: dict[str, Any]) -> None:
-    _runtime_append_quality_report(_services_module(), report)
+    _facade_append_quality_report(report)
 
 
 def _json_safe_clone(value: Any) -> Any:
-    return _runtime_json_safe_clone(value)
+    return _facade_json_safe_clone(value)
 
 
 def _replace_state_dict(target: dict[str, Any], source: Any) -> None:
-    _runtime_replace_state_dict(_services_module(), target, source)
+    _facade_replace_state_dict(target, source)
 
 
 def _expansion_state_payload() -> dict[str, Any]:
-    return _runtime_expansion_state_payload(_services_module())
+    return _facade_expansion_state_payload()
 
 
 def _persist_expansion_state() -> None:
-    _runtime_persist_expansion_state(_services_module())
+    _facade_persist_expansion_state()
 
 
 def _load_expansion_state() -> None:
-    _runtime_load_expansion_state(_services_module())
+    _facade_load_expansion_state()
 
 
 def _run_release_channel_check(base: Path, check: dict[str, Any]) -> dict[str, Any]:
