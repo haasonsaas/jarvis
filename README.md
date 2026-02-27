@@ -130,6 +130,10 @@ Smart home safety defaults:
   - `answer` for direct questions,
   - `act` for explicit action requests,
   - `clarify` when an action request is ambiguous (`it/that/this` targets).
+- Confidence policy auto-calibrates language:
+  - `cautious` for volatile/time-sensitive prompts (`latest`, `today`, `right now`),
+  - `calibrated` for estimate/prediction prompts,
+  - `direct` for stable factual prompts.
 - Home Assistant conversation tool requires both:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`

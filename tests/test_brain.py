@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 from jarvis.brain import (
     Brain,
+    CONFIDENCE_POLICY_INSTRUCTIONS,
     FIRST_RESPONSE_INSTRUCTIONS,
     INTERACTION_CONTRACT,
     RESPONSE_MODE_INSTRUCTIONS,
@@ -98,6 +99,14 @@ class TestBrain:
     def test_first_response_strategy_resolves_answer_for_direct_question(self, brain):
         strategy = brain._first_response_strategy("What time is sunset today?")
         assert strategy == "answer"
+
+    def test_confidence_policy_mode_resolves_cautious_for_volatile_queries(self, brain):
+        mode = brain._confidence_policy_mode("What is the latest weather right now?")
+        assert mode == "cautious"
+
+    def test_confidence_policy_mode_resolves_calibrated_for_estimates(self, brain):
+        mode = brain._confidence_policy_mode("Can you estimate how likely this is to fail?")
+        assert mode == "calibrated"
 
     @pytest.mark.asyncio
     async def test_respond_sets_thinking_state(self, brain):
@@ -289,6 +298,9 @@ class TestBrain:
         assert "Response mode:" in payload
         assert "Mode=normal" in payload
         assert RESPONSE_MODE_INSTRUCTIONS["normal"] in payload
+        assert "Confidence policy:" in payload
+        assert "Mode=direct" in payload
+        assert CONFIDENCE_POLICY_INSTRUCTIONS["direct"] in payload
         assert "Prompt style:" in payload
         assert "Mode=friendly" in payload
         assert "Response contract:" in payload
@@ -314,6 +326,7 @@ class TestBrain:
         assert "Response mode:" in payload
         assert "Mode=brief" in payload
         assert RESPONSE_MODE_INSTRUCTIONS["brief"] in payload
+        assert "Confidence policy:" in payload
 
     @pytest.mark.asyncio
     async def test_respond_includes_deep_response_mode_instruction(self, brain):
@@ -334,6 +347,7 @@ class TestBrain:
         assert "Response mode:" in payload
         assert "Mode=deep" in payload
         assert RESPONSE_MODE_INSTRUCTIONS["deep"] in payload
+        assert "Confidence policy:" in payload
 
     @pytest.mark.asyncio
     async def test_respond_includes_clarify_first_response_strategy_instruction(self, brain):
@@ -353,6 +367,25 @@ class TestBrain:
         assert "First response strategy:" in payload
         assert "Strategy=clarify" in payload
         assert FIRST_RESPONSE_INSTRUCTIONS["clarify"] in payload
+
+    @pytest.mark.asyncio
+    async def test_respond_includes_cautious_confidence_policy_instruction(self, brain):
+        captured = {}
+
+        async def fake_query(text: str, session_id: str):
+            captured["text"] = text
+
+        with patch.object(brain._client, "query", new=AsyncMock(side_effect=fake_query)), \
+             patch.object(brain._client, "receive_response") as mock_recv, \
+             patch.object(brain, "_ensure_connected", new=AsyncMock()):
+            mock_recv.return_value = _async_iter([])
+            async for _ in brain.respond("Give me the latest stock price right now."):
+                pass
+
+        payload = captured.get("text", "")
+        assert "Confidence policy:" in payload
+        assert "Mode=cautious" in payload
+        assert CONFIDENCE_POLICY_INSTRUCTIONS["cautious"] in payload
 
     @pytest.mark.asyncio
     async def test_memory_persona_style_overrides_config(self, brain):
@@ -427,6 +460,7 @@ class TestBrain:
         assert prompt in payload
         assert "First response strategy:" in payload
         assert "Response mode:" in payload
+        assert "Confidence policy:" in payload
         assert "Prompt style:" in payload
         assert f"Mode={style}" in payload
         assert STYLE_INSTRUCTIONS[style] in payload

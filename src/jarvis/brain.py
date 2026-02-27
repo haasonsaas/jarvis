@@ -158,6 +158,36 @@ FIRST_RESPONSE_INSTRUCTIONS = {
     "clarify": "Ask one clarifying question before any tool call, then wait for the answer.",
     "acknowledge": "Acknowledge and ask for the minimum missing detail needed to proceed.",
 }
+CONFIDENCE_POLICY_INSTRUCTIONS = {
+    "direct": "Use direct language for stable facts, but avoid absolute claims unless grounded in tool output or memory.",
+    "calibrated": "State confidence briefly and mention assumptions when the request has uncertainty.",
+    "cautious": "Treat this as high uncertainty: avoid definitive claims, state uncertainty plainly, and suggest verification steps.",
+}
+CONFIDENCE_VOLATILE_TERMS = {
+    "today",
+    "current",
+    "currently",
+    "latest",
+    "breaking",
+    "news",
+    "price",
+    "stock",
+    "weather",
+    "schedule",
+    "recent",
+    "as of now",
+    "right now",
+}
+CONFIDENCE_CALIBRATED_TERMS = {
+    "estimate",
+    "likely",
+    "probably",
+    "might",
+    "best guess",
+    "prediction",
+    "could",
+    "should",
+}
 
 
 class Brain:
@@ -325,6 +355,21 @@ class Brain:
         instruction = FIRST_RESPONSE_INSTRUCTIONS.get(strategy, FIRST_RESPONSE_INSTRUCTIONS["acknowledge"])
         return f"Strategy={strategy}. {instruction}"
 
+    def _confidence_policy_mode(self, user_text: str) -> str:
+        sample = str(user_text or "").strip().lower()
+        if not sample:
+            return "direct"
+        if any(term in sample for term in CONFIDENCE_VOLATILE_TERMS):
+            return "cautious"
+        if any(term in sample for term in CONFIDENCE_CALIBRATED_TERMS):
+            return "calibrated"
+        return "direct"
+
+    def _confidence_policy_instruction(self, user_text: str) -> str:
+        mode = self._confidence_policy_mode(user_text)
+        instruction = CONFIDENCE_POLICY_INSTRUCTIONS.get(mode, CONFIDENCE_POLICY_INSTRUCTIONS["direct"])
+        return f"Mode={mode}. {instruction}"
+
     def _interaction_contract_context(self) -> str:
         rules = INTERACTION_CONTRACT.get("response_order", ()) + INTERACTION_CONTRACT.get("ambiguity_and_safety", ())
         if not rules:
@@ -387,6 +432,10 @@ class Brain:
         response_mode_instruction = self._response_mode_instruction(query_text)
         if response_mode_instruction:
             user_text = f"{user_text}\n\nResponse mode:\n{response_mode_instruction}"
+
+        confidence_instruction = self._confidence_policy_instruction(query_text)
+        if confidence_instruction:
+            user_text = f"{user_text}\n\nConfidence policy:\n{confidence_instruction}"
 
         style_instruction = self._style_instruction_context()
         if style_instruction:
