@@ -26,7 +26,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `JX02` Add dynamic response mode switching (`brief`, `normal`, `deep`) based on user context and urgency. `P0`
 - [x] `JX03` Add context-aware first-response behavior (acknowledge, answer, act, or ask clarifying question). `P0`
 - [x] `JX04` Add confidence-aware language policy to avoid overconfident answers when uncertain. `P0`
-- [ ] `JX05` Add "operator personality controls" with live preview and rollback. `P1`
+- [x] `JX05` Add "operator personality controls" with live preview and rollback. `P1`
 - [x] `JX06` Add "Jarvis quality bar" regression checks for tone/style consistency across common prompts. `P1`
 
 ## 2) Voice and Dialogue Quality (6 items)

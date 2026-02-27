@@ -209,6 +209,14 @@ def _dashboard_html() -> str:
         <button onclick=\"control('set_backchannel_style',{style:'expressive'})\">Backchannel Expressive</button>
       </div>
       <div>
+        <button onclick=\"control('preview_personality',{persona_style:'friendly',backchannel_style:'expressive'})\">Preview Friendly+</button>
+        <button onclick=\"control('preview_personality',{persona_style:'terse',backchannel_style:'quiet'})\">Preview Terse+</button>
+      </div>
+      <div>
+        <button onclick=\"control('commit_personality_preview',{})\">Commit Preview</button>
+        <button data-danger=\"true\" onclick=\"control('rollback_personality_preview',{})\">Rollback Preview</button>
+      </div>
+      <div>
         <button onclick=\"control('skills_reload',{})\">Reload Skills</button>
       </div>
       <div>

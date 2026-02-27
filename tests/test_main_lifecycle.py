@@ -489,6 +489,7 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
         set_backchannel_style=MagicMock(),
     )
     jarvis.brain = SimpleNamespace(_memory=None)
+    jarvis._personality_preview_snapshot = None
     jarvis._skills = SimpleNamespace(
         discover=MagicMock(),
         status_snapshot=lambda: {"enabled": True},
@@ -561,7 +562,48 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     )
     assert backchannel_result == {"ok": True, "backchannel_style": "quiet"}
     assert jarvis.config.backchannel_style == "quiet"
-    jarvis.presence.set_backchannel_style.assert_called_with("quiet")
+    jarvis.presence.set_backchannel_style.assert_any_call("quiet")
+
+    preview_result = await Jarvis._operator_control_handler(
+        jarvis,
+        "preview_personality",
+        {"persona_style": "terse", "backchannel_style": "expressive"},
+    )
+    assert preview_result["ok"] is True
+    assert preview_result["preview_active"] is True
+    assert preview_result["baseline"] == {"persona_style": "friendly", "backchannel_style": "quiet"}
+    assert jarvis.config.persona_style == "terse"
+    assert jarvis.config.backchannel_style == "expressive"
+
+    rollback_result = await Jarvis._operator_control_handler(
+        jarvis,
+        "rollback_personality_preview",
+        {},
+    )
+    assert rollback_result["ok"] is True
+    assert rollback_result["rolled_back"] is True
+    assert jarvis.config.persona_style == "friendly"
+    assert jarvis.config.backchannel_style == "quiet"
+    assert jarvis._personality_preview_snapshot is None
+
+    preview_commit = await Jarvis._operator_control_handler(
+        jarvis,
+        "preview_personality",
+        {"persona_style": "terse"},
+    )
+    assert preview_commit["ok"] is True
+    assert jarvis.config.persona_style == "terse"
+    assert jarvis._personality_preview_snapshot == {"persona_style": "friendly", "backchannel_style": "quiet"}
+
+    commit_result = await Jarvis._operator_control_handler(
+        jarvis,
+        "commit_personality_preview",
+        {},
+    )
+    assert commit_result["ok"] is True
+    assert commit_result["committed"] is True
+    assert commit_result["preview_active"] is False
+    assert jarvis._personality_preview_snapshot is None
 
     unknown = await Jarvis._operator_control_handler(jarvis, "nope", {})
     assert unknown["ok"] is False
@@ -641,3 +683,32 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     assert load_target._awaiting_repair_confirmation is True
     assert load_target._repair_candidate_text == "turn on the porch lights"
     load_target.presence.set_backchannel_style.assert_called_with("expressive")
+
+
+def test_runtime_state_saves_personality_baseline_when_preview_active(tmp_path):
+    state_path = tmp_path / "runtime-state-preview.json"
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._runtime_state_path = state_path
+    jarvis._voice_attention = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))
+    jarvis.config = SimpleNamespace(
+        motion_enabled=True,
+        home_enabled=True,
+        safe_mode_enabled=False,
+        persona_style="friendly",
+        backchannel_style="expressive",
+    )
+    jarvis._tts_output_enabled = True
+    jarvis._awaiting_confirmation = False
+    jarvis._pending_text = None
+    jarvis._awaiting_repair_confirmation = False
+    jarvis._repair_candidate_text = None
+    jarvis._personality_preview_snapshot = {
+        "persona_style": "composed",
+        "backchannel_style": "balanced",
+    }
+
+    Jarvis._save_runtime_state(jarvis)
+
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert payload["runtime"]["persona_style"] == "composed"
+    assert payload["runtime"]["backchannel_style"] == "balanced"

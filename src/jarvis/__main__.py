@@ -383,6 +383,7 @@ class Jarvis:
         self._telemetry_error_counts: dict[str, float] = {}
         self._conversation_traces: deque[dict[str, Any]] = deque(maxlen=CONVERSATION_TRACE_MAXLEN)
         self._turn_trace_seq = 0
+        self._personality_preview_snapshot: dict[str, str] | None = None
         self._stt_diagnostics: dict[str, Any] = self._default_stt_diagnostics()
         self._load_runtime_state()
         self._publish_voice_status()
@@ -638,6 +639,15 @@ class Jarvis:
                     "required": ["style"],
                     "enum": {"style": sorted(VALID_BACKCHANNEL_STYLES)},
                 },
+                "preview_personality": {
+                    "required": [],
+                    "enum": {
+                        "persona_style": sorted(VALID_PERSONA_STYLES),
+                        "backchannel_style": sorted(VALID_BACKCHANNEL_STYLES),
+                    },
+                },
+                "commit_personality_preview": {"required": []},
+                "rollback_personality_preview": {"required": []},
                 "skills_reload": {"required": []},
                 "skills_enable": {"required": ["name"], "types": {"name": "string"}},
                 "skills_disable": {"required": ["name"], "types": {"name": "string"}},
@@ -746,6 +756,19 @@ class Jarvis:
             return
         path.parent.mkdir(parents=True, exist_ok=True)
         voice = self._voice_controller()
+        preview_snapshot = getattr(self, "_personality_preview_snapshot", None)
+        if isinstance(preview_snapshot, dict):
+            persisted_persona_style = self._parse_control_choice(
+                preview_snapshot.get("persona_style"),
+                VALID_PERSONA_STYLES,
+            ) or str(getattr(self.config, "persona_style", "composed"))
+            persisted_backchannel_style = self._parse_control_choice(
+                preview_snapshot.get("backchannel_style"),
+                VALID_BACKCHANNEL_STYLES,
+            ) or str(getattr(self.config, "backchannel_style", "balanced"))
+        else:
+            persisted_persona_style = str(getattr(self.config, "persona_style", "composed"))
+            persisted_backchannel_style = str(getattr(self.config, "backchannel_style", "balanced"))
         payload = {
             "saved_at": time.time(),
             "voice": {
@@ -759,8 +782,8 @@ class Jarvis:
                 "home_enabled": bool(self.config.home_enabled),
                 "safe_mode_enabled": bool(getattr(self.config, "safe_mode_enabled", False)),
                 "tts_enabled": bool(getattr(self, "_tts_output_enabled", True)),
-                "persona_style": str(self.config.persona_style),
-                "backchannel_style": str(self.config.backchannel_style),
+                "persona_style": persisted_persona_style,
+                "backchannel_style": persisted_backchannel_style,
             },
             "awaiting_confirmation": bool(getattr(self, "_awaiting_confirmation", False)),
             "pending_text": getattr(self, "_pending_text", None),
@@ -1132,6 +1155,15 @@ class Jarvis:
         status["conversation_trace"] = {
             "recent_count": len(self._conversation_traces),
             "latest_turn_id": latest_turn_id,
+        }
+        preview = getattr(self, "_personality_preview_snapshot", None)
+        status["personality_preview"] = {
+            "active": isinstance(preview, dict),
+            "baseline": dict(preview) if isinstance(preview, dict) else None,
+            "current": {
+                "persona_style": str(getattr(self.config, "persona_style", "unknown")),
+                "backchannel_style": str(getattr(self.config, "backchannel_style", "unknown")),
+            },
         }
         return status
 
@@ -1603,6 +1635,7 @@ class Jarvis:
                     "expected": sorted(VALID_PERSONA_STYLES),
                 }
             self._set_persona_style(style)
+            self._personality_preview_snapshot = None
             self._persist_runtime_state_safe()
             return {"ok": True, "persona_style": style}
         if command == "set_backchannel_style":
@@ -1616,8 +1649,75 @@ class Jarvis:
                 }
             self.config.backchannel_style = style
             self.presence.set_backchannel_style(style)
+            self._personality_preview_snapshot = None
             self._persist_runtime_state_safe()
             return {"ok": True, "backchannel_style": style}
+        if command == "preview_personality":
+            persona_style = self._parse_control_choice(data.get("persona_style"), VALID_PERSONA_STYLES)
+            backchannel_style = self._parse_control_choice(data.get("backchannel_style"), VALID_BACKCHANNEL_STYLES)
+            if persona_style is None and backchannel_style is None:
+                return {
+                    "ok": False,
+                    "error": "invalid_payload",
+                    "message": "provide persona_style and/or backchannel_style",
+                    "expected": {
+                        "persona_style": sorted(VALID_PERSONA_STYLES),
+                        "backchannel_style": sorted(VALID_BACKCHANNEL_STYLES),
+                    },
+                }
+            if getattr(self, "_personality_preview_snapshot", None) is None:
+                self._personality_preview_snapshot = {
+                    "persona_style": str(getattr(self.config, "persona_style", "composed")),
+                    "backchannel_style": str(getattr(self.config, "backchannel_style", "balanced")),
+                }
+            if persona_style is not None:
+                self._set_persona_style(persona_style)
+            if backchannel_style is not None:
+                self.config.backchannel_style = backchannel_style
+                self.presence.set_backchannel_style(backchannel_style)
+            return {
+                "ok": True,
+                "preview_active": True,
+                "persona_style": str(getattr(self.config, "persona_style", "unknown")),
+                "backchannel_style": str(getattr(self.config, "backchannel_style", "unknown")),
+                "baseline": dict(self._personality_preview_snapshot or {}),
+            }
+        if command == "commit_personality_preview":
+            was_active = isinstance(getattr(self, "_personality_preview_snapshot", None), dict)
+            self._personality_preview_snapshot = None
+            self._persist_runtime_state_safe()
+            return {
+                "ok": True,
+                "committed": was_active,
+                "preview_active": False,
+                "persona_style": str(getattr(self.config, "persona_style", "unknown")),
+                "backchannel_style": str(getattr(self.config, "backchannel_style", "unknown")),
+            }
+        if command == "rollback_personality_preview":
+            snapshot = getattr(self, "_personality_preview_snapshot", None)
+            if not isinstance(snapshot, dict):
+                return {
+                    "ok": True,
+                    "rolled_back": False,
+                    "preview_active": False,
+                    "persona_style": str(getattr(self.config, "persona_style", "unknown")),
+                    "backchannel_style": str(getattr(self.config, "backchannel_style", "unknown")),
+                }
+            persona_style = self._parse_control_choice(snapshot.get("persona_style"), VALID_PERSONA_STYLES)
+            backchannel_style = self._parse_control_choice(snapshot.get("backchannel_style"), VALID_BACKCHANNEL_STYLES)
+            if persona_style is not None:
+                self._set_persona_style(persona_style)
+            if backchannel_style is not None:
+                self.config.backchannel_style = backchannel_style
+                self.presence.set_backchannel_style(backchannel_style)
+            self._personality_preview_snapshot = None
+            return {
+                "ok": True,
+                "rolled_back": True,
+                "preview_active": False,
+                "persona_style": str(getattr(self.config, "persona_style", "unknown")),
+                "backchannel_style": str(getattr(self.config, "backchannel_style", "unknown")),
+            }
         if command == "clear_inbound_webhooks":
             result = await service_tools.webhook_inbound_clear({})
             text = result.get("content", [{}])[0].get("text", "")
