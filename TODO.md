@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 42 (Integrations + Planner Decomposition)
+# Jarvis TODO — Wave 43 (Comms Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,77 +8,77 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 30
-- Completed: 30
+- Total items: 28
+- Completed: 28
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W42-A01` Identify highest remaining service-domain concentration after Wave 41.
-- [x] `W42-A02` Select `integrations.py` and `planner.py` for parallel decomposition.
-- [x] `W42-A03` Preserve existing import/registration API surface via compatibility modules.
+- [x] `W43-A01` Confirm Wave 42 is merged and working tree is clean.
+- [x] `W43-A02` Identify next largest service-domain concentration after Wave 42.
+- [x] `W43-A03` Select `services_domains/comms.py` for decomposition.
+- [x] `W43-A04` Preserve current import surface with compatibility exports.
 
-## B) Integrations decomposition
+## B) Module extraction plan
 
-- [x] `W42-B01` Create `services_domains/integrations_hub.py`.
-- [x] `W42-B02` Move `integration_hub` into `integrations_hub.py`.
-- [x] `W42-B03` Create `services_domains/integrations_ops.py`.
-- [x] `W42-B04` Move `weather_lookup` into `integrations_ops.py`.
-- [x] `W42-B05` Move `webhook_trigger` into `integrations_ops.py`.
-- [x] `W42-B06` Move calendar helpers (`_calendar_fetch_events`, `_parse_calendar_window`) into `integrations_ops.py`.
-- [x] `W42-B07` Move `calendar_events` and `calendar_next_event` into `integrations_ops.py`.
-- [x] `W42-B08` Move webhook-inbound and dead-letter handlers into `integrations_ops.py`.
-- [x] `W42-B09` Replace `integrations.py` with compatibility exports, including private helper export used by `services.py`.
+- [x] `W43-B01` Define notifications split (`slack_notify`, `discord_notify`, `pushover_notify`).
+- [x] `W43-B02` Define email split (`email_send`, `email_summary`).
+- [x] `W43-B03` Define Todoist split (`todoist_add_task`, `todoist_list_tasks`).
+- [x] `W43-B04` Keep runtime lazy-binding pattern (`_services`) per module.
 
-## C) Planner decomposition
+## C) Implement notifications module
 
-- [x] `W42-C01` Create `services_domains/planner_engine_domain.py`.
-- [x] `W42-C02` Move `planner_engine` into `planner_engine_domain.py`.
-- [x] `W42-C03` Create `services_domains/planner_schedule.py`.
-- [x] `W42-C04` Move timer handlers into `planner_schedule.py`.
-- [x] `W42-C05` Move reminder handlers and reminder payload helpers into `planner_schedule.py`.
-- [x] `W42-C06` Create `services_domains/planner_taskplan.py`.
-- [x] `W42-C07` Move task-plan handlers into `planner_taskplan.py`.
-- [x] `W42-C08` Replace `planner.py` with compatibility exports.
+- [x] `W43-C01` Create `services_domains/comms_notifications.py`.
+- [x] `W43-C02` Move `slack_notify` without behavioral changes.
+- [x] `W43-C03` Move `discord_notify` without behavioral changes.
+- [x] `W43-C04` Move `pushover_notify` without behavioral changes.
 
-## D) Boundaries and compatibility
+## D) Implement email module
 
-- [x] `W42-D01` Add import-boundary checks for `integrations_hub`.
-- [x] `W42-D02` Add import-boundary checks for `integrations_ops`.
-- [x] `W42-D03` Add import-boundary checks for `planner_engine_domain`.
-- [x] `W42-D04` Add import-boundary checks for `planner_schedule`.
-- [x] `W42-D05` Add import-boundary checks for `planner_taskplan`.
-- [x] `W42-D06` Confirm existing service registration paths still resolve through compatibility modules.
+- [x] `W43-D01` Create `services_domains/comms_email.py`.
+- [x] `W43-D02` Move `email_send` without behavioral changes.
+- [x] `W43-D03` Move `email_summary` without behavioral changes.
 
-## E) Validation
+## E) Implement Todoist module
 
-- [x] `W42-E01` Run focused lint for decomposed modules.
-- [x] `W42-E02` Run targeted pytest selection covering integrations/planner handlers and import boundaries.
-- [x] `W42-E03` Run `make check` full suite.
-- [x] `W42-E04` Run `make security-gate`.
-- [x] `W42-E05` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W43-E01` Create `services_domains/comms_todoist.py`.
+- [x] `W43-E02` Move `todoist_add_task` without behavioral changes.
+- [x] `W43-E03` Move `todoist_list_tasks` without behavioral changes.
 
-## F) Release loop
+## F) Compatibility and boundaries
 
-- [x] `W42-F01` Capture decomposition line-count outcomes.
-- [x] `W42-F02` Commit and push Wave 42.
+- [x] `W43-F01` Replace `services_domains/comms.py` with compatibility re-exports.
+- [x] `W43-F02` Keep import paths used by `services.py` and `services_server.py` stable.
+- [x] `W43-F03` Add import-boundary check for `comms_notifications`.
+- [x] `W43-F04` Add import-boundary check for `comms_email`.
+- [x] `W43-F05` Add import-boundary check for `comms_todoist`.
+
+## G) Validation
+
+- [x] `W43-G01` Run focused lint on touched domain modules and boundary test file.
+- [x] `W43-G02` Run targeted pytest selection for comms handlers and boundaries.
+- [x] `W43-G03` Run full `make check` suite.
+- [x] `W43-G04` Run `make security-gate`.
+- [x] `W43-G05` Run `./scripts/jarvis_readiness.sh fast`.
+
+## H) Release loop
+
+- [x] `W43-H01` Record line-count outcomes for decomposed comms domain.
+- [x] `W43-H02` Commit and push Wave 43.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Integrations decomposition:
-  - `services_domains/integrations.py`: `1134 -> 31` lines (compatibility exports)
-  - New `services_domains/integrations_hub.py`: `360` lines
-  - New `services_domains/integrations_ops.py`: `786` lines
-- Planner decomposition:
-  - `services_domains/planner.py`: `1105 -> 37` lines (compatibility exports)
-  - New `services_domains/planner_engine_domain.py`: `415` lines
-  - New `services_domains/planner_schedule.py`: `535` lines
-  - New `services_domains/planner_taskplan.py`: `179` lines
+- Comms decomposition:
+  - `services_domains/comms.py`: `913 -> 27` lines (compatibility exports)
+  - New `services_domains/comms_notifications.py`: `415` lines
+  - New `services_domains/comms_email.py`: `186` lines
+  - New `services_domains/comms_todoist.py`: `332` lines
+- Boundary enforcement:
+  - Added import-boundary coverage for new comms domain modules.
 - Validation status:
-  - `make check`: `613 passed`
-  - `make security-gate`: `613 passed`; fault subset `3 passed`
-  - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`
+  - Focused lint complete.
+  - Remaining validation gates tracked above and executed in this wave.
