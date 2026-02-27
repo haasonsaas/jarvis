@@ -219,12 +219,12 @@ from jarvis.tools.services_automation_runtime import (
     slugify_identifier as _runtime_slugify_identifier,
     structured_diff as _runtime_structured_diff,
 )
-from jarvis.tools.services_action_runtime import (
-    action_key as _runtime_action_key,
-    cooldown_active as _runtime_cooldown_active,
-    prune_action_history as _runtime_prune_action_history,
-    retry_backoff_delay as _runtime_retry_backoff_delay,
-    touch_action as _runtime_touch_action,
+from jarvis.tools.services_action_facade_runtime import (
+    action_key as _facade_action_key,
+    cooldown_active as _facade_cooldown_active,
+    prune_action_history as _facade_prune_action_history,
+    retry_backoff_delay as _facade_retry_backoff_delay,
+    touch_action as _facade_touch_action,
 )
 from jarvis.tools.services_coercion_runtime import (
     as_bool as _runtime_as_bool,
@@ -819,8 +819,7 @@ def _retry_backoff_delay(
     jitter_ratio: float = RETRY_JITTER_RATIO,
     jitter_sample: float | None = None,
 ) -> float:
-    return _runtime_retry_backoff_delay(
-        _services_module(),
+    return _facade_retry_backoff_delay(
         attempt_index,
         base_delay_sec=base_delay_sec,
         max_delay_sec=max_delay_sec,
@@ -833,20 +832,10 @@ def _as_str_list(value: Any, *, lower: bool = False, allow_none: bool = False) -
     return _runtime_as_str_list(value, lower=lower, allow_none=allow_none)
 
 
-def _action_key(domain: str, action: str, entity_id: str) -> str:
-    return _runtime_action_key(domain, action, entity_id)
-
-
-def _prune_action_history(now: float | None = None) -> None:
-    _runtime_prune_action_history(_services_module(), now=now)
-
-
-def _cooldown_active(domain: str, action: str, entity_id: str) -> bool:
-    return _runtime_cooldown_active(_services_module(), domain, action, entity_id)
-
-
-def _touch_action(domain: str, action: str, entity_id: str) -> None:
-    _runtime_touch_action(_services_module(), domain, action, entity_id)
+_action_key = _facade_action_key
+_prune_action_history = _facade_prune_action_history
+_cooldown_active = _facade_cooldown_active
+_touch_action = _facade_touch_action
 
 
 _audit_status = _facade_audit_status
