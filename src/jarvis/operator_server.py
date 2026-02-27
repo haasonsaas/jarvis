@@ -179,6 +179,10 @@ def _dashboard_html() -> str:
         <button onclick=\"control('set_push_to_talk',{active:false})\">PTT Off</button>
       </div>
       <div>
+        <button onclick=\"control('set_sleeping',{sleeping:true})\">Sleep</button>
+        <button onclick=\"control('set_sleeping',{sleeping:false})\">Wake</button>
+      </div>
+      <div>
         <button onclick=\"control('set_motion_enabled',{enabled:true})\">Motion On</button>
         <button onclick=\"control('set_motion_enabled',{enabled:false})\">Motion Off</button>
       </div>
@@ -229,6 +233,10 @@ def _dashboard_html() -> str:
       <h2>Operator Actions</h2>
       <pre id=\"actions\">loading...</pre>
     </section>
+    <section class=\"card\">
+      <h2>Control Schema</h2>
+      <pre id=\"control-schema\">loading...</pre>
+    </section>
   </div>
   <script>
     let operatorToken = localStorage.getItem('jarvisOperatorToken') || '';
@@ -268,11 +276,13 @@ def _dashboard_html() -> str:
           json('/api/audit?limit=20'),
           json('/api/operator-actions?limit=20'),
         ]);
+        const controlSchema = await json('/api/control-schema');
         document.getElementById('status').textContent = JSON.stringify(status, null, 2);
         document.getElementById('tools').textContent = JSON.stringify(tools, null, 2);
         document.getElementById('startup').textContent = JSON.stringify(startup, null, 2);
         document.getElementById('audit').textContent = JSON.stringify(audit, null, 2);
         document.getElementById('actions').textContent = JSON.stringify(actions, null, 2);
+        document.getElementById('control-schema').textContent = JSON.stringify(controlSchema, null, 2);
       } catch (err) {
         document.getElementById('status').textContent = String(err);
       }
@@ -308,6 +318,7 @@ class OperatorServer:
         status_provider: Callable[[], Awaitable[dict[str, Any]]],
         diagnostics_provider: Callable[[], list[str]],
         control_handler: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]],
+        control_schema_provider: Callable[[], dict[str, Any]],
         metrics_provider: Callable[[], str],
         events_provider: Callable[[], list[dict[str, Any]]],
         inbound_callback: Callable[[Any, dict[str, Any], str, str], int],
@@ -320,6 +331,7 @@ class OperatorServer:
         self._status_provider = status_provider
         self._diagnostics_provider = diagnostics_provider
         self._control_handler = control_handler
+        self._control_schema_provider = control_schema_provider
         self._metrics_provider = metrics_provider
         self._events_provider = events_provider
         self._inbound_callback = inbound_callback
@@ -340,6 +352,7 @@ class OperatorServer:
         app.router.add_get("/api/audit", self._handle_audit)
         app.router.add_get("/api/startup-diagnostics", self._handle_startup_diagnostics)
         app.router.add_get("/api/operator-actions", self._handle_operator_actions)
+        app.router.add_get("/api/control-schema", self._handle_control_schema)
         app.router.add_post("/api/control", self._handle_control)
         app.router.add_get("/metrics", self._handle_metrics)
         app.router.add_get("/events", self._handle_events)
@@ -415,6 +428,10 @@ class OperatorServer:
             limit = 20
         limit = max(1, min(200, limit))
         return web.json_response(list(reversed(self._actions))[:limit])
+
+    async def _handle_control_schema(self, request: web.Request) -> web.Response:
+        self._require_operator_auth(request)
+        return web.json_response(self._control_schema_provider())
 
     async def _handle_control(self, request: web.Request) -> web.Response:
         self._require_operator_auth(request)

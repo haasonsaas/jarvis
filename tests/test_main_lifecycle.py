@@ -339,6 +339,22 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     assert persona_result == {"ok": True, "persona_style": "friendly"}
     assert jarvis.config.persona_style == "friendly"
 
+    sleep_result = await Jarvis._operator_control_handler(
+        jarvis,
+        "set_sleeping",
+        {"sleeping": True},
+    )
+    assert sleep_result == {"ok": True, "sleeping": True}
+    assert jarvis._voice_attention.sleeping is True
+
+    wake_result = await Jarvis._operator_control_handler(
+        jarvis,
+        "set_sleeping",
+        {"sleeping": False},
+    )
+    assert wake_result == {"ok": True, "sleeping": False}
+    assert jarvis._voice_attention.sleeping is False
+
     backchannel_result = await Jarvis._operator_control_handler(
         jarvis,
         "set_backchannel_style",
@@ -351,6 +367,8 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     unknown = await Jarvis._operator_control_handler(jarvis, "nope", {})
     assert unknown["ok"] is False
     assert unknown["error"] == "invalid_action"
+    assert "available_actions" in unknown
+    assert "set_sleeping" in unknown["available_actions"]
 
 
 def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):

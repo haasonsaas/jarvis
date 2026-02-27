@@ -421,6 +421,39 @@ class Jarvis:
             snapshot = {"enabled": False, "uptime_sec": 0.0, "restart_count": 0, "alerts": []}
         set_runtime_observability_state(snapshot)
 
+    def _operator_control_schema(self) -> dict[str, Any]:
+        return {
+            "version": "1.0",
+            "actions": {
+                "set_wake_mode": {"required": ["mode"], "enum": {"mode": sorted(VALID_WAKE_MODES)}},
+                "set_sleeping": {"required": ["sleeping"], "types": {"sleeping": "boolean"}},
+                "set_timeout_profile": {
+                    "required": ["profile"],
+                    "enum": {"profile": sorted(VALID_TIMEOUT_PROFILES)},
+                },
+                "set_push_to_talk": {"required": ["active"], "types": {"active": "boolean"}},
+                "set_motion_enabled": {"required": ["enabled"], "types": {"enabled": "boolean"}},
+                "set_home_enabled": {"required": ["enabled"], "types": {"enabled": "boolean"}},
+                "set_tts_enabled": {"required": ["enabled"], "types": {"enabled": "boolean"}},
+                "set_persona_style": {"required": ["style"], "enum": {"style": sorted(VALID_PERSONA_STYLES)}},
+                "set_backchannel_style": {
+                    "required": ["style"],
+                    "enum": {"style": sorted(VALID_BACKCHANNEL_STYLES)},
+                },
+                "skills_reload": {"required": []},
+                "skills_enable": {"required": ["name"], "types": {"name": "string"}},
+                "skills_disable": {"required": ["name"], "types": {"name": "string"}},
+                "clear_inbound_webhooks": {"required": []},
+            },
+        }
+
+    def _operator_available_actions(self) -> list[str]:
+        schema = self._operator_control_schema()
+        actions = schema.get("actions")
+        if not isinstance(actions, dict):
+            return []
+        return sorted(str(name) for name in actions)
+
     def _startup_blockers(self) -> list[str]:
         blockers: list[str] = []
         if not bool(getattr(self.config, "startup_strict", False)):
@@ -747,7 +780,12 @@ class Jarvis:
         command = str(action or "").strip().lower()
         data = payload if isinstance(payload, dict) else {}
         if not command:
-            return {"ok": False, "error": "invalid_action", "message": "action is required"}
+            return {
+                "ok": False,
+                "error": "invalid_action",
+                "message": "action is required",
+                "available_actions": self._operator_available_actions(),
+            }
         if command == "set_wake_mode":
             mode = self._parse_control_choice(data.get("mode"), VALID_WAKE_MODES)
             if mode is None:
@@ -761,6 +799,16 @@ class Jarvis:
             self._publish_voice_status()
             self._persist_runtime_state_safe()
             return {"ok": True, "mode": mode}
+        if command == "set_sleeping":
+            sleeping = self._parse_control_bool(data.get("sleeping"))
+            if sleeping is None:
+                return {"ok": False, "error": "invalid_payload", "field": "sleeping", "expected": "boolean"}
+            voice.sleeping = sleeping
+            if not sleeping:
+                voice.continue_listening()
+            self._publish_voice_status()
+            self._persist_runtime_state_safe()
+            return {"ok": True, "sleeping": voice.sleeping}
         if command == "set_timeout_profile":
             profile = self._parse_control_choice(data.get("profile"), VALID_TIMEOUT_PROFILES)
             if profile is None:
@@ -856,7 +904,12 @@ class Jarvis:
             ok, detail = self._skills.disable_skill(name)
             self._publish_skills_status()
             return {"ok": ok, "detail": detail, "name": name}
-        return {"ok": False, "error": "invalid_action", "message": "unknown action"}
+        return {
+            "ok": False,
+            "error": "invalid_action",
+            "message": "unknown action",
+            "available_actions": self._operator_available_actions(),
+        }
 
     async def _start_operator_server(self) -> None:
         if not self.config.operator_server_enabled:
@@ -869,6 +922,7 @@ class Jarvis:
             status_provider=self._operator_status_provider,
             diagnostics_provider=self._startup_diagnostics_provider,
             control_handler=self._operator_control_handler,
+            control_schema_provider=self._operator_control_schema,
             metrics_provider=self._operator_metrics_provider,
             events_provider=self._operator_events_provider,
             inbound_callback=lambda payload, headers, path, source: service_tools.record_inbound_webhook_event(

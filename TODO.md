@@ -33,6 +33,22 @@ This tranche targets remaining practical gaps that affect day-to-day reliability
 
 ---
 
+## 2026-02-27 Execution Tranche: Operator Control Contract and Discoverability
+
+This tranche tightens operator usability by exposing a machine-readable control schema, adding explicit sleep/wake control actions, and improving invalid-action guidance.
+
+### Tranche items
+- [x] `OC01` Add authenticated `GET /api/control-schema` endpoint for operator action introspection.
+- [x] `OC02` Wire control schema provider from main runtime so endpoint stays in sync with real actions.
+- [x] `OC03` Add `set_sleeping` operator action for explicit sleep/wake control.
+- [x] `OC04` Return `available_actions` in invalid-action control responses.
+- [x] `OC05` Surface control schema in operator dashboard UI.
+- [x] `OC06` Add regression tests for control-schema route and auth behavior.
+- [x] `OC07` Add regression tests for `set_sleeping` action and invalid-action guidance payload.
+- [x] `OC08` Update operator docs for control schema endpoint and explicit sleep/wake controls.
+
+---
+
 ## Status legend
 - `[ ]` Not started
 - `[-]` In progress

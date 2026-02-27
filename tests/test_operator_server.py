@@ -25,6 +25,7 @@ async def test_operator_server_routes_and_control_log(tmp_path):
         status_provider=status_provider,
         diagnostics_provider=lambda: ["warn-1"],
         control_handler=control_handler,
+        control_schema_provider=lambda: {"actions": {"set_mode": {"required": ["mode"]}}},
         metrics_provider=lambda: "jarvis_uptime_seconds 1\n",
         events_provider=lambda: [{"event_type": "x", "payload": {"a": 1}}],
         inbound_callback=lambda payload, headers, path, source: 7,
@@ -43,6 +44,7 @@ async def test_operator_server_routes_and_control_log(tmp_path):
         async with aiohttp.ClientSession() as session:
             dashboard = await (await session.get(f"{base}/")).text()
             assert "@media (max-width: 920px)" in dashboard
+            assert "Control Schema" in dashboard
 
             bad_control = await session.post(
                 f"{base}/api/control",
@@ -60,6 +62,9 @@ async def test_operator_server_routes_and_control_log(tmp_path):
 
             events_text = await (await session.get(f"{base}/events?timeout_sec=0.6")).text()
             assert "event: runtime" in events_text
+
+            control_schema = await (await session.get(f"{base}/api/control-schema")).json()
+            assert "set_mode" in control_schema["actions"]
 
             control = await (
                 await session.post(
@@ -102,6 +107,7 @@ async def test_operator_server_inbound_webhook_token_enforcement():
         status_provider=lambda: _awaitable({"ok": True}),
         diagnostics_provider=lambda: [],
         control_handler=lambda a, p: _awaitable({"ok": True}),
+        control_schema_provider=lambda: {"actions": {}},
         metrics_provider=lambda: "",
         events_provider=lambda: [],
         inbound_callback=callback,
@@ -154,6 +160,7 @@ async def test_operator_server_inbound_requires_configured_token():
         status_provider=lambda: _awaitable({"ok": True}),
         diagnostics_provider=lambda: [],
         control_handler=lambda a, p: _awaitable({"ok": True}),
+        control_schema_provider=lambda: {"actions": {}},
         metrics_provider=lambda: "",
         events_provider=lambda: [],
         inbound_callback=lambda payload, headers, path, source: 1,
@@ -183,6 +190,7 @@ async def test_operator_server_auth_protects_api_endpoints():
         status_provider=lambda: _awaitable({"ok": True}),
         diagnostics_provider=lambda: [],
         control_handler=lambda a, p: _awaitable({"ok": True}),
+        control_schema_provider=lambda: {"actions": {}},
         metrics_provider=lambda: "jarvis_uptime_seconds 1\n",
         events_provider=lambda: [],
         inbound_callback=lambda payload, headers, path, source: 1,
@@ -205,6 +213,9 @@ async def test_operator_server_auth_protects_api_endpoints():
             unauth = await session.get(f"{base}/api/status")
             assert unauth.status == 401
 
+            schema_unauth = await session.get(f"{base}/api/control-schema")
+            assert schema_unauth.status == 401
+
             denied = await session.get(f"{base}/api/status", headers={"X-Operator-Token": "wrong"})
             assert denied.status == 403
 
@@ -212,6 +223,9 @@ async def test_operator_server_auth_protects_api_endpoints():
             assert allowed.status == 200
             payload = await allowed.json()
             assert payload["ok"] is True
+
+            schema_allowed = await session.get(f"{base}/api/control-schema", headers={"X-Operator-Token": "op-secret"})
+            assert schema_allowed.status == 200
 
             allowed_bearer = await session.get(
                 f"{base}/api/status",
@@ -233,6 +247,7 @@ async def test_operator_server_control_maps_invalid_action_to_400():
         status_provider=lambda: _awaitable({"ok": True}),
         diagnostics_provider=lambda: [],
         control_handler=control_handler,
+        control_schema_provider=lambda: {"actions": {"set_mode": {"required": ["mode"]}}},
         metrics_provider=lambda: "",
         events_provider=lambda: [],
         inbound_callback=lambda payload, headers, path, source: 1,
@@ -272,6 +287,7 @@ async def test_operator_server_audit_uses_tail_semantics(monkeypatch, tmp_path):
         status_provider=lambda: _awaitable({"ok": True}),
         diagnostics_provider=lambda: [],
         control_handler=lambda a, p: _awaitable({"ok": True}),
+        control_schema_provider=lambda: {"actions": {"set_mode": {"required": ["mode"]}}},
         metrics_provider=lambda: "",
         events_provider=lambda: [],
         inbound_callback=lambda payload, headers, path, source: 1,

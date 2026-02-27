@@ -129,6 +129,8 @@ Smart home safety defaults:
   - Set `OPERATOR_AUTH_TOKEN` when binding `OPERATOR_SERVER_HOST` to a non-loopback interface.
   - When token is set, `/api/*`, `/metrics`, and `/events` require `X-Operator-Token` or `Authorization: Bearer <token>`.
   - The dashboard root (`/`) remains reachable and supports token entry for browser-based API calls.
+  - `GET /api/control-schema` returns action/payload requirements for automation clients.
+  - Control actions include explicit sleep/wake toggles via `set_sleeping` (`sleeping=true|false`).
 - Release checklist: [`docs/operations/release-checklist.md`](docs/operations/release-checklist.md).
 - Security maintenance: [`docs/operations/security-maintenance.md`](docs/operations/security-maintenance.md).
 - Error taxonomy: [`docs/operations/error-taxonomy.md`](docs/operations/error-taxonomy.md).
