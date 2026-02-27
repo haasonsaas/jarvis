@@ -6,7 +6,7 @@ Everything is audit-logged.
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: F401
 import base64
 import hashlib
 import hmac  # noqa: F401  # accessed by domain modules via services module alias
@@ -100,6 +100,23 @@ from jarvis.tools.services_ha_runtime import (
     ha_get_state as _runtime_ha_get_state,
     ha_render_template as _runtime_ha_render_template,
     ha_request_json as _runtime_ha_request_json,
+)
+from jarvis.tools.services_recovery_runtime import (
+    RecoveryOperation as _runtime_RecoveryOperation,
+    append_dead_letter_entry as _runtime_append_dead_letter_entry,
+    dead_letter_enqueue as _runtime_dead_letter_enqueue,
+    dead_letter_matches as _runtime_dead_letter_matches,
+    dead_letter_queue_status as _runtime_dead_letter_queue_status,
+    read_dead_letter_entries as _runtime_read_dead_letter_entries,
+    read_recovery_journal_entries as _runtime_read_recovery_journal_entries,
+    recovery_begin as _runtime_recovery_begin,
+    recovery_finish as _runtime_recovery_finish,
+    recovery_journal_status as _runtime_recovery_journal_status,
+    recovery_reconcile_interrupted as _runtime_recovery_reconcile_interrupted,
+    tool_response_success as _runtime_tool_response_success,
+    tool_response_text as _runtime_tool_response_text,
+    write_dead_letter_entries as _runtime_write_dead_letter_entries,
+    write_recovery_journal_entry as _runtime_write_recovery_journal_entry,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -1642,51 +1659,20 @@ def _audit_status() -> dict[str, Any]:
 
 
 def _read_recovery_journal_entries() -> list[dict[str, Any]]:
-    path = _recovery_journal_path
-    if not path.exists():
-        return []
-    try:
-        lines = path.read_text().splitlines()
-    except OSError:
-        return []
-    entries: list[dict[str, Any]] = []
-    for line in lines:
-        text = line.strip()
-        if not text:
-            continue
-        try:
-            payload = json.loads(text)
-        except Exception:
-            continue
-        if isinstance(payload, dict):
-            entries.append(payload)
-    return entries
+    return _runtime_read_recovery_journal_entries(_services_module())
 
 
 def _write_recovery_journal_entry(payload: dict[str, Any]) -> None:
-    path = _recovery_journal_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(payload, default=str)
-    try:
-        with path.open("a") as handle:
-            handle.write(line + "\n")
-    except OSError as exc:
-        log.warning("Failed to write recovery journal entry: %s", exc)
+    _runtime_write_recovery_journal_entry(_services_module(), payload)
 
 
 def _recovery_begin(tool_name: str, *, operation: str, context: dict[str, Any] | None = None) -> str:
-    entry_id = secrets.token_hex(12)
-    _write_recovery_journal_entry(
-        {
-            "timestamp": time.time(),
-            "entry_id": entry_id,
-            "tool": str(tool_name),
-            "operation": str(operation),
-            "status": "started",
-            "context": context or {},
-        }
+    return _runtime_recovery_begin(
+        _services_module(),
+        tool_name,
+        operation=operation,
+        context=context,
     )
-    return entry_id
 
 
 def _recovery_finish(
@@ -1698,83 +1684,25 @@ def _recovery_finish(
     detail: str = "",
     context: dict[str, Any] | None = None,
 ) -> None:
-    _write_recovery_journal_entry(
-        {
-            "timestamp": time.time(),
-            "entry_id": str(entry_id),
-            "tool": str(tool_name),
-            "operation": str(operation),
-            "status": str(status),
-            "detail": str(detail),
-            "context": context or {},
-        }
+    _runtime_recovery_finish(
+        _services_module(),
+        entry_id,
+        tool_name=tool_name,
+        operation=operation,
+        status=status,
+        detail=detail,
+        context=context,
     )
 
 
-class _RecoveryOperation:
+class _RecoveryOperation(_runtime_RecoveryOperation):
     def __init__(self, tool_name: str, *, operation: str, context: dict[str, Any] | None = None) -> None:
-        self._tool_name = str(tool_name)
-        self._operation = str(operation)
-        self._base_context = dict(context or {})
-        self._context_updates: dict[str, Any] = {}
-        self._status = "failed"
-        self._detail = ""
-        self._closed = False
-        self._entry_id = _recovery_begin(self._tool_name, operation=self._operation, context=self._base_context)
-
-    def mark_completed(self, *, detail: str = "ok", context: dict[str, Any] | None = None) -> None:
-        self._status = "completed"
-        self._detail = str(detail)
-        if context:
-            self._context_updates.update(context)
-
-    def mark_failed(self, detail: str, *, context: dict[str, Any] | None = None) -> None:
-        self._status = "failed"
-        self._detail = str(detail)
-        if context:
-            self._context_updates.update(context)
-
-    def mark_cancelled(self, *, detail: str = "cancelled", context: dict[str, Any] | None = None) -> None:
-        self._status = "cancelled"
-        self._detail = str(detail)
-        if context:
-            self._context_updates.update(context)
-
-    def __enter__(self) -> _RecoveryOperation:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        _tb: Any,
-    ) -> bool:
-        if self._closed:
-            return False
-        status = self._status
-        detail = self._detail
-        if exc is not None:
-            if isinstance(exc, asyncio.CancelledError):
-                status = "cancelled"
-                if not detail:
-                    detail = "cancelled"
-            else:
-                status = "failed"
-                if not detail:
-                    detail = exc.__class__.__name__
-        if not detail:
-            detail = "ok" if status == "completed" else "failed"
-        context = {**self._base_context, **self._context_updates}
-        _recovery_finish(
-            self._entry_id,
-            tool_name=self._tool_name,
-            operation=self._operation,
-            status=status,
-            detail=detail,
+        super().__init__(
+            _services_module(),
+            tool_name,
+            operation=operation,
             context=context,
         )
-        self._closed = True
-        return False
 
 
 def _recovery_operation(
@@ -1787,222 +1715,53 @@ def _recovery_operation(
 
 
 def _recovery_reconcile_interrupted() -> None:
-    entries = _read_recovery_journal_entries()
-    if not entries:
-        return
-    latest_by_entry: dict[str, dict[str, Any]] = {}
-    for entry in entries:
-        entry_id = str(entry.get("entry_id", "")).strip()
-        if not entry_id:
-            continue
-        latest_by_entry[entry_id] = entry
-    for entry_id, entry in latest_by_entry.items():
-        status = str(entry.get("status", "")).strip().lower()
-        if status != "started":
-            continue
-        _recovery_finish(
-            entry_id,
-            tool_name=str(entry.get("tool", "unknown")),
-            operation=str(entry.get("operation", "unknown")),
-            status="interrupted",
-            detail="process_restart",
-            context={"source": "reconcile"},
-        )
+    _runtime_recovery_reconcile_interrupted(_services_module())
 
 
 def _recovery_journal_status(*, limit: int = 20) -> dict[str, Any]:
-    entries = _read_recovery_journal_entries()
-    latest_by_entry: dict[str, dict[str, Any]] = {}
-    for entry in entries:
-        entry_id = str(entry.get("entry_id", "")).strip()
-        if not entry_id:
-            continue
-        latest_by_entry[entry_id] = entry
-    unresolved = sum(
-        1
-        for entry in latest_by_entry.values()
-        if str(entry.get("status", "")).strip().lower() == "started"
-    )
-    interrupted = sum(
-        1
-        for entry in latest_by_entry.values()
-        if str(entry.get("status", "")).strip().lower() == "interrupted"
-    )
-    size = max(1, min(100, int(limit)))
-    recent = entries[-size:]
-    return {
-        "path": str(_recovery_journal_path),
-        "exists": _recovery_journal_path.exists(),
-        "entry_count": len(entries),
-        "tracked_actions": len(latest_by_entry),
-        "unresolved_count": unresolved,
-        "interrupted_count": interrupted,
-        "recent": recent,
-    }
+    return _runtime_recovery_journal_status(_services_module(), limit=limit)
 
 
 def _read_dead_letter_entries() -> list[dict[str, Any]]:
-    path = _dead_letter_queue_path
-    if not path.exists():
-        return []
-    try:
-        lines = path.read_text().splitlines()
-    except OSError:
-        return []
-    entries: list[dict[str, Any]] = []
-    for line in lines:
-        text = line.strip()
-        if not text:
-            continue
-        try:
-            payload = json.loads(text)
-        except Exception:
-            continue
-        if isinstance(payload, dict):
-            entries.append(payload)
-    return entries
+    return _runtime_read_dead_letter_entries(_services_module())
 
 
 def _write_dead_letter_entries(entries: list[dict[str, Any]]) -> None:
-    path = _dead_letter_queue_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [json.dumps(item, default=str) for item in entries if isinstance(item, dict)]
-    text = "\n".join(lines)
-    if text:
-        text += "\n"
-    try:
-        path.write_text(text)
-    except OSError as exc:
-        log.warning("Failed to write dead-letter queue: %s", exc)
+    _runtime_write_dead_letter_entries(_services_module(), entries)
 
 
 def _append_dead_letter_entry(entry: dict[str, Any]) -> None:
-    path = _dead_letter_queue_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(entry, default=str)
-    try:
-        with path.open("a") as handle:
-            handle.write(line + "\n")
-    except OSError as exc:
-        log.warning("Failed to append dead-letter queue entry: %s", exc)
+    _runtime_append_dead_letter_entry(_services_module(), entry)
 
 
 def _dead_letter_matches(entry: dict[str, Any], *, status_filter: str) -> bool:
-    status = str(entry.get("status", "pending")).strip().lower() or "pending"
-    if status_filter == "all":
-        return True
-    if status_filter == "open":
-        return status in {"pending", "failed"}
-    return status == status_filter
+    return _runtime_dead_letter_matches(entry, status_filter=status_filter)
 
 
 def _dead_letter_queue_status(*, limit: int = 20, status_filter: str = "open") -> dict[str, Any]:
-    entries = _read_dead_letter_entries()
-    size = max(1, min(200, int(limit)))
-    selected = [entry for entry in entries if _dead_letter_matches(entry, status_filter=status_filter)]
-    recent_raw = selected[-size:]
-    recent: list[dict[str, Any]] = []
-    for entry in recent_raw:
-        tool_name = str(entry.get("tool", "unknown")).strip().lower()
-        args = entry.get("args")
-        args_preview = _sanitize_inbound_payload(args if isinstance(args, dict) else {})
-        recent.append(
-            {
-                "entry_id": str(entry.get("entry_id", "")),
-                "timestamp": float(entry.get("timestamp", 0.0) or 0.0),
-                "tool": tool_name,
-                "status": str(entry.get("status", "pending")),
-                "reason": str(entry.get("reason", "")),
-                "attempts": int(entry.get("attempts", 0) or 0),
-                "last_attempt_at": float(entry.get("last_attempt_at", 0.0) or 0.0),
-                "last_error": str(entry.get("last_error", "")),
-                "args_preview": args_preview,
-                "replayable": tool_name in {
-                    "webhook_trigger",
-                    "slack_notify",
-                    "discord_notify",
-                    "email_send",
-                    "pushover_notify",
-                },
-            }
-        )
-    pending = sum(1 for entry in entries if str(entry.get("status", "pending")).strip().lower() == "pending")
-    failed = sum(1 for entry in entries if str(entry.get("status", "")).strip().lower() == "failed")
-    replayed = sum(1 for entry in entries if str(entry.get("status", "")).strip().lower() == "replayed")
-    return {
-        "path": str(_dead_letter_queue_path),
-        "exists": _dead_letter_queue_path.exists(),
-        "entry_count": len(entries),
-        "pending_count": pending,
-        "failed_count": failed,
-        "replayed_count": replayed,
-        "recent": recent,
-    }
+    return _runtime_dead_letter_queue_status(
+        _services_module(),
+        limit=limit,
+        status_filter=status_filter,
+    )
 
 
 def _dead_letter_enqueue(tool_name: str, args: dict[str, Any], *, reason: str, detail: str = "") -> str | None:
-    if not isinstance(args, dict):
-        return None
-    if bool(args.get("_dead_letter_replay")):
-        return None
-    payload_args = {str(key): value for key, value in args.items() if str(key) != "_dead_letter_replay"}
-    entry_id = secrets.token_hex(10)
-    entry = {
-        "timestamp": time.time(),
-        "entry_id": entry_id,
-        "tool": str(tool_name),
-        "status": "pending",
-        "reason": str(reason),
-        "attempts": 0,
-        "last_attempt_at": 0.0,
-        "last_error": str(detail),
-        "args": payload_args,
-    }
-    _append_dead_letter_entry(entry)
-    _audit(
-        "dead_letter_queue",
-        {
-            "result": "enqueued",
-            "entry_id": entry_id,
-            "tool": str(tool_name),
-            "reason": str(reason),
-        },
+    return _runtime_dead_letter_enqueue(
+        _services_module(),
+        tool_name,
+        args,
+        reason=reason,
+        detail=detail,
     )
-    return entry_id
 
 
 def _tool_response_text(result: dict[str, Any]) -> str:
-    if not isinstance(result, dict):
-        return ""
-    content = result.get("content")
-    if not isinstance(content, list) or not content:
-        return ""
-    first = content[0]
-    if not isinstance(first, dict):
-        return ""
-    return str(first.get("text", "")).strip()
+    return _runtime_tool_response_text(result)
 
 
 def _tool_response_success(text: str) -> bool:
-    value = str(text).strip().lower()
-    if not value:
-        return False
-    failure_markers = (
-        "not permitted",
-        "denied",
-        "failed",
-        "error",
-        "timed out",
-        "cancelled",
-        "required",
-        "missing",
-        "not configured",
-        "authentication failed",
-        "invalid",
-        "unexpected",
-        "circuit breaker is open",
-    )
-    return not any(marker in value for marker in failure_markers)
+    return _runtime_tool_response_success(text)
 
 
 def _prune_audit_file(path: Path, *, cutoff_ts: float) -> int:
