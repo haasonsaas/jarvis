@@ -75,8 +75,20 @@ from jarvis.runtime_telemetry import (
     policy_decision_analytics as _runtime_policy_decision_analytics,
     stt_confidence_band as _runtime_stt_confidence_band,
     stt_diagnostics_snapshot as _runtime_stt_diagnostics_snapshot,
+    summarize_tool_error_counters as _runtime_summarize_tool_error_counters,
+    telemetry_snapshot as _runtime_telemetry_snapshot,
     transcribe_with_optional_diagnostics as _runtime_transcribe_with_optional_diagnostics,
     update_stt_diagnostics as _runtime_update_stt_diagnostics,
+)
+from jarvis.runtime_state import (
+    apply_control_preset as _runtime_apply_control_preset,
+    apply_runtime_profile as _runtime_apply_runtime_profile,
+    check_runtime_invariants as _runtime_check_runtime_invariants,
+    load_runtime_state as _runtime_load_runtime_state,
+    preset_profile as _runtime_preset_profile,
+    runtime_invariant_snapshot as _runtime_runtime_invariant_snapshot,
+    runtime_profile_snapshot as _runtime_runtime_profile_snapshot,
+    save_runtime_state as _runtime_save_runtime_state,
 )
 from jarvis.runtime_constants import (
     ATTENTION_RECENCY_SEC,
@@ -727,178 +739,26 @@ class Jarvis:
         return blockers
 
     def _load_runtime_state(self) -> None:
-        path = getattr(self, "_runtime_state_path", None)
-        if path is None or not isinstance(path, Path):
-            return
-        if not path.exists():
-            return
-        try:
-            payload = json.loads(path.read_text())
-        except Exception:
-            return
-        if not isinstance(payload, dict):
-            return
-        voice = self._voice_controller()
-        voice_state = payload.get("voice")
-        if isinstance(voice_state, dict):
-            if "mode" in voice_state:
-                voice.set_mode(str(voice_state.get("mode", voice.mode)))
-            if "timeout_profile" in voice_state:
-                voice.set_timeout_profile(str(voice_state.get("timeout_profile", voice.timeout_profile)))
-            voice.set_push_to_talk_active(bool(voice_state.get("push_to_talk_active", False)))
-            voice.sleeping = bool(voice_state.get("sleeping", False))
-        runtime_state = payload.get("runtime")
-        if isinstance(runtime_state, dict):
-            motion_enabled = self._parse_control_bool(runtime_state.get("motion_enabled"))
-            if motion_enabled is not None:
-                self.config.motion_enabled = motion_enabled
-            home_enabled = self._parse_control_bool(runtime_state.get("home_enabled"))
-            if home_enabled is not None:
-                self.config.home_enabled = home_enabled
-            safe_mode_enabled = self._parse_control_bool(runtime_state.get("safe_mode_enabled"))
-            if safe_mode_enabled is not None:
-                self.config.safe_mode_enabled = safe_mode_enabled
-            tts_enabled = self._parse_control_bool(runtime_state.get("tts_enabled"))
-            if tts_enabled is not None:
-                self._tts_output_enabled = tts_enabled
-            persona_style = self._parse_control_choice(runtime_state.get("persona_style"), VALID_PERSONA_STYLES)
-            if persona_style is not None:
-                self._set_persona_style(persona_style)
-            backchannel_style = self._parse_control_choice(
-                runtime_state.get("backchannel_style"), VALID_BACKCHANNEL_STYLES
-            )
-            if backchannel_style is not None:
-                self.config.backchannel_style = backchannel_style
-                self.presence.set_backchannel_style(backchannel_style)
-            raw_profiles = runtime_state.get("voice_user_profiles")
-            if isinstance(raw_profiles, dict):
-                parsed_profiles: dict[str, dict[str, str]] = {}
-                for raw_user, raw_profile in raw_profiles.items():
-                    user = str(raw_user).strip().lower()
-                    if not user or not isinstance(raw_profile, dict):
-                        continue
-                    profile: dict[str, str] = {}
-                    verbosity = self._parse_control_choice(raw_profile.get("verbosity"), VALID_VOICE_PROFILE_VERBOSITY)
-                    confirmations = self._parse_control_choice(
-                        raw_profile.get("confirmations"),
-                        VALID_VOICE_PROFILE_CONFIRMATIONS,
-                    )
-                    pace = self._parse_control_choice(raw_profile.get("pace"), VALID_VOICE_PROFILE_PACE)
-                    tone = self._parse_control_choice(raw_profile.get("tone"), VALID_VOICE_PROFILE_TONE)
-                    if verbosity is not None:
-                        profile["verbosity"] = verbosity
-                    if confirmations is not None:
-                        profile["confirmations"] = confirmations
-                    if pace is not None:
-                        profile["pace"] = pace
-                    if tone is not None:
-                        profile["tone"] = tone
-                    if profile:
-                        parsed_profiles[user] = profile
-                self._voice_user_profiles = parsed_profiles
-            preset = str(runtime_state.get("active_control_preset", "custom")).strip().lower()
-            self._active_control_preset = preset if preset in VALID_CONTROL_PRESETS else "custom"
-        service_tools.set_safe_mode(bool(getattr(self.config, "safe_mode_enabled", False)))
-        self._awaiting_confirmation = bool(payload.get("awaiting_confirmation", False))
-        pending = payload.get("pending_text")
-        self._pending_text = str(pending) if isinstance(pending, str) else None
-        self._awaiting_repair_confirmation = bool(payload.get("awaiting_repair_confirmation", False))
-        repair_pending = payload.get("repair_candidate_text")
-        self._repair_candidate_text = str(repair_pending) if isinstance(repair_pending, str) else None
-        if not self._awaiting_repair_confirmation:
-            self._repair_candidate_text = None
-        elif not self._repair_candidate_text:
-            self._awaiting_repair_confirmation = False
-        raw_timeline = payload.get("episodic_timeline")
-        parsed_timeline: list[dict[str, Any]] = []
-
-        def safe_int(value: Any, default: int = 0) -> int:
-            try:
-                number = int(value)
-            except (TypeError, ValueError):
-                return default
-            return number
-
-        def safe_float(value: Any, default: float = 0.0) -> float:
-            try:
-                number = float(value)
-            except (TypeError, ValueError):
-                return default
-            if not math.isfinite(number):
-                return default
-            return number
-
-        if isinstance(raw_timeline, list):
-            for item in raw_timeline[:EPISODIC_TIMELINE_MAXLEN]:
-                if not isinstance(item, dict):
-                    continue
-                snapshot = {
-                    "episode_id": safe_int(item.get("episode_id", 0), 0),
-                    "timestamp": safe_float(item.get("timestamp", 0.0), 0.0),
-                    "turn_id": safe_int(item.get("turn_id", 0), 0),
-                    "intent": str(item.get("intent", "unknown")),
-                    "lifecycle": str(item.get("lifecycle", "unknown")),
-                    "summary": str(item.get("summary", "")).strip()[:240],
-                    "tool_count": max(0, safe_int(item.get("tool_count", 0), 0)),
-                    "completion_success": item.get("completion_success"),
-                    "response_success": item.get("response_success"),
-                }
-                if snapshot["episode_id"] <= 0 or snapshot["timestamp"] <= 0.0 or not snapshot["summary"]:
-                    continue
-                parsed_timeline.append(snapshot)
-        self._episodic_timeline = deque(parsed_timeline, maxlen=EPISODIC_TIMELINE_MAXLEN)
-        try:
-            loaded_episode_seq = int(payload.get("episodic_timeline_seq", 0) or 0)
-        except (TypeError, ValueError):
-            loaded_episode_seq = 0
-        self._episode_seq = max(loaded_episode_seq, len(parsed_timeline))
+        _runtime_load_runtime_state(
+            self,
+            episodic_timeline_maxlen=EPISODIC_TIMELINE_MAXLEN,
+            valid_persona_styles=VALID_PERSONA_STYLES,
+            valid_backchannel_styles=VALID_BACKCHANNEL_STYLES,
+            valid_voice_profile_verbosity=VALID_VOICE_PROFILE_VERBOSITY,
+            valid_voice_profile_confirmations=VALID_VOICE_PROFILE_CONFIRMATIONS,
+            valid_voice_profile_pace=VALID_VOICE_PROFILE_PACE,
+            valid_voice_profile_tone=VALID_VOICE_PROFILE_TONE,
+            valid_control_presets=VALID_CONTROL_PRESETS,
+            set_safe_mode_fn=service_tools.set_safe_mode,
+        )
 
     def _save_runtime_state(self) -> None:
-        path = getattr(self, "_runtime_state_path", None)
-        if path is None or not isinstance(path, Path):
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        voice = self._voice_controller()
-        preview_snapshot = getattr(self, "_personality_preview_snapshot", None)
-        if isinstance(preview_snapshot, dict):
-            persisted_persona_style = self._parse_control_choice(
-                preview_snapshot.get("persona_style"),
-                VALID_PERSONA_STYLES,
-            ) or str(getattr(self.config, "persona_style", "composed"))
-            persisted_backchannel_style = self._parse_control_choice(
-                preview_snapshot.get("backchannel_style"),
-                VALID_BACKCHANNEL_STYLES,
-            ) or str(getattr(self.config, "backchannel_style", "balanced"))
-        else:
-            persisted_persona_style = str(getattr(self.config, "persona_style", "composed"))
-            persisted_backchannel_style = str(getattr(self.config, "backchannel_style", "balanced"))
-        payload = {
-            "saved_at": time.time(),
-            "voice": {
-                "mode": voice.mode,
-                "timeout_profile": voice.timeout_profile,
-                "push_to_talk_active": voice.push_to_talk_active,
-                "sleeping": voice.sleeping,
-            },
-            "runtime": {
-                "motion_enabled": bool(self.config.motion_enabled),
-                "home_enabled": bool(self.config.home_enabled),
-                "safe_mode_enabled": bool(getattr(self.config, "safe_mode_enabled", False)),
-                "tts_enabled": bool(getattr(self, "_tts_output_enabled", True)),
-                "persona_style": persisted_persona_style,
-                "backchannel_style": persisted_backchannel_style,
-                "voice_user_profiles": getattr(self, "_voice_user_profiles", {}),
-                "active_control_preset": str(getattr(self, "_active_control_preset", "custom")),
-            },
-            "awaiting_confirmation": bool(getattr(self, "_awaiting_confirmation", False)),
-            "pending_text": getattr(self, "_pending_text", None),
-            "awaiting_repair_confirmation": bool(getattr(self, "_awaiting_repair_confirmation", False)),
-            "repair_candidate_text": getattr(self, "_repair_candidate_text", None),
-            "episodic_timeline_seq": int(getattr(self, "_episode_seq", 0)),
-            "episodic_timeline": list(getattr(self, "_episodic_timeline", []))[:EPISODIC_TIMELINE_MAXLEN],
-        }
-        with suppress(OSError):
-            path.write_text(json.dumps(payload, indent=2))
+        _runtime_save_runtime_state(
+            self,
+            episodic_timeline_maxlen=EPISODIC_TIMELINE_MAXLEN,
+            valid_persona_styles=VALID_PERSONA_STYLES,
+            valid_backchannel_styles=VALID_BACKCHANNEL_STYLES,
+        )
 
     def _voice_controller(self) -> VoiceAttentionController:
         voice = getattr(self, "_voice_attention", None)
@@ -961,95 +821,15 @@ class Jarvis:
         return f"{text}\n\nVoice profile preference:\n" + "\n".join(f"- {line}" for line in guidance)
 
     def _runtime_invariant_snapshot(self) -> dict[str, Any]:
-        recent = list(getattr(self, "_runtime_invariant_recent", []))
-        return {
-            "last_checked_at": float(getattr(self, "_runtime_invariant_checked_at", 0.0)),
-            "total_violations": int(getattr(self, "_runtime_invariant_violations_total", 0)),
-            "total_auto_heals": int(getattr(self, "_runtime_invariant_auto_heals_total", 0)),
-            "recent": recent[:20],
-        }
+        return _runtime_runtime_invariant_snapshot(self)
 
     def _check_runtime_invariants(self, *, auto_heal: bool = True) -> dict[str, Any]:
-        now = time.time()
-        self._runtime_invariant_checked_at = now
-        self._runtime_invariant_checked_monotonic = time.monotonic()
-        voice = self._voice_controller()
-        violations: list[dict[str, Any]] = []
-        mode = str(getattr(voice, "mode", "unknown")).strip().lower()
-        push_to_talk_active = bool(getattr(voice, "push_to_talk_active", False))
-
-        if mode == "push_to_talk" and not push_to_talk_active:
-            healed = False
-            if auto_heal:
-                voice.set_push_to_talk_active(True)
-                healed = True
-            violations.append(
-                {
-                    "code": "push_to_talk_mode_inactive",
-                    "message": "wake mode push_to_talk requires push_to_talk_active=true",
-                    "healed": healed,
-                }
-            )
-        if mode != "push_to_talk" and push_to_talk_active:
-            healed = False
-            if auto_heal:
-                voice.set_push_to_talk_active(False)
-                healed = True
-            violations.append(
-                {
-                    "code": "push_to_talk_active_mode_mismatch",
-                    "message": "push_to_talk_active=true requires wake mode push_to_talk",
-                    "healed": healed,
-                }
-            )
-
-        preset = str(getattr(self, "_active_control_preset", "custom")).strip().lower()
-        if preset not in VALID_CONTROL_PRESETS and preset != "custom":
-            healed = False
-            if auto_heal:
-                self._active_control_preset = "custom"
-                healed = True
-            violations.append(
-                {
-                    "code": "invalid_control_preset",
-                    "message": "active control preset must be known or custom",
-                    "healed": healed,
-                }
-            )
-
-        recent = getattr(self, "_runtime_invariant_recent", None)
-        if not isinstance(recent, deque):
-            recent = deque(maxlen=RUNTIME_INVARIANT_HISTORY_MAXLEN)
-            self._runtime_invariant_recent = recent
-        if not hasattr(self, "_runtime_invariant_violations_total"):
-            self._runtime_invariant_violations_total = 0
-        if not hasattr(self, "_runtime_invariant_auto_heals_total"):
-            self._runtime_invariant_auto_heals_total = 0
-
-        healed_any = False
-        for item in violations:
-            healed = bool(item.get("healed", False))
-            if healed:
-                healed_any = True
-            self._runtime_invariant_violations_total += 1
-            if healed:
-                self._runtime_invariant_auto_heals_total += 1
-            record = {
-                "timestamp": now,
-                "code": str(item.get("code", "unknown")),
-                "message": str(item.get("message", "")),
-                "healed": healed,
-            }
-            recent.appendleft(record)
-            observability = getattr(self, "_observability", None)
-            if observability is not None:
-                with suppress(Exception):
-                    observability.record_event("runtime_invariant", record)
-
-        if healed_any:
-            self._persist_runtime_state_safe()
-
-        return self._runtime_invariant_snapshot()
+        return _runtime_check_runtime_invariants(
+            self,
+            auto_heal=auto_heal,
+            runtime_invariant_history_maxlen=RUNTIME_INVARIANT_HISTORY_MAXLEN,
+            valid_control_presets=VALID_CONTROL_PRESETS,
+        )
 
     @staticmethod
     def _percentile(values: list[float], q: float) -> float:
@@ -1064,239 +844,60 @@ class Jarvis:
         return _runtime_policy_decision_analytics(traces)
 
     def _runtime_profile_snapshot(self) -> dict[str, Any]:
-        voice = self._voice_controller()
-        return {
-            "wake_mode": str(getattr(voice, "mode", "wake_word")),
-            "sleeping": bool(getattr(voice, "sleeping", False)),
-            "timeout_profile": str(getattr(voice, "timeout_profile", "normal")),
-            "push_to_talk_active": bool(getattr(voice, "push_to_talk_active", False)),
-            "motion_enabled": bool(getattr(self.config, "motion_enabled", False)),
-            "home_enabled": bool(getattr(self.config, "home_enabled", False)),
-            "safe_mode_enabled": bool(getattr(self.config, "safe_mode_enabled", False)),
-            "tts_enabled": bool(getattr(self, "_tts_output_enabled", True)),
-            "persona_style": str(getattr(self.config, "persona_style", "composed")),
-            "backchannel_style": str(getattr(self.config, "backchannel_style", "balanced")),
-            "voice_user_profiles": {
-                str(name): dict(profile)
-                for name, profile in getattr(self, "_voice_user_profiles", {}).items()
-                if isinstance(profile, dict)
-            },
-            "active_control_preset": str(getattr(self, "_active_control_preset", "custom")),
-        }
+        return _runtime_runtime_profile_snapshot(self)
 
     def _apply_runtime_profile(self, profile: dict[str, Any], *, mark_custom: bool = True) -> dict[str, Any]:
-        voice = self._voice_controller()
-        wake_mode = self._parse_control_choice(profile.get("wake_mode"), VALID_WAKE_MODES)
-        if wake_mode is not None:
-            voice.set_mode(wake_mode)
-        sleeping = self._parse_control_bool(profile.get("sleeping"))
-        if sleeping is not None:
-            voice.sleeping = sleeping
-            if not sleeping:
-                voice.continue_listening()
-        timeout_profile = self._parse_control_choice(profile.get("timeout_profile"), VALID_TIMEOUT_PROFILES)
-        if timeout_profile is not None:
-            voice.set_timeout_profile(timeout_profile)
-        push_to_talk = self._parse_control_bool(profile.get("push_to_talk_active"))
-        if push_to_talk is not None:
-            voice.set_push_to_talk_active(push_to_talk)
-
-        motion_enabled = self._parse_control_bool(profile.get("motion_enabled"))
-        if motion_enabled is not None:
-            self.config.motion_enabled = motion_enabled
-            if motion_enabled:
-                with suppress(Exception):
-                    self.presence.start()
-            else:
-                with suppress(Exception):
-                    self.presence.stop()
-        home_enabled = self._parse_control_bool(profile.get("home_enabled"))
-        if home_enabled is not None:
-            self.config.home_enabled = home_enabled
-        safe_mode_enabled = self._parse_control_bool(profile.get("safe_mode_enabled"))
-        if safe_mode_enabled is not None:
-            self.config.safe_mode_enabled = safe_mode_enabled
-            service_tools.set_safe_mode(safe_mode_enabled)
-        tts_enabled = self._parse_control_bool(profile.get("tts_enabled"))
-        if tts_enabled is not None:
-            self._tts_output_enabled = tts_enabled
-
-        persona_style = self._parse_control_choice(profile.get("persona_style"), VALID_PERSONA_STYLES)
-        if persona_style is not None:
-            self._set_persona_style(persona_style)
-        backchannel_style = self._parse_control_choice(profile.get("backchannel_style"), VALID_BACKCHANNEL_STYLES)
-        if backchannel_style is not None:
-            self.config.backchannel_style = backchannel_style
-            self.presence.set_backchannel_style(backchannel_style)
-
-        raw_profiles = profile.get("voice_user_profiles")
-        if isinstance(raw_profiles, dict):
-            parsed_profiles: dict[str, dict[str, str]] = {}
-            for raw_user, raw_profile in raw_profiles.items():
-                user = str(raw_user).strip().lower()
-                if not user or not isinstance(raw_profile, dict):
-                    continue
-                parsed: dict[str, str] = {}
-                verbosity = self._parse_control_choice(raw_profile.get("verbosity"), VALID_VOICE_PROFILE_VERBOSITY)
-                confirmations = self._parse_control_choice(raw_profile.get("confirmations"), VALID_VOICE_PROFILE_CONFIRMATIONS)
-                pace = self._parse_control_choice(raw_profile.get("pace"), VALID_VOICE_PROFILE_PACE)
-                tone = self._parse_control_choice(raw_profile.get("tone"), VALID_VOICE_PROFILE_TONE)
-                if verbosity is not None:
-                    parsed["verbosity"] = verbosity
-                if confirmations is not None:
-                    parsed["confirmations"] = confirmations
-                if pace is not None:
-                    parsed["pace"] = pace
-                if tone is not None:
-                    parsed["tone"] = tone
-                if parsed:
-                    parsed_profiles[user] = parsed
-            self._voice_user_profiles = parsed_profiles
-
-        if mark_custom:
-            self._active_control_preset = "custom"
-        self._publish_voice_status()
-        self._persist_runtime_state_safe()
-        return self._runtime_profile_snapshot()
+        return _runtime_apply_runtime_profile(
+            self,
+            profile,
+            mark_custom=mark_custom,
+            valid_wake_modes=VALID_WAKE_MODES,
+            valid_timeout_profiles=VALID_TIMEOUT_PROFILES,
+            valid_persona_styles=VALID_PERSONA_STYLES,
+            valid_backchannel_styles=VALID_BACKCHANNEL_STYLES,
+            valid_voice_profile_verbosity=VALID_VOICE_PROFILE_VERBOSITY,
+            valid_voice_profile_confirmations=VALID_VOICE_PROFILE_CONFIRMATIONS,
+            valid_voice_profile_pace=VALID_VOICE_PROFILE_PACE,
+            valid_voice_profile_tone=VALID_VOICE_PROFILE_TONE,
+            set_safe_mode_fn=service_tools.set_safe_mode,
+        )
 
     def _preset_profile(self, preset: str) -> dict[str, Any]:
-        name = str(preset or "").strip().lower()
-        if name == "quiet_hours":
-            return {
-                "wake_mode": "wake_word",
-                "sleeping": False,
-                "timeout_profile": "short",
-                "push_to_talk_active": False,
-                "motion_enabled": bool(getattr(self.config, "motion_enabled", False)),
-                "home_enabled": False,
-                "safe_mode_enabled": True,
-                "tts_enabled": True,
-                "persona_style": "composed",
-                "backchannel_style": "quiet",
-            }
-        if name == "demo_mode":
-            return {
-                "wake_mode": "always_listening",
-                "sleeping": False,
-                "timeout_profile": "long",
-                "push_to_talk_active": False,
-                "motion_enabled": True,
-                "home_enabled": False,
-                "safe_mode_enabled": True,
-                "tts_enabled": True,
-                "persona_style": "jarvis",
-                "backchannel_style": "expressive",
-            }
-        if name == "maintenance_mode":
-            return {
-                "wake_mode": "push_to_talk",
-                "sleeping": True,
-                "timeout_profile": "short",
-                "push_to_talk_active": True,
-                "motion_enabled": False,
-                "home_enabled": False,
-                "safe_mode_enabled": True,
-                "tts_enabled": False,
-                "persona_style": "terse",
-                "backchannel_style": "quiet",
-            }
-        return {}
+        return _runtime_preset_profile(self, preset)
 
     def _apply_control_preset(self, preset: str) -> dict[str, Any] | None:
-        name = str(preset or "").strip().lower()
-        if name not in VALID_CONTROL_PRESETS:
-            return None
-        profile = self._preset_profile(name)
-        applied = self._apply_runtime_profile(profile, mark_custom=False)
-        self._active_control_preset = name
-        self._publish_voice_status()
-        self._persist_runtime_state_safe()
-        return applied
+        return _runtime_apply_control_preset(
+            self,
+            preset,
+            valid_control_presets=VALID_CONTROL_PRESETS,
+        )
 
     def _refresh_tool_error_counters(self) -> None:
         try:
             recent = list_summaries(limit=200)
         except Exception:
             return
-        service_errors = 0
-        storage_errors = 0
-        unknown_summary_details = 0
-        per_code: dict[str, float] = {}
-        for item in recent:
-            if not isinstance(item, dict):
-                continue
-            status = str(item.get("status", ""))
-            detail = str(item.get("detail", ""))
-            if status != "error":
-                continue
-            if detail in TOOL_SERVICE_ERROR_CODES:
-                per_code[detail] = per_code.get(detail, 0.0) + 1.0
-            if detail in TELEMETRY_STORAGE_ERROR_DETAILS:
-                storage_errors += 1
-                continue
-            if detail in TELEMETRY_SERVICE_ERROR_DETAILS:
-                service_errors += 1
-                continue
-            unknown_summary_details += 1
-        self._telemetry["service_errors"] = float(service_errors)
-        self._telemetry["storage_errors"] = float(storage_errors)
-        self._telemetry["unknown_summary_details"] = float(unknown_summary_details)
-        self._telemetry_error_counts = {name: per_code[name] for name in sorted(per_code)}
+        (
+            service_errors,
+            storage_errors,
+            unknown_summary_details,
+            per_code,
+        ) = _runtime_summarize_tool_error_counters(
+            recent,
+            tool_service_error_codes=TOOL_SERVICE_ERROR_CODES,
+            storage_error_details=TELEMETRY_STORAGE_ERROR_DETAILS,
+            service_error_details=TELEMETRY_SERVICE_ERROR_DETAILS,
+        )
+        self._telemetry["service_errors"] = service_errors
+        self._telemetry["storage_errors"] = storage_errors
+        self._telemetry["unknown_summary_details"] = unknown_summary_details
+        self._telemetry_error_counts = per_code
 
     def _telemetry_snapshot(self) -> dict[str, Any]:
-        def metric(key: str) -> float:
-            value = self._telemetry.get(key, 0.0)
-            if not math.isfinite(value):
-                return 0.0
-            return value
-
-        def avg(total_key: str, count_key: str) -> float:
-            count = metric(count_key)
-            if count <= 0.0:
-                return 0.0
-            total = metric(total_key)
-            value = total / count
-            if not math.isfinite(value):
-                return 0.0
-            return value
-
-        counts = {
-            name: value
-            for name, value in getattr(self, "_telemetry_error_counts", {}).items()
-            if math.isfinite(value)
-        }
-        intent_turns = metric("intent_turns_total")
-        answer_total = metric("intent_answer_total")
-        completion_total = metric("intent_completion_total")
-        answer_success_rate = (metric("intent_answer_success") / answer_total) if answer_total > 0.0 else 0.0
-        completion_success_rate = (
-            (metric("intent_completion_success") / completion_total) if completion_total > 0.0 else 0.0
+        return _runtime_telemetry_snapshot(
+            self._telemetry,
+            telemetry_error_counts=getattr(self, "_telemetry_error_counts", {}),
         )
-        correction_frequency = (metric("intent_corrections") / intent_turns) if intent_turns > 0.0 else 0.0
-        return {
-            "turns": metric("turns"),
-            "barge_ins": metric("barge_ins"),
-            "avg_stt_latency_ms": avg("stt_latency_total_ms", "stt_latency_count"),
-            "avg_llm_first_sentence_ms": avg("llm_first_sentence_total_ms", "llm_first_sentence_count"),
-            "avg_tts_first_audio_ms": avg("tts_first_audio_total_ms", "tts_first_audio_count"),
-            "service_errors": metric("service_errors"),
-            "storage_errors": metric("storage_errors"),
-            "unknown_summary_details": metric("unknown_summary_details"),
-            "service_error_counts": counts,
-            "fallback_responses": metric("fallback_responses"),
-            "intent_metrics": {
-                "turn_count": intent_turns,
-                "answer_intent_count": metric("intent_answer_turns"),
-                "action_intent_count": metric("intent_action_turns"),
-                "hybrid_intent_count": metric("intent_hybrid_turns"),
-                "answer_sample_count": answer_total,
-                "completion_sample_count": completion_total,
-                "answer_quality_success_rate": answer_success_rate,
-                "completion_success_rate": completion_success_rate,
-                "correction_count": metric("intent_corrections"),
-                "correction_frequency": correction_frequency,
-            },
-        }
 
     @staticmethod
     def _default_stt_diagnostics() -> dict[str, Any]:

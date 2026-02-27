@@ -339,3 +339,110 @@ def confidence_pause(
     if pace == "fast":
         return pause * 0.8
     return pause
+
+
+def summarize_tool_error_counters(
+    summaries: list[dict[str, Any]],
+    *,
+    tool_service_error_codes: set[str],
+    storage_error_details: set[str],
+    service_error_details: set[str],
+) -> tuple[float, float, float, dict[str, float]]:
+    service_errors = 0.0
+    storage_errors = 0.0
+    unknown_summary_details = 0.0
+    per_code: dict[str, float] = {}
+    for item in summaries:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status", ""))
+        detail = str(item.get("detail", ""))
+        if status != "error":
+            continue
+        if detail in tool_service_error_codes:
+            per_code[detail] = per_code.get(detail, 0.0) + 1.0
+        if detail in storage_error_details:
+            storage_errors += 1.0
+            continue
+        if detail in service_error_details:
+            service_errors += 1.0
+            continue
+        unknown_summary_details += 1.0
+    return (
+        service_errors,
+        storage_errors,
+        unknown_summary_details,
+        {name: per_code[name] for name in sorted(per_code)},
+    )
+
+
+def telemetry_snapshot(
+    telemetry: dict[str, float],
+    *,
+    telemetry_error_counts: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    def metric(key: str) -> float:
+        value = telemetry.get(key, 0.0)
+        if not math.isfinite(value):
+            return 0.0
+        return value
+
+    def avg(total_key: str, count_key: str) -> float:
+        count = metric(count_key)
+        if count <= 0.0:
+            return 0.0
+        total = metric(total_key)
+        value = total / count
+        if not math.isfinite(value):
+            return 0.0
+        return value
+
+    counts = {
+        name: value
+        for name, value in (telemetry_error_counts or {}).items()
+        if math.isfinite(value)
+    }
+    intent_turns = metric("intent_turns_total")
+    answer_total = metric("intent_answer_total")
+    completion_total = metric("intent_completion_total")
+    answer_success_rate = (
+        metric("intent_answer_success") / answer_total if answer_total > 0.0 else 0.0
+    )
+    completion_success_rate = (
+        metric("intent_completion_success") / completion_total
+        if completion_total > 0.0
+        else 0.0
+    )
+    correction_frequency = (
+        metric("intent_corrections") / intent_turns if intent_turns > 0.0 else 0.0
+    )
+    return {
+        "turns": metric("turns"),
+        "barge_ins": metric("barge_ins"),
+        "avg_stt_latency_ms": avg("stt_latency_total_ms", "stt_latency_count"),
+        "avg_llm_first_sentence_ms": avg(
+            "llm_first_sentence_total_ms",
+            "llm_first_sentence_count",
+        ),
+        "avg_tts_first_audio_ms": avg(
+            "tts_first_audio_total_ms",
+            "tts_first_audio_count",
+        ),
+        "service_errors": metric("service_errors"),
+        "storage_errors": metric("storage_errors"),
+        "unknown_summary_details": metric("unknown_summary_details"),
+        "service_error_counts": counts,
+        "fallback_responses": metric("fallback_responses"),
+        "intent_metrics": {
+            "turn_count": intent_turns,
+            "answer_intent_count": metric("intent_answer_turns"),
+            "action_intent_count": metric("intent_action_turns"),
+            "hybrid_intent_count": metric("intent_hybrid_turns"),
+            "answer_sample_count": answer_total,
+            "completion_sample_count": completion_total,
+            "answer_quality_success_rate": answer_success_rate,
+            "completion_success_rate": completion_success_rate,
+            "correction_count": metric("intent_corrections"),
+            "correction_frequency": correction_frequency,
+        },
+    }

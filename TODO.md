@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 31 (Architecture + Reliability + Personality)
+# Jarvis TODO — Wave 32 (Runtime Decomposition Continued)
 
 Last updated: 2026-02-27
 
@@ -8,78 +8,62 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 32
-- Completed: 32
-- Remaining: 0
+- Total items: 24
+- Completed: 22
+- Remaining: 2
 
 ---
 
-## A) Architecture decomposition
+## A) Runtime architecture decomposition
 
-- [x] `W31-A01` Replace stale Wave 30 TODO and reset with Wave 31 scope tied to current repository shape.
-- [x] `W31-A02` Extract telemetry + STT analytics helpers from `src/jarvis/__main__.py` into a dedicated runtime helper module.
-- [x] `W31-A03` Keep compatibility wrappers on `Jarvis` class methods used by tests/importers.
-- [x] `W31-A04` Reduce `__main__.py` line count by moving pure/helper logic out of the file.
-- [x] `W31-A05` Extract planner reminder payload helper logic from `services_domains/planner.py` into `services_domains/planner_runtime.py`.
-- [x] `W31-A06` Extract calendar window parsing helper logic from `services_domains/integrations.py` into `services_domains/integrations_runtime.py`.
-- [x] `W31-A07` Add import-boundary tests for new domain runtime modules to ensure clean import graph.
-- [x] `W31-A08` Add import-boundary tests for new runtime helper module used by `__main__.py`.
+- [x] `W32-A01` Create `src/jarvis/runtime_state.py` for runtime-state lifecycle helpers.
+- [x] `W32-A02` Extract runtime state load logic from `Jarvis._load_runtime_state`.
+- [x] `W32-A03` Extract runtime state save logic from `Jarvis._save_runtime_state`.
+- [x] `W32-A04` Extract runtime invariant snapshot/check helpers.
+- [x] `W32-A05` Extract runtime profile snapshot/apply helpers.
+- [x] `W32-A06` Extract control preset profile/apply helpers.
+- [x] `W32-A07` Preserve backwards-compatible `Jarvis` method wrappers.
+- [x] `W32-A08` Reduce `src/jarvis/__main__.py` line count by at least 300 lines.
 
-## B) Eval coverage expansion
+## B) Telemetry decomposition
 
-- [x] `W31-E01` Expand `docs/evals/assistant-contract.json` from 91 to at least 150 cases.
-- [x] `W31-E02` Add multi-turn continuity/repair/confirmation cases (follow-up carryover, correction flows).
-- [x] `W31-E03` Add long-horizon autonomy cases (schedule/checkpoint/cycle/status combinations).
-- [x] `W31-E04` Add recovery and dead-letter lifecycle cases (enqueue/list/replay/status transitions).
-- [x] `W31-E05` Add area-policy, automation apply/rollback, and preview-token gating edge cases.
-- [x] `W31-E06` Add personality/voice-profile contract cases (`persona_style`, `tone`, `pace`, `verbosity`).
-- [x] `W31-E07` Keep strict pass-rate gate at 100% for readiness profile.
+- [x] `W32-B01` Extract tool error counter summarization into `runtime_telemetry.py`.
+- [x] `W32-B02` Extract telemetry snapshot shaping into `runtime_telemetry.py`.
+- [x] `W32-B03` Wire `Jarvis._refresh_tool_error_counters` through extracted helper.
+- [x] `W32-B04` Wire `Jarvis._telemetry_snapshot` through extracted helper.
 
-## C) Soak and robustness
+## C) Test coverage and boundaries
 
-- [x] `W31-R01` Add long-duration simulation soak profile script with explicit phases.
-- [x] `W31-R02` Add deterministic outage/recovery phase to soak flow (HA/webhook fault profile runs).
-- [x] `W31-R03` Add checkpoint resume verification phase using planner autonomy tooling.
-- [x] `W31-R04` Add retry/circuit-breaker verification phase with explicit assertions.
-- [x] `W31-R05` Wire new soak profile into `Makefile` targets for repeatable execution.
-- [x] `W31-R06` Capture machine-readable soak artifact summary in `.artifacts/quality/`.
+- [x] `W32-C01` Add new runtime-state-focused test module `tests/test_runtime_state.py`.
+- [x] `W32-C02` Add runtime state round-trip persistence/restore test.
+- [x] `W32-C03` Add runtime invariant auto-heal behavior test.
+- [x] `W32-C04` Add runtime profile apply/persist behavior test.
+- [x] `W32-C05` Add runtime profile snapshot sanitization test.
+- [x] `W32-C06` Extend `tests/test_import_boundaries.py` with `jarvis.runtime_state` boundary assertion.
+- [x] `W32-C07` Run targeted runtime/telemetry lifecycle tests.
 
-## D) Personality A/B + drift checks
+## D) Validation and readiness
 
-- [x] `W31-P01` Add script to run persona/tone A/B batches over eval-style prompts.
-- [x] `W31-P02` Implement scoring for brevity drift and confirmation-friction drift.
-- [x] `W31-P03` Emit JSON + markdown report artifacts for A/B runs.
-- [x] `W31-P04` Document A/B workflow in `docs/operations/personality-research.md`.
-- [x] `W31-P05` Add CI-ready command wrapper for personality checks.
+- [x] `W32-D01` Run `make check` after decomposition changes.
+- [x] `W32-D02` Run `make security-gate` after decomposition changes.
+- [x] `W32-D03` Run `./scripts/jarvis_readiness.sh fast` to verify readiness contract.
 
-## E) Hygiene, docs, and release readiness
+## E) Hygiene and release loop
 
-- [x] `W31-H01` Update stale line-count references in docs/TODO outcome snapshots.
-- [x] `W31-H02` Re-run `make check`.
-- [x] `W31-H03` Re-run `make security-gate`.
-- [x] `W31-H04` Re-run full readiness suite (`./scripts/jarvis_readiness.sh full`).
-- [x] `W31-H05` Commit/push in small checkpoints with messages tied to track IDs.
-- [x] `W31-H06` Final sweep for untracked files, stale artifacts, and TODO completion accuracy.
+- [x] `W32-E01` Update TODO outcome snapshot with post-change metrics.
+- [ ] `W32-E02` Commit Wave 32 runtime decomposition checkpoint.
+- [ ] `W32-E03` Push Wave 32 checkpoint to `origin/main`.
 
 ---
 
-## Outcome snapshot (completed)
+## Outcome snapshot (in progress)
 
-- `src/jarvis/__main__.py` reduced from `2,919` to `2,677` lines.
-- Domain decomposition added:
-  - `src/jarvis/tools/services_domains/planner_runtime.py`
-  - `src/jarvis/tools/services_domains/integrations_runtime.py`
-  - import-boundary coverage in `tests/test_import_boundaries.py`.
-- Eval contract expanded from `91` to `151` strict passing cases.
-- New phased soak profiles added with machine-readable artifacts:
-  - `scripts/run_soak_profile.py`
-  - `scripts/test_soak.sh` (fast profile)
-  - `scripts/test_soak_extended.sh` (full profile)
-- Personality A/B harness and drift checks added:
-  - `docs/evals/personality-ab-prompts.json`
-  - `scripts/personality_ab_eval.py`
-  - `scripts/test_personality.sh`
-- Full gates are green:
-  - `make check` (`558 passed`)
-  - `make security-gate` (`558 passed`; fault subset `3 passed`)
-  - `./scripts/jarvis_readiness.sh full` (`151/151` strict eval)
+- `src/jarvis/__main__.py`: `2,677` -> `2,278` lines.
+- New runtime module: `src/jarvis/runtime_state.py` (`560` lines).
+- `runtime_telemetry.py` expanded to include telemetry snapshot + error summarization helpers.
+- New tests: `tests/test_runtime_state.py` (`8` passing tests).
+- Expanded import-boundary assertions include `jarvis.runtime_state`.
+- Validation currently green:
+  - `make check` (`563 passed`)
+  - `make security-gate` (`563 passed`; fault subset `3 passed`)
+  - `./scripts/jarvis_readiness.sh fast` (release acceptance fast + strict eval `151/151`)
