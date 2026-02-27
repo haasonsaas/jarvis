@@ -12,7 +12,6 @@ import hmac  # noqa: F401  # accessed by domain modules via services module alia
 import json  # noqa: F401  # accessed by domain modules via services module alias
 import logging
 import math
-import random
 import re
 import smtplib
 import sys
@@ -208,6 +207,13 @@ from jarvis.tools.services_automation_runtime import (
     planner_ready_nodes as _runtime_planner_ready_nodes,
     slugify_identifier as _runtime_slugify_identifier,
     structured_diff as _runtime_structured_diff,
+)
+from jarvis.tools.services_action_runtime import (
+    action_key as _runtime_action_key,
+    cooldown_active as _runtime_cooldown_active,
+    prune_action_history as _runtime_prune_action_history,
+    retry_backoff_delay as _runtime_retry_backoff_delay,
+    touch_action as _runtime_touch_action,
 )
 from jarvis.tools.services_domains.home import (  # noqa: F401  # compatibility exports for tests/importers
     home_orchestrator,
@@ -1125,12 +1131,14 @@ def _retry_backoff_delay(
     jitter_ratio: float = RETRY_JITTER_RATIO,
     jitter_sample: float | None = None,
 ) -> float:
-    step = max(0, int(attempt_index))
-    base_delay = min(max_delay_sec, base_delay_sec * (2 ** step))
-    sample = random.random() if jitter_sample is None else float(jitter_sample)
-    sample = min(1.0, max(0.0, sample))
-    jitter = base_delay * jitter_ratio * ((sample * 2.0) - 1.0)
-    return max(0.0, base_delay + jitter)
+    return _runtime_retry_backoff_delay(
+        _services_module(),
+        attempt_index,
+        base_delay_sec=base_delay_sec,
+        max_delay_sec=max_delay_sec,
+        jitter_ratio=jitter_ratio,
+        jitter_sample=jitter_sample,
+    )
 
 
 def _as_str_list(value: Any, *, lower: bool = False, allow_none: bool = False) -> list[str] | None:
@@ -1159,39 +1167,19 @@ def _as_str_list(value: Any, *, lower: bool = False, allow_none: bool = False) -
 
 
 def _action_key(domain: str, action: str, entity_id: str) -> str:
-    return f"{domain}:{action}:{entity_id}"
+    return _runtime_action_key(domain, action, entity_id)
 
 
 def _prune_action_history(now: float | None = None) -> None:
-    if not _action_last_seen:
-        return
-    current = time.monotonic() if now is None else now
-    cutoff = current - ACTION_HISTORY_RETENTION_SEC
-    stale_keys = [key for key, ts in _action_last_seen.items() if ts < cutoff]
-    for key in stale_keys:
-        _action_last_seen.pop(key, None)
-    if len(_action_last_seen) <= ACTION_HISTORY_MAX_ENTRIES:
-        return
-    over = len(_action_last_seen) - ACTION_HISTORY_MAX_ENTRIES
-    oldest = sorted(_action_last_seen.items(), key=lambda item: item[1])[:over]
-    for key, _ in oldest:
-        _action_last_seen.pop(key, None)
+    _runtime_prune_action_history(_services_module(), now=now)
 
 
 def _cooldown_active(domain: str, action: str, entity_id: str) -> bool:
-    now = time.monotonic()
-    _prune_action_history(now)
-    key = _action_key(domain, action, entity_id)
-    last = _action_last_seen.get(key)
-    if last is None:
-        return False
-    return (now - last) < ACTION_COOLDOWN_SEC
+    return _runtime_cooldown_active(_services_module(), domain, action, entity_id)
 
 
 def _touch_action(domain: str, action: str, entity_id: str) -> None:
-    now = time.monotonic()
-    _action_last_seen[_action_key(domain, action, entity_id)] = now
-    _prune_action_history(now)
+    _runtime_touch_action(_services_module(), domain, action, entity_id)
 
 
 def _audit_status() -> dict[str, Any]:
