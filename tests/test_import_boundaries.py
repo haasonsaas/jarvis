@@ -37,6 +37,8 @@ import pytest
         ("jarvis.tools.services_domains.home_ha_todo", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_ha_timer", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.home_ha_area_media", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.home_area_entities_tool", "jarvis.tools.services"),
+        ("jarvis.tools.services_domains.home_media_control_tool", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.comms_notifications", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.comms_notify_webhooks", "jarvis.tools.services"),
         ("jarvis.tools.services_domains.comms_notify_pushover", "jarvis.tools.services"),

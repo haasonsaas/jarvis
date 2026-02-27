@@ -1,4 +1,4 @@
-# Jarvis TODO — Wave 58 (Proactive Nudges Decomposition)
+# Jarvis TODO — Wave 59 (Area + Media Handler Decomposition)
 
 Last updated: 2026-02-27
 
@@ -8,68 +8,67 @@ Last updated: 2026-02-27
 - `[x]` Completed
 
 ## Completion summary
-- Total items: 23
-- Completed: 23
+- Total items: 22
+- Completed: 22
 - Remaining: 0
 
 ---
 
 ## A) Scope and baseline
 
-- [x] `W58-A01` Re-profile remaining `services_domains` hotspots after Wave 57.
-- [x] `W58-A02` Select `services_domains/trust_proactive_nudges.py` for decomposition.
-- [x] `W58-A03` Preserve proactive-assistant output contracts for anomaly and nudge actions.
+- [x] `W59-A01` Re-profile high-line home domain modules after Wave 58.
+- [x] `W59-A02` Select `services_domains/home_ha_area_media.py` for decomposition.
+- [x] `W59-A03` Preserve API contract for `home_assistant_area_entities` and `media_control`.
 
 ## B) Decomposition design
 
-- [x] `W58-B01` Extract anomaly scanning flow into `trust_proactive_anomaly.py`.
-- [x] `W58-B02` Extract nudge decisioning flow into `trust_proactive_nudge_decision.py`.
-- [x] `W58-B03` Keep `trust_proactive_nudges.py` as thin exports.
+- [x] `W59-B01` Extract area entity lookup flow to `home_area_entities_tool.py`.
+- [x] `W59-B02` Extract media action flow to `home_media_control_tool.py`.
+- [x] `W59-B03` Reduce `home_ha_area_media.py` to thin exports.
 
 ## C) Extraction implementation
 
-- [x] `W58-C01` Create `services_domains/trust_proactive_anomaly.py`.
-- [x] `W58-C02` Move `proactive_anomaly_scan` logic and payload construction.
-- [x] `W58-C03` Create `services_domains/trust_proactive_nudge_decision.py`.
-- [x] `W58-C04` Move candidate bucketing/capacity/dedupe logic.
-- [x] `W58-C05` Move proactive counters + response payload logic.
-- [x] `W58-C06` Rewrite `trust_proactive_nudges.py` to re-export handlers.
+- [x] `W59-C01` Create `services_domains/home_area_entities_tool.py`.
+- [x] `W59-C02` Move area template/render/filter/state-include logic.
+- [x] `W59-C03` Create `services_domains/home_media_control_tool.py`.
+- [x] `W59-C04` Move media action validation, policy, preview, and execution logic.
+- [x] `W59-C05` Replace `home_ha_area_media.py` with export facade.
 
 ## D) Boundaries and quality
 
-- [x] `W58-D01` Add import-boundary check for `trust_proactive_anomaly`.
-- [x] `W58-D02` Add import-boundary check for `trust_proactive_nudge_decision`.
-- [x] `W58-D03` Preserve runtime helper usage from `services_proactive_runtime`.
+- [x] `W59-D01` Add import-boundary check for `home_area_entities_tool`.
+- [x] `W59-D02` Add import-boundary check for `home_media_control_tool`.
+- [x] `W59-D03` Preserve lazy access pattern for service helpers.
 
 ## E) Validation
 
-- [x] `W58-E01` Run focused lint for proactive nudge modules + boundary test file.
-- [x] `W58-E02` Run targeted proactive decision tests from `test_tools_services.py`.
-- [x] `W58-E03` Run `tests/test_import_boundaries.py`.
-- [x] `W58-E04` Run full `make check`.
-- [x] `W58-E05` Run full `make security-gate`.
-- [x] `W58-E06` Run `./scripts/jarvis_readiness.sh fast`.
+- [x] `W59-E01` Run focused lint for changed modules + boundary test file.
+- [x] `W59-E02` Run targeted tests for area-entities/media-control paths.
+- [x] `W59-E03` Run `tests/test_import_boundaries.py`.
+- [x] `W59-E04` Run full `make check`.
+- [x] `W59-E05` Run full `make security-gate`.
+- [x] `W59-E06` Run `./scripts/jarvis_readiness.sh fast`.
 
 ## F) Release loop
 
-- [x] `W58-F01` Capture post-split line-count outcomes.
-- [x] `W58-F02` Commit Wave 58 changes.
-- [x] `W58-F03` Push Wave 58 to remote.
+- [x] `W59-F01` Capture post-split line-count outcomes.
+- [x] `W59-F02` Commit Wave 59 changes.
+- [x] `W59-F03` Push Wave 59 to remote.
 
 ---
 
 ## Outcome snapshot (completed)
 
-- Proactive nudge decomposition:
-  - `services_domains/trust_proactive_nudges.py`: `299 -> 8` lines (thin exports).
-  - New `services_domains/trust_proactive_anomaly.py`: `76` lines.
-  - New `services_domains/trust_proactive_nudge_decision.py`: `234` lines.
+- Area/media decomposition:
+  - `services_domains/home_ha_area_media.py`: `290 -> 8` lines (thin exports).
+  - New `services_domains/home_area_entities_tool.py`: `109` lines.
+  - New `services_domains/home_media_control_tool.py`: `197` lines.
 - Boundary enforcement:
-  - Added import-boundary coverage for both extracted proactive nudge modules.
+  - Added import-boundary coverage for both new home area/media modules.
 - Validation status:
   - Focused lint: pass.
-  - Targeted proactive tests: pass (`5 passed`, `217 deselected`).
-  - `tests/test_import_boundaries.py`: pass (`69 passed`).
-  - `make check`: `658 passed`.
-  - `make security-gate`: `658 passed`; fault subset `3 passed`.
+  - Targeted tests: pass (`2 passed`, `220 deselected`).
+  - `tests/test_import_boundaries.py`: pass (`71 passed`).
+  - `make check`: `660 passed`.
+  - `make security-gate`: `660 passed`; fault subset `3 passed`.
   - `./scripts/jarvis_readiness.sh fast`: pass; strict eval `159/159`.
