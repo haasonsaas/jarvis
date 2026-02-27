@@ -207,6 +207,43 @@ def test_requires_stt_repair_skips_answers_and_corrections():
     assert Jarvis._requires_stt_repair(jarvis, "actually, I meant the kitchen", "action") is False
 
 
+def test_with_voice_profile_guidance_applies_non_default_verbosity():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis.config = SimpleNamespace(identity_default_user="operator")
+    jarvis._voice_user_profiles = {"operator": {"verbosity": "brief"}}
+
+    guided = Jarvis._with_voice_profile_guidance(jarvis, "Turn on the lights.")
+    assert "Voice profile preference" in guided
+    assert "concise" in guided
+
+
+def test_requires_confirmation_respects_voice_profile_confirmation_mode():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis.config = SimpleNamespace(identity_default_user="operator")
+    jarvis._voice_user_profiles = {"operator": {"confirmations": "minimal"}}
+    jarvis._last_doa_speech = True
+    jarvis.presence = SimpleNamespace(
+        signals=SimpleNamespace(face_last_seen=None, hand_last_seen=None, doa_last_seen=None)
+    )
+
+    assert Jarvis._requires_confirmation(jarvis, now=10.0) is False
+
+    jarvis._voice_user_profiles = {"operator": {"confirmations": "strict"}}
+    assert Jarvis._requires_confirmation(jarvis, now=10.0) is True
+
+
+def test_confidence_pause_respects_voice_profile_pace():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis.config = SimpleNamespace(identity_default_user="operator")
+    jarvis._voice_user_profiles = {"operator": {"pace": "slow"}}
+    slow = Jarvis._confidence_pause(jarvis, "All set.")
+
+    jarvis._voice_user_profiles = {"operator": {"pace": "fast"}}
+    fast = Jarvis._confidence_pause(jarvis, "All set.")
+
+    assert slow > fast
+
+
 def test_apply_turn_choreography_sets_presence_bias_fields():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis.presence = SimpleNamespace(signals=SimpleNamespace(turn_lean=0.0, turn_tilt=0.0, turn_glance_yaw=0.0))
@@ -228,6 +265,8 @@ def test_publish_voice_status_includes_turn_choreography():
     jarvis._voice_attention = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))
     jarvis.presence = SimpleNamespace(signals=SimpleNamespace(state=State.LISTENING))
     jarvis._turn_choreography = {}
+    jarvis.config = SimpleNamespace(identity_default_user="operator")
+    jarvis._voice_user_profiles = {}
     jarvis._observability = None
 
     with patch("jarvis.__main__.set_runtime_voice_state") as set_runtime:
@@ -239,6 +278,8 @@ def test_publish_voice_status_includes_turn_choreography():
     assert payload["turn_choreography"]["label"] == "listen_lean_in"
     assert "stt_diagnostics" in payload
     assert payload["stt_diagnostics"]["confidence_band"] == "unknown"
+    assert payload["voice_profile_user"] == "operator"
+    assert payload["voice_profile"]["verbosity"] == "normal"
 
 
 def test_start_requires_sounddevice_for_local_tts_playback():
@@ -482,6 +523,7 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
         safe_mode_enabled=False,
         persona_style="composed",
         backchannel_style="balanced",
+        identity_default_user="operator",
     )
     jarvis.presence = SimpleNamespace(
         start=MagicMock(),
@@ -490,6 +532,7 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     )
     jarvis.brain = SimpleNamespace(_memory=None)
     jarvis._personality_preview_snapshot = None
+    jarvis._voice_user_profiles = {}
     jarvis._skills = SimpleNamespace(
         discover=MagicMock(),
         status_snapshot=lambda: {"enabled": True},
@@ -605,6 +648,28 @@ async def test_operator_control_handler_validates_and_applies_runtime_controls()
     assert commit_result["preview_active"] is False
     assert jarvis._personality_preview_snapshot is None
 
+    set_voice_profile = await Jarvis._operator_control_handler(
+        jarvis,
+        "set_voice_profile",
+        {"user": "operator", "verbosity": "brief", "confirmations": "minimal", "pace": "fast"},
+    )
+    assert set_voice_profile["ok"] is True
+    assert set_voice_profile["profile"]["verbosity"] == "brief"
+    assert set_voice_profile["profile"]["confirmations"] == "minimal"
+    assert set_voice_profile["profile"]["pace"] == "fast"
+
+    list_voice_profiles = await Jarvis._operator_control_handler(jarvis, "list_voice_profiles", {})
+    assert list_voice_profiles["ok"] is True
+    assert list_voice_profiles["active_user"] == "operator"
+    assert "operator" in list_voice_profiles["profiles"]
+
+    clear_voice_profile = await Jarvis._operator_control_handler(
+        jarvis,
+        "clear_voice_profile",
+        {"user": "operator"},
+    )
+    assert clear_voice_profile == {"ok": True, "user": "operator", "removed": True}
+
     unknown = await Jarvis._operator_control_handler(jarvis, "nope", {})
     assert unknown["ok"] is False
     assert unknown["error"] == "invalid_action"
@@ -629,7 +694,11 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
         safe_mode_enabled=True,
         persona_style="friendly",
         backchannel_style="expressive",
+        identity_default_user="operator",
     )
+    save_target._voice_user_profiles = {
+        "operator": {"verbosity": "brief", "confirmations": "minimal", "pace": "fast"}
+    }
     save_target._tts_output_enabled = False
     save_target._awaiting_confirmation = True
     save_target._pending_text = "arm the system"
@@ -644,6 +713,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     assert payload["runtime"]["tts_enabled"] is False
     assert payload["runtime"]["persona_style"] == "friendly"
     assert payload["runtime"]["backchannel_style"] == "expressive"
+    assert payload["runtime"]["voice_user_profiles"]["operator"]["verbosity"] == "brief"
     assert payload["awaiting_repair_confirmation"] is True
     assert payload["repair_candidate_text"] == "turn on the porch lights"
 
@@ -656,6 +726,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
         safe_mode_enabled=False,
         persona_style="composed",
         backchannel_style="balanced",
+        identity_default_user="operator",
     )
     load_target.brain = SimpleNamespace(_memory=None)
     load_target.presence = SimpleNamespace(set_backchannel_style=MagicMock())
@@ -664,6 +735,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     load_target._pending_text = None
     load_target._awaiting_repair_confirmation = False
     load_target._repair_candidate_text = None
+    load_target._voice_user_profiles = {}
     with patch("jarvis.__main__.service_tools.set_safe_mode") as set_safe_mode:
         Jarvis._load_runtime_state(load_target)
     set_safe_mode.assert_called_once_with(True)
@@ -682,6 +754,7 @@ def test_runtime_state_persists_and_restores_runtime_controls(tmp_path):
     assert load_target._pending_text == "arm the system"
     assert load_target._awaiting_repair_confirmation is True
     assert load_target._repair_candidate_text == "turn on the porch lights"
+    assert load_target._voice_user_profiles["operator"]["verbosity"] == "brief"
     load_target.presence.set_backchannel_style.assert_called_with("expressive")
 
 

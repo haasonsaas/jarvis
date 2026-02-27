@@ -49,6 +49,7 @@ async def test_operator_server_routes_and_control_log(tmp_path):
             assert "Conversation Trace" in dashboard
             assert "STT Confidence" in dashboard
             assert "Commit Preview" in dashboard
+            assert "Operator Brief Profile" in dashboard
 
             bad_control = await session.post(
                 f"{base}/api/control",

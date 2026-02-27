@@ -217,6 +217,14 @@ def _dashboard_html() -> str:
         <button data-danger=\"true\" onclick=\"control('rollback_personality_preview',{})\">Rollback Preview</button>
       </div>
       <div>
+        <button onclick=\"control('set_voice_profile',{user:'operator',verbosity:'brief',confirmations:'minimal',pace:'fast'})\">Operator Brief Profile</button>
+        <button onclick=\"control('set_voice_profile',{user:'operator',verbosity:'detailed',confirmations:'strict',pace:'slow'})\">Operator Detailed Profile</button>
+      </div>
+      <div>
+        <button onclick=\"control('list_voice_profiles',{})\">List Voice Profiles</button>
+        <button data-danger=\"true\" onclick=\"control('clear_voice_profile',{user:'operator'})\">Clear Operator Profile</button>
+      </div>
+      <div>
         <button onclick=\"control('skills_reload',{})\">Reload Skills</button>
       </div>
       <div>

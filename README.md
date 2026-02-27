@@ -143,6 +143,8 @@ Smart home safety defaults:
   - `voice_attention.stt_diagnostics` reports confidence score/band, model source, fallback usage, and transcript quality signals.
 - Low-confidence action requests trigger a lightweight repair loop:
   - Jarvis asks `I may have misheard you as ...` and accepts either `confirm` or an immediate corrected phrase.
+- Per-user voice profiles can tune speaking behavior:
+  - `set_voice_profile` / `clear_voice_profile` / `list_voice_profiles` manage per-user `verbosity`, `confirmations`, and `pace`.
 - Home Assistant conversation tool requires both:
   - `HOME_CONVERSATION_ENABLED=true`
   - `HOME_CONVERSATION_PERMISSION_PROFILE=control`

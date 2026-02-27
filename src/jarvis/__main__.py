@@ -94,6 +94,9 @@ WATCHDOG_POLL_SEC = 0.05
 CONVERSATION_TRACE_MAXLEN = 200
 VALID_PERSONA_STYLES = {"terse", "composed", "friendly"}
 VALID_BACKCHANNEL_STYLES = {"quiet", "balanced", "expressive"}
+VALID_VOICE_PROFILE_VERBOSITY = {"brief", "normal", "detailed"}
+VALID_VOICE_PROFILE_CONFIRMATIONS = {"minimal", "standard", "strict"}
+VALID_VOICE_PROFILE_PACE = {"slow", "normal", "fast"}
 MEMORY_FORGET_RE = re.compile(
     r"^(?:please\s+)?(?:forget|delete|remove)\s+(?:memory\s*)?(?:id\s*)?(?P<memory_id>\d+)\s*$",
     re.IGNORECASE,
@@ -383,6 +386,7 @@ class Jarvis:
         self._telemetry_error_counts: dict[str, float] = {}
         self._conversation_traces: deque[dict[str, Any]] = deque(maxlen=CONVERSATION_TRACE_MAXLEN)
         self._turn_trace_seq = 0
+        self._voice_user_profiles: dict[str, dict[str, str]] = {}
         self._personality_preview_snapshot: dict[str, str] | None = None
         self._stt_diagnostics: dict[str, Any] = self._default_stt_diagnostics()
         self._load_runtime_state()
@@ -505,6 +509,9 @@ class Jarvis:
             status["presence_state"] = "unknown"
         status["turn_choreography"] = self._turn_choreography_snapshot()
         status["stt_diagnostics"] = self._stt_diagnostics_snapshot()
+        status["voice_profile_user"] = self._active_voice_user()
+        status["voice_profile"] = self._active_voice_profile()
+        status["voice_profile_count"] = len(getattr(self, "_voice_user_profiles", {}))
         set_runtime_voice_state(status)
         observability = getattr(self, "_observability", None)
         if observability is not None:
@@ -648,6 +655,17 @@ class Jarvis:
                 },
                 "commit_personality_preview": {"required": []},
                 "rollback_personality_preview": {"required": []},
+                "set_voice_profile": {
+                    "required": ["user"],
+                    "types": {"user": "string"},
+                    "enum": {
+                        "verbosity": sorted(VALID_VOICE_PROFILE_VERBOSITY),
+                        "confirmations": sorted(VALID_VOICE_PROFILE_CONFIRMATIONS),
+                        "pace": sorted(VALID_VOICE_PROFILE_PACE),
+                    },
+                },
+                "clear_voice_profile": {"required": ["user"], "types": {"user": "string"}},
+                "list_voice_profiles": {"required": []},
                 "skills_reload": {"required": []},
                 "skills_enable": {"required": ["name"], "types": {"name": "string"}},
                 "skills_disable": {"required": ["name"], "types": {"name": "string"}},
@@ -738,6 +756,29 @@ class Jarvis:
             if backchannel_style is not None:
                 self.config.backchannel_style = backchannel_style
                 self.presence.set_backchannel_style(backchannel_style)
+            raw_profiles = runtime_state.get("voice_user_profiles")
+            if isinstance(raw_profiles, dict):
+                parsed_profiles: dict[str, dict[str, str]] = {}
+                for raw_user, raw_profile in raw_profiles.items():
+                    user = str(raw_user).strip().lower()
+                    if not user or not isinstance(raw_profile, dict):
+                        continue
+                    profile: dict[str, str] = {}
+                    verbosity = self._parse_control_choice(raw_profile.get("verbosity"), VALID_VOICE_PROFILE_VERBOSITY)
+                    confirmations = self._parse_control_choice(
+                        raw_profile.get("confirmations"),
+                        VALID_VOICE_PROFILE_CONFIRMATIONS,
+                    )
+                    pace = self._parse_control_choice(raw_profile.get("pace"), VALID_VOICE_PROFILE_PACE)
+                    if verbosity is not None:
+                        profile["verbosity"] = verbosity
+                    if confirmations is not None:
+                        profile["confirmations"] = confirmations
+                    if pace is not None:
+                        profile["pace"] = pace
+                    if profile:
+                        parsed_profiles[user] = profile
+                self._voice_user_profiles = parsed_profiles
         service_tools.set_safe_mode(bool(getattr(self.config, "safe_mode_enabled", False)))
         self._awaiting_confirmation = bool(payload.get("awaiting_confirmation", False))
         pending = payload.get("pending_text")
@@ -784,6 +825,7 @@ class Jarvis:
                 "tts_enabled": bool(getattr(self, "_tts_output_enabled", True)),
                 "persona_style": persisted_persona_style,
                 "backchannel_style": persisted_backchannel_style,
+                "voice_user_profiles": getattr(self, "_voice_user_profiles", {}),
             },
             "awaiting_confirmation": bool(getattr(self, "_awaiting_confirmation", False)),
             "pending_text": getattr(self, "_pending_text", None),
@@ -800,6 +842,43 @@ class Jarvis:
         fallback = VoiceAttentionController(VoiceAttentionConfig(wake_words=["jarvis"]))
         self._voice_attention = fallback
         return fallback
+
+    def _active_voice_user(self) -> str:
+        user = str(getattr(self.config, "identity_default_user", "operator")).strip().lower()
+        return user or "operator"
+
+    def _active_voice_profile(self, *, user: str | None = None) -> dict[str, str]:
+        profile = {
+            "verbosity": "normal",
+            "confirmations": "standard",
+            "pace": "normal",
+        }
+        key = str(user or self._active_voice_user()).strip().lower()
+        profiles = getattr(self, "_voice_user_profiles", None)
+        if isinstance(profiles, dict):
+            raw = profiles.get(key)
+            if isinstance(raw, dict):
+                verbosity = self._parse_control_choice(raw.get("verbosity"), VALID_VOICE_PROFILE_VERBOSITY)
+                confirmations = self._parse_control_choice(raw.get("confirmations"), VALID_VOICE_PROFILE_CONFIRMATIONS)
+                pace = self._parse_control_choice(raw.get("pace"), VALID_VOICE_PROFILE_PACE)
+                if verbosity is not None:
+                    profile["verbosity"] = verbosity
+                if confirmations is not None:
+                    profile["confirmations"] = confirmations
+                if pace is not None:
+                    profile["pace"] = pace
+        return profile
+
+    def _with_voice_profile_guidance(self, text: str) -> str:
+        profile = self._active_voice_profile()
+        verbosity = profile.get("verbosity", "normal")
+        if verbosity == "brief":
+            guidance = "User voice preference: keep responses concise unless safety requires detail."
+        elif verbosity == "detailed":
+            guidance = "User voice preference: provide fuller detail and explicit steps."
+        else:
+            return text
+        return f"{text}\n\nVoice profile preference:\n{guidance}"
 
     def _refresh_tool_error_counters(self) -> None:
         try:
@@ -1652,6 +1731,86 @@ class Jarvis:
             self._personality_preview_snapshot = None
             self._persist_runtime_state_safe()
             return {"ok": True, "backchannel_style": style}
+        if command == "set_voice_profile":
+            user = str(data.get("user", "")).strip().lower()
+            if not user:
+                return {"ok": False, "error": "invalid_payload", "field": "user", "expected": "non-empty string"}
+            verbosity = self._parse_control_choice(data.get("verbosity"), VALID_VOICE_PROFILE_VERBOSITY)
+            confirmations = self._parse_control_choice(data.get("confirmations"), VALID_VOICE_PROFILE_CONFIRMATIONS)
+            pace = self._parse_control_choice(data.get("pace"), VALID_VOICE_PROFILE_PACE)
+            profile_patch: dict[str, str] = {}
+            if "verbosity" in data:
+                if verbosity is None:
+                    return {
+                        "ok": False,
+                        "error": "invalid_payload",
+                        "field": "verbosity",
+                        "expected": sorted(VALID_VOICE_PROFILE_VERBOSITY),
+                    }
+                profile_patch["verbosity"] = verbosity
+            if "confirmations" in data:
+                if confirmations is None:
+                    return {
+                        "ok": False,
+                        "error": "invalid_payload",
+                        "field": "confirmations",
+                        "expected": sorted(VALID_VOICE_PROFILE_CONFIRMATIONS),
+                    }
+                profile_patch["confirmations"] = confirmations
+            if "pace" in data:
+                if pace is None:
+                    return {
+                        "ok": False,
+                        "error": "invalid_payload",
+                        "field": "pace",
+                        "expected": sorted(VALID_VOICE_PROFILE_PACE),
+                    }
+                profile_patch["pace"] = pace
+            if not profile_patch:
+                return {
+                    "ok": False,
+                    "error": "invalid_payload",
+                    "message": "provide at least one of verbosity, confirmations, or pace",
+                }
+            profiles = getattr(self, "_voice_user_profiles", {})
+            if not isinstance(profiles, dict):
+                profiles = {}
+            entry = profiles.get(user, {})
+            if not isinstance(entry, dict):
+                entry = {}
+            merged = {**entry, **profile_patch}
+            profiles[user] = merged
+            self._voice_user_profiles = profiles
+            self._persist_runtime_state_safe()
+            self._publish_voice_status()
+            return {"ok": True, "user": user, "profile": merged}
+        if command == "clear_voice_profile":
+            user = str(data.get("user", "")).strip().lower()
+            if not user:
+                return {"ok": False, "error": "invalid_payload", "field": "user", "expected": "non-empty string"}
+            profiles = getattr(self, "_voice_user_profiles", {})
+            removed = False
+            if isinstance(profiles, dict) and user in profiles:
+                profiles.pop(user, None)
+                removed = True
+            self._voice_user_profiles = profiles if isinstance(profiles, dict) else {}
+            self._persist_runtime_state_safe()
+            self._publish_voice_status()
+            return {"ok": True, "user": user, "removed": removed}
+        if command == "list_voice_profiles":
+            profiles = getattr(self, "_voice_user_profiles", {})
+            snapshot = {
+                str(name): dict(value)
+                for name, value in profiles.items()
+                if isinstance(value, dict)
+            } if isinstance(profiles, dict) else {}
+            active_user = self._active_voice_user()
+            return {
+                "ok": True,
+                "active_user": active_user,
+                "active_profile": self._active_voice_profile(user=active_user),
+                "profiles": snapshot,
+            }
         if command == "preview_personality":
             persona_style = self._parse_control_choice(data.get("persona_style"), VALID_PERSONA_STYLES)
             backchannel_style = self._parse_control_choice(data.get("backchannel_style"), VALID_BACKCHANNEL_STYLES)
@@ -2085,6 +2244,7 @@ class Jarvis:
                     text,
                     now_ts=turn_started_at,
                 )
+                response_prompt_text = self._with_voice_profile_guidance(response_prompt_text)
                 await self._respond_and_speak(response_prompt_text)
                 response_success = bool(self._response_started and not self._barge_in.is_set())
                 llm_first_sentence_ms = (
@@ -2570,9 +2730,16 @@ class Jarvis:
 
     def _requires_confirmation(self, now: float) -> bool:
         attention = self._attention_confidence(now)
-        if attention >= INTENDED_QUERY_MIN_ATTENTION:
+        profile = self._active_voice_profile()
+        confirmations = profile.get("confirmations", "standard")
+        attention_threshold = INTENDED_QUERY_MIN_ATTENTION
+        if confirmations == "minimal":
+            attention_threshold = 0.15
+        elif confirmations == "strict":
+            attention_threshold = 0.55
+        if attention >= attention_threshold:
             return False
-        if self._last_doa_speech is True:
+        if confirmations != "strict" and self._last_doa_speech is True:
             return False
         return True
 
@@ -2602,8 +2769,15 @@ class Jarvis:
     def _confidence_pause(self, sentence: str) -> float:
         lowered = sentence.lower()
         if any(token in lowered for token in TTS_LOW_CONFIDENCE_WORDS):
-            return TTS_CONFIDENCE_PAUSE_SEC
-        return TTS_SENTENCE_PAUSE_SEC
+            pause = TTS_CONFIDENCE_PAUSE_SEC
+        else:
+            pause = TTS_SENTENCE_PAUSE_SEC
+        pace = self._active_voice_profile().get("pace", "normal")
+        if pace == "slow":
+            return pause * 1.25
+        if pace == "fast":
+            return pause * 0.8
+        return pause
 
 
 def main():
