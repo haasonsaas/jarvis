@@ -51,7 +51,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 
 - [ ] `MX01` Add scoped long-term memory classes (`preferences`, `people`, `projects`, `household_rules`) with explicit retrieval policy. `P0`
 - [ ] `MX02` Add "memory confidence" and "source trail" to prevent stale or hallucinated recall. `P0`
-- [ ] `MX03` Add memory correction flow ("forget this", "update that") as first-class voice commands. `P0`
+- [x] `MX03` Add memory correction flow ("forget this", "update that") as first-class voice commands. `P0`
 - [ ] `MX04` Add episodic timeline snapshots for recent important conversations/actions. `P1`
 - [ ] `MX05` Add per-user memory partitions with shared/common memory overlays. `P1`
 - [ ] `MX06` Add memory quality audits (duplication, contradiction, stale data) with cleanup tools. `P1`
@@ -155,7 +155,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q03` Implement `AX05` plan preview before medium/high-risk execution.
 - [x] `Q04` Implement `RX04` turn-phase timeout budgets and status exposure.
 - [x] `Q05` Implement `PX03` nudge/interrupt policy + quiet windows.
-- [ ] `Q06` Implement `MX03` memory correction voice commands.
+- [x] `Q06` Implement `MX03` memory correction voice commands.
 - [ ] `Q07` Implement `IX03` step-up verification flow.
 - [ ] `Q08` Implement `HX06` idempotent home-action guardrail.
 - [ ] `Q09` Implement `OX04` global safe-mode toggle.

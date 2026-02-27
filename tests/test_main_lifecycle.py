@@ -86,6 +86,20 @@ def test_startup_summary_lines_include_core_status():
     assert "Error taxonomy: total=" in joined
 
 
+def test_parse_memory_correction_command_forget():
+    command = Jarvis._parse_memory_correction_command("forget memory 42")
+    assert command == ("memory_forget", {"memory_id": 42})
+
+
+def test_parse_memory_correction_command_update():
+    command = Jarvis._parse_memory_correction_command("update memory 7 to Call me Captain.")
+    assert command == ("memory_update", {"memory_id": 7, "text": "Call me Captain."})
+
+
+def test_parse_memory_correction_command_rejects_ambiguous_phrases():
+    assert Jarvis._parse_memory_correction_command("forget this") is None
+
+
 def test_start_requires_sounddevice_for_local_tts_playback():
     jarvis = Jarvis.__new__(Jarvis)
     jarvis._started = False

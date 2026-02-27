@@ -573,6 +573,22 @@ SERVICE_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "required": ["text"],
     },
+    "memory_update": {
+        "type": "object",
+        "properties": {
+            "memory_id": {"type": "integer"},
+            "text": {"type": "string"},
+            "allow_pii": {"type": "boolean"},
+        },
+        "required": ["memory_id", "text"],
+    },
+    "memory_forget": {
+        "type": "object",
+        "properties": {
+            "memory_id": {"type": "integer"},
+        },
+        "required": ["memory_id"],
+    },
     "memory_search": {
         "type": "object",
         "properties": {
@@ -728,6 +744,8 @@ SERVICE_RUNTIME_REQUIRED_FIELDS: dict[str, set[str]] = {
     "system_status": set(),
     "system_status_contract": set(),
     "memory_add": {"text"},
+    "memory_update": {"memory_id", "text"},
+    "memory_forget": {"memory_id"},
     "memory_search": {"query"},
     "memory_status": set(),
     "memory_recent": set(),
@@ -5309,6 +5327,69 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": f"Memory stored (id={memory_id})."}]}
 
 
+async def memory_update(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("memory_update"):
+        record_summary("memory_update", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _memory:
+        _record_service_error("memory_update", start_time, "missing_store")
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    memory_id = _as_exact_int(args.get("memory_id"))
+    if memory_id is None or memory_id <= 0:
+        _record_service_error("memory_update", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "memory_id must be a positive integer."}]}
+    text = str(args.get("text", "")).strip()
+    if not text:
+        _record_service_error("memory_update", start_time, "missing_text")
+        return {"content": [{"type": "text", "text": "Memory text required."}]}
+    allow_pii = _as_bool(args.get("allow_pii"), default=False)
+    if _memory_pii_guardrails_enabled and not allow_pii and _contains_pii(text):
+        _record_service_error("memory_update", start_time, "policy")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Potential PII detected in memory text. Use allow_pii=true only when intentional.",
+                }
+            ]
+        }
+    try:
+        updated = _memory.update_memory_text(memory_id, text)
+    except Exception as e:
+        _record_service_error("memory_update", start_time, "storage_error")
+        return {"content": [{"type": "text", "text": f"Memory update failed: {e}"}]}
+    if not updated:
+        _record_service_error("memory_update", start_time, "not_found")
+        return {"content": [{"type": "text", "text": "Memory not found."}]}
+    record_summary("memory_update", "ok", start_time, effect=f"memory_id={memory_id}", risk="low")
+    return {"content": [{"type": "text", "text": f"Memory updated (id={memory_id})."}]}
+
+
+async def memory_forget(args: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.monotonic()
+    if not _tool_permitted("memory_forget"):
+        record_summary("memory_forget", "denied", start_time, "policy")
+        return {"content": [{"type": "text", "text": "Tool not permitted."}]}
+    if not _memory:
+        _record_service_error("memory_forget", start_time, "missing_store")
+        return {"content": [{"type": "text", "text": "Memory store not available."}]}
+    memory_id = _as_exact_int(args.get("memory_id"))
+    if memory_id is None or memory_id <= 0:
+        _record_service_error("memory_forget", start_time, "missing_fields")
+        return {"content": [{"type": "text", "text": "memory_id must be a positive integer."}]}
+    try:
+        deleted = _memory.delete_memory(memory_id)
+    except Exception as e:
+        _record_service_error("memory_forget", start_time, "storage_error")
+        return {"content": [{"type": "text", "text": f"Memory forget failed: {e}"}]}
+    if not deleted:
+        _record_service_error("memory_forget", start_time, "not_found")
+        return {"content": [{"type": "text", "text": "Memory not found."}]}
+    record_summary("memory_forget", "ok", start_time, effect=f"memory_id={memory_id}", risk="low")
+    return {"content": [{"type": "text", "text": f"Memory forgotten (id={memory_id})."}]}
+
+
 async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
     start_time = time.monotonic()
     if not _tool_permitted("memory_search"):
@@ -5960,6 +6041,18 @@ memory_add_tool = tool(
     SERVICE_TOOL_SCHEMAS["memory_add"],
 )(memory_add)
 
+memory_update_tool = tool(
+    "memory_update",
+    "Update existing memory text by id.",
+    SERVICE_TOOL_SCHEMAS["memory_update"],
+)(memory_update)
+
+memory_forget_tool = tool(
+    "memory_forget",
+    "Forget (delete) a memory by id.",
+    SERVICE_TOOL_SCHEMAS["memory_forget"],
+)(memory_forget)
+
 memory_search_tool = tool(
     "memory_search",
     "Search long-term memory for relevant entries.",
@@ -6144,6 +6237,8 @@ def create_services_server():
             skills_disable_tool,
             skills_version_tool,
             memory_add_tool,
+            memory_update_tool,
+            memory_forget_tool,
             memory_search_tool,
             memory_recent_tool,
             memory_status_tool,

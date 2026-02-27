@@ -18,6 +18,7 @@ import asyncio
 import json
 import math
 import logging
+import re
 import signal
 import time
 import threading
@@ -87,6 +88,14 @@ TELEMETRY_SERVICE_ERROR_DETAILS = TOOL_SERVICE_ERROR_CODES - TELEMETRY_STORAGE_E
 WATCHDOG_POLL_SEC = 0.05
 VALID_PERSONA_STYLES = {"terse", "composed", "friendly"}
 VALID_BACKCHANNEL_STYLES = {"quiet", "balanced", "expressive"}
+MEMORY_FORGET_RE = re.compile(
+    r"^(?:please\s+)?(?:forget|delete|remove)\s+(?:memory\s*)?(?:id\s*)?(?P<memory_id>\d+)\s*$",
+    re.IGNORECASE,
+)
+MEMORY_UPDATE_RE = re.compile(
+    r"^(?:please\s+)?(?:update|change|edit)\s+(?:memory\s*)?(?:id\s*)?(?P<memory_id>\d+)\s+(?:to|with)\s+(?P<text>.+)$",
+    re.IGNORECASE,
+)
 
 
 def _require_sounddevice(feature: str) -> None:
@@ -763,6 +772,24 @@ class Jarvis:
             return normalized
         return None
 
+    @staticmethod
+    def _parse_memory_correction_command(text: str) -> tuple[str, dict[str, Any]] | None:
+        phrase = str(text or "").strip()
+        if not phrase:
+            return None
+        forget_match = MEMORY_FORGET_RE.fullmatch(phrase)
+        if forget_match:
+            memory_id = int(forget_match.group("memory_id"))
+            return "memory_forget", {"memory_id": memory_id}
+        update_match = MEMORY_UPDATE_RE.fullmatch(phrase)
+        if update_match:
+            memory_id = int(update_match.group("memory_id"))
+            updated_text = update_match.group("text").strip()
+            if not updated_text:
+                return None
+            return "memory_update", {"memory_id": memory_id, "text": updated_text}
+        return None
+
     def _persist_runtime_state_safe(self) -> None:
         with suppress(Exception):
             self._save_runtime_state()
@@ -1086,6 +1113,22 @@ class Jarvis:
                     else:
                         self._awaiting_confirmation = False
                         self._pending_text = None
+
+                memory_correction = self._parse_memory_correction_command(text)
+                if memory_correction is not None:
+                    tool_name, payload = memory_correction
+                    if tool_name == "memory_forget":
+                        result = await service_tools.memory_forget(payload)
+                    else:
+                        result = await service_tools.memory_update(payload)
+                    reply = str(result.get("content", [{}])[0].get("text", "")).strip() or "Done."
+                    if self.tts:
+                        await self._tts_queue.put((self._active_response_id, reply, True, 0.0))
+                    else:
+                        print(f"  JARVIS: {reply}")
+                    self.presence.signals.state = State.IDLE
+                    self._publish_voice_status()
+                    continue
 
                 if self._requires_confirmation(time.monotonic()):
                     self._awaiting_confirmation = True

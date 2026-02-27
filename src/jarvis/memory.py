@@ -414,6 +414,40 @@ class MemoryStore:
             rows = cur.execute(sql, (*source_params, limit)).fetchall()
         return [self._row_to_memory(row) for row in rows]
 
+    def update_memory_text(self, memory_id: int, text: str) -> bool:
+        clean = text.strip()
+        if not clean:
+            raise ValueError("memory text required")
+        memory_key = int(memory_id)
+        stored_text = self._encrypt_text(clean)
+        with self._conn:
+            cur = self._conn.cursor()
+            cur.execute(
+                "UPDATE memory SET text = ? WHERE id = ?",
+                (stored_text, memory_key),
+            )
+            updated = cur.rowcount > 0
+            if not updated:
+                return False
+            if self._fts_enabled and not self._encrypted:
+                cur.execute("DELETE FROM memory_fts WHERE rowid = ?", (memory_key,))
+                cur.execute("INSERT INTO memory_fts(rowid, text) VALUES (?, ?)", (memory_key, clean))
+            if self._memory_enabled and not self._encrypted:
+                cur.execute("DELETE FROM memory_vec WHERE rowid = ?", (memory_key,))
+                cur.execute("INSERT INTO memory_vec(rowid, text) VALUES (?, ?)", (memory_key, clean))
+        return True
+
+    def delete_memory(self, memory_id: int) -> bool:
+        memory_key = int(memory_id)
+        with self._conn:
+            cur = self._conn.cursor()
+            if self._fts_enabled and not self._encrypted:
+                cur.execute("DELETE FROM memory_fts WHERE rowid = ?", (memory_key,))
+            if self._memory_enabled and not self._encrypted:
+                cur.execute("DELETE FROM memory_vec WHERE rowid = ?", (memory_key,))
+            cur.execute("DELETE FROM memory WHERE id = ?", (memory_key,))
+            return cur.rowcount > 0
+
     def add_task_plan(self, title: str, steps: list[str]) -> int:
         clean_title = title.strip()
         if not clean_title:

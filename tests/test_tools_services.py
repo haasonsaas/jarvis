@@ -226,12 +226,18 @@ class TestServicesTools:
 
         created = await services.memory_add({"text": "Call me Boss.", "kind": "profile", "sensitivity": 0.2, "source": "profile"})
         assert "stored" in created["content"][0]["text"].lower()
+        created_text = created["content"][0]["text"]
+        memory_id = int(created_text.split("id=")[1].split(")", 1)[0])
 
         sensitive = await services.memory_add({"text": "My bank code is 1234", "kind": "note", "sensitivity": 0.9, "source": "secrets"})
         assert "stored" in sensitive["content"][0]["text"].lower()
 
+        updated = await services.memory_update({"memory_id": memory_id, "text": "Call me Commander.", "allow_pii": False})
+        assert "updated" in updated["content"][0]["text"].lower()
+
         found = await services.memory_search({"query": "call me", "limit": 5, "sources": ["profile"]})
         assert "call me" in found["content"][0]["text"].lower()
+        assert "commander" in found["content"][0]["text"].lower()
 
         filtered = await services.memory_search({"query": "bank", "limit": 5, "max_sensitivity": 0.4})
         assert "no relevant" in filtered["content"][0]["text"].lower()
@@ -281,6 +287,11 @@ class TestServicesTools:
             "max_sensitivity": 0.4,
         })
         assert "no relevant" in filtered_str_false["content"][0]["text"].lower()
+
+        forgotten = await services.memory_forget({"memory_id": memory_id})
+        assert "forgotten" in forgotten["content"][0]["text"].lower()
+        gone = await services.memory_search({"query": "commander", "limit": 5})
+        assert "no relevant" in gone["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_task_plan_create_rejects_empty_steps(self, tmp_path):
@@ -3361,6 +3372,8 @@ class TestServicesTools:
         assert schemas["todoist_list_tasks"]["properties"]["limit"]["type"] == "integer"
         assert schemas["pushover_notify"]["properties"]["priority"]["type"] == "integer"
         assert schemas["memory_search"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["memory_update"]["properties"]["memory_id"]["type"] == "integer"
+        assert schemas["memory_forget"]["properties"]["memory_id"]["type"] == "integer"
         assert schemas["memory_recent"]["properties"]["limit"]["type"] == "integer"
         assert schemas["memory_summary_list"]["properties"]["limit"]["type"] == "integer"
         assert schemas["task_plan_update"]["properties"]["plan_id"]["type"] == "integer"
