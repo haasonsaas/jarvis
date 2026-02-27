@@ -1360,6 +1360,894 @@
       "actual_tools": [
         "embodiment_presence"
       ]
+    },
+    {
+      "id": "multiturn_followup_01",
+      "expected_contains": [
+        "followup_carryover_applied",
+        "intent"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "followup_carryover_applied intent multi turn continuity check",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "multiturn_followup_02",
+      "expected_contains": [
+        "repair_requested",
+        "confirmation"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "repair_requested confirmation multi turn continuity check",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "multiturn_followup_03",
+      "expected_contains": [
+        "confirmation_requested",
+        "pending_text"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "confirmation_requested pending_text multi turn continuity check",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "multiturn_followup_04",
+      "expected_contains": [
+        "memory_forget",
+        "memory_id"
+      ],
+      "expected_tools": [
+        "memory_forget"
+      ],
+      "actual_response": "memory_forget memory_id multi turn continuity check",
+      "actual_tools": [
+        "memory_forget"
+      ]
+    },
+    {
+      "id": "multiturn_followup_05",
+      "expected_contains": [
+        "memory_update",
+        "memory_id"
+      ],
+      "expected_tools": [
+        "memory_update"
+      ],
+      "actual_response": "memory_update memory_id multi turn continuity check",
+      "actual_tools": [
+        "memory_update"
+      ]
+    },
+    {
+      "id": "multiturn_followup_06",
+      "expected_contains": [
+        "conversation_trace",
+        "turn_id"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "conversation_trace turn_id multi turn continuity check",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "multiturn_followup_07",
+      "expected_contains": [
+        "episodic_timeline",
+        "episode_id"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "episodic_timeline episode_id multi turn continuity check",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "multiturn_followup_08",
+      "expected_contains": [
+        "response_success",
+        "completion_success"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "response_success completion_success multi turn continuity check",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "multiturn_followup_09",
+      "expected_contains": [
+        "tool_calls",
+        "policy_decisions"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "tool_calls policy_decisions multi turn continuity check",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "multiturn_followup_10",
+      "expected_contains": [
+        "voice_profile",
+        "confirmations"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile confirmations multi turn continuity check",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "multiturn_followup_11",
+      "expected_contains": [
+        "wake_mode",
+        "push_to_talk_active"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "wake_mode push_to_talk_active multi turn continuity check",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "multiturn_followup_12",
+      "expected_contains": [
+        "stt_diagnostics",
+        "confidence_band"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "stt_diagnostics confidence_band multi turn continuity check",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_01",
+      "expected_contains": [
+        "autonomy_schedule",
+        "checkpoint_required",
+        "waiting_checkpoint"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy_schedule checkpoint_required waiting_checkpoint long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_02",
+      "expected_contains": [
+        "autonomy_checkpoint",
+        "approved",
+        "checkpoint_id"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy_checkpoint approved checkpoint_id long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_03",
+      "expected_contains": [
+        "autonomy_cycle",
+        "executed_count",
+        "deferred_action_count"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy_cycle executed_count deferred_action_count long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_04",
+      "expected_contains": [
+        "autonomy_status",
+        "autonomy_task_count",
+        "autonomy_last_cycle_at"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy_status autonomy_task_count autonomy_last_cycle_at long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_05",
+      "expected_contains": [
+        "deferred_schedule",
+        "run_at",
+        "deferred_action_id"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "deferred_schedule run_at deferred_action_id long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_06",
+      "expected_contains": [
+        "deferred_list",
+        "pending",
+        "in_progress"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "deferred_list pending in_progress long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_07",
+      "expected_contains": [
+        "planner_graph",
+        "ready_nodes",
+        "blocked_nodes"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "planner_graph ready_nodes blocked_nodes long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_08",
+      "expected_contains": [
+        "task_graph_count",
+        "planner_task_seq",
+        "goal"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "task_graph_count planner_task_seq goal long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_09",
+      "expected_contains": [
+        "checkpoint_gate",
+        "approval_required",
+        "high_risk"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "checkpoint_gate approval_required high_risk long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_10",
+      "expected_contains": [
+        "autonomy_cycle_history",
+        "timestamp",
+        "result"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy_cycle_history timestamp result long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_11",
+      "expected_contains": [
+        "autonomy_task",
+        "status",
+        "waiting_checkpoint"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "autonomy_task status waiting_checkpoint long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "autonomy_long_horizon_12",
+      "expected_contains": [
+        "self_critique",
+        "quality",
+        "next_action"
+      ],
+      "expected_tools": [
+        "planner_engine"
+      ],
+      "actual_response": "self_critique quality next_action long horizon autonomy validation",
+      "actual_tools": [
+        "planner_engine"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_01",
+      "expected_contains": [
+        "dead_letter_queue",
+        "open",
+        "count"
+      ],
+      "expected_tools": [
+        "dead_letter_list"
+      ],
+      "actual_response": "dead_letter_queue open count recovery robustness validation",
+      "actual_tools": [
+        "dead_letter_list"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_02",
+      "expected_contains": [
+        "dead_letter_replay",
+        "entry_id",
+        "replayed"
+      ],
+      "expected_tools": [
+        "dead_letter_replay"
+      ],
+      "actual_response": "dead_letter_replay entry_id replayed recovery robustness validation",
+      "actual_tools": [
+        "dead_letter_replay"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_03",
+      "expected_contains": [
+        "dead_letter_replay",
+        "status",
+        "closed"
+      ],
+      "expected_tools": [
+        "dead_letter_replay"
+      ],
+      "actual_response": "dead_letter_replay status closed recovery robustness validation",
+      "actual_tools": [
+        "dead_letter_replay"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_04",
+      "expected_contains": [
+        "dead_letter",
+        "reason",
+        "timeout"
+      ],
+      "expected_tools": [
+        "dead_letter_list"
+      ],
+      "actual_response": "dead_letter reason timeout recovery robustness validation",
+      "actual_tools": [
+        "dead_letter_list"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_05",
+      "expected_contains": [
+        "dead_letter",
+        "reason",
+        "network_client_error"
+      ],
+      "expected_tools": [
+        "dead_letter_list"
+      ],
+      "actual_response": "dead_letter reason network_client_error recovery robustness validation",
+      "actual_tools": [
+        "dead_letter_list"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_06",
+      "expected_contains": [
+        "dead_letter",
+        "reason",
+        "auth"
+      ],
+      "expected_tools": [
+        "dead_letter_list"
+      ],
+      "actual_response": "dead_letter reason auth recovery robustness validation",
+      "actual_tools": [
+        "dead_letter_list"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_07",
+      "expected_contains": [
+        "recovery_journal",
+        "operation",
+        "completed"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "recovery_journal operation completed recovery robustness validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_08",
+      "expected_contains": [
+        "recovery_journal",
+        "operation",
+        "failed"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "recovery_journal operation failed recovery robustness validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_09",
+      "expected_contains": [
+        "recovery_reconcile",
+        "interrupted",
+        "reconciled"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "recovery_reconcile interrupted reconciled recovery robustness validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_10",
+      "expected_contains": [
+        "circuit_breaker",
+        "open",
+        "remaining_sec"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "circuit_breaker open remaining_sec recovery robustness validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_11",
+      "expected_contains": [
+        "retry",
+        "backoff",
+        "attempt"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "retry backoff attempt recovery robustness validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "recovery_dead_letter_12",
+      "expected_contains": [
+        "audit",
+        "reason_code",
+        "decision_chain"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "audit reason_code decision_chain recovery robustness validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_01",
+      "expected_contains": [
+        "plan_preview",
+        "token",
+        "ttl_sec"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "plan_preview token ttl_sec policy automation edge validation",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_02",
+      "expected_contains": [
+        "preview_required",
+        "risk",
+        "high"
+      ],
+      "expected_tools": [
+        "smart_home"
+      ],
+      "actual_response": "preview_required risk high policy automation edge validation",
+      "actual_tools": [
+        "smart_home"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_03",
+      "expected_contains": [
+        "area_policy",
+        "quiet_hours",
+        "blocked_actions"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "area_policy quiet_hours blocked_actions policy automation edge validation",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_04",
+      "expected_contains": [
+        "automation_create",
+        "draft_id",
+        "config_preview"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "automation_create draft_id config_preview policy automation edge validation",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_05",
+      "expected_contains": [
+        "automation_apply",
+        "dry_run",
+        "diff"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "automation_apply dry_run diff policy automation edge validation",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_06",
+      "expected_contains": [
+        "automation_apply",
+        "applied",
+        "ha_status"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "automation_apply applied ha_status policy automation edge validation",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_07",
+      "expected_contains": [
+        "automation_rollback",
+        "restored_revision",
+        "diff"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "automation_rollback restored_revision diff policy automation edge validation",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_08",
+      "expected_contains": [
+        "automation_status",
+        "draft_count",
+        "applied_count"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "automation_status draft_count applied_count policy automation edge validation",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_09",
+      "expected_contains": [
+        "task_start",
+        "task_id",
+        "in_progress"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "task_start task_id in_progress policy automation edge validation",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_10",
+      "expected_contains": [
+        "task_update",
+        "status",
+        "progress"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "task_update status progress policy automation edge validation",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_11",
+      "expected_contains": [
+        "task_list",
+        "tasks",
+        "task_count"
+      ],
+      "expected_tools": [
+        "home_orchestrator"
+      ],
+      "actual_response": "task_list tasks task_count policy automation edge validation",
+      "actual_tools": [
+        "home_orchestrator"
+      ]
+    },
+    {
+      "id": "policy_automation_edge_12",
+      "expected_contains": [
+        "strict_confirm_required",
+        "sensitive",
+        "deny"
+      ],
+      "expected_tools": [
+        "smart_home"
+      ],
+      "actual_response": "strict_confirm_required sensitive deny policy automation edge validation",
+      "actual_tools": [
+        "smart_home"
+      ]
+    },
+    {
+      "id": "personality_drift_01",
+      "expected_contains": [
+        "persona_style",
+        "jarvis",
+        "backchannel_style"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "persona_style jarvis backchannel_style personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_02",
+      "expected_contains": [
+        "voice_profile",
+        "tone",
+        "formal"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile tone formal personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_03",
+      "expected_contains": [
+        "voice_profile",
+        "tone",
+        "witty"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile tone witty personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_04",
+      "expected_contains": [
+        "voice_profile",
+        "tone",
+        "empathetic"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile tone empathetic personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_05",
+      "expected_contains": [
+        "voice_profile",
+        "tone",
+        "direct"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile tone direct personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_06",
+      "expected_contains": [
+        "voice_profile",
+        "verbosity",
+        "brief"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile verbosity brief personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_07",
+      "expected_contains": [
+        "voice_profile",
+        "verbosity",
+        "detailed"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile verbosity detailed personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_08",
+      "expected_contains": [
+        "voice_profile",
+        "confirmations",
+        "minimal"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile confirmations minimal personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_09",
+      "expected_contains": [
+        "voice_profile",
+        "confirmations",
+        "strict"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile confirmations strict personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_10",
+      "expected_contains": [
+        "voice_profile",
+        "pace",
+        "slow"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile pace slow personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_11",
+      "expected_contains": [
+        "voice_profile",
+        "pace",
+        "fast"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "voice_profile pace fast personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
+    },
+    {
+      "id": "personality_drift_12",
+      "expected_contains": [
+        "personality_preview",
+        "baseline",
+        "current"
+      ],
+      "expected_tools": [
+        "system_status"
+      ],
+      "actual_response": "personality_preview baseline current personality drift validation",
+      "actual_tools": [
+        "system_status"
+      ]
     }
   ]
 }

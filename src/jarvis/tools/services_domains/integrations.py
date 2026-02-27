@@ -7,6 +7,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from jarvis.tools.services_domains.integrations_runtime import (
+    parse_calendar_window as _runtime_parse_calendar_window,
+)
+
 
 def _services():
     from jarvis.tools import services as s
@@ -790,29 +794,19 @@ def _parse_calendar_window(args: dict[str, Any]) -> tuple[float | None, float | 
     CALENDAR_MAX_WINDOW_HOURS = s.CALENDAR_MAX_WINDOW_HOURS
 
     now = time.time()
-    start_raw = str(args.get("start", "")).strip()
-    end_raw = str(args.get("end", "")).strip()
-    start_ts = now
-    if start_raw:
-        parsed_start = _parse_due_timestamp(start_raw, now_ts=now)
-        if parsed_start is None:
-            return None, None
-        start_ts = parsed_start
-    if end_raw:
-        end_ts = _parse_due_timestamp(end_raw, now_ts=now)
-        if end_ts is None:
-            return None, None
-    else:
-        window_hours = _as_float(
-            args.get("window_hours", CALENDAR_DEFAULT_WINDOW_HOURS),
-            CALENDAR_DEFAULT_WINDOW_HOURS,
+    return _runtime_parse_calendar_window(
+        args,
+        now_ts=now,
+        parse_due_timestamp=lambda value: _parse_due_timestamp(value, now_ts=now),
+        as_float=lambda value, default: _as_float(
+            value,
+            default,
             minimum=0.1,
             maximum=CALENDAR_MAX_WINDOW_HOURS,
-        )
-        end_ts = start_ts + (window_hours * 3600.0)
-    if end_ts <= start_ts:
-        return None, None
-    return start_ts, end_ts
+        ),
+        default_window_hours=CALENDAR_DEFAULT_WINDOW_HOURS,
+        max_window_hours=CALENDAR_MAX_WINDOW_HOURS,
+    )
 
 
 async def calendar_events(args: dict[str, Any]) -> dict[str, Any]:
