@@ -454,7 +454,7 @@ class Jarvis:
             f"Home tools: {'on' if self.config.home_enabled else 'off'}",
             f"Safe mode: {'on' if bool(getattr(self.config, 'safe_mode_enabled', False)) else 'off'}",
             f"Home conversation: {'on' if self.config.home_conversation_enabled else 'off'}",
-            f"Wake mode: {wake_mode} | timeout profile: {timeout_profile}",
+            f"Wake mode: {wake_mode} | calibration: {getattr(self.config, 'wake_calibration_profile', 'default')} | timeout profile: {timeout_profile}",
             f"TTS: {tts_reason}",
             f"Memory: {memory_state} ({self.config.memory_path})",
             f"Skills: {'on' if skills_enabled else 'off'} ({getattr(self.config, 'skills_dir', 'n/a')})",
