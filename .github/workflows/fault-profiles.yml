@@ -27,12 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile:
-          - quick
-          - network
-          - storage
-          - contract
-    if: github.event_name != 'workflow_dispatch' || github.event.inputs.profile == 'all' || github.event.inputs.profile == matrix.profile
+        profile: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.profile != 'all' && fromJSON(format('["{0}"]', github.event.inputs.profile)) || fromJSON('["quick","network","storage","contract"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
