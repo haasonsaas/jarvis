@@ -101,6 +101,8 @@ class VoiceAttentionController:
         self.accepted_count = 0
         self.rejected_count = 0
         self.false_positive_count = 0
+        self._speech_rate_wps = 2.5
+        self._interruption_likelihood = 0.0
 
     @staticmethod
     def _normalize_mode(mode: str) -> str:
@@ -145,8 +147,21 @@ class VoiceAttentionController:
     def set_push_to_talk_active(self, active: bool) -> None:
         self.push_to_talk_active = bool(active)
 
+    def _compute_adaptive_timeout(self) -> float:
+        base = float(self.timeout_profiles.get(self.timeout_profile, self.timeout_profiles["normal"]))
+        speech_rate = max(0.0, float(self._speech_rate_wps))
+        interruption = max(0.0, min(1.0, float(self._interruption_likelihood)))
+        # Slow speakers need a wider pause window to avoid clipped utterances.
+        slow_boost = max(0.0, min(0.4, (2.2 - speech_rate) * 0.18))
+        # Fast speakers and interruption-heavy contexts benefit from shorter turn-closing latency.
+        fast_reduction = max(0.0, min(0.25, (speech_rate - 3.8) * 0.08))
+        interruption_reduction = interruption * 0.2
+        scale = 1.0 + slow_boost - fast_reduction - interruption_reduction
+        adaptive = base * scale
+        return max(0.2, min(2.5, adaptive))
+
     def silence_timeout(self) -> float:
-        return float(self.timeout_profiles.get(self.timeout_profile, self.timeout_profiles["normal"]))
+        return self._compute_adaptive_timeout()
 
     def barge_in_threshold(self) -> float:
         return float(self.barge_thresholds.get(self.mode, 0.4))
@@ -155,6 +170,32 @@ class VoiceAttentionController:
         base = time.monotonic() if now is None else float(now)
         window = self.followup_window_sec if window_sec is None else max(0.0, float(window_sec))
         self.followup_until = base + window
+
+    def register_utterance(
+        self,
+        text: str,
+        *,
+        duration_sec: float,
+        interruption_likelihood: float | None = None,
+    ) -> None:
+        try:
+            duration = float(duration_sec)
+        except (TypeError, ValueError):
+            duration = 0.0
+        duration = max(0.1, duration)
+        words = re.findall(r"[a-zA-Z0-9']+", str(text or ""))
+        if words:
+            rate = len(words) / duration
+            if math.isfinite(rate):
+                self._speech_rate_wps = (self._speech_rate_wps * 0.7) + (rate * 0.3)
+        if interruption_likelihood is not None:
+            try:
+                parsed_interrupt = float(interruption_likelihood)
+            except (TypeError, ValueError):
+                parsed_interrupt = 0.0
+            if not math.isfinite(parsed_interrupt):
+                parsed_interrupt = 0.0
+            self._interruption_likelihood = max(0.0, min(1.0, parsed_interrupt))
 
     def update_room_from_doa(self, doa_angle: float | None) -> None:
         if doa_angle is None:
@@ -293,6 +334,9 @@ class VoiceAttentionController:
             "followup_remaining_sec": followup_remaining,
             "timeout_profile": self.timeout_profile,
             "silence_timeout_sec": self.silence_timeout(),
+            "adaptive_silence_timeout_sec": self.silence_timeout(),
+            "speech_rate_wps": self._speech_rate_wps,
+            "interruption_likelihood": self._interruption_likelihood,
             "barge_in_threshold": self.barge_in_threshold(),
             "push_to_talk_active": self.push_to_talk_active,
             "active_room": self.active_room,

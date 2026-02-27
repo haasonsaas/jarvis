@@ -32,7 +32,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 ## 2) Voice and Dialogue Quality (6 items)
 
 - [ ] `VX01` Add robust wake-word false-trigger suppression with environment-specific calibration profiles. `P0`
-- [ ] `VX02` Add adaptive end-of-turn timing based on speaking rate and interruption likelihood. `P0`
+- [x] `VX02` Add adaptive end-of-turn timing based on speaking rate and interruption likelihood. `P0`
 - [ ] `VX03` Add explicit "follow-up intent carryover" so multi-turn requests preserve unresolved slots. `P0`
 - [ ] `VX04` Add per-user voice preferences (pace, verbosity, confirmations). `P1`
 - [ ] `VX05` Add runtime STT confidence diagnostics in operator UI and status endpoints. `P1`
@@ -161,7 +161,7 @@ This is a fresh roadmap focused on what is still missing for a "feels-like-Jarvi
 - [x] `Q09` Implement `OX04` global safe-mode toggle.
 - [x] `Q10` Implement `EX01` intent-level success metrics.
 - [x] `Q11` Implement `BX02` turn choreography pass.
-- [ ] `Q12` Implement `VX02` adaptive end-of-turn timing.
+- [x] `Q12` Implement `VX02` adaptive end-of-turn timing.
 - [ ] `Q13` Implement `JX06` style consistency regression tests.
 - [ ] `Q14` Implement `RX01` integration circuit breakers.
 - [ ] `Q15` Implement `RX02` recovery journal and resume.

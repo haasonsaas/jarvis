@@ -3053,7 +3053,7 @@ class TestServicesTools:
 
         result = await services.system_status({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.3"
+        assert payload["schema_version"] == "1.4"
         assert "local_time" in payload
         assert "tool_policy" in payload
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
@@ -3084,6 +3084,9 @@ class TestServicesTools:
         assert "voice_attention" in payload
         assert "mode" in payload["voice_attention"]
         assert "active_room" in payload["voice_attention"]
+        assert "adaptive_silence_timeout_sec" in payload["voice_attention"]
+        assert "speech_rate_wps" in payload["voice_attention"]
+        assert "interruption_likelihood" in payload["voice_attention"]
         assert "turn_choreography" in payload["voice_attention"]
         assert "phase" in payload["voice_attention"]["turn_choreography"]
         assert "turn_timeouts" in payload
@@ -3119,7 +3122,7 @@ class TestServicesTools:
 
         result = await services.system_status_contract({})
         payload = json.loads(result["content"][0]["text"])
-        assert payload["schema_version"] == "1.3"
+        assert payload["schema_version"] == "1.4"
         assert "top_level_required" in payload
         assert "tool_policy" in payload["top_level_required"]
         assert "identity" in payload["top_level_required"]
@@ -3144,6 +3147,9 @@ class TestServicesTools:
         assert "timers_required" in payload
         assert "reminders_required" in payload
         assert "voice_attention_required" in payload
+        assert "adaptive_silence_timeout_sec" in payload["voice_attention_required"]
+        assert "speech_rate_wps" in payload["voice_attention_required"]
+        assert "interruption_likelihood" in payload["voice_attention_required"]
         assert "turn_choreography" in payload["voice_attention_required"]
         assert "voice_attention_turn_choreography_required" in payload
         assert "turn_glance_yaw" in payload["voice_attention_turn_choreography_required"]

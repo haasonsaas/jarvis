@@ -1322,6 +1322,14 @@ class Jarvis:
                     self._publish_voice_status()
                     continue
                 text = decision.text
+                utterance_duration_sec = float(len(utterance)) / float(self.config.sample_rate)
+                turn_count = max(1.0, float(self._telemetry.get("turns", 0.0)))
+                interruption_likelihood = float(self._telemetry.get("barge_ins", 0.0)) / turn_count
+                self._voice_controller().register_utterance(
+                    text,
+                    duration_sec=utterance_duration_sec,
+                    interruption_likelihood=interruption_likelihood,
+                )
 
                 if self._awaiting_confirmation:
                     normalized = text.strip().lower()

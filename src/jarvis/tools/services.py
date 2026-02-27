@@ -74,7 +74,7 @@ TODOIST_LIST_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SEC = 0.2
 RETRY_MAX_DELAY_SEC = 1.0
 RETRY_JITTER_RATIO = 0.2
-SYSTEM_STATUS_CONTRACT_VERSION = "1.3"
+SYSTEM_STATUS_CONTRACT_VERSION = "1.4"
 HA_CONVERSATION_MAX_TEXT_CHARS = 600
 TIMER_MAX_SECONDS = 86_400.0
 TIMER_MAX_ACTIVE = 200
@@ -2338,9 +2338,17 @@ def _voice_attention_snapshot() -> dict[str, Any]:
             "followup_active": False,
             "sleeping": False,
             "active_room": "unknown",
+            "silence_timeout_sec": 0.0,
+            "adaptive_silence_timeout_sec": 0.0,
+            "speech_rate_wps": 0.0,
+            "interruption_likelihood": 0.0,
             "turn_choreography": default_choreography,
         }
     snapshot = {str(key): value for key, value in _runtime_voice_state.items()}
+    snapshot.setdefault("silence_timeout_sec", 0.0)
+    snapshot.setdefault("adaptive_silence_timeout_sec", float(snapshot.get("silence_timeout_sec", 0.0) or 0.0))
+    snapshot.setdefault("speech_rate_wps", 0.0)
+    snapshot.setdefault("interruption_likelihood", 0.0)
     if not isinstance(snapshot.get("turn_choreography"), dict):
         snapshot["turn_choreography"] = default_choreography
     return snapshot
@@ -5302,6 +5310,9 @@ async def system_status_contract(args: dict[str, Any]) -> dict[str, Any]:
             "followup_active",
             "sleeping",
             "active_room",
+            "adaptive_silence_timeout_sec",
+            "speech_rate_wps",
+            "interruption_likelihood",
             "turn_choreography",
         ],
         "voice_attention_turn_choreography_required": [

@@ -86,3 +86,29 @@ def test_room_routing_updates_from_doa():
     assert attention.status(now=0.0)["active_room"] == "center"
     attention.update_room_from_doa(80.0)
     assert attention.status(now=0.0)["active_room"] == "right"
+
+
+def test_adaptive_silence_timeout_adjusts_for_rate_and_interruptions():
+    attention = _controller("always_listening")
+    base_timeout = attention.silence_timeout()
+
+    attention.register_utterance("one two", duration_sec=2.5, interruption_likelihood=0.0)
+    slow_timeout = attention.silence_timeout()
+    assert slow_timeout > base_timeout
+
+    attention.register_utterance(
+        "one two three four five six seven eight nine ten",
+        duration_sec=1.0,
+        interruption_likelihood=0.9,
+    )
+    fast_interrupt_timeout = attention.silence_timeout()
+    assert fast_interrupt_timeout < slow_timeout
+
+
+def test_status_includes_adaptive_timeout_diagnostics():
+    attention = _controller("always_listening")
+    attention.register_utterance("please set a timer", duration_sec=1.2, interruption_likelihood=0.25)
+    status = attention.status(now=0.0)
+    assert "adaptive_silence_timeout_sec" in status
+    assert "speech_rate_wps" in status
+    assert "interruption_likelihood" in status
