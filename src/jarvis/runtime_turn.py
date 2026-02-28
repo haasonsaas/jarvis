@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import re
 import time
 from contextlib import suppress
 from typing import Any, Callable, Mapping
@@ -20,11 +19,18 @@ from jarvis.runtime_constants import (
 )
 
 
+def _tokenize_text(text: str) -> list[str]:
+    chars: list[str] = []
+    for ch in str(text or "").lower():
+        chars.append(ch if (ch.isalnum() or ch == "'") else " ")
+    return [token for token in "".join(chars).split() if token]
+
+
 def classify_user_intent(text: str) -> str:
     phrase = str(text or "").strip().lower()
     if not phrase:
         return "answer"
-    tokens = set(re.findall(r"[a-z']+", phrase))
+    tokens = set(_tokenize_text(phrase))
     has_action = bool(tokens & ACTION_INTENT_TERMS)
     starts_with_question = any(phrase.startswith(f"{term} ") for term in QUESTION_START_TERMS)
     has_question = phrase.endswith("?") or starts_with_question
@@ -41,7 +47,18 @@ def looks_like_user_correction(text: str) -> bool:
         return False
     if any(term in phrase for term in CORRECTION_TERMS):
         return True
-    return bool(re.search(r"\b(?:no|nope|nah)\b.+\b(?:meant|wanted|said)\b", phrase))
+    tokens = _tokenize_text(phrase)
+    if not tokens:
+        return False
+    negatives = {"no", "nope", "nah"}
+    correction_verbs = {"meant", "wanted", "said"}
+    negative_positions = [index for index, token in enumerate(tokens) if token in negatives]
+    if not negative_positions:
+        return False
+    for start_index in negative_positions:
+        if any(token in correction_verbs for token in tokens[start_index + 1 :]):
+            return True
+    return False
 
 
 def attention_confidence(
@@ -96,7 +113,7 @@ def requires_stt_repair(
     text: str,
     intent_class: str,
     *,
-    looks_like_user_correction_fn: Callable[[str], bool],
+    looks_like_correction: bool,
     diagnostics: Mapping[str, Any] | None,
     repair_min_words: int,
     repair_confidence_threshold: float,
@@ -106,9 +123,9 @@ def requires_stt_repair(
     phrase = str(text or "").strip()
     if not phrase:
         return False
-    if looks_like_user_correction_fn(phrase):
+    if bool(looks_like_correction):
         return False
-    words = re.findall(r"[a-z0-9']+", phrase.lower())
+    words = _tokenize_text(phrase)
     if len(words) < repair_min_words:
         return False
     stt_diagnostics = diagnostics if isinstance(diagnostics, Mapping) else {}
@@ -182,7 +199,7 @@ def is_followup_carryover_candidate(
         return False
     if any(phrase.startswith(prefix) for prefix in FOLLOWUP_CARRYOVER_PREFIX_TERMS):
         return True
-    word_list = [token for token in re.findall(r"[a-z0-9']+", phrase)]
+    word_list = _tokenize_text(phrase)
     words = set(word_list)
     if words & FOLLOWUP_CARRYOVER_REFERENCE_TERMS:
         return True
@@ -206,12 +223,18 @@ def with_followup_carryover(
     *,
     context: Mapping[str, Any] | None,
     now_ts: float | None = None,
+    apply: bool | None = None,
 ) -> tuple[str, bool]:
-    if not is_followup_carryover_candidate(text, context=context, now_ts=now_ts):
-        return text, False
     if not isinstance(context, Mapping):
         return text, False
+    should_apply = bool(apply)
+    if apply is None:
+        should_apply = is_followup_carryover_candidate(text, context=context, now_ts=now_ts)
+    if not should_apply:
+        return text, False
     previous_text = str(context.get("text", "")).strip()[:220]
+    if not previous_text:
+        return text, False
     unresolved = bool(context.get("unresolved", False))
     policy = (
         "Previous request may still have unresolved slots; preserve target/entity context unless user overrides."

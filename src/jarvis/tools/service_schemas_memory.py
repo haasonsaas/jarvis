@@ -31,6 +31,14 @@ SERVICE_TOOL_SCHEMAS_MEMORY: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "description": "Optional model override for memory conflict resolution.",
             },
+            "ingestion_confidence": {
+                "type": "number",
+                "description": "Optional confidence score for ingestion policy gating (0.0-1.0).",
+            },
+            "ingestion_policy": {
+                "type": "object",
+                "description": "Optional per-request ingestion policy overlay.",
+            },
         },
         "required": ["text"],
     },
@@ -64,6 +72,7 @@ SERVICE_TOOL_SCHEMAS_MEMORY: dict[str, dict[str, Any]] = {
             "mmr_lambda": {"type": "number"},
             "sources": {"type": "array", "items": {"type": "string"}},
             "scopes": {"type": "array", "items": {"type": "string"}},
+            "include_inactive": {"type": "boolean"},
         },
         "required": ["query"],
     },
@@ -74,6 +83,8 @@ SERVICE_TOOL_SCHEMAS_MEMORY: dict[str, dict[str, Any]] = {
             "sync": {"type": "boolean"},
             "optimize": {"type": "boolean"},
             "vacuum": {"type": "boolean"},
+            "doctor": {"type": "boolean"},
+            "include_graph": {"type": "boolean"},
         },
     },
     "memory_recent": {
@@ -83,6 +94,7 @@ SERVICE_TOOL_SCHEMAS_MEMORY: dict[str, dict[str, Any]] = {
             "kind": {"type": "string"},
             "sources": {"type": "array", "items": {"type": "string"}},
             "scopes": {"type": "array", "items": {"type": "string"}},
+            "include_inactive": {"type": "boolean"},
         },
     },
     "memory_summary_add": {

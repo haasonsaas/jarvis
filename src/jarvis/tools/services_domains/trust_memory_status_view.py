@@ -42,6 +42,10 @@ async def memory_status(args: dict[str, Any]) -> dict[str, Any]:
             _memory.vacuum()
         status = _memory.memory_status()
         if isinstance(status, dict):
+            if _as_bool(args.get("doctor"), default=False):
+                status["doctor"] = _memory.memory_doctor()
+            if _as_bool(args.get("include_graph"), default=False):
+                status["entity_graph_snapshot"] = _memory.entity_graph_snapshot(limit=200, include_inactive=False)
             status["confidence_model"] = {
                 "version": "v1",
                 "inputs": ["retrieval_score", "recency", "source", "sensitivity"],

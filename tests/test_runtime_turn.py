@@ -53,7 +53,7 @@ def test_requires_stt_repair_low_confidence_and_fallback_cases() -> None:
     assert requires_stt_repair(
         "turn on the bedroom lights",
         "action",
-        looks_like_user_correction_fn=looks_like_user_correction,
+        looks_like_correction=False,
         diagnostics={"confidence_band": "low", "confidence_score": 0.4, "fallback_used": False},
         repair_min_words=3,
         repair_confidence_threshold=0.55,
@@ -61,7 +61,7 @@ def test_requires_stt_repair_low_confidence_and_fallback_cases() -> None:
     assert requires_stt_repair(
         "set the hallway lights to warm white",
         "hybrid",
-        looks_like_user_correction_fn=looks_like_user_correction,
+        looks_like_correction=False,
         diagnostics={"confidence_band": "unknown", "confidence_score": 0.0, "fallback_used": True},
         repair_min_words=3,
         repair_confidence_threshold=0.55,
@@ -69,7 +69,7 @@ def test_requires_stt_repair_low_confidence_and_fallback_cases() -> None:
     assert requires_stt_repair(
         "actually, I meant the kitchen",
         "action",
-        looks_like_user_correction_fn=looks_like_user_correction,
+        looks_like_correction=True,
         diagnostics={"confidence_band": "low", "confidence_score": 0.1, "fallback_used": True},
         repair_min_words=3,
         repair_confidence_threshold=0.55,

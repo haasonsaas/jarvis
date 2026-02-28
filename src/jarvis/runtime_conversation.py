@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import time
 from collections import deque
 from contextlib import suppress
@@ -69,6 +68,57 @@ def _increment_telemetry(runtime: Any, key: str, amount: float = 1.0) -> None:
     except (TypeError, ValueError):
         base = 0.0
     telemetry[key] = base + float(amount)
+
+
+def _default_turn_understanding_payload() -> dict[str, Any]:
+    return {
+        "intent_class": "answer",
+        "looks_like_correction": False,
+        "apply_followup_carryover": False,
+        "confirmation_intent": "none",
+        "memory_command": "none",
+        "memory_id": None,
+        "memory_text": "",
+        "route_confidence": 0.0,
+        "uncertainty_reason": "turn_understanding_unavailable",
+        "route_source": "fallback",
+        "fallback_reason": "router_unavailable",
+        "guardrail_correction": "none",
+    }
+
+
+async def _understand_turn(
+    runtime: Any,
+    text: str,
+    *,
+    awaiting_confirmation: bool,
+    awaiting_repair_confirmation: bool,
+) -> dict[str, Any]:
+    payload = _default_turn_understanding_payload()
+    brain = getattr(runtime, "brain", None)
+    if brain is None or not hasattr(brain, "understand_turn"):
+        return payload
+    context = getattr(runtime, "_followup_carryover", {})
+    try:
+        decision = await brain.understand_turn(
+            user_text=text,
+            followup_context=context if isinstance(context, dict) else {},
+            awaiting_confirmation=awaiting_confirmation,
+            awaiting_repair_confirmation=awaiting_repair_confirmation,
+        )
+        if hasattr(brain, "latest_turn_understanding_trace"):
+            trace_payload = brain.latest_turn_understanding_trace()
+            if isinstance(trace_payload, dict) and trace_payload:
+                return {str(key): value for key, value in trace_payload.items()}
+        if hasattr(decision, "model_dump") and callable(decision.model_dump):
+            model_payload = decision.model_dump()
+            if isinstance(model_payload, dict):
+                payload.update({str(key): value for key, value in model_payload.items()})
+                return payload
+    except Exception as exc:
+        log.warning("Turn-understanding routing failed; using fallback: %s", exc)
+        payload["fallback_reason"] = "router_error"
+    return payload
 
 
 async def _semantic_turn_should_commit(
@@ -249,8 +299,13 @@ async def run(runtime: Any) -> None:
 
             repair_resolved_this_turn = False
             if runtime._awaiting_confirmation:
-                normalized = text.strip().lower()
-                intent = runtime._voice_controller().confirmation_intent(normalized)
+                understanding = await _understand_turn(
+                    runtime,
+                    text,
+                    awaiting_confirmation=True,
+                    awaiting_repair_confirmation=False,
+                )
+                intent = str(understanding.get("confirmation_intent", "none")).strip().lower()
                 if intent == "confirm" and runtime._pending_text:
                     runtime._awaiting_confirmation = False
                     text = runtime._pending_text
@@ -290,15 +345,19 @@ async def run(runtime: Any) -> None:
                     runtime._pending_text = None
 
             if runtime._awaiting_repair_confirmation:
-                normalized = text.strip().lower()
-                intent = runtime._voice_controller().confirmation_intent(normalized)
-                words = re.findall(r"[a-z0-9']+", normalized)
+                understanding = await _understand_turn(
+                    runtime,
+                    text,
+                    awaiting_confirmation=False,
+                    awaiting_repair_confirmation=True,
+                )
+                intent = str(understanding.get("confirmation_intent", "none")).strip().lower()
                 if intent == "confirm" and runtime._repair_candidate_text:
                     text = runtime._repair_candidate_text
                     runtime._awaiting_repair_confirmation = False
                     runtime._repair_candidate_text = None
                     repair_resolved_this_turn = True
-                elif intent in {"deny", "repeat"} and len(words) <= 2:
+                elif intent in {"deny", "repeat"}:
                     if runtime.tts:
                         await runtime._tts_queue.put(
                             (
@@ -406,7 +465,15 @@ async def run(runtime: Any) -> None:
                 runtime._last_interruption_route = dict(interruption_route)
                 runtime._interrupted_turn = None
 
-            intent_class = runtime._classify_user_intent(user_text)
+            turn_understanding = await _understand_turn(
+                runtime,
+                user_text,
+                awaiting_confirmation=False,
+                awaiting_repair_confirmation=False,
+            )
+            intent_class = str(turn_understanding.get("intent_class", "answer")).strip().lower()
+            if intent_class not in {"answer", "action", "hybrid"}:
+                intent_class = "answer"
             runtime._telemetry["intent_turns_total"] += 1.0
             if intent_class == "action":
                 runtime._telemetry["intent_action_turns"] += 1.0
@@ -414,9 +481,19 @@ async def run(runtime: Any) -> None:
                 runtime._telemetry["intent_hybrid_turns"] += 1.0
             else:
                 runtime._telemetry["intent_answer_turns"] += 1.0
-            looks_like_correction = runtime._looks_like_user_correction(user_text)
+            looks_like_correction = bool(
+                turn_understanding.get("looks_like_correction", False)
+            )
             if looks_like_correction:
                 runtime._telemetry["intent_corrections"] += 1.0
+            apply_followup_carryover = bool(
+                turn_understanding.get("apply_followup_carryover", False)
+            )
+            memory_command = str(
+                turn_understanding.get("memory_command", "none")
+            ).strip().lower()
+            memory_id = _safe_positive_int(turn_understanding.get("memory_id"))
+            memory_text = str(turn_understanding.get("memory_text", "")).strip()
 
             turn_started_at = time.time()
             learned_preferences: dict[str, str] = {}
@@ -454,7 +531,11 @@ async def run(runtime: Any) -> None:
                     runtime._telemetry["multimodal_low_confidence_turns"] += 1.0
             if (
                 not repair_resolved_this_turn
-                and runtime._requires_stt_repair(user_text, intent_class)
+                and runtime._requires_stt_repair(
+                    user_text,
+                    intent_class,
+                    looks_like_correction=looks_like_correction,
+                )
             ):
                 runtime._awaiting_repair_confirmation = True
                 runtime._repair_candidate_text = user_text
@@ -487,7 +568,18 @@ async def run(runtime: Any) -> None:
                 )
                 continue
 
-            memory_correction = runtime._parse_memory_correction_command(user_text)
+            memory_correction: tuple[str, dict[str, Any]] | None = None
+            if memory_command == "memory_forget" and memory_id is not None:
+                memory_correction = ("memory_forget", {"memory_id": memory_id})
+            elif (
+                memory_command == "memory_update"
+                and memory_id is not None
+                and memory_text
+            ):
+                memory_correction = (
+                    "memory_update",
+                    {"memory_id": memory_id, "text": memory_text},
+                )
             if memory_correction is not None:
                 tool_name, payload = memory_correction
                 if tool_name == "memory_forget":
@@ -591,6 +683,7 @@ async def run(runtime: Any) -> None:
                 runtime._with_followup_carryover(
                     user_text,
                     now_ts=turn_started_at,
+                    apply=apply_followup_carryover,
                 )
             )
             if response_input_text != user_text:

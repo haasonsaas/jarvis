@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import math
 import os
-import re
+import queue
 import sqlite3
+import threading
 import time
 import base64
 import hashlib
@@ -142,6 +143,10 @@ class MemoryEntry:
     sensitivity: float
     source: str
     score: float = 0.0
+    valid_from: float | None = None
+    valid_to: float | None = None
+    superseded_by: int | None = None
+    invalidated_reason: str = ""
 
 
 @dataclass
@@ -202,6 +207,8 @@ class MemoryStore:
         embedding_vector_weight: float = 0.65,
         embedding_min_similarity: float = 0.2,
         embedding_timeout_sec: float = 6.0,
+        ingest_async_enabled: bool = False,
+        ingest_queue_max: int = 256,
     ) -> None:
         if path not in {":memory:", ""}:
             parent = os.path.dirname(path)
@@ -226,6 +233,24 @@ class MemoryStore:
         self._embedding_timeout_sec = 6.0
         self._embedding_last_error = ""
         self._embedding_client: Any | None = None
+        self._ingest_async_enabled = bool(ingest_async_enabled)
+        queue_max = 256
+        try:
+            queue_max = int(ingest_queue_max)
+        except (TypeError, ValueError):
+            queue_max = 256
+        self._ingest_queue_max = max(8, min(10_000, queue_max))
+        self._ingest_queue: queue.Queue[tuple[int, str]] = queue.Queue(maxsize=self._ingest_queue_max)
+        self._ingest_stop = threading.Event()
+        self._ingest_thread: threading.Thread | None = None
+        self._ingest_stats: dict[str, Any] = {
+            "queued_total": 0,
+            "processed_total": 0,
+            "failed_total": 0,
+            "dropped_total": 0,
+            "last_error": "",
+            "last_success_at": None,
+        }
         self._configure_embeddings(
             embedding_enabled=embedding_enabled,
             embedding_model=embedding_model,
@@ -239,7 +264,9 @@ class MemoryStore:
         self._last_sync = None
         self._last_optimize = None
         self._last_vacuum = None
+        self._last_pre_compaction_flush = None
         self._init_schema()
+        self._start_ingest_worker()
 
     def _configure_connection(self) -> None:
         cur = self._conn.cursor()
@@ -326,6 +353,77 @@ class MemoryStore:
             self._embedding_last_error = "missing_api_key"
             return
 
+    def _start_ingest_worker(self) -> None:
+        if not self._ingest_async_enabled:
+            return
+        if self._ingest_thread is not None and self._ingest_thread.is_alive():
+            return
+        self._ingest_stop.clear()
+        self._ingest_thread = threading.Thread(
+            target=self._ingest_worker_loop,
+            name="jarvis-memory-ingest",
+            daemon=True,
+        )
+        self._ingest_thread.start()
+
+    def _stop_ingest_worker(self) -> None:
+        self._ingest_stop.set()
+        worker = self._ingest_thread
+        if worker is None:
+            return
+        if worker.is_alive():
+            worker.join(timeout=1.0)
+        self._ingest_thread = None
+
+    def _ingest_worker_loop(self) -> None:
+        while not self._ingest_stop.is_set():
+            try:
+                memory_id, clean_text = self._ingest_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            try:
+                self._process_ingest_job(memory_id, clean_text)
+            finally:
+                self._ingest_queue.task_done()
+
+    def _enqueue_ingest_job(self, memory_id: int, clean_text: str) -> None:
+        if not self._ingest_async_enabled:
+            self._process_ingest_job(memory_id, clean_text)
+            return
+        try:
+            self._ingest_queue.put_nowait((int(memory_id), str(clean_text)))
+            self._ingest_stats["queued_total"] = int(self._ingest_stats.get("queued_total", 0) or 0) + 1
+        except queue.Full:
+            self._ingest_stats["dropped_total"] = int(self._ingest_stats.get("dropped_total", 0) or 0) + 1
+            self._process_ingest_job(memory_id, clean_text)
+
+    def _drain_ingest_queue(self, *, max_jobs: int | None = None) -> int:
+        drained = 0
+        while True:
+            if max_jobs is not None and drained >= max_jobs:
+                break
+            try:
+                memory_id, clean_text = self._ingest_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                self._process_ingest_job(memory_id, clean_text)
+            finally:
+                self._ingest_queue.task_done()
+            drained += 1
+        return drained
+
+    def _process_ingest_job(self, memory_id: int, clean_text: str) -> None:
+        try:
+            if self._embedding_enabled:
+                self._refresh_embedding_for_memory(memory_id, clean_text)
+            self._ingest_stats["processed_total"] = int(self._ingest_stats.get("processed_total", 0) or 0) + 1
+            self._ingest_stats["last_error"] = ""
+            self._ingest_stats["last_success_at"] = time.time()
+        except Exception as exc:
+            self._ingest_stats["failed_total"] = int(self._ingest_stats.get("failed_total", 0) or 0) + 1
+            self._ingest_stats["last_error"] = str(exc)
+
     def _encrypt_text(self, text: str) -> str:
         value = str(text)
         if not self._encrypted or self._fernet is None:
@@ -364,7 +462,14 @@ class MemoryStore:
             """
         )
         self._ensure_column(cur, "memory", "sensitivity", "REAL NOT NULL DEFAULT 0.0")
+        self._ensure_column(cur, "memory", "valid_from", "REAL")
+        self._ensure_column(cur, "memory", "valid_to", "REAL")
+        self._ensure_column(cur, "memory", "superseded_by", "INTEGER")
+        self._ensure_column(cur, "memory", "invalidated_reason", "TEXT NOT NULL DEFAULT ''")
+        cur.execute("UPDATE memory SET valid_from = created_at WHERE valid_from IS NULL")
+        cur.execute("UPDATE memory SET invalidated_reason = '' WHERE invalidated_reason IS NULL")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memory_created_at ON memory(created_at DESC);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_memory_valid_to ON memory(valid_to, created_at DESC);")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS memory_meta (
@@ -385,6 +490,24 @@ class MemoryStore:
             """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model ON memory_embeddings(model);")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memory_assertions (
+                memory_id INTEGER PRIMARY KEY,
+                subject TEXT NOT NULL,
+                predicate TEXT NOT NULL,
+                polarity TEXT NOT NULL,
+                value TEXT NOT NULL,
+                valid_from REAL NOT NULL,
+                valid_to REAL,
+                invalidated_by INTEGER,
+                FOREIGN KEY(memory_id) REFERENCES memory(id) ON DELETE CASCADE
+            );
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memory_assertions_subject ON memory_assertions(subject, predicate, valid_to);"
+        )
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS task_plans (
@@ -497,28 +620,44 @@ class MemoryStore:
         stored_text = self._encrypt_text(clean)
         payload = json.dumps(tags or [])
         created_at = time.time()
+        assertion = None if self._encrypted else self._extract_assertion(clean)
         cur = self._conn.cursor()
         cur.execute(
             """
-            INSERT INTO memory(created_at, kind, text, tags, importance, sensitivity, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO memory(created_at, kind, text, tags, importance, sensitivity, source, valid_from, valid_to, superseded_by, invalidated_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, '')
             """,
-            (created_at, kind, stored_text, payload, float(importance), float(sensitivity), source),
+            (
+                created_at,
+                kind,
+                stored_text,
+                payload,
+                float(importance),
+                float(sensitivity),
+                source,
+                created_at,
+            ),
         )
         memory_id = int(cur.lastrowid)
         if self._fts_enabled and not self._encrypted:
             cur.execute("INSERT INTO memory_fts(rowid, text) VALUES (?, ?)", (memory_id, clean))
         if self._memory_enabled and not self._encrypted:
             cur.execute("INSERT INTO memory_vec(rowid, text) VALUES (?, ?)", (memory_id, clean))
+        if assertion is not None:
+            self._upsert_assertion(memory_id, assertion, valid_from=created_at)
         self._conn.commit()
-        if self._embedding_enabled:
-            self._refresh_embedding_for_memory(memory_id, clean)
+        self._enqueue_ingest_job(memory_id, clean)
         return memory_id
 
     def warm(self) -> None:
+        if self._ingest_async_enabled and (self._ingest_thread is None or not self._ingest_thread.is_alive()):
+            self._start_ingest_worker()
         self._last_warm = time.time()
 
     def sync(self) -> None:
+        if self._ingest_async_enabled:
+            # Flush queued enrichment so status/compaction snapshots see current state.
+            self._drain_ingest_queue()
         self._last_sync = time.time()
 
     def search_v2(
@@ -534,6 +673,7 @@ class MemoryStore:
         mmr_lambda: float = 0.7,
         sources: list[str] | None = None,
         candidate_multiplier: int = DEFAULT_SEARCH_CANDIDATE_MULTIPLIER,
+        include_inactive: bool = False,
     ) -> list[MemoryEntry]:
         cleaned = query.strip()
         if not cleaned:
@@ -546,6 +686,7 @@ class MemoryStore:
                 limit=candidate_limit,
                 max_sensitivity=max_sensitivity,
                 sources=sources,
+                include_inactive=include_inactive,
             )
             entries = self._apply_hybrid_scoring(entries, cleaned, hybrid_weight)
             if decay_enabled:
@@ -558,6 +699,7 @@ class MemoryStore:
             limit=candidate_limit,
             max_sensitivity=max_sensitivity,
             sources=sources,
+            include_inactive=include_inactive,
         )
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         keyword_rows = self._search_keyword(
@@ -566,6 +708,7 @@ class MemoryStore:
             sensitivity_clause,
             sensitivity_params,
             sources,
+            include_inactive=include_inactive,
         )
         if not keyword_rows and not vector_rows:
             return []
@@ -624,6 +767,7 @@ class MemoryStore:
             mmr_enabled=False,
             sources=sources,
             candidate_multiplier=1,
+            include_inactive=True,
         )
         top_matches: list[dict[str, Any]] = []
         duplicates: list[dict[str, Any]] = []
@@ -671,15 +815,23 @@ class MemoryStore:
         *,
         limit: int = 5,
         max_sensitivity: float | None = None,
+        include_inactive: bool = False,
     ) -> list[MemoryEntry]:
         cleaned = query.strip()
         if not cleaned:
             return []
         limit = self._normalize_limit(limit, default=5)
         if self._encrypted:
-            return self._search_encrypted(cleaned, limit=limit, max_sensitivity=max_sensitivity, sources=None)
+            return self._search_encrypted(
+                cleaned,
+                limit=limit,
+                max_sensitivity=max_sensitivity,
+                sources=None,
+                include_inactive=include_inactive,
+            )
         cur = self._conn.cursor()
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
+        active_clause, active_params = self._active_filter("memory", include_inactive=include_inactive)
         if self._fts_enabled:
             fts_query = self._build_fts_query(cleaned)
             if not fts_query:
@@ -688,35 +840,43 @@ class MemoryStore:
                 "SELECT memory.* FROM memory_fts "
                 "JOIN memory ON memory_fts.rowid = memory.id "
                 "WHERE memory_fts MATCH ? "
-                f"{sensitivity_clause} "
+                f"{sensitivity_clause} {active_clause} "
                 "ORDER BY bm25(memory_fts) ASC "
                 "LIMIT ?"
             )
-            rows = cur.execute(sql, (fts_query, *sensitivity_params, limit)).fetchall()
+            rows = cur.execute(sql, (fts_query, *sensitivity_params, *active_params, limit)).fetchall()
         else:
             like = f"%{cleaned}%"
             sql = (
                 "SELECT * FROM memory WHERE text LIKE ? "
-                f"{sensitivity_clause} "
+                f"{sensitivity_clause} {active_clause} "
                 "ORDER BY created_at DESC LIMIT ?"
             )
-            rows = cur.execute(sql, (like, *sensitivity_params, limit)).fetchall()
+            rows = cur.execute(sql, (like, *sensitivity_params, *active_params, limit)).fetchall()
         return [self._row_to_memory(row) for row in rows]
 
-    def recent(self, *, limit: int = 5, kind: str | None = None, sources: list[str] | None = None) -> list[MemoryEntry]:
+    def recent(
+        self,
+        *,
+        limit: int = 5,
+        kind: str | None = None,
+        sources: list[str] | None = None,
+        include_inactive: bool = False,
+    ) -> list[MemoryEntry]:
         limit = self._normalize_limit(limit, default=5)
         cur = self._conn.cursor()
         source_clause, source_params = self._source_filter(sources)
+        active_clause, active_params = self._active_filter("memory", include_inactive=include_inactive)
         if kind:
             sql = (
                 "SELECT * FROM memory WHERE kind = ? "
-                f"{source_clause} "
+                f"{source_clause} {active_clause} "
                 "ORDER BY created_at DESC LIMIT ?"
             )
-            rows = cur.execute(sql, (kind, *source_params, limit)).fetchall()
+            rows = cur.execute(sql, (kind, *source_params, *active_params, limit)).fetchall()
         else:
-            sql = f"SELECT * FROM memory WHERE 1=1 {source_clause} ORDER BY created_at DESC LIMIT ?"
-            rows = cur.execute(sql, (*source_params, limit)).fetchall()
+            sql = f"SELECT * FROM memory WHERE 1=1 {source_clause} {active_clause} ORDER BY created_at DESC LIMIT ?"
+            rows = cur.execute(sql, (*source_params, *active_params, limit)).fetchall()
         return [self._row_to_memory(row) for row in rows]
 
     def update_memory_text(self, memory_id: int, text: str) -> bool:
@@ -725,8 +885,12 @@ class MemoryStore:
             raise ValueError("memory text required")
         memory_key = int(memory_id)
         stored_text = self._encrypt_text(clean)
+        created_at: float | None = None
         with self._conn:
             cur = self._conn.cursor()
+            row = cur.execute("SELECT created_at FROM memory WHERE id = ?", (memory_key,)).fetchone()
+            if row is not None:
+                created_at = float(row["created_at"])
             cur.execute(
                 "UPDATE memory SET text = ? WHERE id = ?",
                 (stored_text, memory_key),
@@ -740,8 +904,12 @@ class MemoryStore:
             if self._memory_enabled and not self._encrypted:
                 cur.execute("DELETE FROM memory_vec WHERE rowid = ?", (memory_key,))
                 cur.execute("INSERT INTO memory_vec(rowid, text) VALUES (?, ?)", (memory_key, clean))
-        if self._embedding_enabled:
-            self._refresh_embedding_for_memory(memory_key, clean)
+            assertion = None if self._encrypted else self._extract_assertion(clean)
+            if assertion is None:
+                cur.execute("DELETE FROM memory_assertions WHERE memory_id = ?", (memory_key,))
+            elif created_at is not None:
+                self._upsert_assertion(memory_key, assertion, valid_from=created_at)
+        self._enqueue_ingest_job(memory_key, clean)
         return True
 
     def delete_memory(self, memory_id: int) -> bool:
@@ -754,6 +922,7 @@ class MemoryStore:
                 cur.execute("DELETE FROM memory_vec WHERE rowid = ?", (memory_key,))
             if self._embedding_enabled:
                 cur.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (memory_key,))
+            cur.execute("DELETE FROM memory_assertions WHERE memory_id = ?", (memory_key,))
             cur.execute("DELETE FROM memory WHERE id = ?", (memory_key,))
             return cur.rowcount > 0
 
@@ -1121,6 +1290,7 @@ class MemoryStore:
 
     def prune_retention(self, *, cutoff_ts: float) -> dict[str, int]:
         cutoff = float(cutoff_ts)
+        self.pre_compaction_flush(reason="retention")
         deleted = {
             "memory": 0,
             "task_plans": 0,
@@ -1140,6 +1310,10 @@ class MemoryStore:
                     "DELETE FROM memory_embeddings WHERE memory_id IN (SELECT id FROM memory WHERE created_at < ?)",
                     (cutoff,),
                 )
+            cur.execute(
+                "DELETE FROM memory_assertions WHERE memory_id IN (SELECT id FROM memory WHERE created_at < ?)",
+                (cutoff,),
+            )
             cur.execute("DELETE FROM memory WHERE created_at < ?", (cutoff,))
             deleted["memory"] = int(cur.rowcount)
 
@@ -1161,22 +1335,42 @@ class MemoryStore:
     def close(self) -> None:
         if self._closed:
             return
+        self._stop_ingest_worker()
+        self._drain_ingest_queue()
         self._conn.close()
         self._closed = True
 
     def memory_status(self) -> dict[str, Any]:
         cur = self._conn.cursor()
         count = cur.execute("SELECT COUNT(*) as c FROM memory").fetchone()["c"]
+        active_count_row = cur.execute("SELECT COUNT(*) AS c FROM memory WHERE valid_to IS NULL").fetchone()
+        active_count = int(active_count_row["c"]) if active_count_row is not None else 0
+        historical_count = max(0, int(count) - active_count)
         sources = cur.execute("SELECT source, COUNT(*) as c FROM memory GROUP BY source").fetchall()
         source_counts = {str(row["source"]): int(row["c"]) for row in sources}
         embedding_count_row = cur.execute("SELECT COUNT(*) AS c FROM memory_embeddings").fetchone()
         embedding_count = int(embedding_count_row["c"]) if embedding_count_row is not None else 0
+        assertion_total_row = cur.execute("SELECT COUNT(*) AS c FROM memory_assertions").fetchone()
+        assertion_total = int(assertion_total_row["c"]) if assertion_total_row is not None else 0
+        assertion_active_row = cur.execute("SELECT COUNT(*) AS c FROM memory_assertions WHERE valid_to IS NULL").fetchone()
+        assertion_active = int(assertion_active_row["c"]) if assertion_active_row is not None else 0
+        ingest_thread_alive = self._ingest_thread is not None and self._ingest_thread.is_alive()
         return {
             "entries": int(count),
+            "active_entries": int(active_count),
+            "historical_entries": int(historical_count),
             "fts": self._fts_enabled,
             "vector": self._memory_enabled,
             "encrypted": self._encrypted,
             "crypto_available": self._crypto_available,
+            "bitemporal": {
+                "enabled": True,
+                "last_pre_compaction_flush": self._last_pre_compaction_flush,
+            },
+            "entity_graph": {
+                "assertions_total": assertion_total,
+                "assertions_active": assertion_active,
+            },
             "semantic_vector": {
                 "enabled": self._embedding_enabled,
                 "model": self._embedding_model,
@@ -1185,6 +1379,18 @@ class MemoryStore:
                 "min_similarity": self._embedding_min_similarity,
                 "last_error": self._embedding_last_error,
             },
+            "ingestion_pipeline": {
+                "async_enabled": self._ingest_async_enabled,
+                "queue_max": self._ingest_queue_max,
+                "queue_pending": self._ingest_queue.qsize() if self._ingest_async_enabled else 0,
+                "worker_alive": ingest_thread_alive,
+                "queued_total": int(self._ingest_stats.get("queued_total", 0) or 0),
+                "processed_total": int(self._ingest_stats.get("processed_total", 0) or 0),
+                "failed_total": int(self._ingest_stats.get("failed_total", 0) or 0),
+                "dropped_total": int(self._ingest_stats.get("dropped_total", 0) or 0),
+                "last_error": str(self._ingest_stats.get("last_error", "") or ""),
+                "last_success_at": self._ingest_stats.get("last_success_at"),
+            },
             "sources": source_counts,
             "timers": self.timer_counts(),
             "reminders": self.reminder_counts(),
@@ -1192,6 +1398,101 @@ class MemoryStore:
             "last_sync": self._last_sync,
             "last_optimize": self._last_optimize,
             "last_vacuum": self._last_vacuum,
+        }
+
+    def memory_doctor(self) -> dict[str, Any]:
+        cur = self._conn.cursor()
+        total_row = cur.execute("SELECT COUNT(*) AS c FROM memory").fetchone()
+        total_entries = int(total_row["c"]) if total_row is not None else 0
+        active_row = cur.execute("SELECT COUNT(*) AS c FROM memory WHERE valid_to IS NULL").fetchone()
+        active_entries = int(active_row["c"]) if active_row is not None else 0
+        orphan_embeddings_row = cur.execute(
+            "SELECT COUNT(*) AS c FROM memory_embeddings WHERE memory_id NOT IN (SELECT id FROM memory)"
+        ).fetchone()
+        orphan_embeddings = int(orphan_embeddings_row["c"]) if orphan_embeddings_row is not None else 0
+        contradiction_without_reason_row = cur.execute(
+            "SELECT COUNT(*) AS c FROM memory WHERE valid_to IS NOT NULL AND (invalidated_reason IS NULL OR invalidated_reason = '')"
+        ).fetchone()
+        stale_invalidation_rows = (
+            int(contradiction_without_reason_row["c"])
+            if contradiction_without_reason_row is not None
+            else 0
+        )
+        assertion_orphans_row = cur.execute(
+            "SELECT COUNT(*) AS c FROM memory_assertions WHERE memory_id NOT IN (SELECT id FROM memory)"
+        ).fetchone()
+        assertion_orphans = int(assertion_orphans_row["c"]) if assertion_orphans_row is not None else 0
+        warnings: list[str] = []
+        if orphan_embeddings > 0:
+            warnings.append(f"orphan_embeddings={orphan_embeddings}")
+        if assertion_orphans > 0:
+            warnings.append(f"orphan_assertions={assertion_orphans}")
+        if stale_invalidation_rows > 0:
+            warnings.append(f"invalidation_reason_missing={stale_invalidation_rows}")
+        pending_jobs = self._ingest_queue.qsize() if self._ingest_async_enabled else 0
+        if pending_jobs > 0:
+            warnings.append(f"ingest_queue_pending={pending_jobs}")
+        return {
+            "status": "degraded" if warnings else "ok",
+            "entries_total": total_entries,
+            "entries_active": active_entries,
+            "entries_historical": max(0, total_entries - active_entries),
+            "orphan_embeddings": orphan_embeddings,
+            "orphan_assertions": assertion_orphans,
+            "invalidation_reason_missing": stale_invalidation_rows,
+            "ingest_queue_pending": pending_jobs,
+            "warnings": warnings,
+            "checked_at": time.time(),
+        }
+
+    def pre_compaction_flush(self, *, reason: str = "compaction") -> dict[str, Any]:
+        queue_before = self._ingest_queue.qsize() if self._ingest_async_enabled else 0
+        if self._ingest_async_enabled:
+            self._drain_ingest_queue()
+        self._last_pre_compaction_flush = time.time()
+        self._last_sync = self._last_pre_compaction_flush
+        return {
+            "reason": str(reason or "compaction"),
+            "queue_before": int(queue_before),
+            "queue_after": self._ingest_queue.qsize() if self._ingest_async_enabled else 0,
+            "flushed_at": self._last_pre_compaction_flush,
+        }
+
+    def entity_graph_snapshot(self, *, limit: int = 200, include_inactive: bool = False) -> dict[str, Any]:
+        limit = self._normalize_limit(limit, default=200)
+        active_clause = "" if include_inactive else "WHERE valid_to IS NULL"
+        rows = self._conn.cursor().execute(
+            (
+                "SELECT memory_id, subject, predicate, polarity, value, valid_from, valid_to "
+                "FROM memory_assertions "
+                f"{active_clause} "
+                "ORDER BY valid_from DESC LIMIT ?"
+            ),
+            (limit,),
+        ).fetchall()
+        edges: list[dict[str, Any]] = []
+        nodes: set[str] = set()
+        for row in rows:
+            subject = str(row["subject"])
+            value = str(row["value"])
+            nodes.add(subject)
+            nodes.add(value)
+            edges.append(
+                {
+                    "memory_id": int(row["memory_id"]),
+                    "subject": subject,
+                    "predicate": str(row["predicate"]),
+                    "polarity": str(row["polarity"]),
+                    "value": value,
+                    "valid_from": float(row["valid_from"]),
+                    "valid_to": float(row["valid_to"]) if row["valid_to"] is not None else None,
+                }
+            )
+        return {
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "nodes": sorted(nodes)[: min(len(nodes), limit)],
+            "edges": edges,
         }
 
     def optimize(self) -> None:
@@ -1218,6 +1519,11 @@ class MemoryStore:
                 tags = [str(tag) for tag in parsed if str(tag).strip()]
             else:
                 tags = []
+        row_keys = set(row.keys())
+        valid_from = row["valid_from"] if "valid_from" in row_keys else row["created_at"]
+        valid_to = row["valid_to"] if "valid_to" in row_keys else None
+        superseded_by = row["superseded_by"] if "superseded_by" in row_keys else None
+        invalidated_reason = row["invalidated_reason"] if "invalidated_reason" in row_keys else ""
         return MemoryEntry(
             id=int(row["id"]),
             created_at=float(row["created_at"]),
@@ -1227,6 +1533,10 @@ class MemoryStore:
             importance=float(row["importance"]),
             sensitivity=float(row["sensitivity"]),
             source=str(row["source"]),
+            valid_from=float(valid_from) if valid_from is not None else None,
+            valid_to=float(valid_to) if valid_to is not None else None,
+            superseded_by=int(superseded_by) if superseded_by is not None else None,
+            invalidated_reason=str(invalidated_reason or ""),
         )
 
     def _row_to_timer(self, row: sqlite3.Row) -> TimerEntry:
@@ -1297,7 +1607,10 @@ class MemoryStore:
         return keywords
 
     def _tokenize_words(self, text: str) -> list[str]:
-        return re.findall(r"[a-z0-9_']+", str(text or "").lower())
+        chars: list[str] = []
+        for ch in str(text or "").lower():
+            chars.append(ch if (ch.isalnum() or ch in {"_", "'"}) else " ")
+        return [token for token in "".join(chars).split() if token]
 
     def _expand_query_tokens(self, tokens: list[str]) -> list[str]:
         expanded: list[str] = []
@@ -1371,32 +1684,47 @@ class MemoryStore:
         parsed_text = self._normalize_text(text)
         if not parsed_text:
             return None
-        match = re.match(
-            (
-                r"^(?P<subject>[a-z0-9][a-z0-9 _'-]{1,80}?)\s+"
-                r"(?P<predicate>is|are|likes|like|prefers|prefer)\s+"
-                r"(?P<negation>not\s+)?"
-                r"(?P<value>[a-z0-9][a-z0-9 _'/-]{0,80})$"
-            ),
-            parsed_text,
-            re.IGNORECASE,
-        )
-        if not match:
+        cleaned_chars: list[str] = []
+        for ch in parsed_text:
+            if ch.isalnum() or ch in {" ", "_", "'", "-", "/"}:
+                cleaned_chars.append(ch)
+            else:
+                cleaned_chars.append(" ")
+        cleaned = " ".join("".join(cleaned_chars).split())
+        if not cleaned:
             return None
-        predicate_raw = match.group("predicate").strip().lower()
+        tokens = cleaned.split()
+        if len(tokens) < 3:
+            return None
+        predicate_index = -1
+        predicate_raw = ""
+        for index, token in enumerate(tokens):
+            if token in {"is", "are", "likes", "like", "prefers", "prefer"}:
+                predicate_index = index
+                predicate_raw = token
+                break
+        if predicate_index <= 0 or predicate_index >= (len(tokens) - 1):
+            return None
+        subject = self._normalize_text(" ".join(tokens[:predicate_index]))
+        remainder = tokens[predicate_index + 1 :]
+        polarity = "positive"
+        if remainder and remainder[0] == "not":
+            polarity = "negative"
+            remainder = remainder[1:]
+        value = self._normalize_text(" ".join(remainder))
+        if not subject or not value:
+            return None
+        if len(subject) > 80 or len(value) > 80:
+            return None
         predicate = {
             "are": "is",
             "like": "likes",
             "prefer": "prefers",
         }.get(predicate_raw, predicate_raw)
-        subject = self._normalize_text(match.group("subject"))
-        value = self._normalize_text(match.group("value"))
-        if not subject or not value:
-            return None
         return {
             "subject": subject,
             "predicate": predicate,
-            "polarity": "negative" if match.group("negation") else "positive",
+            "polarity": polarity,
             "value": value,
         }
 
@@ -1415,6 +1743,66 @@ class MemoryStore:
         if left.get("predicate") == "is" and left_polarity == "positive" and right_polarity == "positive":
             return left_value != right_value
         return False
+
+    def _upsert_assertion(self, memory_id: int, assertion: dict[str, str], *, valid_from: float) -> None:
+        subject = str(assertion.get("subject", "")).strip().lower()
+        predicate = str(assertion.get("predicate", "")).strip().lower()
+        polarity = str(assertion.get("polarity", "positive")).strip().lower() or "positive"
+        value = str(assertion.get("value", "")).strip().lower()
+        if not subject or not predicate or not value:
+            return
+        cur = self._conn.cursor()
+        rows = cur.execute(
+            (
+                "SELECT memory_assertions.memory_id, subject, predicate, polarity, value "
+                "FROM memory_assertions "
+                "JOIN memory ON memory_assertions.memory_id = memory.id "
+                "WHERE subject = ? AND predicate = ? "
+                "AND memory_assertions.valid_to IS NULL "
+                "AND memory_assertions.memory_id != ?"
+            ),
+            (subject, predicate, int(memory_id)),
+        ).fetchall()
+        incoming = {
+            "subject": subject,
+            "predicate": predicate,
+            "polarity": polarity,
+            "value": value,
+        }
+        for row in rows:
+            existing = {
+                "subject": str(row["subject"]),
+                "predicate": str(row["predicate"]),
+                "polarity": str(row["polarity"]),
+                "value": str(row["value"]),
+            }
+            if not self._assertions_conflict(incoming, existing):
+                continue
+            stale_memory_id = int(row["memory_id"])
+            cur.execute(
+                (
+                    "UPDATE memory "
+                    "SET valid_to = ?, superseded_by = ?, invalidated_reason = ? "
+                    "WHERE id = ? AND valid_to IS NULL"
+                ),
+                (float(valid_from), int(memory_id), "contradiction", stale_memory_id),
+            )
+            cur.execute(
+                (
+                    "UPDATE memory_assertions "
+                    "SET valid_to = ?, invalidated_by = ? "
+                    "WHERE memory_id = ? AND valid_to IS NULL"
+                ),
+                (float(valid_from), int(memory_id), stale_memory_id),
+            )
+        cur.execute("DELETE FROM memory_assertions WHERE memory_id = ?", (int(memory_id),))
+        cur.execute(
+            (
+                "INSERT INTO memory_assertions(memory_id, subject, predicate, polarity, value, valid_from, valid_to, invalidated_by) "
+                "VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)"
+            ),
+            (int(memory_id), subject, predicate, polarity, value, float(valid_from)),
+        )
 
     def _embedding_client_instance(self) -> Any | None:
         if not self._embedding_enabled:
@@ -1503,6 +1891,7 @@ class MemoryStore:
         limit: int,
         max_sensitivity: float | None,
         sources: list[str] | None,
+        include_inactive: bool,
     ) -> list[tuple[MemoryEntry, float]]:
         if not self._embedding_enabled:
             return []
@@ -1515,6 +1904,7 @@ class MemoryStore:
             return []
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         source_clause, source_params = self._source_filter(sources)
+        active_clause, active_params = self._active_filter("memory", include_inactive=include_inactive)
         fetch_limit = min(MAX_SEARCH_FANOUT, max(limit, limit * 6))
         rows = self._conn.cursor().execute(
             (
@@ -1522,10 +1912,10 @@ class MemoryStore:
                 "FROM memory_embeddings "
                 "JOIN memory ON memory_embeddings.memory_id = memory.id "
                 "WHERE memory_embeddings.model = ? "
-                f"{sensitivity_clause} {source_clause} "
+                f"{sensitivity_clause} {source_clause} {active_clause} "
                 "ORDER BY memory.created_at DESC LIMIT ?"
             ),
-            (self._embedding_model, *sensitivity_params, *source_params, fetch_limit),
+            (self._embedding_model, *sensitivity_params, *source_params, *active_params, fetch_limit),
         ).fetchall()
         scored: list[tuple[MemoryEntry, float]] = []
         for row in rows:
@@ -1565,8 +1955,11 @@ class MemoryStore:
         sensitivity_clause: str,
         sensitivity_params: list[float],
         sources: list[str] | None,
+        *,
+        include_inactive: bool,
     ) -> list[sqlite3.Row]:
         source_clause, source_params = self._source_filter(sources)
+        active_clause, active_params = self._active_filter("memory", include_inactive=include_inactive)
         if self._fts_enabled:
             keywords = self._extract_keywords(query)
             keywords.extend(self._expand_query_tokens(keywords))
@@ -1580,21 +1973,24 @@ class MemoryStore:
                 "SELECT memory.* FROM memory_fts "
                 "JOIN memory ON memory_fts.rowid = memory.id "
                 "WHERE memory_fts MATCH ? "
-                f"{sensitivity_clause} {source_clause} "
+                f"{sensitivity_clause} {source_clause} {active_clause} "
                 "ORDER BY bm25(memory_fts) ASC "
                 "LIMIT ?"
             )
             return self._conn.cursor().execute(
                 sql,
-                (expanded, *sensitivity_params, *source_params, limit),
+                (expanded, *sensitivity_params, *source_params, *active_params, limit),
             ).fetchall()
         like = f"%{query}%"
         sql = (
             "SELECT * FROM memory WHERE text LIKE ? "
-            f"{sensitivity_clause} {source_clause} "
+            f"{sensitivity_clause} {source_clause} {active_clause} "
             "ORDER BY created_at DESC LIMIT ?"
         )
-        return self._conn.cursor().execute(sql, (like, *sensitivity_params, *source_params, limit)).fetchall()
+        return self._conn.cursor().execute(
+            sql,
+            (like, *sensitivity_params, *source_params, *active_params, limit),
+        ).fetchall()
 
     def _search_encrypted(
         self,
@@ -1603,20 +1999,22 @@ class MemoryStore:
         limit: int,
         max_sensitivity: float | None,
         sources: list[str] | None,
+        include_inactive: bool,
     ) -> list[MemoryEntry]:
         lowered = self._normalize_text(query)
         query_tokens = set(self._tokenize_words(lowered))
         cur = self._conn.cursor()
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         source_clause, source_params = self._source_filter(sources)
+        active_clause, active_params = self._active_filter("memory", include_inactive=include_inactive)
         fetch_limit = min(MAX_SEARCH_FANOUT, max(limit, limit * 5))
         rows = cur.execute(
             (
                 "SELECT * FROM memory WHERE 1=1 "
-                f"{sensitivity_clause} {source_clause} "
+                f"{sensitivity_clause} {source_clause} {active_clause} "
                 "ORDER BY created_at DESC LIMIT ?"
             ),
-            (*sensitivity_params, *source_params, fetch_limit),
+            (*sensitivity_params, *source_params, *active_params, fetch_limit),
         ).fetchall()
         results: list[MemoryEntry] = []
         for row in rows:
@@ -1735,6 +2133,14 @@ class MemoryStore:
             selected.append(best)
             remaining.remove(best)
         return selected
+
+    def _active_filter(self, table_name: str, *, include_inactive: bool) -> tuple[str, list[Any]]:
+        if include_inactive:
+            return "", []
+        prefix = str(table_name or "").strip()
+        if prefix:
+            return f"AND {prefix}.valid_to IS NULL", []
+        return "AND valid_to IS NULL", []
 
     def _source_filter(self, sources: list[str] | None) -> tuple[str, list[str]]:
         if not sources:

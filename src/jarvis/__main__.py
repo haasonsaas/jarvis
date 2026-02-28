@@ -634,12 +634,19 @@ class Jarvis:
             now_ts=now_ts,
         )
 
-    def _with_followup_carryover(self, text: str, *, now_ts: float | None = None) -> tuple[str, bool]:
+    def _with_followup_carryover(
+        self,
+        text: str,
+        *,
+        now_ts: float | None = None,
+        apply: bool | None = None,
+    ) -> tuple[str, bool]:
         context = getattr(self, "_followup_carryover", {})
         return _turn_with_followup_carryover(
             text,
             context=context,
             now_ts=now_ts,
+            apply=apply,
         )
 
     def _update_followup_carryover(
@@ -831,11 +838,22 @@ class Jarvis:
             excerpt = excerpt[:137].rstrip() + "..."
         return REPAIR_CONFIRMATION_TEMPLATE.format(text=excerpt)
 
-    def _requires_stt_repair(self, text: str, intent_class: str) -> bool:
+    def _requires_stt_repair(
+        self,
+        text: str,
+        intent_class: str,
+        *,
+        looks_like_correction: bool | None = None,
+    ) -> bool:
+        correction_flag = (
+            bool(self._looks_like_user_correction(text))
+            if looks_like_correction is None
+            else bool(looks_like_correction)
+        )
         return _turn_requires_stt_repair(
             text,
             intent_class,
-            looks_like_user_correction_fn=self._looks_like_user_correction,
+            looks_like_correction=correction_flag,
             diagnostics=self._stt_diagnostics_snapshot(),
             repair_min_words=REPAIR_MIN_WORDS,
             repair_confidence_threshold=REPAIR_CONFIDENCE_THRESHOLD,

@@ -68,6 +68,7 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
         maximum=1.0,
     )
     include_sensitive = _as_bool(args.get("include_sensitive"), default=False)
+    include_inactive = _as_bool(args.get("include_inactive"), default=False)
     max_sensitivity = None if include_sensitive else _as_float(
         args.get("max_sensitivity", default_max_sensitivity),
         default_max_sensitivity,
@@ -101,6 +102,7 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
                 maximum=1.0,
             ),
             sources=source_list,
+            include_inactive=include_inactive,
         )
     except Exception as e:
         _record_service_error("memory_search", start_time, "storage_error")
@@ -126,9 +128,12 @@ async def memory_search(args: dict[str, Any]) -> dict[str, Any]:
         source = str(entry.source).strip() or "unknown"
         scope = _memory_entry_scope(entry)
         trail = _memory_source_trail(entry)
+        validity = ""
+        if entry.valid_to is not None:
+            validity = f" valid_to={entry.valid_to:.0f}"
         lines.append(
             f"[{entry.id}] ({entry.kind}) confidence={confidence_label}({confidence_score:.2f}) "
-            f"scope={scope} source={source} score={entry.score:.2f} trail={trail} {snippet}{tags}"
+            f"scope={scope} source={source} score={entry.score:.2f} trail={trail}{validity} {snippet}{tags}"
         )
     record_summary("memory_search", "ok", start_time, effect=f"scopes={','.join(scoped_policy)}")
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}

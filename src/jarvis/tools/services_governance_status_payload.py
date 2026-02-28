@@ -6,6 +6,7 @@ from typing import Any
 
 def tool_policy_status_snapshot(services_module: Any) -> dict[str, Any]:
     s = services_module
+    cfg = s._config
     return {
         "allow_count": len(s._tool_allowlist),
         "deny_count": len(s._tool_denylist),
@@ -22,6 +23,8 @@ def tool_policy_status_snapshot(services_module: Any) -> dict[str, Any]:
         "nudge_quiet_window_active": s._quiet_window_active(),
         "email_permission_profile": s._email_permission_profile,
         "memory_pii_guardrails_enabled": s._memory_pii_guardrails_enabled,
+        "memory_ingestion_min_confidence": float(getattr(cfg, "memory_ingestion_min_confidence", 0.0) if cfg else 0.0),
+        "memory_ingest_async_enabled": bool(getattr(cfg, "memory_ingest_async_enabled", False) if cfg else False),
         "identity_enforcement_enabled": s._identity_enforcement_enabled,
         "identity_default_profile": s._identity_default_profile,
         "identity_require_approval": s._identity_require_approval,

@@ -40,13 +40,14 @@ SERVICE_TOOL_SCHEMAS_ADVANCED: dict[str, dict[str, Any]] = {
     "memory_governance": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "description": "partition | quality_audit | cleanup"},
+            "action": {"type": "string", "description": "partition | quality_audit | cleanup | doctor | graph | compaction_flush"},
             "user": {"type": "string"},
             "shared_scopes": {"type": "array", "items": {"type": "string"}},
             "private_scopes": {"type": "array", "items": {"type": "string"}},
             "stale_days": {"type": "number"},
             "apply": {"type": "boolean"},
             "limit": {"type": "integer"},
+            "include_inactive": {"type": "boolean"},
         },
         "required": ["action"],
     },

@@ -10,15 +10,46 @@ def _services():
 
     return s
 
+
+def _parse_simple_assertion(text: str) -> tuple[str, str] | None:
+    cleaned_chars: list[str] = []
+    for ch in str(text or "").strip().lower():
+        if ch.isalnum() or ch in {" ", "_", "-"}:
+            cleaned_chars.append(ch)
+        else:
+            cleaned_chars.append(" ")
+    normalized = " ".join("".join(cleaned_chars).split())
+    if not normalized:
+        return None
+    tokens = normalized.split()
+    if len(tokens) < 3:
+        return None
+    try:
+        predicate_index = tokens.index("is")
+    except ValueError:
+        return None
+    if predicate_index <= 0 or predicate_index >= (len(tokens) - 1):
+        return None
+    subject = " ".join(tokens[:predicate_index]).strip()
+    remainder = tokens[predicate_index + 1 :]
+    polarity_prefix = "yes:"
+    if remainder and remainder[0] == "not":
+        polarity_prefix = "not:"
+        remainder = remainder[1:]
+    value = " ".join(remainder).strip()
+    if len(subject) < 2 or len(subject) > 80 or not value or len(value) > 80:
+        return None
+    return subject, f"{polarity_prefix}{value}"
+
+
 def _memory_quality_audit(*, stale_days: float, limit: int) -> dict[str, Any]:
     s = _services()
     time = s.time
-    re = s.re
     _memory = s._memory
 
     if _memory is None:
         return {"error": "missing_store"}
-    entries = _memory.recent(limit=limit)
+    entries = _memory.recent(limit=limit, include_inactive=True)
     duplicates: list[dict[str, Any]] = []
     duplicate_ids: list[int] = []
     seen_by_text: dict[str, int] = {}
@@ -27,8 +58,6 @@ def _memory_quality_audit(*, stale_days: float, limit: int) -> dict[str, Any]:
     assertions: dict[str, str] = {}
     now = time.time()
     stale_cutoff = now - (max(1.0, stale_days) * 86400.0)
-    is_not_re = re.compile(r"^\s*(?P<subject>[a-z0-9 _-]{2,})\s+is\s+not\s+(?P<value>[a-z0-9 _-]{1,80})\s*$", re.IGNORECASE)
-    is_re = re.compile(r"^\s*(?P<subject>[a-z0-9 _-]{2,})\s+is\s+(?P<value>[a-z0-9 _-]{1,80})\s*$", re.IGNORECASE)
     for entry in entries:
         text_key = " ".join(str(entry.text).strip().lower().split())
         if text_key:
@@ -40,18 +69,9 @@ def _memory_quality_audit(*, stale_days: float, limit: int) -> dict[str, Any]:
                 duplicates.append({"memory_id": int(entry.id), "duplicate_of": int(prior_id)})
         if float(entry.created_at) < stale_cutoff:
             stale_ids.append(int(entry.id))
-        text = str(entry.text).strip().lower()
-        neg = is_not_re.match(text)
-        pos = is_re.match(text)
-        if neg:
-            key = neg.group("subject").strip()
-            value = f"not:{neg.group('value').strip()}"
-        elif pos:
-            key = pos.group("subject").strip()
-            value = f"yes:{pos.group('value').strip()}"
-        else:
-            key = ""
-            value = ""
+        parsed = _parse_simple_assertion(str(entry.text))
+        key = parsed[0] if parsed else ""
+        value = parsed[1] if parsed else ""
         if key:
             previous = assertions.get(key)
             if previous is not None and previous != value:
@@ -141,20 +161,72 @@ async def memory_governance(args: dict[str, Any]) -> dict[str, Any]:
         candidate_ids = sorted(set(duplicate_ids + stale_ids))
         removed = 0
         if apply:
+            flush_payload = _memory.pre_compaction_flush(reason="governance_cleanup")
             for memory_id in candidate_ids:
                 with suppress(Exception):
                     if _memory.delete_memory(memory_id):
                         removed += 1
+        else:
+            flush_payload = None
         payload = {
             "action": action,
             "apply": apply,
             "candidate_count": len(candidate_ids),
             "removed_count": removed,
             "candidate_ids": candidate_ids[:200],
+            "pre_compaction_flush": flush_payload,
         }
         record_summary("memory_governance", "ok", start_time, effect="cleanup_applied" if apply else "cleanup_preview", risk="low")
         return _expansion_payload_response(payload)
 
+    if action == "doctor":
+        if _memory is None:
+            _record_service_error("memory_governance", start_time, "missing_store")
+            return {"content": [{"type": "text", "text": "Memory store not available."}]}
+        try:
+            payload = {
+                "action": action,
+                "doctor": _memory.memory_doctor(),
+            }
+        except Exception as exc:
+            _record_service_error("memory_governance", start_time, "storage_error")
+            return {"content": [{"type": "text", "text": f"Memory doctor failed: {exc}"}]}
+        record_summary("memory_governance", "ok", start_time, effect="doctor", risk="low")
+        return _expansion_payload_response(payload)
+
+    if action == "graph":
+        if _memory is None:
+            _record_service_error("memory_governance", start_time, "missing_store")
+            return {"content": [{"type": "text", "text": "Memory store not available."}]}
+        limit = _as_int(args.get("limit", 200), 200, minimum=1, maximum=1000)
+        include_inactive = _as_bool(args.get("include_inactive"), default=False)
+        try:
+            snapshot = _memory.entity_graph_snapshot(limit=limit, include_inactive=include_inactive)
+        except Exception as exc:
+            _record_service_error("memory_governance", start_time, "storage_error")
+            return {"content": [{"type": "text", "text": f"Memory graph failed: {exc}"}]}
+        payload = {
+            "action": action,
+            "include_inactive": include_inactive,
+            "graph": snapshot,
+        }
+        record_summary("memory_governance", "ok", start_time, effect="graph", risk="low")
+        return _expansion_payload_response(payload)
+
+    if action == "compaction_flush":
+        if _memory is None:
+            _record_service_error("memory_governance", start_time, "missing_store")
+            return {"content": [{"type": "text", "text": "Memory store not available."}]}
+        try:
+            payload = {
+                "action": action,
+                "flush": _memory.pre_compaction_flush(reason="manual"),
+            }
+        except Exception as exc:
+            _record_service_error("memory_governance", start_time, "storage_error")
+            return {"content": [{"type": "text", "text": f"Compaction flush failed: {exc}"}]}
+        record_summary("memory_governance", "ok", start_time, effect="compaction_flush", risk="low")
+        return _expansion_payload_response(payload)
+
     _record_service_error("memory_governance", start_time, "invalid_data")
     return {"content": [{"type": "text", "text": "Unknown memory_governance action."}]}
-

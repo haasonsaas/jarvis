@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from jarvis.presence import State
 from jarvis.tool_errors import TOOL_SERVICE_ERROR_CODES, TOOL_STORAGE_ERROR_DETAILS
 
@@ -43,14 +41,6 @@ VALID_VOICE_PROFILE_TONE = {"auto", "formal", "witty", "empathetic", "direct"}
 VALID_CONTROL_PRESETS = {"quiet_hours", "demo_mode", "maintenance_mode"}
 VALID_OPERATOR_AUTH_MODES = {"off", "token", "session"}
 
-MEMORY_FORGET_RE = re.compile(
-    r"^(?:please\s+)?(?:forget|delete|remove)\s+(?:memory\s*)?(?:id\s*)?(?P<memory_id>\d+)\s*$",
-    re.IGNORECASE,
-)
-MEMORY_UPDATE_RE = re.compile(
-    r"^(?:please\s+)?(?:update|change|edit)\s+(?:memory\s*)?(?:id\s*)?(?P<memory_id>\d+)\s+(?:to|with)\s+(?P<text>.+)$",
-    re.IGNORECASE,
-)
 ACTION_INTENT_TERMS = {
     "turn",
     "set",

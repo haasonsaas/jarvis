@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 try:
@@ -65,16 +64,7 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
         if isinstance(parsed, dict):
             return parsed
     except Exception:
-        pass
-    match = re.search(r"\{.*\}", raw, re.DOTALL)
-    if not match:
         return None
-    try:
-        parsed = json.loads(match.group(0))
-    except Exception:
-        return None
-    if isinstance(parsed, dict):
-        return parsed
     return None
 
 
@@ -185,6 +175,82 @@ async def _resolve_conflict_decision(
         timeout_sec=timeout_sec,
     )
 
+
+def _coerce_ingestion_policy(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return {str(key): value for key, value in raw.items()}
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return {str(key): value for key, value in parsed.items()}
+
+
+def _list_of_lower_strings(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    return [str(item).strip().lower() for item in raw if str(item).strip()]
+
+
+def _ingestion_policy_decision(
+    *,
+    policy: dict[str, Any],
+    kind: str,
+    source: str,
+    scope: str,
+    tags: list[str],
+    text: str,
+    importance: float,
+    sensitivity: float,
+    confidence: float,
+) -> tuple[bool, str]:
+    allow_kinds = _list_of_lower_strings(policy.get("allow_kinds"))
+    if allow_kinds and kind.lower() not in allow_kinds:
+        return False, "kind_not_allowed"
+    deny_sources = _list_of_lower_strings(policy.get("deny_sources"))
+    if deny_sources and source.lower() in deny_sources:
+        return False, "source_denied"
+    allow_scopes = _list_of_lower_strings(policy.get("allow_scopes"))
+    if allow_scopes and scope.lower() not in allow_scopes:
+        return False, "scope_not_allowed"
+    require_tags = set(_list_of_lower_strings(policy.get("require_tags")))
+    lowered_tags = {str(tag).strip().lower() for tag in tags if str(tag).strip()}
+    if require_tags and not require_tags.issubset(lowered_tags):
+        return False, "required_tags_missing"
+    try:
+        max_sensitivity = float(policy.get("max_sensitivity"))
+    except Exception:
+        max_sensitivity = 1.0
+    if max_sensitivity < 1.0 and sensitivity > max_sensitivity:
+        return False, "sensitivity_above_policy"
+    try:
+        min_importance = float(policy.get("min_importance"))
+    except Exception:
+        min_importance = 0.0
+    if min_importance > 0.0 and importance < min_importance:
+        return False, "importance_below_policy"
+    deny_patterns = (
+        [str(item).strip().lower() for item in policy.get("deny_patterns", []) if str(item).strip()]
+        if isinstance(policy.get("deny_patterns"), list)
+        else []
+    )
+    lowered_text = str(text or "").lower()
+    for pattern in deny_patterns[:20]:
+        if pattern and pattern in lowered_text:
+            return False, "text_denied_by_pattern"
+    try:
+        min_confidence = float(policy.get("min_confidence"))
+    except Exception:
+        min_confidence = 0.0
+    if min_confidence > 0.0 and confidence < min_confidence:
+        return False, "confidence_below_policy"
+    return True, ""
+
 async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
     s = _services()
     record_summary = s.record_summary
@@ -248,6 +314,67 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
             )
         except Exception:
             candidate_report = None
+    duplicate_count = len(candidate_report.get("near_duplicates", [])) if isinstance(candidate_report, dict) else 0
+    contradiction_count = len(candidate_report.get("contradictions", [])) if isinstance(candidate_report, dict) else 0
+    policy_from_config = _coerce_ingestion_policy(getattr(_config, "memory_ingestion_policy", {}))
+    policy_from_args = _coerce_ingestion_policy(args.get("ingestion_policy"))
+    ingestion_policy = dict(policy_from_config)
+    ingestion_policy.update(policy_from_args)
+    derived_confidence = _as_float(
+        (0.65 * importance) + (0.35 * (1.0 - sensitivity)) - (0.08 * duplicate_count) - (0.12 * contradiction_count),
+        0.5,
+        minimum=0.0,
+        maximum=1.0,
+    )
+    ingestion_confidence = _as_float(
+        args.get("ingestion_confidence", derived_confidence),
+        derived_confidence,
+        minimum=0.0,
+        maximum=1.0,
+    )
+    min_confidence = _as_float(
+        args.get("ingestion_min_confidence", getattr(_config, "memory_ingestion_min_confidence", 0.0)),
+        _as_float(getattr(_config, "memory_ingestion_min_confidence", 0.0), 0.0, minimum=0.0, maximum=1.0),
+        minimum=0.0,
+        maximum=1.0,
+    )
+    policy_allows, policy_reason = _ingestion_policy_decision(
+        policy=ingestion_policy,
+        kind=kind,
+        source=source,
+        scope=scope,
+        tags=tags,
+        text=text,
+        importance=importance,
+        sensitivity=sensitivity,
+        confidence=ingestion_confidence,
+    )
+    if not policy_allows:
+        _record_service_error("memory_add", start_time, "policy")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "Memory rejected by ingestion policy "
+                        f"(reason={policy_reason}, confidence={ingestion_confidence:.2f})."
+                    ),
+                }
+            ]
+        }
+    if ingestion_confidence < min_confidence:
+        _record_service_error("memory_add", start_time, "policy")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "Memory rejected due to low ingestion confidence "
+                        f"({ingestion_confidence:.2f} < {min_confidence:.2f})."
+                    ),
+                }
+            ]
+        }
     resolve_conflicts = _as_bool(
         args.get("resolve_conflicts"),
         default=_as_bool(getattr(_config, "memory_conflict_resolution_enabled", False), default=False),
@@ -357,7 +484,7 @@ async def memory_add(args: dict[str, Any]) -> dict[str, Any]:
         _record_service_error("memory_add", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory add failed: {e}"}]}
     record_summary("memory_add", "ok", start_time)
-    message = f"Memory stored (id={memory_id}, scope={scope})."
+    message = f"Memory stored (id={memory_id}, scope={scope}, confidence={ingestion_confidence:.2f})."
     if candidate_report:
         duplicate_ids = [
             int(row["memory_id"])

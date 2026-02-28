@@ -349,6 +349,48 @@ class TestServicesTools:
         assert "no relevant" in gone["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_memory_status_doctor_and_graph_snapshot(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+        await services.memory_add({"text": "favorite drink is coffee", "source": "profile"})
+
+        status = await services.memory_status({"doctor": True, "include_graph": True})
+        payload = json.loads(status["content"][0]["text"])
+        assert "doctor" in payload
+        assert payload["doctor"]["status"] in {"ok", "degraded"}
+        assert "entity_graph_snapshot" in payload
+        assert payload["entity_graph_snapshot"]["edge_count"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_memory_governance_doctor_graph_and_compaction_flush(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path), ingest_async_enabled=True)
+        services.bind(services._config, store)
+        await services.memory_add({"text": "favorite snack is apples"})
+
+        doctor = await services.memory_governance({"action": "doctor"})
+        doctor_payload = json.loads(doctor["content"][0]["text"])
+        assert doctor_payload["action"] == "doctor"
+        assert doctor_payload["doctor"]["status"] in {"ok", "degraded"}
+
+        graph = await services.memory_governance({"action": "graph", "limit": 10})
+        graph_payload = json.loads(graph["content"][0]["text"])
+        assert graph_payload["action"] == "graph"
+        assert graph_payload["graph"]["edge_count"] >= 1
+
+        flush = await services.memory_governance({"action": "compaction_flush"})
+        flush_payload = json.loads(flush["content"][0]["text"])
+        assert flush_payload["action"] == "compaction_flush"
+        assert "flushed_at" in flush_payload["flush"]
+
+    @pytest.mark.asyncio
     async def test_task_plan_create_rejects_empty_steps(self, tmp_path):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
@@ -3331,6 +3373,8 @@ class TestServicesTools:
         assert isinstance(payload["tool_policy"]["home_require_confirm_execute"], bool)
         assert isinstance(payload["tool_policy"]["home_conversation_enabled"], bool)
         assert isinstance(payload["tool_policy"]["memory_pii_guardrails_enabled"], bool)
+        assert isinstance(payload["tool_policy"]["memory_ingestion_min_confidence"], float)
+        assert isinstance(payload["tool_policy"]["memory_ingest_async_enabled"], bool)
         assert payload["tool_policy"]["home_conversation_permission_profile"] in {"readonly", "control"}
         assert payload["tool_policy"]["email_permission_profile"] in {"readonly", "control"}
         assert isinstance(payload["tool_policy"]["identity_enforcement_enabled"], bool)
@@ -3468,6 +3512,8 @@ class TestServicesTools:
         assert "home_conversation_permission_profile" in payload["tool_policy_required"]
         assert "email_permission_profile" in payload["tool_policy_required"]
         assert "memory_pii_guardrails_enabled" in payload["tool_policy_required"]
+        assert "memory_ingestion_min_confidence" in payload["tool_policy_required"]
+        assert "memory_ingest_async_enabled" in payload["tool_policy_required"]
         assert "safe_mode_enabled" in payload["tool_policy_required"]
         assert "identity_enforcement_enabled" in payload["tool_policy_required"]
         assert "identity_default_profile" in payload["tool_policy_required"]

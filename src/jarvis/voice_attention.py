@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import re
 import time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -86,6 +85,17 @@ _REPEAT_WORDS = {
     "say again",
     "repeat that",
 }
+
+
+def _compact_whitespace(text: str) -> str:
+    return " ".join(str(text or "").strip().lower().split())
+
+
+def _word_tokens(text: str) -> list[str]:
+    chars: list[str] = []
+    for ch in str(text or ""):
+        chars.append(ch if (ch.isalnum() or ch == "'") else " ")
+    return [token for token in "".join(chars).split() if token]
 
 
 @dataclass
@@ -290,7 +300,7 @@ class VoiceAttentionController:
         except (TypeError, ValueError):
             duration = 0.0
         duration = max(0.1, duration)
-        words = re.findall(r"[a-zA-Z0-9']+", str(text or ""))
+        words = _word_tokens(text)
         if words:
             rate = len(words) / duration
             if math.isfinite(rate):
@@ -319,12 +329,12 @@ class VoiceAttentionController:
         return SequenceMatcher(a=a, b=b).ratio()
 
     def _detect_wake_word(self, text: str, *, sensitivity: float | None = None) -> tuple[bool, str, str]:
-        compact = re.sub(r"\s+", " ", text.strip().lower())
+        compact = _compact_whitespace(text)
         if not compact:
             return False, "", ""
         threshold = self.wake_word_sensitivity if sensitivity is None else self._normalize_sensitivity(sensitivity)
         for wake_word in self._wake_words:
-            wake_compact = re.sub(r"\s+", " ", wake_word)
+            wake_compact = _compact_whitespace(wake_word)
             prefix = compact[: len(wake_compact)]
             if self._similarity(prefix, wake_compact) >= threshold:
                 remainder = compact[len(wake_compact) :].lstrip(" ,.!?:;")
@@ -433,7 +443,7 @@ class VoiceAttentionController:
         return TranscriptDecision(True, remainder, "accepted_wake_word")
 
     def confirmation_intent(self, text: str) -> str | None:
-        normalized = re.sub(r"\s+", " ", text.strip().lower())
+        normalized = _compact_whitespace(text)
         if not normalized:
             return None
         if normalized in _CONFIRM_WORDS:

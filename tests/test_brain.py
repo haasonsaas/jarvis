@@ -19,6 +19,7 @@ from jarvis.brain import (
     RESPONSE_MODE_INSTRUCTIONS,
     SemanticTurnDecision,
     STYLE_INSTRUCTIONS,
+    TurnUnderstandingDecision,
     _find_sentence_boundary,
 )
 from jarvis.presence import PresenceLoop, State
@@ -247,6 +248,42 @@ class TestBrain:
         )
         assert decision == brain._default_semantic_turn_decision()
         trace = brain.latest_semantic_turn_trace()
+        assert trace.get("route_source") == "fallback"
+        assert trace.get("fallback_reason") == "router_error"
+
+    def test_turn_understanding_guardrails_drop_incomplete_memory_update(self, brain):
+        decision, correction = brain._enforce_turn_understanding_guardrails(
+            TurnUnderstandingDecision(
+                intent_class="action",
+                looks_like_correction=True,
+                apply_followup_carryover=False,
+                confirmation_intent="none",
+                memory_command="memory_update",
+                memory_id=12,
+                memory_text="",
+                route_confidence=0.8,
+                uncertainty_reason="",
+            ),
+            awaiting_confirmation=False,
+            awaiting_repair_confirmation=False,
+        )
+        assert decision.memory_command == "none"
+        assert "memory_update_missing_fields" in correction
+
+    @pytest.mark.asyncio
+    async def test_understand_turn_falls_back_when_runner_fails(self, brain, monkeypatch):
+        async def _raise(*_args, **_kwargs):
+            raise RuntimeError("router down")
+
+        monkeypatch.setattr("jarvis.brain.Runner.run", _raise)
+        decision = await brain.understand_turn(
+            user_text="confirm",
+            followup_context={},
+            awaiting_confirmation=True,
+            awaiting_repair_confirmation=False,
+        )
+        assert decision == brain._default_turn_understanding_decision()
+        trace = brain.latest_turn_understanding_trace()
         assert trace.get("route_source") == "fallback"
         assert trace.get("fallback_reason") == "router_error"
 

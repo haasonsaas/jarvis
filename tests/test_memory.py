@@ -469,3 +469,55 @@ def test_search_v2_uses_vector_results_when_lexical_misses(tmp_path, monkeypatch
         assert rows[0].id == target_id
     finally:
         store.close()
+
+
+def test_bitemporal_assertion_conflict_invalidates_prior_memory(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        first_id = store.add_memory("favorite color is blue", source="profile")
+        second_id = store.add_memory("favorite color is not blue", source="profile")
+
+        first_row = store._conn.execute(
+            "SELECT valid_to, superseded_by, invalidated_reason FROM memory WHERE id = ?",
+            (first_id,),
+        ).fetchone()
+        assert first_row is not None
+        assert first_row["valid_to"] is not None
+        assert int(first_row["superseded_by"]) == second_id
+        assert str(first_row["invalidated_reason"]) == "contradiction"
+
+        recent = store.recent(limit=10)
+        recent_ids = [row.id for row in recent]
+        assert second_id in recent_ids
+        assert first_id not in recent_ids
+    finally:
+        store.close()
+
+
+def test_memory_doctor_and_graph_snapshot_report_assertions(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        _ = store.add_memory("favorite drink is coffee", source="profile")
+
+        doctor = store.memory_doctor()
+        assert doctor["status"] in {"ok", "degraded"}
+        assert doctor["entries_total"] == 1
+        assert doctor["entries_active"] == 1
+
+        graph = store.entity_graph_snapshot(limit=10)
+        assert graph["edge_count"] >= 1
+        assert "favorite drink" in graph["nodes"]
+    finally:
+        store.close()
+
+
+def test_pre_compaction_flush_updates_status_timestamp(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"), ingest_async_enabled=True)
+    try:
+        _ = store.add_memory("status flush note")
+        flush = store.pre_compaction_flush(reason="test")
+        assert flush["reason"] == "test"
+        status = store.memory_status()
+        assert status["bitemporal"]["last_pre_compaction_flush"] is not None
+    finally:
+        store.close()

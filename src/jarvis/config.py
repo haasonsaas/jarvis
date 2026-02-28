@@ -1,6 +1,5 @@
 import math
 import os
-import re
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
@@ -301,6 +300,12 @@ class Config:
         default_factory=lambda: _env_bool("MEMORY_PROMPT_SANITIZATION_ENABLED") is not False
     )
     memory_pii_guardrails_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_PII_GUARDRAILS_ENABLED") is not False)
+    memory_ingestion_min_confidence: float = field(
+        default_factory=lambda: _env_float("MEMORY_INGESTION_MIN_CONFIDENCE", 0.0)
+    )
+    memory_ingestion_policy: str = field(default_factory=lambda: os.environ.get("MEMORY_INGESTION_POLICY", ""))
+    memory_ingest_async_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_INGEST_ASYNC_ENABLED") or False)
+    memory_ingest_queue_max: int = field(default_factory=lambda: _env_int("MEMORY_INGEST_QUEUE_MAX", 256))
 
     # Tool policy
     tool_allowlist: list[str] = field(default_factory=lambda: _env_list("TOOL_ALLOWLIST"))
@@ -453,6 +458,10 @@ class Config:
             raise ValueError("memory_embedding_timeout_sec must be > 0")
         if self.memory_conflict_resolution_timeout_sec <= 0.0:
             raise ValueError("memory_conflict_resolution_timeout_sec must be > 0")
+        if not (0.0 <= self.memory_ingestion_min_confidence <= 1.0):
+            raise ValueError("memory_ingestion_min_confidence must be between 0.0 and 1.0")
+        if self.memory_ingest_queue_max < 8:
+            raise ValueError("memory_ingest_queue_max must be >= 8")
         if self.audit_log_max_bytes <= 0:
             raise ValueError("audit_log_max_bytes must be > 0")
         if self.audit_log_backups < 1:
@@ -689,11 +698,17 @@ class Config:
         text = (value or "").strip()
         if not text:
             return ""
-        match = re.fullmatch(r"(\d{1,2}):(\d{2})", text)
-        if not match:
+        if ":" not in text:
             return ""
-        hours = int(match.group(1))
-        minutes = int(match.group(2))
+        parts = text.split(":")
+        if len(parts) != 2:
+            return ""
+        hours_text = parts[0].strip()
+        minutes_text = parts[1].strip()
+        if not (hours_text.isdigit() and minutes_text.isdigit() and len(minutes_text) == 2):
+            return ""
+        hours = int(hours_text)
+        minutes = int(minutes_text)
         if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
             return ""
         return f"{hours:02d}:{minutes:02d}"
@@ -941,6 +956,8 @@ class Config:
                 "positive_float",
                 str(self.memory_conflict_resolution_timeout_sec),
             ),
+            ("MEMORY_INGESTION_MIN_CONFIDENCE", "float", str(self.memory_ingestion_min_confidence)),
+            ("MEMORY_INGEST_QUEUE_MAX", "int", str(self.memory_ingest_queue_max)),
             ("AUDIT_LOG_MAX_BYTES", "int", str(self.audit_log_max_bytes)),
             ("AUDIT_LOG_BACKUPS", "int", str(self.audit_log_backups)),
             ("MEMORY_RETENTION_DAYS", "nonnegative_float", str(self.memory_retention_days)),
@@ -977,6 +994,7 @@ class Config:
             "MEMORY_CONFLICT_RESOLUTION_ENABLED",
             "MEMORY_PROMPT_SANITIZATION_ENABLED",
             "MEMORY_PII_GUARDRAILS_ENABLED",
+            "MEMORY_INGEST_ASYNC_ENABLED",
             "STT_FALLBACK_ENABLED",
             "TTS_FALLBACK_TEXT_ONLY",
             "MODEL_FAILOVER_ENABLED",

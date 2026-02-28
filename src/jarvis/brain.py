@@ -12,10 +12,10 @@ Design for latency:
 from __future__ import annotations
 
 import asyncio
+import json
 import hashlib
 import logging
 import math
-import re
 from contextlib import suppress
 from types import SimpleNamespace
 from typing import Any, AsyncIterator, Literal
@@ -165,6 +165,27 @@ Guidance:
 - Use `commit` when transcript is semantically complete enough to process now.
 - When uncertain, prefer `commit` unless there is strong evidence the user is continuing.
 """
+TURN_UNDERSTANDING_ROUTER_PROMPT = """\
+You are Jarvis's turn-understanding router. Analyze one user utterance and return ONLY the structured result.
+
+Fields:
+- intent_class: answer | action | hybrid
+- looks_like_correction: boolean
+- apply_followup_carryover: boolean
+- confirmation_intent: confirm | deny | repeat | none
+- memory_command: none | memory_forget | memory_update
+- memory_id: positive integer or null
+- memory_text: string (required when memory_command=memory_update)
+- route_confidence: float in [0.0, 1.0]
+- uncertainty_reason: short string (empty if confidence is high)
+
+Rules:
+- Only set `confirmation_intent` when the user utterance is clearly a confirmation-style reply in the provided state.
+- Only set `memory_command` when the user explicitly issues a direct memory mutation command.
+- For memory_forget, include `memory_id`.
+- For memory_update, include both `memory_id` and non-empty `memory_text`.
+- `apply_followup_carryover=true` only when previous unresolved context should be carried into this turn.
+"""
 
 
 class PolicyRouteDecision(BaseModel):
@@ -195,6 +216,18 @@ class InterruptionRouteDecision(BaseModel):
 
 class SemanticTurnDecision(BaseModel):
     action: Literal["commit", "wait"] = "commit"
+    route_confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+    uncertainty_reason: str = ""
+
+
+class TurnUnderstandingDecision(BaseModel):
+    intent_class: Literal["answer", "action", "hybrid"] = "answer"
+    looks_like_correction: bool = False
+    apply_followup_carryover: bool = False
+    confirmation_intent: Literal["confirm", "deny", "repeat", "none"] = "none"
+    memory_command: Literal["none", "memory_forget", "memory_update"] = "none"
+    memory_id: int | None = Field(default=None, ge=1)
+    memory_text: str = ""
     route_confidence: float = Field(default=0.7, ge=0.0, le=1.0)
     uncertainty_reason: str = ""
 
@@ -281,6 +314,41 @@ def _semantic_turn_output_guardrail(
         tripwire_triggered=bool(issues),
     )
 
+
+@output_guardrail(name="turn_understanding_output_guardrail")
+def _turn_understanding_output_guardrail(
+    _context: Any,
+    _agent: Agent[Any],
+    agent_output: Any,
+) -> GuardrailFunctionOutput:
+    try:
+        decision = (
+            agent_output
+            if isinstance(agent_output, TurnUnderstandingDecision)
+            else TurnUnderstandingDecision.model_validate(agent_output)
+        )
+    except Exception:
+        return GuardrailFunctionOutput(
+            output_info={"issues": ["invalid_turn_understanding_output_schema"]},
+            tripwire_triggered=True,
+        )
+
+    issues: list[str] = []
+    if not math.isfinite(float(decision.route_confidence)):
+        issues.append("non_finite_route_confidence")
+    if decision.memory_command == "memory_forget" and decision.memory_id is None:
+        issues.append("memory_forget_missing_memory_id")
+    if decision.memory_command == "memory_update":
+        if decision.memory_id is None:
+            issues.append("memory_update_missing_memory_id")
+        if not str(decision.memory_text).strip():
+            issues.append("memory_update_missing_memory_text")
+    return GuardrailFunctionOutput(
+        output_info={"issues": issues},
+        tripwire_triggered=bool(issues),
+    )
+
+
 STYLE_INSTRUCTIONS = {
     "terse": "Keep responses extremely brief and direct. Default to one sentence unless detail is explicitly requested.",
     "composed": "Use calm, precise phrasing with concise structure and restrained wit.",
@@ -314,12 +382,23 @@ PERSONA_STYLE_ALIASES = {
     "classic_jarvis": "jarvis",
     "jarvis_classic": "jarvis",
 }
-MEMORY_PROMPT_INJECTION_PATTERNS = (
-    re.compile(r"ignore (all|any|previous|above|prior) instructions", re.IGNORECASE),
-    re.compile(r"do not follow (the )?(system|developer)", re.IGNORECASE),
-    re.compile(r"(reveal|show).{0,24}(system prompt|developer message)", re.IGNORECASE),
-    re.compile(r"\b(run|execute|call|invoke)\b.{0,30}\b(tool|command)\b", re.IGNORECASE),
-    re.compile(r"<\s*(system|assistant|developer|tool|function)\b", re.IGNORECASE),
+MEMORY_PROMPT_INJECTION_TERMS = (
+    "ignore all instructions",
+    "ignore all previous instructions",
+    "ignore previous instructions",
+    "do not follow system",
+    "do not follow developer",
+    "reveal system prompt",
+    "show system prompt",
+    "reveal developer message",
+    "run tool",
+    "execute tool",
+    "call tool",
+    "<system",
+    "<assistant",
+    "<developer",
+    "<tool",
+    "<function",
 )
 
 
@@ -343,6 +422,8 @@ class Brain:
                 embedding_vector_weight=config.memory_embedding_vector_weight,
                 embedding_min_similarity=config.memory_embedding_min_similarity,
                 embedding_timeout_sec=config.memory_embedding_timeout_sec,
+                ingest_async_enabled=config.memory_ingest_async_enabled,
+                ingest_queue_max=config.memory_ingest_queue_max,
             )
             if config.memory_enabled
             else None
@@ -431,9 +512,17 @@ class Brain:
             output_type=SemanticTurnDecision,
             output_guardrails=[_semantic_turn_output_guardrail],
         )
+        self._turn_understanding_router_agent = Agent(
+            name="JarvisTurnUnderstandingRouter",
+            instructions=TURN_UNDERSTANDING_ROUTER_PROMPT,
+            model=router_model,
+            output_type=TurnUnderstandingDecision,
+            output_guardrails=[_turn_understanding_output_guardrail],
+        )
         self._last_policy_route_trace: dict[str, Any] = {}
         self._last_interruption_route_trace: dict[str, Any] = {}
         self._last_semantic_turn_trace: dict[str, Any] = {}
+        self._last_turn_understanding_trace: dict[str, Any] = {}
 
         # Compatibility shim for existing tests/debug expectations.
         self._client = SimpleNamespace(
@@ -1058,6 +1147,189 @@ class Brain:
         )
         return guarded_decision
 
+    @staticmethod
+    def _default_turn_understanding_decision() -> TurnUnderstandingDecision:
+        return TurnUnderstandingDecision(
+            intent_class="answer",
+            looks_like_correction=False,
+            apply_followup_carryover=False,
+            confirmation_intent="none",
+            memory_command="none",
+            memory_id=None,
+            memory_text="",
+            route_confidence=0.0,
+            uncertainty_reason="turn_understanding_fallback",
+        )
+
+    def _record_turn_understanding_trace(
+        self,
+        decision: TurnUnderstandingDecision,
+        *,
+        route_source: str,
+        fallback_reason: str = "",
+        guardrail_correction: str = "none",
+    ) -> None:
+        payload = decision.model_dump()
+        payload["route_source"] = str(route_source)
+        payload["fallback_reason"] = str(fallback_reason)
+        payload["guardrail_correction"] = str(guardrail_correction)
+        self._last_turn_understanding_trace = payload
+
+    def latest_turn_understanding_trace(self) -> dict[str, Any]:
+        return dict(self._last_turn_understanding_trace)
+
+    def _enforce_turn_understanding_guardrails(
+        self,
+        decision: TurnUnderstandingDecision,
+        *,
+        awaiting_confirmation: bool,
+        awaiting_repair_confirmation: bool,
+    ) -> tuple[TurnUnderstandingDecision, str]:
+        normalized = decision.model_copy(deep=True)
+        corrections: list[str] = []
+        confidence = float(normalized.route_confidence)
+        if not math.isfinite(confidence):
+            confidence = 0.0
+            corrections.append("normalized_confidence")
+        clamped_confidence = min(1.0, max(0.0, confidence))
+        if clamped_confidence != confidence:
+            corrections.append("normalized_confidence")
+        normalized.route_confidence = clamped_confidence
+
+        awaiting = bool(awaiting_confirmation or awaiting_repair_confirmation)
+        if not awaiting and normalized.confirmation_intent != "none":
+            normalized.confirmation_intent = "none"
+            corrections.append("confirmation_intent_outside_confirmation_state")
+
+        if normalized.memory_command == "memory_forget":
+            if normalized.memory_id is None:
+                normalized.memory_command = "none"
+                corrections.append("memory_forget_missing_memory_id")
+        elif normalized.memory_command == "memory_update":
+            if normalized.memory_id is None or not str(normalized.memory_text).strip():
+                normalized.memory_command = "none"
+                normalized.memory_id = None
+                normalized.memory_text = ""
+                corrections.append("memory_update_missing_fields")
+        else:
+            normalized.memory_id = None
+            normalized.memory_text = ""
+
+        if normalized.memory_command != "none" and normalized.intent_class == "answer":
+            normalized.intent_class = "action"
+            corrections.append("memory_command_forced_action_intent")
+
+        unique_corrections = list(dict.fromkeys(corrections))
+        outcome = ",".join(unique_corrections) if unique_corrections else "none"
+        return normalized, outcome
+
+    async def understand_turn(
+        self,
+        *,
+        user_text: str,
+        followup_context: dict[str, Any] | None = None,
+        awaiting_confirmation: bool = False,
+        awaiting_repair_confirmation: bool = False,
+    ) -> TurnUnderstandingDecision:
+        fallback = self._default_turn_understanding_decision()
+        route_source = "router"
+        fallback_reason = ""
+        context_payload = followup_context if isinstance(followup_context, dict) else {}
+        payload = {
+            "user_text": str(user_text or "").strip()[:320],
+            "state": {
+                "awaiting_confirmation": bool(awaiting_confirmation),
+                "awaiting_repair_confirmation": bool(awaiting_repair_confirmation),
+            },
+            "followup_context": {
+                "text": str(context_payload.get("text", "")).strip()[:280],
+                "intent": str(context_payload.get("intent", "")).strip().lower(),
+                "unresolved": bool(context_payload.get("unresolved", False)),
+            },
+        }
+        prompt = (
+            "Conversation turn context (JSON):\n"
+            f"{json.dumps(payload, ensure_ascii=True)}"
+        )
+        try:
+            result = await asyncio.wait_for(
+                Runner.run(
+                    self._turn_understanding_router_agent,
+                    prompt,
+                    max_turns=2,
+                ),
+                timeout=float(getattr(self._config, "router_timeout_sec", 2.0)),
+            )
+        except asyncio.TimeoutError:
+            route_source = "fallback"
+            fallback_reason = "router_timeout"
+            self._record_turn_understanding_trace(
+                fallback,
+                route_source=route_source,
+                fallback_reason=fallback_reason,
+                guardrail_correction="none",
+            )
+            return fallback
+        except OutputGuardrailTripwireTriggered as e:
+            route_source = "fallback"
+            fallback_reason = "guardrail_tripwire"
+            guardrail_info = getattr(getattr(e, "guardrail_result", None), "output", None)
+            log.warning(
+                "Turn understanding router guardrail tripwire; using default fallback: %s",
+                getattr(guardrail_info, "output_info", {}),
+            )
+            self._record_turn_understanding_trace(
+                fallback,
+                route_source=route_source,
+                fallback_reason=fallback_reason,
+                guardrail_correction="none",
+            )
+            return fallback
+        except Exception as e:
+            route_source = "fallback"
+            fallback_reason = "router_error"
+            log.warning("Turn understanding router failed; using default fallback: %s", e)
+            self._record_turn_understanding_trace(
+                fallback,
+                route_source=route_source,
+                fallback_reason=fallback_reason,
+                guardrail_correction="none",
+            )
+            return fallback
+
+        output = getattr(result, "final_output", None)
+        if isinstance(output, TurnUnderstandingDecision):
+            decision = output
+        else:
+            try:
+                decision = TurnUnderstandingDecision.model_validate(output)
+            except Exception:
+                route_source = "fallback"
+                fallback_reason = "invalid_router_output"
+                log.warning(
+                    "Turn understanding router returned invalid output; using default fallback."
+                )
+                self._record_turn_understanding_trace(
+                    fallback,
+                    route_source=route_source,
+                    fallback_reason=fallback_reason,
+                    guardrail_correction="none",
+                )
+                return fallback
+
+        guarded, correction = self._enforce_turn_understanding_guardrails(
+            decision,
+            awaiting_confirmation=awaiting_confirmation,
+            awaiting_repair_confirmation=awaiting_repair_confirmation,
+        )
+        self._record_turn_understanding_trace(
+            guarded,
+            route_source=route_source,
+            fallback_reason=fallback_reason,
+            guardrail_correction=correction,
+        )
+        return guarded
+
     async def _run_agent_stream(self, prompt: str, starting_agent: Agent[Any]) -> AsyncIterator[str]:
         streamed = Runner.run_streamed(
             starting_agent,
@@ -1282,18 +1554,26 @@ def _safe_memory_snippet_for_prompt(text: str, *, max_chars: int, sanitize: bool
         return "", False
     if not sanitize:
         return normalized[:max_chars], False
-    flagged = any(pattern.search(normalized) for pattern in MEMORY_PROMPT_INJECTION_PATTERNS)
+    lowered = normalized.lower()
+    flagged = any(term in lowered for term in MEMORY_PROMPT_INJECTION_TERMS)
     if flagged:
         return "[redacted potential prompt-injection content]", True
     sanitized = normalized.replace("<", "[").replace(">", "]")
     return sanitized[:max_chars], False
 
 
+def _tokenize_text(text: str) -> set[str]:
+    chars: list[str] = []
+    for ch in str(text or "").lower():
+        chars.append(ch if ch.isalnum() else " ")
+    return {token for token in "".join(chars).split() if token}
+
+
 def _memory_relevant(query: str, entry: Any) -> bool:
-    tokens = {token for token in re.findall(r"\w+", query.lower()) if len(token) > 2}
+    tokens = {token for token in _tokenize_text(query) if len(token) > 2}
     if not tokens:
         return False
-    entry_tokens = set(re.findall(r"\w+", entry.text.lower()))
+    entry_tokens = _tokenize_text(str(getattr(entry, "text", "")))
     overlap = len(tokens & entry_tokens)
     ratio = overlap / max(1, len(tokens))
     return ratio >= 0.25 or entry.importance >= 0.7

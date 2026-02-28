@@ -53,6 +53,8 @@ SYSTEM_STATUS_CONTRACT_CORE_FIELDS: dict[str, Any] = {
         "nudge_quiet_window_active",
         "email_permission_profile",
         "memory_pii_guardrails_enabled",
+        "memory_ingestion_min_confidence",
+        "memory_ingest_async_enabled",
         "identity_enforcement_enabled",
         "identity_default_profile",
         "identity_require_approval",

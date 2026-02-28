@@ -19,6 +19,7 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
     _memory = s._memory
     _record_service_error = s._record_service_error
     _as_int = s._as_int
+    _as_bool = s._as_bool
     _as_str_list = s._as_str_list
     _memory_requested_scopes = s._memory_requested_scopes
     _memory_entry_scope = s._memory_entry_scope
@@ -37,9 +38,15 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
     limit = _as_int(args.get("limit", 5), 5, minimum=1, maximum=100)
     kind = args.get("kind")
     source_list = _as_str_list(args.get("sources"))
+    include_inactive = _as_bool(args.get("include_inactive"), default=False)
     scoped_policy = _memory_requested_scopes(args.get("scopes"), query=str(args.get("query", "")))
     try:
-        results = _memory.recent(limit=limit, kind=str(kind) if kind else None, sources=source_list)
+        results = _memory.recent(
+            limit=limit,
+            kind=str(kind) if kind else None,
+            sources=source_list,
+            **({"include_inactive": True} if include_inactive else {}),
+        )
     except Exception as e:
         _record_service_error("memory_recent", start_time, "storage_error")
         return {"content": [{"type": "text", "text": f"Memory recent failed: {e}"}]}
@@ -64,9 +71,12 @@ async def memory_recent(args: dict[str, Any]) -> dict[str, Any]:
         source = str(entry.source).strip() or "unknown"
         scope = _memory_entry_scope(entry)
         trail = _memory_source_trail(entry)
+        validity = ""
+        if entry.valid_to is not None:
+            validity = f" valid_to={entry.valid_to:.0f}"
         lines.append(
             f"[{entry.id}] ({entry.kind}) confidence={confidence_label}({confidence_score:.2f}) "
-            f"scope={scope} source={source} trail={trail} {snippet}{tags}"
+            f"scope={scope} source={source} trail={trail}{validity} {snippet}{tags}"
         )
     record_summary("memory_recent", "ok", start_time, effect=f"scopes={','.join(scoped_policy)}")
     return {"content": [{"type": "text", "text": "\n".join(lines)}]}
