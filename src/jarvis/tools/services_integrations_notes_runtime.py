@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +19,16 @@ def capture_note(
     normalized_backend = str(backend or "local_markdown").strip().lower()
     clean_title = str(title or "jarvis-note").strip() or "jarvis-note"
     clean_content = str(content or "").strip()
-    slug = re.sub(r"[^a-z0-9_-]+", "-", clean_title.lower()).strip("-") or "jarvis-note"
+    slug_chars: list[str] = []
+    for ch in clean_title.lower():
+        if ch.isalnum() or ch in {"_", "-"}:
+            slug_chars.append(ch)
+        else:
+            slug_chars.append("-")
+    slug = "".join(slug_chars).strip("-")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    slug = slug or "jarvis-note"
     if normalized_backend in {"obsidian", "local_markdown"}:
         base = Path(path_hint).expanduser() if path_hint else services_module._notes_capture_dir
         base.mkdir(parents=True, exist_ok=True)

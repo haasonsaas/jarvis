@@ -28,20 +28,50 @@ def duration_seconds(services_module: Any, value: Any) -> float | None:
         pass
     total = 0.0
     cursor = 0
-    for match in s._DURATION_SEGMENT_RE.finditer(text):
-        if match.start() != cursor and text[cursor : match.start()].strip():
+    text_len = len(text)
+    while cursor < text_len:
+        while cursor < text_len and text[cursor].isspace():
+            cursor += 1
+        if cursor >= text_len:
+            break
+        value_start = cursor
+        has_dot = False
+        while cursor < text_len:
+            ch = text[cursor]
+            if ch.isdigit():
+                cursor += 1
+                continue
+            if ch == "." and not has_dot:
+                has_dot = True
+                cursor += 1
+                continue
+            break
+        value_text = text[value_start:cursor]
+        if not value_text or value_text in {"."}:
             return None
-        value_part = float(match.group("value"))
-        unit = match.group("unit").lower()
+        try:
+            value_part = float(value_text)
+        except ValueError:
+            return None
+        if value_part <= 0.0:
+            return None
+        while cursor < text_len and text[cursor].isspace():
+            cursor += 1
+        unit_start = cursor
+        while cursor < text_len and text[cursor].isalpha():
+            cursor += 1
+        unit = text[unit_start:cursor].lower()
+        if not unit:
+            return None
+        multiplier = s._DURATION_UNITS_SECONDS.get(unit)
+        if multiplier is None:
+            return None
         if unit.startswith("h"):
-            total += value_part * 3600.0
+            total += value_part * multiplier
         elif unit.startswith("m"):
-            total += value_part * 60.0
+            total += value_part * multiplier
         else:
-            total += value_part
-        cursor = match.end()
-    if cursor != len(text) and text[cursor:].strip():
-        return None
+            total += value_part * multiplier
     if total <= 0.0:
         return None
     return min(total, s.TIMER_MAX_SECONDS)

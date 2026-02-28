@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from jarvis.tools.services_domains.integrations_runtime import (
@@ -14,6 +13,23 @@ def _services():
     from jarvis.tools import services as s
 
     return s
+
+
+def _looks_like_iso_date(value: Any) -> bool:
+    text = str(value or "").strip()
+    if len(text) != 10:
+        return False
+    parts = text.split("-")
+    if len(parts) != 3:
+        return False
+    year, month, day = parts
+    if not (len(year) == 4 and len(month) == 2 and len(day) == 2):
+        return False
+    if not (year.isdigit() and month.isdigit() and day.isdigit()):
+        return False
+    month_value = int(month)
+    day_value = int(day)
+    return 1 <= month_value <= 12 and 1 <= day_value <= 31
 
 
 async def calendar_fetch_events(
@@ -61,7 +77,7 @@ async def calendar_fetch_events(
             if start_event is None:
                 continue
             end_event = _parse_calendar_event_timestamp(item.get("end"))
-            all_day = isinstance(start_raw, str) and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", start_raw.strip()))
+            all_day = isinstance(start_raw, str) and _looks_like_iso_date(start_raw)
             events.append(
                 {
                     "entity_id": entity_id,

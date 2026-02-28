@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
@@ -78,16 +77,98 @@ CIRCUIT_BREAKER_ERROR_CODES = {
     "auth",
     "unexpected",
 }
-_DURATION_SEGMENT_RE = re.compile(
-    r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)",
-    re.IGNORECASE,
+_DURATION_UNITS_SECONDS: dict[str, float] = {
+    "h": 3600.0,
+    "hr": 3600.0,
+    "hrs": 3600.0,
+    "hour": 3600.0,
+    "hours": 3600.0,
+    "m": 60.0,
+    "min": 60.0,
+    "mins": 60.0,
+    "minute": 60.0,
+    "minutes": 60.0,
+    "s": 1.0,
+    "sec": 1.0,
+    "secs": 1.0,
+    "second": 1.0,
+    "seconds": 1.0,
+}
+
+
+def _contains_ssn_like(text: str) -> bool:
+    sample = str(text or "")
+    for index in range(0, max(0, len(sample) - 10)):
+        chunk = sample[index : index + 11]
+        if (
+            chunk[3] == "-"
+            and chunk[6] == "-"
+            and chunk[:3].isdigit()
+            and chunk[4:6].isdigit()
+            and chunk[7:].isdigit()
+        ):
+            return True
+    return False
+
+
+def _contains_card_like(text: str) -> bool:
+    sample = str(text or "")
+    run_chars: list[str] = []
+    for ch in sample + " ":
+        if ch.isdigit() or ch in {" ", "-"}:
+            run_chars.append(ch)
+            continue
+        if run_chars:
+            digits = [item for item in run_chars if item.isdigit()]
+            if 13 <= len(digits) <= 16:
+                return True
+            run_chars.clear()
+    return False
+
+
+def _contains_phone_like(text: str) -> bool:
+    sample = str(text or "")
+    current_digits = 0
+    for ch in sample + " ":
+        if ch.isdigit():
+            current_digits += 1
+            continue
+        if ch in {" ", "-", ".", "(", ")", "+"}:
+            continue
+        if current_digits in {10, 11}:
+            return True
+        current_digits = 0
+    return current_digits in {10, 11}
+
+
+def _contains_email_like(text: str) -> bool:
+    for token in str(text or "").replace(",", " ").replace(";", " ").split():
+        candidate = token.strip().lower()
+        if "@" not in candidate or "." not in candidate:
+            continue
+        if candidate.count("@") != 1:
+            continue
+        local, domain = candidate.split("@", 1)
+        if not local or not domain or "." not in domain:
+            continue
+        if len(local) > 128 or len(domain) > 255:
+            continue
+        valid_local = all(ch.isalnum() or ch in {".", "_", "%", "+", "-"} for ch in local)
+        valid_domain = all(ch.isalnum() or ch in {".", "-"} for ch in domain)
+        if not (valid_local and valid_domain):
+            continue
+        top_level = domain.rsplit(".", 1)[-1]
+        if len(top_level) >= 2 and top_level.isalpha():
+            return True
+    return False
+
+
+_PII_PATTERNS = (
+    _contains_ssn_like,
+    _contains_card_like,
+    _contains_phone_like,
+    _contains_email_like,
 )
-_PII_PATTERNS = [
-    re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),  # US SSN
-    re.compile(r"\b(?:\d[ -]*?){13,16}\b"),  # payment-card-like sequence
-    re.compile(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"),  # phone-like sequence
-    re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE),  # email
-]
 
 
 def default_proactive_state() -> dict[str, Any]:

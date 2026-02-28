@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import re
 import time
 from contextlib import suppress
 
 from typing import Any
 
-
-_TOKEN_RE = re.compile(r"[a-z0-9']+")
+def _tokenize_words(text: str) -> list[str]:
+    chars: list[str] = []
+    for ch in str(text or "").lower():
+        chars.append(ch if (ch.isalnum() or ch == "'") else " ")
+    return [token for token in "".join(chars).split() if token]
 
 _PREFERENCE_HINTS = {
     "brief",
@@ -45,7 +47,7 @@ _DIRECTIONAL_HINTS = {
 
 
 def _normalized_text(text: str) -> str:
-    tokens = _TOKEN_RE.findall(str(text or "").lower())
+    tokens = _tokenize_words(text)
     if not tokens:
         return ""
     return " " + " ".join(tokens) + " "

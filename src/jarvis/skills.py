@@ -3,13 +3,23 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-_VALID_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+def _valid_skill_name(name: str) -> bool:
+    text = str(name or "").strip().lower()
+    if len(text) < 2 or len(text) > 64:
+        return False
+    first = text[0]
+    if not (first.isdigit() or ("a" <= first <= "z")):
+        return False
+    for ch in text:
+        if ch.isdigit() or ("a" <= ch <= "z") or ch in {"_", "-"}:
+            continue
+        return False
+    return True
 
 
 @dataclass
@@ -150,7 +160,7 @@ class SkillRegistry:
         allowed_paths = self._normalize_str_list(raw.get("allowed_paths"))
         signature = str(raw.get("signature", "")).strip()
 
-        valid_name = bool(_VALID_NAME_RE.match(name))
+        valid_name = _valid_skill_name(name)
         namespace_ok = namespace.startswith("skill.") and len(namespace.split(".")) >= 2
         namespace_owner_ok = namespace.split(".")[1] == name if namespace_ok else False
 

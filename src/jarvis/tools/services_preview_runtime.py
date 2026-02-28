@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import secrets
 import time
 from typing import Any
 
 
 def tokenized_words(text: str) -> list[str]:
-    return [token for token in re.findall(r"[a-z0-9_']+", text.lower()) if token]
+    chars: list[str] = []
+    for ch in str(text or "").lower():
+        chars.append(ch if (ch.isalnum() or ch in {"_", "'"}) else " ")
+    return [token for token in "".join(chars).split() if token]
 
 
 def is_ambiguous_high_risk_text(services_module: Any, text: str) -> bool:

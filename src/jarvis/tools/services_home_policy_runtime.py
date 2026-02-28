@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import time
 from typing import Any
 
@@ -12,7 +11,13 @@ def extract_area_from_entity(entity_id: str) -> str:
     if "." not in text:
         return ""
     _, name = text.split(".", 1)
-    cleaned = re.sub(r"[^a-z0-9_]", "_", name)
+    cleaned_chars: list[str] = []
+    for ch in name:
+        if ch.isalnum() or ch == "_":
+            cleaned_chars.append(ch)
+        else:
+            cleaned_chars.append("_")
+    cleaned = "".join(cleaned_chars)
     parts = [part for part in cleaned.split("_") if part]
     if not parts:
         return ""

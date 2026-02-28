@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import secrets
 import time
 from typing import Any
@@ -17,11 +16,17 @@ def normalize_nudge_policy(value: Any) -> str:
 
 def hhmm_to_minutes(value: str) -> int | None:
     text = str(value or "").strip()
-    match = re.fullmatch(r"(\d{1,2}):(\d{2})", text)
-    if not match:
+    if ":" not in text:
         return None
-    hours = int(match.group(1))
-    minutes = int(match.group(2))
+    parts = text.split(":")
+    if len(parts) != 2:
+        return None
+    hours_text = parts[0].strip()
+    minutes_text = parts[1].strip()
+    if not (hours_text.isdigit() and minutes_text.isdigit() and len(minutes_text) == 2):
+        return None
+    hours = int(hours_text)
+    minutes = int(minutes_text)
     if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
         return None
     return (hours * 60) + minutes

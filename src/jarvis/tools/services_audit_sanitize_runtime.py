@@ -98,4 +98,11 @@ def contains_pii(services_module: Any, text: str) -> bool:
     sample = text.strip()
     if not sample:
         return False
-    return any(pattern.search(sample) is not None for pattern in s._PII_PATTERNS)
+    for detector in s._PII_PATTERNS:
+        if callable(detector):
+            try:
+                if bool(detector(sample)):
+                    return True
+            except Exception:
+                continue
+    return False

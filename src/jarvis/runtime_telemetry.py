@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import math
-import re
 import time
 from contextlib import suppress
 from typing import Any
 
 import numpy as np
+
+
+def _tokenize_words(text: str) -> list[str]:
+    chars: list[str] = []
+    for ch in str(text or "").lower():
+        chars.append(ch if (ch.isalnum() or ch == "'") else " ")
+    return [token for token in "".join(chars).split() if token]
 
 
 def percentile(values: list[float], q: float) -> float:
@@ -266,7 +272,7 @@ def update_stt_diagnostics(
         return max(0, number)
 
     transcript = str(text or "").strip()
-    words = re.findall(r"[a-z0-9']+", transcript.lower())
+    words = _tokenize_words(transcript)
     word_count = len(words)
     char_count = len(transcript)
     confidence_score_raw = diag.get("confidence_score")

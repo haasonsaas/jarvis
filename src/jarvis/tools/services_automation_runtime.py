@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 
@@ -34,7 +33,15 @@ def home_plan_from_request(request_text: str) -> dict[str, Any]:
 
 
 def slugify_identifier(value: str, *, fallback: str = "item") -> str:
-    normalized = re.sub(r"[^a-z0-9_]+", "_", str(value or "").strip().lower()).strip("_")
+    cleaned_chars: list[str] = []
+    for ch in str(value or "").strip().lower():
+        if ch.isalnum() or ch == "_":
+            cleaned_chars.append(ch)
+        else:
+            cleaned_chars.append("_")
+    normalized = "".join(cleaned_chars).strip("_")
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
     return normalized or fallback
 
 

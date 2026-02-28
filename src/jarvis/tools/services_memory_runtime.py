@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import json
 import math
-import re
 import time
 from typing import Any
+
+
+def _tokenize_words(text: str) -> set[str]:
+    chars: list[str] = []
+    for ch in str(text or "").lower():
+        chars.append(ch if (ch.isalnum() or ch in {"_", "'"}) else " ")
+    return {token for token in "".join(chars).split() if token}
 
 
 def normalize_memory_scope(services_module: Any, value: Any) -> str | None:
@@ -88,7 +94,7 @@ def memory_entry_scope(services_module: Any, entry: Any) -> str:
 
 def memory_policy_scopes_for_query(services_module: Any, query: str) -> list[str]:
     s = services_module
-    tokens = {token for token in re.findall(r"[a-z0-9_']+", str(query or "").lower()) if token}
+    tokens = _tokenize_words(query)
     if not tokens:
         return sorted(s.MEMORY_SCOPES)
     for scope, hints in s.MEMORY_QUERY_SCOPE_HINTS.items():

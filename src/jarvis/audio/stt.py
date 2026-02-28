@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import math
-import re
 from typing import Any
 
 import numpy as np
@@ -12,6 +11,13 @@ from scipy.signal import resample_poly
 from faster_whisper import WhisperModel
 
 log = logging.getLogger(__name__)
+
+
+def _tokenize_words(text: str) -> list[str]:
+    chars: list[str] = []
+    for ch in str(text or "").lower():
+        chars.append(ch if (ch.isalnum() or ch == "'") else " ")
+    return [token for token in "".join(chars).split() if token]
 
 
 class SpeechToText:
@@ -115,7 +121,7 @@ class SpeechToText:
             return "", diagnostics
 
         text = " ".join(seg.text.strip() for seg in segments if str(getattr(seg, "text", "")).strip()).strip()
-        words = re.findall(r"[a-z0-9']+", text.lower())
+        words = _tokenize_words(text)
         logprob_values = [
             self._finite_float(getattr(seg, "avg_logprob", None), default=-3.0)
             for seg in segments

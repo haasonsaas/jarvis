@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 
@@ -10,6 +9,23 @@ def _services():
     from jarvis.tools import services as s
 
     return s
+
+
+def _looks_like_iso_date(value: str) -> bool:
+    text = str(value or "").strip()
+    if len(text) != 10:
+        return False
+    parts = text.split("-")
+    if len(parts) != 3:
+        return False
+    year, month, day = parts
+    if not (len(year) == 4 and len(month) == 2 and len(day) == 2):
+        return False
+    if not (year.isdigit() and month.isdigit() and day.isdigit()):
+        return False
+    month_value = int(month)
+    day_value = int(day)
+    return 1 <= month_value <= 12 and 1 <= day_value <= 31
 
 
 async def integration_hub_calendar_upsert(args: dict[str, Any], *, start_time: float) -> dict[str, Any]:
@@ -55,9 +71,7 @@ async def integration_hub_calendar_upsert(args: dict[str, Any], *, start_time: f
         service_data["description"] = description
     if location:
         service_data["location"] = location
-    is_all_day = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", start_value)) and bool(
-        re.fullmatch(r"\d{4}-\d{2}-\d{2}", end_value)
-    )
+    is_all_day = _looks_like_iso_date(start_value) and _looks_like_iso_date(end_value)
     if is_all_day:
         service_data["start_date"] = start_value
         service_data["end_date"] = end_value

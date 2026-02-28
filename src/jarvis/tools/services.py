@@ -12,7 +12,6 @@ import hmac  # noqa: F401  # accessed by domain modules via services module alia
 import json  # noqa: F401  # accessed by domain modules via services module alias
 import logging
 import math  # noqa: F401  # accessed by domain modules via services module alias
-import re  # noqa: F401  # accessed by domain modules via services module alias
 import smtplib  # noqa: F401  # accessed by domain modules via services module alias
 import sys
 import time
@@ -401,7 +400,8 @@ CIRCUIT_BREAKER_FAILURE_THRESHOLD = _services_defaults.CIRCUIT_BREAKER_FAILURE_T
 CIRCUIT_BREAKER_BASE_COOLDOWN_SEC = _services_defaults.CIRCUIT_BREAKER_BASE_COOLDOWN_SEC
 CIRCUIT_BREAKER_MAX_COOLDOWN_SEC = _services_defaults.CIRCUIT_BREAKER_MAX_COOLDOWN_SEC
 CIRCUIT_BREAKER_ERROR_CODES = _services_defaults.CIRCUIT_BREAKER_ERROR_CODES
-_DURATION_SEGMENT_RE = _services_defaults._DURATION_SEGMENT_RE
+_DURATION_UNITS_SECONDS = _services_defaults._DURATION_UNITS_SECONDS
+_DURATION_SEGMENT_RE = None  # legacy compatibility alias
 _PII_PATTERNS = _services_defaults._PII_PATTERNS
 
 _config: Config | None = None

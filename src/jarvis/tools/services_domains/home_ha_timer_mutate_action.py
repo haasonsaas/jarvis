@@ -11,10 +11,25 @@ def _services():
     return s
 
 
+def _looks_like_hhmmss(value: str) -> bool:
+    text = str(value or "").strip()
+    parts = text.split(":")
+    if len(parts) != 3:
+        return False
+    hour, minute, second = parts
+    if not (hour.isdigit() and minute.isdigit() and second.isdigit()):
+        return False
+    if len(minute) != 2 or len(second) != 2 or len(hour) not in {1, 2}:
+        return False
+    hour_value = int(hour)
+    minute_value = int(minute)
+    second_value = int(second)
+    return 0 <= hour_value <= 99 and 0 <= minute_value <= 59 and 0 <= second_value <= 59
+
+
 async def home_assistant_timer_mutate(context: dict[str, Any], *, start_time: float) -> dict[str, Any]:
     s = _services()
     record_summary = s.record_summary
-    re = s.re
     _audit = s._audit
     _record_service_error = s._record_service_error
     _duration_seconds = s._duration_seconds
@@ -41,7 +56,7 @@ async def home_assistant_timer_mutate(context: dict[str, Any], *, start_time: fl
                 hours, rem = divmod(total, 3600)
                 minutes, seconds = divmod(rem, 60)
                 service_data["duration"] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            elif re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", duration_text):
+            elif _looks_like_hhmmss(duration_text):
                 service_data["duration"] = duration_text
             else:
                 _record_service_error("home_assistant_timer", start_time, "invalid_data")

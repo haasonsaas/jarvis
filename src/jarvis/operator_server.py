@@ -5,7 +5,6 @@ import base64
 import hashlib
 import hmac
 import json
-import re
 import secrets
 import time
 from collections import deque
@@ -610,8 +609,18 @@ def _dashboard_onclick_csp_hashes() -> tuple[str, ...]:
     # Allow legacy inline onclick handlers without enabling global unsafe-inline.
     html = _dashboard_html(auth_mode="token", csp_nonce="")
     hashes: set[str] = set()
-    for match in re.finditer(r'onclick="([^"]+)"', html):
-        handler = str(match.group(1)).strip()
+    marker = 'onclick="'
+    cursor = 0
+    while True:
+        start = html.find(marker, cursor)
+        if start < 0:
+            break
+        value_start = start + len(marker)
+        value_end = html.find('"', value_start)
+        if value_end < 0:
+            break
+        handler = str(html[value_start:value_end]).strip()
+        cursor = value_end + 1
         if not handler:
             continue
         digest = hashlib.sha256(handler.encode("utf-8")).digest()
