@@ -139,6 +139,94 @@ def policy_decision_analytics(traces: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def router_canary_analytics(
+    traces: list[dict[str, Any]],
+    *,
+    disagreement_limit: int = 20,
+) -> dict[str, Any]:
+    sample_count = 0
+    router_decision_count = 0
+    canary_turn_count = 0
+    fallback_count = 0
+    shadow_compare_count = 0
+    shadow_agreement_count = 0
+    shadow_disagreement_count = 0
+    disagreements: list[dict[str, Any]] = []
+
+    for item in traces:
+        if not isinstance(item, dict):
+            continue
+        route_policy = item.get("route_policy")
+        if not isinstance(route_policy, dict):
+            continue
+        sample_count += 1
+        route_source = str(route_policy.get("route_source", "")).strip().lower()
+        if route_source == "router":
+            router_decision_count += 1
+        if route_source == "fallback":
+            fallback_count += 1
+        router_variant = str(route_policy.get("router_variant", "")).strip().lower()
+        if router_variant == "canary":
+            canary_turn_count += 1
+        shadow_agreement = route_policy.get("shadow_agreement")
+        if isinstance(shadow_agreement, bool):
+            shadow_compare_count += 1
+            if shadow_agreement:
+                shadow_agreement_count += 1
+            else:
+                shadow_disagreement_count += 1
+                shadow_route = route_policy.get("shadow_route")
+                shadow_starting_agent = (
+                    str(shadow_route.get("starting_agent", "")).strip().lower()
+                    if isinstance(shadow_route, dict)
+                    else ""
+                )
+                disagreements.append(
+                    {
+                        "turn_id": int(item.get("turn_id", 0) or 0),
+                        "timestamp": float(item.get("timestamp", 0.0) or 0.0),
+                        "primary_starting_agent": str(route_policy.get("starting_agent", "")),
+                        "shadow_starting_agent": shadow_starting_agent,
+                        "primary_strategy": str(route_policy.get("first_response_strategy", "")),
+                        "shadow_strategy": (
+                            str(shadow_route.get("first_response_strategy", ""))
+                            if isinstance(shadow_route, dict)
+                            else ""
+                        ),
+                        "route_confidence": float(route_policy.get("route_confidence", 0.0) or 0.0),
+                    }
+                )
+
+    canary_coverage = (
+        (canary_turn_count / router_decision_count)
+        if router_decision_count > 0
+        else 0.0
+    )
+    shadow_agreement_rate = (
+        (shadow_agreement_count / shadow_compare_count)
+        if shadow_compare_count > 0
+        else 0.0
+    )
+    capped_disagreement_limit = max(1, int(disagreement_limit))
+    recent_disagreements = sorted(
+        disagreements,
+        key=lambda row: (float(row.get("timestamp", 0.0) or 0.0), int(row.get("turn_id", 0) or 0)),
+        reverse=True,
+    )[:capped_disagreement_limit]
+    return {
+        "sample_count": sample_count,
+        "router_decision_count": router_decision_count,
+        "canary_turn_count": canary_turn_count,
+        "canary_coverage": canary_coverage,
+        "fallback_count": fallback_count,
+        "shadow_compare_count": shadow_compare_count,
+        "shadow_agreement_count": shadow_agreement_count,
+        "shadow_disagreement_count": shadow_disagreement_count,
+        "shadow_agreement_rate": shadow_agreement_rate,
+        "recent_disagreements": recent_disagreements,
+    }
+
+
 def default_stt_diagnostics() -> dict[str, Any]:
     return {
         "source": "none",
@@ -491,6 +579,32 @@ def telemetry_snapshot(
         if multimodal_turns > 0.0
         else 0.0
     )
+    llm_prompt_tokens_total = max(0.0, metric("llm_prompt_tokens_total"))
+    llm_completion_tokens_total = max(0.0, metric("llm_completion_tokens_total"))
+    llm_total_tokens_total = max(
+        0.0,
+        metric("llm_total_tokens_total") or (llm_prompt_tokens_total + llm_completion_tokens_total),
+    )
+    llm_cost_usd_total = max(0.0, metric("llm_cost_usd_total"))
+    llm_usage_samples = max(0.0, metric("llm_usage_samples"))
+    avg_tokens_per_usage = (
+        (llm_total_tokens_total / llm_usage_samples)
+        if llm_usage_samples > 0.0
+        else 0.0
+    )
+    avg_cost_per_usage = (
+        (llm_cost_usd_total / llm_usage_samples)
+        if llm_usage_samples > 0.0
+        else 0.0
+    )
+    router_shadow_comparisons_total = max(0.0, metric("router_shadow_comparisons_total"))
+    router_shadow_agreements_total = max(0.0, metric("router_shadow_agreements_total"))
+    router_shadow_disagreements_total = max(0.0, metric("router_shadow_disagreements_total"))
+    router_shadow_agreement_rate = (
+        (router_shadow_agreements_total / router_shadow_comparisons_total)
+        if router_shadow_comparisons_total > 0.0
+        else 0.0
+    )
     return {
         "turns": metric("turns"),
         "barge_ins": metric("barge_ins"),
@@ -508,6 +622,22 @@ def telemetry_snapshot(
         "unknown_summary_details": metric("unknown_summary_details"),
         "service_error_counts": counts,
         "fallback_responses": metric("fallback_responses"),
+        "llm_token_usage": {
+            "prompt_tokens_total": llm_prompt_tokens_total,
+            "completion_tokens_total": llm_completion_tokens_total,
+            "total_tokens_total": llm_total_tokens_total,
+            "cost_usd_total": llm_cost_usd_total,
+            "usage_samples": llm_usage_samples,
+            "avg_tokens_per_usage": avg_tokens_per_usage,
+            "avg_cost_usd_per_usage": avg_cost_per_usage,
+        },
+        "router_canary_metrics": {
+            "canary_turns_total": max(0.0, metric("router_canary_turns_total")),
+            "shadow_comparisons_total": router_shadow_comparisons_total,
+            "shadow_agreements_total": router_shadow_agreements_total,
+            "shadow_disagreements_total": router_shadow_disagreements_total,
+            "shadow_agreement_rate": router_shadow_agreement_rate,
+        },
         "intent_metrics": {
             "turn_count": intent_turns,
             "answer_intent_count": metric("intent_answer_turns"),

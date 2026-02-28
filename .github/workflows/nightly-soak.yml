@@ -39,6 +39,13 @@ jobs:
             --baseline config/quality-trend-baselines.json \
             --output .artifacts/quality/quality-trend-gate.json
 
+      - name: Nightly memory maintenance
+        run: |
+          uv run python scripts/run_memory_maintenance.py \
+            --scan-limit 600 \
+            --vacuum \
+            --output .artifacts/quality/memory-maintenance.json
+
       - name: Upload soak artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

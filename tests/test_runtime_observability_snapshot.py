@@ -11,6 +11,7 @@ def test_publish_observability_snapshot_respects_interval_guard() -> None:
         record_snapshot=MagicMock(),
         record_tool_summaries=MagicMock(),
         detect_failure_burst=MagicMock(return_value=[]),
+        detect_budget_violations=MagicMock(return_value=[]),
     )
     runtime = SimpleNamespace(
         _observability=observability,
@@ -36,13 +37,21 @@ def test_publish_observability_snapshot_records_snapshot_summaries_and_alerts() 
     observability = SimpleNamespace(
         record_snapshot=MagicMock(),
         record_tool_summaries=MagicMock(),
-        detect_failure_burst=MagicMock(return_value=["burst-a"]),
+        detect_failure_burst=MagicMock(return_value=[{"type": "failure_burst"}]),
+        detect_budget_violations=MagicMock(return_value=[{"type": "latency_budget_exceeded"}]),
     )
     logger = SimpleNamespace(warning=MagicMock())
     runtime = SimpleNamespace(
         _observability=observability,
         _last_observability_snapshot_at=0.0,
-        config=SimpleNamespace(observability_snapshot_interval_sec=5.0),
+        config=SimpleNamespace(
+            observability_snapshot_interval_sec=5.0,
+            observability_latency_budget_p95_ms=3200.0,
+            observability_tokens_budget_per_hour=0.0,
+            observability_cost_budget_usd_per_hour=0.0,
+            observability_budget_window_sec=1800.0,
+            observability_alert_cooldown_sec=120.0,
+        ),
         _telemetry_snapshot=lambda: {"turns": 2.0},
         _publish_observability_status=MagicMock(),
     )
@@ -57,6 +66,7 @@ def test_publish_observability_snapshot_records_snapshot_summaries_and_alerts() 
 
     observability.record_snapshot.assert_called_once_with({"turns": 2.0})
     observability.record_tool_summaries.assert_called_once()
+    observability.detect_budget_violations.assert_called_once()
     logger.warning.assert_called_once()
     runtime._publish_observability_status.assert_called_once()
 

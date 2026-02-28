@@ -194,6 +194,29 @@ def observability_snapshot(services_module: Any) -> dict[str, Any]:
                 "by_user": {},
                 "by_user_tool": {},
             },
+            "router_canary_analytics": {
+                "sample_count": 0,
+                "router_decision_count": 0,
+                "canary_turn_count": 0,
+                "canary_coverage": 0.0,
+                "fallback_count": 0,
+                "shadow_compare_count": 0,
+                "shadow_agreement_count": 0,
+                "shadow_disagreement_count": 0,
+                "shadow_agreement_rate": 0.0,
+                "recent_disagreements": [],
+            },
+            "budget_metrics": {
+                "window_sec": 3600.0,
+                "sample_count": 0,
+                "latency_p95_ms": {
+                    "stt_ms": 0.0,
+                    "llm_first_sentence_ms": 0.0,
+                    "tts_first_audio_ms": 0.0,
+                },
+                "tokens_per_hour": 0.0,
+                "cost_usd_per_hour": 0.0,
+            },
         }
     snapshot = {str(key): value for key, value in s._runtime_observability_state.items()}
     if not isinstance(snapshot.get("intent_metrics"), dict):
@@ -231,6 +254,31 @@ def observability_snapshot(services_module: Any) -> dict[str, Any]:
             "by_user": {},
             "by_user_tool": {},
         }
+    if not isinstance(snapshot.get("router_canary_analytics"), dict):
+        snapshot["router_canary_analytics"] = {
+            "sample_count": 0,
+            "router_decision_count": 0,
+            "canary_turn_count": 0,
+            "canary_coverage": 0.0,
+            "fallback_count": 0,
+            "shadow_compare_count": 0,
+            "shadow_agreement_count": 0,
+            "shadow_disagreement_count": 0,
+            "shadow_agreement_rate": 0.0,
+            "recent_disagreements": [],
+        }
+    if not isinstance(snapshot.get("budget_metrics"), dict):
+        snapshot["budget_metrics"] = {
+            "window_sec": 3600.0,
+            "sample_count": 0,
+            "latency_p95_ms": {
+                "stt_ms": 0.0,
+                "llm_first_sentence_ms": 0.0,
+                "tts_first_audio_ms": 0.0,
+            },
+            "tokens_per_hour": 0.0,
+            "cost_usd_per_hour": 0.0,
+        }
     return snapshot
 
 
@@ -246,5 +294,4 @@ def skills_status_snapshot(services_module: Any) -> dict[str, Any]:
             "skills": [],
         }
     return {str(key): value for key, value in s._runtime_skills_state.items()}
-
 

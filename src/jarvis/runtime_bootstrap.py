@@ -107,6 +107,15 @@ def telemetry_defaults() -> dict[str, float]:
         "semantic_turn_waits": 0.0,
         "semantic_turn_commits": 0.0,
         "semantic_turn_fallbacks": 0.0,
+        "llm_prompt_tokens_total": 0.0,
+        "llm_completion_tokens_total": 0.0,
+        "llm_total_tokens_total": 0.0,
+        "llm_cost_usd_total": 0.0,
+        "llm_usage_samples": 0.0,
+        "router_canary_turns_total": 0.0,
+        "router_shadow_comparisons_total": 0.0,
+        "router_shadow_agreements_total": 0.0,
+        "router_shadow_disagreements_total": 0.0,
     }
 
 

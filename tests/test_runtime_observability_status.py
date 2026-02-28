@@ -15,6 +15,8 @@ def test_default_observability_status_snapshot_shape() -> None:
     assert "intent_metrics" in snapshot
     assert "latency_dashboards" in snapshot
     assert "policy_decision_analytics" in snapshot
+    assert "router_canary_analytics" in snapshot
+    assert "budget_metrics" in snapshot
 
 
 def test_publish_observability_status_uses_default_when_disabled() -> None:
@@ -35,6 +37,7 @@ def test_publish_observability_status_enriches_snapshot_with_analytics() -> None
         _observability=SimpleNamespace(status_snapshot=lambda: {"enabled": True, "alerts": []}),
         _conversation_latency_analytics=lambda: {"sample_count": 3},
         _policy_decision_analytics=lambda: {"decision_count": 2},
+        _router_canary_analytics=lambda: {"sample_count": 4, "shadow_disagreement_count": 1},
     )
     payload: dict[str, object] = {}
 
@@ -46,6 +49,7 @@ def test_publish_observability_status_enriches_snapshot_with_analytics() -> None
     assert payload["enabled"] is True
     assert payload["latency_dashboards"]["sample_count"] == 3
     assert payload["policy_decision_analytics"]["decision_count"] == 2
+    assert payload["router_canary_analytics"]["shadow_disagreement_count"] == 1
 
 
 def test_publish_observability_status_falls_back_when_snapshot_raises() -> None:

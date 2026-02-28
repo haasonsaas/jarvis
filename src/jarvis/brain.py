@@ -16,6 +16,7 @@ import json
 import hashlib
 import logging
 import math
+import time
 from contextlib import suppress
 from types import SimpleNamespace
 from typing import Any, AsyncIterator, Literal
@@ -402,6 +403,73 @@ MEMORY_PROMPT_INJECTION_TERMS = (
 )
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, parsed)
+
+
+def _as_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return {str(key): item for key, item in value.items()}
+    keys = getattr(value, "keys", None)
+    if callable(keys):
+        try:
+            return {str(key): value[key] for key in value.keys()}  # type: ignore[index]
+        except Exception:
+            return {}
+    return {}
+
+
+def _extract_usage_candidate(value: Any, *, depth: int = 0) -> dict[str, Any]:
+    if depth > 4 or value is None:
+        return {}
+    mapping = _as_mapping(value)
+    if mapping:
+        token_keys = {
+            "input_tokens",
+            "prompt_tokens",
+            "output_tokens",
+            "completion_tokens",
+            "total_tokens",
+        }
+        if token_keys.intersection(mapping.keys()):
+            return mapping
+        for key in ("usage", "response", "raw_response", "result"):
+            if key in mapping:
+                candidate = _extract_usage_candidate(mapping.get(key), depth=depth + 1)
+                if candidate:
+                    return candidate
+    for attr in ("usage", "response", "raw_response", "result"):
+        with suppress(Exception):
+            candidate = _extract_usage_candidate(getattr(value, attr), depth=depth + 1)
+            if candidate:
+                return candidate
+    return {}
+
+
+def _usage_from_event_data(data: Any) -> dict[str, int]:
+    usage = _extract_usage_candidate(data)
+    prompt_tokens = _safe_int(
+        usage.get("input_tokens", usage.get("prompt_tokens"))
+    )
+    completion_tokens = _safe_int(
+        usage.get("output_tokens", usage.get("completion_tokens"))
+    )
+    total_tokens = _safe_int(usage.get("total_tokens"))
+    if total_tokens <= 0:
+        total_tokens = prompt_tokens + completion_tokens
+    if total_tokens <= 0:
+        return {}
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
 class Brain:
     """Manages conversation with OpenAI Agents SDK for multi-turn interactions."""
 
@@ -523,6 +591,14 @@ class Brain:
         self._last_interruption_route_trace: dict[str, Any] = {}
         self._last_semantic_turn_trace: dict[str, Any] = {}
         self._last_turn_understanding_trace: dict[str, Any] = {}
+        self._last_llm_usage: dict[str, Any] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_usd": 0.0,
+            "updated_at": 0.0,
+            "model": model,
+        }
 
         # Compatibility shim for existing tests/debug expectations.
         self._client = SimpleNamespace(
@@ -1178,6 +1254,9 @@ class Brain:
     def latest_turn_understanding_trace(self) -> dict[str, Any]:
         return dict(self._last_turn_understanding_trace)
 
+    def latest_llm_usage(self) -> dict[str, Any]:
+        return dict(self._last_llm_usage)
+
     def _enforce_turn_understanding_guardrails(
         self,
         decision: TurnUnderstandingDecision,
@@ -1338,12 +1417,25 @@ class Brain:
             max_turns=5,
         )
         emitted_delta = False
+        usage_totals = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+        input_rate = float(getattr(self._config, "llm_cost_input_per_1k_tokens", 0.0) or 0.0)
+        output_rate = float(getattr(self._config, "llm_cost_output_per_1k_tokens", 0.0) or 0.0)
+        model_name = str(getattr(starting_agent, "model", "") or getattr(self._config, "openai_model", ""))
         async for event in streamed.stream_events():
             if str(getattr(event, "type", "")) != "raw_response_event":
                 continue
             data = getattr(event, "data", None)
             if data is None:
                 continue
+            usage = _usage_from_event_data(data)
+            if usage:
+                usage_totals["prompt_tokens"] += int(usage.get("prompt_tokens", 0) or 0)
+                usage_totals["completion_tokens"] += int(usage.get("completion_tokens", 0) or 0)
+                usage_totals["total_tokens"] += int(usage.get("total_tokens", 0) or 0)
             if str(getattr(data, "type", "")) != "response.output_text.delta":
                 continue
             delta = str(getattr(data, "delta", ""))
@@ -1355,6 +1447,26 @@ class Brain:
             final_text = str(getattr(streamed, "final_output", "") or "").strip()
             if final_text:
                 yield final_text
+        total_tokens = max(
+            0,
+            int(usage_totals["total_tokens"])
+            or int(usage_totals["prompt_tokens"] + usage_totals["completion_tokens"]),
+        )
+        prompt_tokens = max(0, int(usage_totals["prompt_tokens"]))
+        completion_tokens = max(0, int(usage_totals["completion_tokens"]))
+        cost_usd = 0.0
+        if input_rate > 0.0 or output_rate > 0.0:
+            cost_usd = ((prompt_tokens / 1000.0) * max(0.0, input_rate)) + (
+                (completion_tokens / 1000.0) * max(0.0, output_rate)
+            )
+        self._last_llm_usage = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "cost_usd": max(0.0, float(cost_usd)),
+            "updated_at": time.time(),
+            "model": model_name,
+        }
 
     def _resolve_persona_style(self) -> str:
         style = _normalize_persona_style(self._config.persona_style)
@@ -1429,6 +1541,14 @@ class Brain:
         self._presence.signals.state = State.THINKING
         log.info("User: %s", user_text)
         self._last_policy_route_trace = {}
+        self._last_llm_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_usd": 0.0,
+            "updated_at": time.time(),
+            "model": str(getattr(self._config, "openai_model", "")),
+        }
         query_text = user_text
 
         if self._memory:

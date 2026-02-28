@@ -98,6 +98,7 @@ from jarvis.runtime_telemetry import (
     normalize_tts_chunk as _runtime_normalize_tts_chunk,
     percentile as _runtime_percentile,
     policy_decision_analytics as _runtime_policy_decision_analytics,
+    router_canary_analytics as _runtime_router_canary_analytics,
     stt_confidence_band as _runtime_stt_confidence_band,
     stt_diagnostics_snapshot as _runtime_stt_diagnostics_snapshot,
     refresh_tool_error_counters as _runtime_refresh_tool_error_counters,
@@ -513,6 +514,10 @@ class Jarvis:
     def _policy_decision_analytics(self) -> dict[str, Any]:
         traces = list(getattr(self, "_conversation_traces", []))
         return _runtime_policy_decision_analytics(traces)
+
+    def _router_canary_analytics(self) -> dict[str, Any]:
+        traces = list(getattr(self, "_conversation_traces", []))
+        return _runtime_router_canary_analytics(traces)
 
     def _runtime_profile_snapshot(self) -> dict[str, Any]:
         return _runtime_runtime_profile_snapshot(self)

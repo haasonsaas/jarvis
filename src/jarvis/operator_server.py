@@ -190,6 +190,10 @@ def _dashboard_html(auth_mode: str = "token", csp_nonce: str = "") -> str:
       <pre id=\"stt\">loading...</pre>
     </section>
     <section class=\"card\">
+      <h2>Router Canary</h2>
+      <pre id=\"canary\">loading...</pre>
+    </section>
+    <section class=\"card\">
       <h2>Quick Controls</h2>
       <div>
         <button onclick=\"control('set_wake_mode',{mode:'always_listening'})\">Always Listening</button>
@@ -570,8 +574,10 @@ def _dashboard_html(auth_mode: str = "token", csp_nonce: str = "") -> str:
         ]);
         const controlSchema = await json('/api/control-schema');
         const stt = (((status || {}).voice_attention || {}).stt_diagnostics) || {};
+        const canary = ((((status || {}).observability) || {}).router_canary_analytics) || {};
         document.getElementById('status').textContent = JSON.stringify(status, null, 2);
         document.getElementById('stt').textContent = JSON.stringify(stt, null, 2);
+        document.getElementById('canary').textContent = JSON.stringify(canary, null, 2);
         document.getElementById('tools').textContent = JSON.stringify(tools, null, 2);
         document.getElementById('startup').textContent = JSON.stringify(startup, null, 2);
         document.getElementById('audit').textContent = JSON.stringify(audit, null, 2);
@@ -581,6 +587,7 @@ def _dashboard_html(auth_mode: str = "token", csp_nonce: str = "") -> str:
       } catch (err) {
         document.getElementById('status').textContent = String(err);
         document.getElementById('stt').textContent = String(err);
+        document.getElementById('canary').textContent = String(err);
       }
     }
     async function control(action, payload) {

@@ -70,6 +70,41 @@ def _increment_telemetry(runtime: Any, key: str, amount: float = 1.0) -> None:
     telemetry[key] = base + float(amount)
 
 
+def _record_llm_usage_metrics(runtime: Any) -> None:
+    brain = getattr(runtime, "brain", None)
+    if brain is None or not hasattr(brain, "latest_llm_usage"):
+        return
+    try:
+        usage = brain.latest_llm_usage()
+    except Exception:
+        return
+    if not isinstance(usage, dict):
+        return
+    try:
+        total_tokens = int(usage.get("total_tokens", 0) or 0)
+    except (TypeError, ValueError):
+        total_tokens = 0
+    if total_tokens <= 0:
+        return
+    try:
+        prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+    except (TypeError, ValueError):
+        prompt_tokens = 0
+    try:
+        completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+    except (TypeError, ValueError):
+        completion_tokens = 0
+    try:
+        cost_usd = float(usage.get("cost_usd", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        cost_usd = 0.0
+    _increment_telemetry(runtime, "llm_prompt_tokens_total", float(max(0, prompt_tokens)))
+    _increment_telemetry(runtime, "llm_completion_tokens_total", float(max(0, completion_tokens)))
+    _increment_telemetry(runtime, "llm_total_tokens_total", float(max(0, total_tokens)))
+    _increment_telemetry(runtime, "llm_cost_usd_total", max(0.0, cost_usd))
+    _increment_telemetry(runtime, "llm_usage_samples", 1.0)
+
+
 def _default_turn_understanding_payload() -> dict[str, Any]:
     return {
         "intent_class": "answer",
@@ -746,6 +781,22 @@ async def run(runtime: Any) -> None:
                     "response_prompt_text": str(response_prompt_text).strip()[:500],
                 }
 
+            route_policy_payload = (
+                runtime.brain.latest_policy_route_trace()
+                if hasattr(runtime.brain, "latest_policy_route_trace")
+                else {}
+            )
+            if isinstance(route_policy_payload, dict):
+                if str(route_policy_payload.get("router_variant", "")).strip().lower() == "canary":
+                    _increment_telemetry(runtime, "router_canary_turns_total", 1.0)
+                shadow_agreement = route_policy_payload.get("shadow_agreement")
+                if isinstance(shadow_agreement, bool):
+                    _increment_telemetry(runtime, "router_shadow_comparisons_total", 1.0)
+                    if shadow_agreement:
+                        _increment_telemetry(runtime, "router_shadow_agreements_total", 1.0)
+                    else:
+                        _increment_telemetry(runtime, "router_shadow_disagreements_total", 1.0)
+
             runtime._record_conversation_trace(
                 user_text=user_text,
                 intent_class=intent_class,
@@ -760,11 +811,7 @@ async def run(runtime: Any) -> None:
                 followup_carryover_applied=followup_carryover_applied,
                 preference_updates=learned_preferences,
                 multimodal_grounding=multimodal_grounding,
-                route_policy=(
-                    runtime.brain.latest_policy_route_trace()
-                    if hasattr(runtime.brain, "latest_policy_route_trace")
-                    else {}
-                ),
+                route_policy=route_policy_payload,
                 correction_outcome=(
                     "resolved"
                     if looks_like_correction and resolved is True
@@ -1054,6 +1101,7 @@ async def respond_and_speak(runtime: Any, text: str) -> None:
     finally:
         with suppress(Exception):
             await response_iter.aclose()
+        _record_llm_usage_metrics(runtime)
         runtime._last_response_spoken_text = " ".join(
             sentence for sentence in spoken_sentences if sentence
         ).strip()

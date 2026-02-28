@@ -96,6 +96,81 @@ def test_observability_prometheus_metrics_contains_expected_lines(tmp_path):
         assert "jarvis_intent_answer_quality_success_rate" in metrics
         assert "jarvis_intent_completion_success_rate" in metrics
         assert "jarvis_intent_correction_frequency" in metrics
+        assert "jarvis_budget_tokens_per_hour" in metrics
+        assert "jarvis_budget_cost_usd_per_hour" in metrics
+    finally:
+        store.stop()
+        store.close()
+
+
+def test_observability_budget_alerts_and_metrics(tmp_path):
+    store = ObservabilityStore(
+        db_path=str(tmp_path / "telemetry.sqlite"),
+        state_path=str(tmp_path / "state.json"),
+        event_log_path=str(tmp_path / "events.jsonl"),
+    )
+    store.start()
+    try:
+        store.record_snapshot(
+            {
+                "turns": 1,
+                "avg_stt_latency_ms": 100.0,
+                "avg_llm_first_sentence_ms": 4200.0,
+                "avg_tts_first_audio_ms": 200.0,
+                "service_errors": 0,
+                "storage_errors": 0,
+                "llm_token_usage": {
+                    "prompt_tokens_total": 800.0,
+                    "completion_tokens_total": 200.0,
+                    "total_tokens_total": 1000.0,
+                    "cost_usd_total": 0.1,
+                },
+            }
+        )
+        store.record_snapshot(
+            {
+                "turns": 2,
+                "avg_stt_latency_ms": 120.0,
+                "avg_llm_first_sentence_ms": 5100.0,
+                "avg_tts_first_audio_ms": 250.0,
+                "service_errors": 0,
+                "storage_errors": 0,
+                "llm_token_usage": {
+                    "prompt_tokens_total": 2800.0,
+                    "completion_tokens_total": 1800.0,
+                    "total_tokens_total": 4600.0,
+                    "cost_usd_total": 1.6,
+                },
+            }
+        )
+
+        budget = store.budget_metrics(window_sec=3600.0)
+        assert budget["sample_count"] >= 2
+        assert budget["latency_p95_ms"]["llm_first_sentence_ms"] >= 4200.0
+        assert budget["tokens_per_hour"] > 0.0
+        assert budget["cost_usd_per_hour"] > 0.0
+
+        alerts = store.detect_budget_violations(
+            latency_p95_budget_ms=2500.0,
+            tokens_budget_per_hour=1000.0,
+            cost_budget_usd_per_hour=0.5,
+            window_sec=3600.0,
+            cooldown_sec=3600.0,
+        )
+        alert_types = {row["type"] for row in alerts}
+        assert "latency_budget_exceeded" in alert_types
+        assert "tokens_budget_exceeded" in alert_types
+        assert "cost_budget_exceeded" in alert_types
+
+        # Cooldown suppresses duplicate emissions for the same breach.
+        suppressed = store.detect_budget_violations(
+            latency_p95_budget_ms=2500.0,
+            tokens_budget_per_hour=1000.0,
+            cost_budget_usd_per_hour=0.5,
+            window_sec=3600.0,
+            cooldown_sec=3600.0,
+        )
+        assert suppressed == []
     finally:
         store.stop()
         store.close()

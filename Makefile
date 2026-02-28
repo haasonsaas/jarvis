@@ -1,5 +1,5 @@
 .PHONY: check test-fast test-sim test-sim-acceptance test-faults test-fault-profiles test-fault-campaign test-fault-chaos test-soak test-soak-reliability test-soak-extended test-soak-campaign test-personality security-gate \
-		bootstrap quality-report eval-dataset router-eval interruption-eval trace-eval trace-synth-eval autonomy-eval memory-eval runtime-outcome-gate quality-trend-gate release-channel-check release-acceptance readiness
+		bootstrap quality-report eval-dataset router-eval interruption-eval trace-eval trace-synth-eval autonomy-eval memory-eval memory-maintenance runtime-outcome-gate quality-trend-gate release-channel-check release-acceptance readiness
 
 check:
 	uv run ruff check src tests
@@ -70,6 +70,9 @@ autonomy-eval:
 
 memory-eval:
 	uv run python scripts/run_memory_quality_eval.py docs/evals/memory-quality-contract.json --output .artifacts/quality/memory-eval.json --strict --min-pass-rate 0.8 --max-failed 1 --min-cases 5 --require-unique-ids --llm-judge on --conflict-resolution on --min-avg-judge-score 0.7
+
+memory-maintenance:
+	uv run python scripts/run_memory_maintenance.py --scan-limit 600 --output .artifacts/quality/memory-maintenance.json
 
 runtime-outcome-gate:
 	uv run python scripts/run_runtime_outcome_gate.py --output .artifacts/quality/runtime-outcome-gate.json --strict --min-pass-rate 1.0 --max-failed 0

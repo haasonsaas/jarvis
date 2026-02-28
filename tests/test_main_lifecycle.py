@@ -381,6 +381,20 @@ def test_conversation_latency_and_policy_decision_analytics():
                 "tool_calls": [{"name": "smart_home_control"}],
                 "policy_decisions": [{"tool": "smart_home_control", "status": "denied", "detail": "policy"}],
                 "requester_user": "operator",
+                "turn_id": 2,
+                "timestamp": 2.0,
+                "route_policy": {
+                    "route_source": "router",
+                    "router_variant": "canary",
+                    "shadow_agreement": False,
+                    "starting_agent": "safety",
+                    "first_response_strategy": "clarify",
+                    "route_confidence": 0.42,
+                    "shadow_route": {
+                        "starting_agent": "action",
+                        "first_response_strategy": "act",
+                    },
+                },
             },
             {
                 "latencies_ms": {"total": 150.0},
@@ -389,6 +403,16 @@ def test_conversation_latency_and_policy_decision_analytics():
                 "tool_calls": [],
                 "policy_decisions": [],
                 "requester_user": "operator",
+                "turn_id": 1,
+                "timestamp": 1.0,
+                "route_policy": {
+                    "route_source": "router",
+                    "router_variant": "primary",
+                    "shadow_agreement": True,
+                    "starting_agent": "conversation",
+                    "first_response_strategy": "answer",
+                    "route_confidence": 0.81,
+                },
             },
         ],
         maxlen=20,
@@ -404,6 +428,14 @@ def test_conversation_latency_and_policy_decision_analytics():
     assert policy["decision_count"] == 1
     assert policy["by_tool"]["smart_home_control"] == 1
     assert policy["by_user"]["operator"] == 1
+
+    canary = Jarvis._router_canary_analytics(jarvis)
+    assert canary["sample_count"] == 2
+    assert canary["router_decision_count"] == 2
+    assert canary["canary_turn_count"] == 1
+    assert canary["shadow_compare_count"] == 2
+    assert canary["shadow_disagreement_count"] == 1
+    assert canary["recent_disagreements"][0]["turn_id"] == 2
 
 
 def test_apply_turn_choreography_sets_presence_bias_fields():
@@ -603,6 +635,15 @@ def test_telemetry_snapshot_averages():
         "semantic_turn_waits": 2.0,
         "semantic_turn_commits": 3.0,
         "semantic_turn_fallbacks": 1.0,
+        "llm_prompt_tokens_total": 300.0,
+        "llm_completion_tokens_total": 120.0,
+        "llm_total_tokens_total": 420.0,
+        "llm_cost_usd_total": 0.08,
+        "llm_usage_samples": 2.0,
+        "router_canary_turns_total": 1.0,
+        "router_shadow_comparisons_total": 2.0,
+        "router_shadow_agreements_total": 1.0,
+        "router_shadow_disagreements_total": 1.0,
     }
     snapshot = Jarvis._telemetry_snapshot(jarvis)
     assert snapshot["turns"] == 10.0
@@ -630,6 +671,14 @@ def test_telemetry_snapshot_averages():
     assert semantic_turn["decision_count"] == 5.0
     assert semantic_turn["wait_count"] == 2.0
     assert semantic_turn["commit_count"] == 3.0
+    llm_usage = snapshot["llm_token_usage"]
+    assert llm_usage["total_tokens_total"] == 420.0
+    assert llm_usage["usage_samples"] == 2.0
+    assert llm_usage["avg_tokens_per_usage"] == pytest.approx(210.0)
+    canary = snapshot["router_canary_metrics"]
+    assert canary["canary_turns_total"] == 1.0
+    assert canary["shadow_comparisons_total"] == 2.0
+    assert canary["shadow_agreement_rate"] == pytest.approx(0.5)
 
 
 def test_telemetry_snapshot_intent_metric_rates():

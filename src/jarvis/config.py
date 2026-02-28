@@ -104,6 +104,12 @@ class Config:
     # OpenAI model API key.
     openai_api_key: str = field(default_factory=_require_openai_api_key)
     openai_model: str = field(default_factory=lambda: os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"))
+    llm_cost_input_per_1k_tokens: float = field(
+        default_factory=lambda: _env_nonnegative_float("LLM_COST_INPUT_PER_1K_TOKENS", 0.0)
+    )
+    llm_cost_output_per_1k_tokens: float = field(
+        default_factory=lambda: _env_nonnegative_float("LLM_COST_OUTPUT_PER_1K_TOKENS", 0.0)
+    )
     openai_router_model: str = field(default_factory=lambda: os.environ.get("OPENAI_ROUTER_MODEL", ""))
     openai_router_shadow_model: str = field(default_factory=lambda: os.environ.get("OPENAI_ROUTER_SHADOW_MODEL", ""))
     router_shadow_enabled: bool = field(default_factory=lambda: _env_bool("ROUTER_SHADOW_ENABLED") or False)
@@ -243,6 +249,21 @@ class Config:
     )
     observability_snapshot_interval_sec: float = field(
         default_factory=lambda: _env_positive_float("OBSERVABILITY_SNAPSHOT_INTERVAL_SEC", 30.0)
+    )
+    observability_latency_budget_p95_ms: float = field(
+        default_factory=lambda: _env_nonnegative_float("OBSERVABILITY_LATENCY_BUDGET_P95_MS", 3500.0)
+    )
+    observability_tokens_budget_per_hour: float = field(
+        default_factory=lambda: _env_nonnegative_float("OBSERVABILITY_TOKENS_BUDGET_PER_HOUR", 0.0)
+    )
+    observability_cost_budget_usd_per_hour: float = field(
+        default_factory=lambda: _env_nonnegative_float("OBSERVABILITY_COST_BUDGET_USD_PER_HOUR", 0.0)
+    )
+    observability_budget_window_sec: float = field(
+        default_factory=lambda: _env_positive_float("OBSERVABILITY_BUDGET_WINDOW_SEC", 3600.0)
+    )
+    observability_alert_cooldown_sec: float = field(
+        default_factory=lambda: _env_positive_float("OBSERVABILITY_ALERT_COOLDOWN_SEC", 300.0)
     )
     skills_enabled: bool = field(default_factory=lambda: _env_bool("SKILLS_ENABLED") is not False)
     skills_dir: str = field(default_factory=lambda: os.environ.get("SKILLS_DIR", os.path.expanduser("~/.jarvis/skills")))
@@ -412,6 +433,20 @@ class Config:
             raise ValueError("observability_failure_burst_threshold must be >= 1")
         if self.observability_snapshot_interval_sec <= 0.0:
             raise ValueError("observability_snapshot_interval_sec must be > 0")
+        if self.observability_latency_budget_p95_ms < 0.0:
+            raise ValueError("observability_latency_budget_p95_ms must be >= 0")
+        if self.observability_tokens_budget_per_hour < 0.0:
+            raise ValueError("observability_tokens_budget_per_hour must be >= 0")
+        if self.observability_cost_budget_usd_per_hour < 0.0:
+            raise ValueError("observability_cost_budget_usd_per_hour must be >= 0")
+        if self.observability_budget_window_sec <= 0.0:
+            raise ValueError("observability_budget_window_sec must be > 0")
+        if self.observability_alert_cooldown_sec <= 0.0:
+            raise ValueError("observability_alert_cooldown_sec must be > 0")
+        if self.llm_cost_input_per_1k_tokens < 0.0:
+            raise ValueError("llm_cost_input_per_1k_tokens must be >= 0")
+        if self.llm_cost_output_per_1k_tokens < 0.0:
+            raise ValueError("llm_cost_output_per_1k_tokens must be >= 0")
         if self.watchdog_listening_timeout_sec <= 0.0:
             raise ValueError("watchdog_listening_timeout_sec must be > 0")
         if self.watchdog_thinking_timeout_sec <= 0.0:
@@ -947,6 +982,33 @@ class Config:
                 "positive_float",
                 str(self.observability_snapshot_interval_sec),
             ),
+            (
+                "OBSERVABILITY_LATENCY_BUDGET_P95_MS",
+                "nonnegative_float",
+                str(self.observability_latency_budget_p95_ms),
+            ),
+            (
+                "OBSERVABILITY_TOKENS_BUDGET_PER_HOUR",
+                "nonnegative_float",
+                str(self.observability_tokens_budget_per_hour),
+            ),
+            (
+                "OBSERVABILITY_COST_BUDGET_USD_PER_HOUR",
+                "nonnegative_float",
+                str(self.observability_cost_budget_usd_per_hour),
+            ),
+            (
+                "OBSERVABILITY_BUDGET_WINDOW_SEC",
+                "positive_float",
+                str(self.observability_budget_window_sec),
+            ),
+            (
+                "OBSERVABILITY_ALERT_COOLDOWN_SEC",
+                "positive_float",
+                str(self.observability_alert_cooldown_sec),
+            ),
+            ("LLM_COST_INPUT_PER_1K_TOKENS", "nonnegative_float", str(self.llm_cost_input_per_1k_tokens)),
+            ("LLM_COST_OUTPUT_PER_1K_TOKENS", "nonnegative_float", str(self.llm_cost_output_per_1k_tokens)),
             ("MEMORY_SEARCH_LIMIT", "int", str(self.memory_search_limit)),
             ("MEMORY_EMBEDDING_VECTOR_WEIGHT", "float", str(self.memory_embedding_vector_weight)),
             ("MEMORY_EMBEDDING_MIN_SIMILARITY", "float", str(self.memory_embedding_min_similarity)),

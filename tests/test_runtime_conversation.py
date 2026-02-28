@@ -32,6 +32,11 @@ async def test_respond_and_speak_streams_sentences_to_tts_queue() -> None:
     runtime._telemetry = {
         "llm_first_sentence_total_ms": 0.0,
         "llm_first_sentence_count": 0.0,
+        "llm_prompt_tokens_total": 0.0,
+        "llm_completion_tokens_total": 0.0,
+        "llm_total_tokens_total": 0.0,
+        "llm_cost_usd_total": 0.0,
+        "llm_usage_samples": 0.0,
     }
     runtime._tts_queue = asyncio.Queue()
     runtime._confidence_pause = lambda sentence: 0.0
@@ -44,7 +49,15 @@ async def test_respond_and_speak_streams_sentences_to_tts_queue() -> None:
     async def _responses():
         yield "First sentence"
 
-    runtime.brain = SimpleNamespace(respond=lambda _: _responses())
+    runtime.brain = SimpleNamespace(
+        respond=lambda _: _responses(),
+        latest_llm_usage=lambda: {
+            "prompt_tokens": 120,
+            "completion_tokens": 80,
+            "total_tokens": 200,
+            "cost_usd": 0.04,
+        },
+    )
 
     await respond_and_speak(runtime, "hello")
 
@@ -52,6 +65,8 @@ async def test_respond_and_speak_streams_sentences_to_tts_queue() -> None:
     assert queued[1] == "First sentence"
     assert runtime._response_started is True
     assert runtime._telemetry["llm_first_sentence_count"] == 1.0
+    assert runtime._telemetry["llm_total_tokens_total"] == 200.0
+    assert runtime._telemetry["llm_usage_samples"] == 1.0
     runtime._publish_voice_status.assert_called_once()
 
 

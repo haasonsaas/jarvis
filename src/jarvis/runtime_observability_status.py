@@ -46,6 +46,29 @@ def default_observability_status_snapshot() -> dict[str, Any]:
             "by_user": {},
             "by_user_tool": {},
         },
+        "router_canary_analytics": {
+            "sample_count": 0,
+            "router_decision_count": 0,
+            "canary_turn_count": 0,
+            "canary_coverage": 0.0,
+            "fallback_count": 0,
+            "shadow_compare_count": 0,
+            "shadow_agreement_count": 0,
+            "shadow_disagreement_count": 0,
+            "shadow_agreement_rate": 0.0,
+            "recent_disagreements": [],
+        },
+        "budget_metrics": {
+            "window_sec": 3600.0,
+            "sample_count": 0,
+            "latency_p95_ms": {
+                "stt_ms": 0.0,
+                "llm_first_sentence_ms": 0.0,
+                "tts_first_audio_ms": 0.0,
+            },
+            "tokens_per_hour": 0.0,
+            "cost_usd_per_hour": 0.0,
+        },
     }
 
 
@@ -66,4 +89,7 @@ def publish_observability_status(
     if isinstance(snapshot, dict):
         snapshot["latency_dashboards"] = runtime._conversation_latency_analytics()
         snapshot["policy_decision_analytics"] = runtime._policy_decision_analytics()
+        router_canary_fn = getattr(runtime, "_router_canary_analytics", None)
+        if callable(router_canary_fn):
+            snapshot["router_canary_analytics"] = router_canary_fn()
     set_runtime_observability_state_fn(snapshot)

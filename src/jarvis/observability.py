@@ -40,6 +40,16 @@ def _default_intent_metrics() -> dict[str, float]:
     }
 
 
+def _safe_float(value: Any) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(parsed):
+        return 0.0
+    return parsed
+
+
 class ObservabilityStore:
     """Persistent observability state and metric export."""
 
@@ -68,6 +78,7 @@ class ObservabilityStore:
         self._started_at = 0.0
         self._restart_count = 0
         self._alerts: deque[dict[str, Any]] = deque(maxlen=100)
+        self._alert_last_emitted: dict[str, float] = {}
         self._events: deque[dict[str, Any]] = deque(maxlen=500)
         self._last_state = "unknown"
 
@@ -276,6 +287,132 @@ class ObservabilityStore:
             }
         return rates
 
+    def _telemetry_payload_rows(self, *, window_sec: float) -> list[tuple[float, dict[str, Any]]]:
+        cutoff = time.time() - max(1.0, float(window_sec))
+        rows = self._conn.cursor().execute(
+            "SELECT ts, payload FROM telemetry_snapshots WHERE ts >= ? ORDER BY ts ASC",
+            (cutoff,),
+        ).fetchall()
+        payload_rows: list[tuple[float, dict[str, Any]]] = []
+        for row in rows:
+            try:
+                payload = json.loads(str(row["payload"]))
+            except Exception:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            payload_rows.append((float(row["ts"]), payload))
+        return payload_rows
+
+    @staticmethod
+    def _token_usage_totals(payload: dict[str, Any]) -> tuple[float, float]:
+        usage = payload.get("llm_token_usage")
+        if not isinstance(usage, dict):
+            return 0.0, 0.0
+        return (
+            max(0.0, _safe_float(usage.get("total_tokens_total"))),
+            max(0.0, _safe_float(usage.get("cost_usd_total"))),
+        )
+
+    def budget_metrics(self, *, window_sec: float = 3600.0) -> dict[str, Any]:
+        window = max(1.0, float(window_sec))
+        payload_rows = self._telemetry_payload_rows(window_sec=window)
+        sample_count = len(payload_rows)
+        lat = self.latency_percentiles(window_sec=window)
+        tokens_per_hour = 0.0
+        cost_usd_per_hour = 0.0
+        if sample_count >= 2:
+            start_ts, start_payload = payload_rows[0]
+            end_ts, end_payload = payload_rows[-1]
+            duration_sec = max(1.0, end_ts - start_ts)
+            start_tokens, start_cost = self._token_usage_totals(start_payload)
+            end_tokens, end_cost = self._token_usage_totals(end_payload)
+            delta_tokens = max(0.0, end_tokens - start_tokens)
+            delta_cost = max(0.0, end_cost - start_cost)
+            tokens_per_hour = delta_tokens * (3600.0 / duration_sec)
+            cost_usd_per_hour = delta_cost * (3600.0 / duration_sec)
+        return {
+            "window_sec": window,
+            "sample_count": sample_count,
+            "latency_p95_ms": {
+                "stt_ms": _safe_float(lat.get("stt_ms", {}).get("p95")),
+                "llm_first_sentence_ms": _safe_float(lat.get("llm_first_sentence_ms", {}).get("p95")),
+                "tts_first_audio_ms": _safe_float(lat.get("tts_first_audio_ms", {}).get("p95")),
+            },
+            "tokens_per_hour": max(0.0, tokens_per_hour),
+            "cost_usd_per_hour": max(0.0, cost_usd_per_hour),
+        }
+
+    def _emit_alert(
+        self,
+        *,
+        alert_key: str,
+        alert: dict[str, Any],
+        cooldown_sec: float,
+    ) -> bool:
+        now = time.time()
+        cooldown = max(1.0, float(cooldown_sec))
+        last = float(self._alert_last_emitted.get(alert_key, 0.0) or 0.0)
+        if (now - last) < cooldown:
+            return False
+        payload = {str(key): value for key, value in alert.items()}
+        payload["timestamp"] = now
+        self._alert_last_emitted[alert_key] = now
+        self._alerts.append(payload)
+        return True
+
+    def detect_budget_violations(
+        self,
+        *,
+        latency_p95_budget_ms: float | None = None,
+        tokens_budget_per_hour: float | None = None,
+        cost_budget_usd_per_hour: float | None = None,
+        window_sec: float = 3600.0,
+        cooldown_sec: float = 300.0,
+    ) -> list[dict[str, Any]]:
+        metrics = self.budget_metrics(window_sec=window_sec)
+        alerts: list[dict[str, Any]] = []
+        latency_budget = max(0.0, _safe_float(latency_p95_budget_ms))
+        if latency_budget > 0.0:
+            llm_p95 = _safe_float(metrics.get("latency_p95_ms", {}).get("llm_first_sentence_ms"))
+            if llm_p95 > latency_budget:
+                alert = {
+                    "type": "latency_budget_exceeded",
+                    "window_sec": float(window_sec),
+                    "metric": "llm_first_sentence_p95_ms",
+                    "value": llm_p95,
+                    "budget": latency_budget,
+                }
+                if self._emit_alert(alert_key="latency_budget_exceeded", alert=alert, cooldown_sec=cooldown_sec):
+                    alerts.append(dict(self._alerts[-1]))
+        tokens_budget = max(0.0, _safe_float(tokens_budget_per_hour))
+        if tokens_budget > 0.0:
+            tokens_per_hour = _safe_float(metrics.get("tokens_per_hour"))
+            if tokens_per_hour > tokens_budget:
+                alert = {
+                    "type": "tokens_budget_exceeded",
+                    "window_sec": float(window_sec),
+                    "metric": "tokens_per_hour",
+                    "value": tokens_per_hour,
+                    "budget": tokens_budget,
+                }
+                if self._emit_alert(alert_key="tokens_budget_exceeded", alert=alert, cooldown_sec=cooldown_sec):
+                    alerts.append(dict(self._alerts[-1]))
+        cost_budget = max(0.0, _safe_float(cost_budget_usd_per_hour))
+        if cost_budget > 0.0:
+            cost_per_hour = _safe_float(metrics.get("cost_usd_per_hour"))
+            if cost_per_hour > cost_budget:
+                alert = {
+                    "type": "cost_budget_exceeded",
+                    "window_sec": float(window_sec),
+                    "metric": "cost_usd_per_hour",
+                    "value": cost_per_hour,
+                    "budget": cost_budget,
+                }
+                if self._emit_alert(alert_key="cost_budget_exceeded", alert=alert, cooldown_sec=cooldown_sec):
+                    alerts.append(dict(self._alerts[-1]))
+        return alerts
+
     @staticmethod
     def _coerce_intent_metrics(payload: Any) -> dict[str, float]:
         defaults = _default_intent_metrics()
@@ -321,14 +458,17 @@ class ObservabilityStore:
         alerts: list[dict[str, Any]] = []
         if count >= self._failure_burst_threshold:
             alert = {
-                "timestamp": time.time(),
                 "type": "failure_burst",
                 "window_sec": float(window_sec),
                 "error_count": count,
                 "threshold": self._failure_burst_threshold,
             }
-            self._alerts.append(alert)
-            alerts.append(alert)
+            if self._emit_alert(
+                alert_key="failure_burst",
+                alert=alert,
+                cooldown_sec=max(30.0, float(window_sec) / 2.0),
+            ):
+                alerts.append(dict(self._alerts[-1]))
         return alerts
 
     def active_alerts(self, *, limit: int = 20) -> list[dict[str, Any]]:
@@ -336,6 +476,7 @@ class ObservabilityStore:
         return list(self._alerts)[-size:]
 
     def status_snapshot(self) -> dict[str, Any]:
+        budget = self.budget_metrics(window_sec=3600.0)
         return {
             "enabled": True,
             "uptime_sec": self.uptime_sec(),
@@ -344,11 +485,13 @@ class ObservabilityStore:
             "tool_rates": self.tool_success_rates(window_sec=900.0),
             "intent_metrics": self.intent_success_metrics(window_sec=3600.0),
             "alerts": self.active_alerts(limit=20),
+            "budget_metrics": budget,
         }
 
     def prometheus_metrics(self) -> str:
         status = self.status_snapshot()
         lat = status["latency_percentiles"]
+        budget = status.get("budget_metrics", {})
         intent = self._coerce_intent_metrics(status.get("intent_metrics"))
         lines = [
             "# HELP jarvis_uptime_seconds Uptime since process start",
@@ -385,6 +528,12 @@ class ObservabilityStore:
                 "# HELP jarvis_intent_correction_frequency User correction frequency",
                 "# TYPE jarvis_intent_correction_frequency gauge",
                 f"jarvis_intent_correction_frequency {intent['correction_frequency']:.6f}",
+                "# HELP jarvis_budget_tokens_per_hour Estimated LLM token usage rate over the observability window",
+                "# TYPE jarvis_budget_tokens_per_hour gauge",
+                f"jarvis_budget_tokens_per_hour {float(budget.get('tokens_per_hour', 0.0) or 0.0):.6f}",
+                "# HELP jarvis_budget_cost_usd_per_hour Estimated LLM cost rate over the observability window",
+                "# TYPE jarvis_budget_cost_usd_per_hour gauge",
+                f"jarvis_budget_cost_usd_per_hour {float(budget.get('cost_usd_per_hour', 0.0) or 0.0):.6f}",
             ]
         )
         return "\n".join(lines) + "\n"
