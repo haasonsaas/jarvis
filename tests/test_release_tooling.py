@@ -67,6 +67,221 @@ def test_run_eval_dataset_threshold_reasons():
     assert "missing_expected_tools" in contract_summary["failure_reasons"]
 
 
+def test_run_router_policy_eval_threshold_reasons():
+    project_root = Path(__file__).resolve().parents[1]
+    module = _load_script_module(
+        "run_router_policy_eval_script",
+        project_root / "scripts" / "run_router_policy_eval.py",
+    )
+
+    row = module._evaluate_case(
+        {
+            "id": "router_case",
+            "expected_route": {"starting_agent": "safety", "route_confidence": 0.4},
+            "actual_route": {"starting_agent": "action", "route_confidence": 1.2},
+            "max_confidence": 0.9,
+        }
+    )
+    assert row["passed"] is False
+    assert "invalid_route_confidence" in row["validation_errors"]
+    assert any("starting_agent" in item for item in row["mismatches"])
+
+    summary = module._evaluate_results(
+        dataset_path=Path("router-dataset.json"),
+        results=[{"id": "a", "passed": True}, {"id": "b", "passed": False}],
+        strict=True,
+        min_pass_rate=1.0,
+        max_failed=0,
+        min_cases=3,
+        duplicate_ids=["b"],
+    )
+    assert summary["accepted"] is False
+    assert "strict_failed_cases" in summary["failure_reasons"]
+    assert "pass_rate_below_threshold" in summary["failure_reasons"]
+    assert "failed_count_above_threshold" in summary["failure_reasons"]
+    assert "insufficient_case_count" in summary["failure_reasons"]
+    assert "duplicate_case_ids" in summary["failure_reasons"]
+
+
+def test_run_interruption_route_eval_threshold_reasons():
+    project_root = Path(__file__).resolve().parents[1]
+    module = _load_script_module(
+        "run_interruption_route_eval_script",
+        project_root / "scripts" / "run_interruption_route_eval.py",
+    )
+
+    row = module._evaluate_case(
+        {
+            "id": "interruption_case",
+            "expected_route": {"strategy": "resume", "route_confidence": 0.7},
+            "actual_route": {"strategy": "unknown", "route_confidence": 1.2},
+            "max_confidence": 0.9,
+        }
+    )
+    assert row["passed"] is False
+    assert "invalid_strategy" in row["validation_errors"]
+    assert any("strategy" in item for item in row["mismatches"])
+
+    summary = module._evaluate_results(
+        dataset_path=Path("interruption-dataset.json"),
+        results=[{"id": "a", "passed": True}, {"id": "b", "passed": False}],
+        strict=True,
+        min_pass_rate=1.0,
+        max_failed=0,
+        min_cases=3,
+        duplicate_ids=["b"],
+    )
+    assert summary["accepted"] is False
+    assert "strict_failed_cases" in summary["failure_reasons"]
+    assert "pass_rate_below_threshold" in summary["failure_reasons"]
+    assert "failed_count_above_threshold" in summary["failure_reasons"]
+    assert "insufficient_case_count" in summary["failure_reasons"]
+    assert "duplicate_case_ids" in summary["failure_reasons"]
+
+
+def test_run_trace_trajectory_eval_threshold_reasons():
+    project_root = Path(__file__).resolve().parents[1]
+    module = _load_script_module(
+        "run_trace_trajectory_eval_script",
+        project_root / "scripts" / "run_trace_trajectory_eval.py",
+    )
+
+    row = module._evaluate_case(
+        {
+            "id": "trajectory_case",
+            "trace": [
+                {"turn_id": 1, "intent": "answer", "response_success": False},
+                {
+                    "turn_id": 2,
+                    "intent": "answer",
+                    "response_success": False,
+                    "interruption_route": {"strategy": "resume"},
+                    "parent_turn_id": 1,
+                },
+            ],
+            "min_total_score": 0.95,
+        }
+    )
+    assert row["passed"] is False
+    assert any("total_score below min" in item for item in row["mismatches"])
+
+    summary = module._evaluate_results(
+        dataset_path=Path("trajectory-dataset.json"),
+        results=[{"id": "a", "passed": True}, {"id": "b", "passed": False}],
+        strict=True,
+        min_pass_rate=1.0,
+        max_failed=0,
+        min_cases=3,
+        duplicate_ids=["b"],
+    )
+    assert summary["accepted"] is False
+    assert "strict_failed_cases" in summary["failure_reasons"]
+    assert "pass_rate_below_threshold" in summary["failure_reasons"]
+    assert "failed_count_above_threshold" in summary["failure_reasons"]
+    assert "insufficient_case_count" in summary["failure_reasons"]
+    assert "duplicate_case_ids" in summary["failure_reasons"]
+
+
+def test_run_autonomy_cycle_eval_threshold_reasons():
+    project_root = Path(__file__).resolve().parents[1]
+    module = _load_script_module(
+        "run_autonomy_cycle_eval_script",
+        project_root / "scripts" / "run_autonomy_cycle_eval.py",
+    )
+
+    row = module._evaluate_case(
+        {
+            "id": "autonomy_case",
+            "actual_cycle": {"replan_count": 2, "retry_scheduled_count": -1},
+            "actual_status": {
+                "needs_replan_count": 0,
+                "retry_pending_count": 0,
+                "backlog_step_count": 1,
+                "status_counts": {"scheduled": 1},
+                "failure_taxonomy": {"condition_equals_mismatch": 2},
+            },
+            "max_replan_count": 1,
+        }
+    )
+    assert row["passed"] is False
+    assert "invalid_cycle_retry_scheduled_count" in row["validation_errors"]
+    assert any("replan_count above max" in item for item in row["mismatches"])
+
+    summary = module._evaluate_results(
+        dataset_path=Path("autonomy-dataset.json"),
+        results=[{"id": "a", "passed": True}, {"id": "b", "passed": False}],
+        strict=True,
+        min_pass_rate=1.0,
+        max_failed=0,
+        min_cases=3,
+        duplicate_ids=["b"],
+    )
+    assert summary["accepted"] is False
+    assert "strict_failed_cases" in summary["failure_reasons"]
+    assert "pass_rate_below_threshold" in summary["failure_reasons"]
+    assert "failed_count_above_threshold" in summary["failure_reasons"]
+    assert "insufficient_case_count" in summary["failure_reasons"]
+    assert "duplicate_case_ids" in summary["failure_reasons"]
+
+
+def test_run_runtime_outcome_gate_threshold_reasons():
+    project_root = Path(__file__).resolve().parents[1]
+    module = _load_script_module(
+        "run_runtime_outcome_gate_script",
+        project_root / "scripts" / "run_runtime_outcome_gate.py",
+    )
+
+    summary = module._evaluate_results(
+        results=[{"id": "a", "passed": True}, {"id": "b", "passed": False}],
+        strict=True,
+        min_pass_rate=1.0,
+        max_failed=0,
+    )
+    assert summary["accepted"] is False
+    assert "strict_failed_cases" in summary["failure_reasons"]
+    assert "pass_rate_below_threshold" in summary["failure_reasons"]
+    assert "failed_count_above_threshold" in summary["failure_reasons"]
+
+
+def test_run_memory_quality_eval_threshold_reasons():
+    project_root = Path(__file__).resolve().parents[1]
+    module = _load_script_module(
+        "run_memory_quality_eval_script",
+        project_root / "scripts" / "run_memory_quality_eval.py",
+    )
+
+    summary = module._evaluate_results(
+        dataset_path=Path("memory-quality-dataset.json"),
+        results=[
+            {"id": "a", "passed": True, "llm_judge": {"score": 0.9}},
+            {"id": "b", "passed": False, "llm_judge": {"score": 0.2}},
+        ],
+        strict=True,
+        min_pass_rate=0.95,
+        max_failed=0,
+        min_cases=3,
+        duplicate_ids=["a"],
+        min_avg_judge_score=0.8,
+        llm_judge_mode="on",
+        llm_judge_enabled=True,
+        conflict_resolution_mode="on",
+        conflict_resolution_enabled=True,
+    )
+    assert summary["accepted"] is False
+    assert "strict_failed_cases" in summary["failure_reasons"]
+    assert "pass_rate_below_threshold" in summary["failure_reasons"]
+    assert "failed_count_above_threshold" in summary["failure_reasons"]
+    assert "insufficient_case_count" in summary["failure_reasons"]
+    assert "duplicate_case_ids" in summary["failure_reasons"]
+    assert "avg_judge_score_below_threshold" in summary["failure_reasons"]
+
+
+def test_readiness_script_includes_runtime_outcome_gate():
+    project_root = Path(__file__).resolve().parents[1]
+    script_text = (project_root / "scripts" / "jarvis_readiness.sh").read_text(encoding="utf-8")
+    assert "run_runtime_outcome_gate.py" in script_text
+
+
 def test_generate_quality_report_trend():
     project_root = Path(__file__).resolve().parents[1]
     module = _load_script_module("generate_quality_report_script", project_root / "scripts" / "generate_quality_report.py")
@@ -274,5 +489,81 @@ def test_assistant_contract_dataset_has_adversarial_coverage():
         "adv_plan_preview_token_ttl_enforced",
         "sim_voice_edge_001",
         "sim_autonomy_edge_001",
+    }
+    assert required_ids.issubset(case_ids)
+
+
+def test_router_policy_dataset_has_adversarial_coverage():
+    project_root = Path(__file__).resolve().parents[1]
+    dataset_path = project_root / "docs" / "evals" / "router-policy-contract.json"
+    payload = json.loads(dataset_path.read_text(encoding="utf-8"))
+    cases = payload.get("cases")
+    assert isinstance(cases, list)
+    assert len(cases) >= 20
+
+    case_ids = {str(case.get("id", "")) for case in cases if isinstance(case, dict)}
+    required_ids = {
+        "adv_router_prompt_injection_fail_closed",
+        "adv_router_identity_spoof_fail_closed",
+        "adv_router_tool_escalation_requires_confirmation",
+        "adv_router_ambiguous_unlock_requires_safety",
+        "router_fallback_default_contract",
+    }
+    assert required_ids.issubset(case_ids)
+
+
+def test_interruption_route_dataset_has_adversarial_coverage():
+    project_root = Path(__file__).resolve().parents[1]
+    dataset_path = project_root / "docs" / "evals" / "interruption-route-contract.json"
+    payload = json.loads(dataset_path.read_text(encoding="utf-8"))
+    cases = payload.get("cases")
+    assert isinstance(cases, list)
+    assert len(cases) >= 20
+
+    case_ids = {str(case.get("id", "")) for case in cases if isinstance(case, dict)}
+    required_ids = {
+        "adv_interruption_prompt_injection_forced_replace",
+        "adv_interruption_identity_spoof_forced_replace",
+        "adv_interruption_low_confidence_resume_forced_replace",
+        "adv_interruption_correction_never_resume",
+        "router_fallback_default_contract",
+    }
+    assert required_ids.issubset(case_ids)
+
+
+def test_trajectory_trace_dataset_has_adversarial_coverage():
+    project_root = Path(__file__).resolve().parents[1]
+    dataset_path = project_root / "docs" / "evals" / "trajectory-trace-contract.json"
+    payload = json.loads(dataset_path.read_text(encoding="utf-8"))
+    cases = payload.get("cases")
+    assert isinstance(cases, list)
+    assert len(cases) >= 10
+
+    case_ids = {str(case.get("id", "")) for case in cases if isinstance(case, dict)}
+    required_ids = {
+        "adv_trace_prompt_injection_guardrail_retained",
+        "adv_trace_identity_spoof_guardrail_retained",
+        "adv_trace_interruption_recovery_quality",
+        "adv_trace_linkage_integrity_preserved",
+        "router_fallback_default_contract",
+    }
+    assert required_ids.issubset(case_ids)
+
+
+def test_autonomy_cycle_dataset_has_adversarial_coverage():
+    project_root = Path(__file__).resolve().parents[1]
+    dataset_path = project_root / "docs" / "evals" / "autonomy-cycle-contract.json"
+    payload = json.loads(dataset_path.read_text(encoding="utf-8"))
+    cases = payload.get("cases")
+    assert isinstance(cases, list)
+    assert len(cases) >= 10
+
+    case_ids = {str(case.get("id", "")) for case in cases if isinstance(case, dict)}
+    required_ids = {
+        "adv_autonomy_precondition_retry_escalates_replan",
+        "adv_autonomy_postcondition_retry_recovers",
+        "adv_autonomy_checkpoint_gate_blocks_until_approved",
+        "adv_autonomy_failure_taxonomy_accumulates",
+        "autonomy_default_contract",
     }
     assert required_ids.issubset(case_ids)

@@ -8,6 +8,8 @@ from typing import Any
 from jarvis.tools.services_domains.planner_engine_autonomy import (
     planner_autonomy_checkpoint,
     planner_autonomy_cycle,
+    planner_autonomy_replan,
+    planner_autonomy_replan_list,
     planner_autonomy_schedule,
     planner_autonomy_status,
 )
@@ -21,6 +23,12 @@ from jarvis.tools.services_domains.planner_engine_plan_graph import (
     planner_task_graph_create,
     planner_task_graph_resume,
     planner_task_graph_update,
+)
+from jarvis.tools.services_domains.planner_engine_goal_stack import (
+    planner_goal_list,
+    planner_goal_pop,
+    planner_goal_push,
+    planner_goal_update,
 )
 
 
@@ -58,10 +66,22 @@ async def planner_engine(args: dict[str, Any]) -> dict[str, Any]:
         return await planner_autonomy_schedule(args, start_time=start_time)
     if action == "autonomy_checkpoint":
         return await planner_autonomy_checkpoint(args, start_time=start_time)
+    if action == "autonomy_replan":
+        return await planner_autonomy_replan(args, start_time=start_time)
+    if action == "autonomy_replan_list":
+        return await planner_autonomy_replan_list(args, start_time=start_time)
     if action == "autonomy_cycle":
         return await planner_autonomy_cycle(args, start_time=start_time)
     if action == "autonomy_status":
         return await planner_autonomy_status(args, start_time=start_time)
+    if action == "goal_push":
+        return await planner_goal_push(args, start_time=start_time)
+    if action == "goal_pop":
+        return await planner_goal_pop(args, start_time=start_time)
+    if action == "goal_list":
+        return await planner_goal_list(args, start_time=start_time)
+    if action == "goal_update":
+        return await planner_goal_update(args, start_time=start_time)
     if action == "self_critique":
         return await planner_self_critique(args, start_time=start_time)
 

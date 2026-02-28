@@ -1,12 +1,11 @@
-"""MCP server/tool registration for Jarvis service handlers."""
+"""OpenAI function-tool registration for Jarvis service handlers."""
 
 from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
-from claude_agent_sdk import create_sdk_mcp_server, tool
-
 from jarvis.tools.service_schemas import SERVICE_TOOL_SCHEMAS
+from jarvis.tools.openai_tooling import build_function_tool
 from jarvis.tools.services_domains.comms import (
     discord_notify,
     email_send,
@@ -273,9 +272,12 @@ def _tool_specs() -> list[tuple[str, str, ToolHandler]]:
 
 def create_services_server():
     specs = _tool_specs()
-    tools = [tool(name, description, SERVICE_TOOL_SCHEMAS[name])(handler) for name, description, handler in specs]
-    return create_sdk_mcp_server(
-        name="jarvis-services",
-        version="0.1.0",
-        tools=tools,
-    )
+    return [
+        build_function_tool(
+            name=name,
+            description=description,
+            schema=SERVICE_TOOL_SCHEMAS[name],
+            handler=handler,
+        )
+        for name, description, handler in specs
+    ]

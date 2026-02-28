@@ -108,6 +108,9 @@ def bind_runtime_state(services_module: Any, config: Any, memory_store: Any | No
     s._release_channel_config_path = Path(
         str(getattr(config, "release_channel_config_path", str(s.DEFAULT_RELEASE_CHANNEL_CONFIG)))
     ).expanduser()
+    s._policy_engine_path = Path(
+        str(getattr(config, "policy_engine_path", str(s.DEFAULT_POLICY_ENGINE_CONFIG)))
+    ).expanduser()
     s._quality_report_dir = Path(
         str(getattr(config, "quality_report_dir", str(s.QUALITY_REPORT_DIR_DEFAULT)))
     ).expanduser()
@@ -116,12 +119,15 @@ def bind_runtime_state(services_module: Any, config: Any, memory_store: Any | No
     ).expanduser()
     if not s._release_channel_config_path.is_absolute():
         s._release_channel_config_path = (Path.cwd() / s._release_channel_config_path).resolve()
+    if not s._policy_engine_path.is_absolute():
+        s._policy_engine_path = (Path.cwd() / s._policy_engine_path).resolve()
     if not s._quality_report_dir.is_absolute():
         s._quality_report_dir = (Path.cwd() / s._quality_report_dir).resolve()
     if not s._notes_capture_dir.is_absolute():
         s._notes_capture_dir = (Path.cwd() / s._notes_capture_dir).resolve()
     s._configure_audit_encryption(enabled=s._audit_encryption_enabled, key=s._data_encryption_key)
     _reset_runtime_state(s)
+    s._load_policy_engine()
     for integration in sorted(set(s.INTEGRATION_TOOL_MAP.values())):
         s._ensure_circuit_breaker_state(integration)
     load_expansion_state(s)
@@ -149,9 +155,20 @@ def _reset_runtime_state(services_module: Any) -> None:
     s._runtime_skills_state.clear()
     s._integration_circuit_breakers.clear()
     s._proactive_state["pending_follow_through"] = []
+    s._proactive_state["follow_through_seq"] = 1
+    s._proactive_state["follow_through_enqueued_total"] = 0
+    s._proactive_state["follow_through_executed_total"] = 0
+    s._proactive_state["follow_through_deduped_total"] = 0
+    s._proactive_state["follow_through_pruned_total"] = 0
+    s._proactive_state["last_follow_through_at"] = 0.0
     s._proactive_state["digest_snoozed_until"] = 0.0
     s._proactive_state["last_briefing_at"] = 0.0
+    s._proactive_state["briefings_total"] = 0
+    s._proactive_state["last_briefing_mode"] = ""
     s._proactive_state["last_digest_at"] = 0.0
+    s._proactive_state["digests_total"] = 0
+    s._proactive_state["digest_items_total"] = 0
+    s._proactive_state["digest_deduped_total"] = 0
     s._proactive_state["nudge_decisions_total"] = 0
     s._proactive_state["nudge_interrupt_total"] = 0
     s._proactive_state["nudge_notify_total"] = 0
@@ -160,6 +177,20 @@ def _reset_runtime_state(services_module: Any) -> None:
     s._proactive_state["last_nudge_decision_at"] = 0.0
     s._proactive_state["last_nudge_dedupe_at"] = 0.0
     s._proactive_state["nudge_recent_dispatches"] = []
+    s._proactive_state["approval_requests"] = []
+    s._proactive_state["approval_seq"] = 1
+    s._proactive_state["approval_requests_total"] = 0
+    s._proactive_state["approval_approved_total"] = 0
+    s._proactive_state["approval_rejected_total"] = 0
+    s._proactive_state["approval_consumed_total"] = 0
+    s._proactive_state["approval_expired_total"] = 0
+    s._proactive_state["approval_pruned_total"] = 0
+    s._proactive_state["effect_verification_total"] = 0
+    s._proactive_state["effect_verification_passed_total"] = 0
+    s._proactive_state["effect_verification_failed_total"] = 0
+    s._proactive_state["autonomy_replan_seq"] = 1
+    s._proactive_state["identity_trust_scores"] = {}
+    s._policy_engine = s._normalize_policy_engine({})
     s._memory_partition_overlays.clear()
     s._memory_quality_last.clear()
     s._identity_trust_policies.clear()
@@ -174,6 +205,17 @@ def _reset_runtime_state(services_module: Any) -> None:
     s._deferred_actions.clear()
     s._autonomy_checkpoints.clear()
     s._autonomy_cycle_history.clear()
+    s._autonomy_replan_drafts.clear()
+    s._world_model_state["entities"] = {}
+    s._world_model_state["facts"] = {}
+    s._world_model_state["events"] = []
+    s._world_model_state["updated_at"] = 0.0
+    s._goal_stack.clear()
+    s._identity_step_up_tokens.clear()
+    s._autonomy_slo_state["updated_at"] = 0.0
+    s._autonomy_slo_state["window_size"] = 50
+    s._autonomy_slo_state["metrics"] = {}
+    s._autonomy_slo_state["alerts"] = []
     s._quality_reports.clear()
     s._micro_expression_library.clear()
     s._gaze_calibrations.clear()
@@ -191,4 +233,3 @@ def _reset_runtime_state(services_module: Any) -> None:
     s._home_automation_seq = 1
     s._planner_task_seq = 1
     s._deferred_action_seq = 1
-

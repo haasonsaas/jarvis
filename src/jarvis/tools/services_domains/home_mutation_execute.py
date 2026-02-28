@@ -30,6 +30,27 @@ async def home_mutation_apply(context: dict[str, Any], *, start_time: float) -> 
     _ha_invalidate_state = s._ha_invalidate_state
     _touch_action = s._touch_action
     _integration_record_success = s._integration_record_success
+    _verify_home_action_effect = s._verify_home_action_effect
+    _record_identity_trust_outcome = s._record_identity_trust_outcome
+    _domain_in_policy = s._domain_in_policy
+    _policy_engine = s._policy_engine
+    _proactive_state = s._proactive_state
+    policy_engine = _policy_engine if isinstance(_policy_engine, dict) else {}
+    execution_policy = (
+        policy_engine.get("execution")
+        if isinstance(policy_engine.get("execution"), dict)
+        else {}
+    )
+    effect_verification_domains = (
+        execution_policy.get("effect_verification_domains")
+        if isinstance(execution_policy.get("effect_verification_domains"), list)
+        else []
+    )
+    high_risk_domains = (
+        execution_policy.get("high_risk_domains")
+        if isinstance(execution_policy.get("high_risk_domains"), list)
+        else []
+    )
 
     from jarvis.tools.robot import tool_feedback
 
@@ -43,6 +64,22 @@ async def home_mutation_apply(context: dict[str, Any], *, start_time: float) -> 
     identity_context = context.get("identity_context")
     identity_chain = context.get("identity_chain") if isinstance(context.get("identity_chain"), list) else []
     current_state = str(context.get("current_state", "unknown"))
+    requester_id = (
+        str(identity_context.get("requester_id", "")).strip().lower()
+        if isinstance(identity_context, dict)
+        else ""
+    )
+    high_risk_action = domain in SENSITIVE_DOMAINS or _domain_in_policy(high_risk_domains, domain)
+
+    def _record_trust(success: bool, *, verification_failed: bool = False) -> None:
+        if not requester_id:
+            return
+        _record_identity_trust_outcome(
+            requester_id,
+            success=success,
+            high_risk=high_risk_action,
+            verification_failed=verification_failed,
+        )
 
     _audit(
         "smart_home",
@@ -105,6 +142,34 @@ async def home_mutation_apply(context: dict[str, Any], *, start_time: float) -> 
                         _ha_invalidate_state(entity_id)
                         _touch_action(domain, action, entity_id)
                         _integration_record_success("home_assistant")
+                        verification = await _verify_home_action_effect(
+                            domain=domain,
+                            action=action,
+                            entity_id=entity_id,
+                            enabled_domains=effect_verification_domains,
+                            max_attempts=2,
+                        )
+                        if bool(verification.get("applied", False)):
+                            _proactive_state["effect_verification_total"] = int(
+                                _proactive_state.get("effect_verification_total", 0) or 0
+                            ) + 1
+                            if bool(verification.get("verified", False)):
+                                _proactive_state["effect_verification_passed_total"] = int(
+                                    _proactive_state.get("effect_verification_passed_total", 0) or 0
+                                ) + 1
+                            else:
+                                _proactive_state["effect_verification_failed_total"] = int(
+                                _proactive_state.get("effect_verification_failed_total", 0) or 0
+                                ) + 1
+                        # Verification may read current entity state and repopulate cache; clear it before returning.
+                        _ha_invalidate_state(entity_id)
+                        _record_trust(
+                            True,
+                            verification_failed=(
+                                bool(verification.get("applied", False))
+                                and not bool(verification.get("verified", False))
+                            ),
+                        )
                         recovery.mark_completed(detail="ok", context={"http_status": resp.status})
                         record_summary(
                             "smart_home",
@@ -113,11 +178,26 @@ async def home_mutation_apply(context: dict[str, Any], *, start_time: float) -> 
                             effect=f"executed {domain}.{action} {entity_id}",
                             risk="medium" if domain in SENSITIVE_DOMAINS else "low",
                         )
-                        return {"content": [{"type": "text", "text": f"Done: {domain}.{action} on {entity_id}"}]}
+                        verification_suffix = ""
+                        if bool(verification.get("applied", False)):
+                            verification_suffix = (
+                                " (effect verified)"
+                                if bool(verification.get("verified", False))
+                                else " (effect pending verification)"
+                            )
+                        return {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Done: {domain}.{action} on {entity_id}{verification_suffix}",
+                                }
+                            ]
+                        }
                     if resp.status == 401:
                         tool_feedback("done")
                         recovery.mark_failed("auth", context={"http_status": resp.status})
                         _record_service_error("smart_home", start_time, "auth")
+                        _record_trust(False)
                         return {
                             "content": [
                                 {
@@ -130,6 +210,7 @@ async def home_mutation_apply(context: dict[str, Any], *, start_time: float) -> 
                         tool_feedback("done")
                         recovery.mark_failed("not_found", context={"http_status": resp.status})
                         _record_service_error("smart_home", start_time, "not_found")
+                        _record_trust(False)
                         return {"content": [{"type": "text", "text": f"Service not found: {domain}.{action}"}]}
                     try:
                         text = await resp.text()
@@ -138,25 +219,30 @@ async def home_mutation_apply(context: dict[str, Any], *, start_time: float) -> 
                     tool_feedback("done")
                     recovery.mark_failed("http_error", context={"http_status": resp.status})
                     _record_service_error("smart_home", start_time, "http_error")
+                    _record_trust(False)
                     return {"content": [{"type": "text", "text": f"Home Assistant error ({resp.status}): {text[:200]}"}]}
         except asyncio.TimeoutError:
             tool_feedback("done")
             recovery.mark_failed("timeout")
             _record_service_error("smart_home", start_time, "timeout")
+            _record_trust(False)
             return {"content": [{"type": "text", "text": "Home Assistant request timed out."}]}
         except asyncio.CancelledError:
             tool_feedback("done")
             recovery.mark_cancelled()
             _record_service_error("smart_home", start_time, "cancelled")
+            _record_trust(False)
             return {"content": [{"type": "text", "text": "Home Assistant request was cancelled."}]}
         except aiohttp.ClientError as e:
             tool_feedback("done")
             recovery.mark_failed("network_client_error")
             _record_service_error("smart_home", start_time, "network_client_error")
+            _record_trust(False)
             return {"content": [{"type": "text", "text": f"Failed to reach Home Assistant: {e}"}]}
         except Exception:
             tool_feedback("done")
             recovery.mark_failed("unexpected")
             _record_service_error("smart_home", start_time, "unexpected")
+            _record_trust(False)
             log.exception("Unexpected smart_home failure")
             return {"content": [{"type": "text", "text": "Unexpected Home Assistant error."}]}

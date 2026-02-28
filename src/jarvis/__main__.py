@@ -3,7 +3,7 @@
 Pipeline:
   1. Presence loop runs continuously (idle breathing, micro-behaviors)
   2. VAD detects speech → state = LISTENING → STT captures utterance
-  3. On end-of-utterance → state = THINKING → Claude streams response
+  3. On end-of-utterance → state = THINKING → model streams response
   4. TTS streams sentences as they arrive → state = SPEAKING
   5. Barge-in: VAD during playback → stop TTS, feed new utterance
   6. Back to idle
@@ -686,6 +686,10 @@ class Jarvis:
         followup_carryover_applied: bool = False,
         preference_updates: dict[str, str] | None = None,
         multimodal_grounding: dict[str, Any] | None = None,
+        route_policy: dict[str, Any] | None = None,
+        correction_outcome: str | None = None,
+        interruption_route: dict[str, Any] | None = None,
+        continuation_from_turn_id: int | None = None,
     ) -> None:
         _runtime_record_conversation_trace(
             self,
@@ -702,6 +706,10 @@ class Jarvis:
             followup_carryover_applied=followup_carryover_applied,
             preference_updates=preference_updates,
             multimodal_grounding=multimodal_grounding,
+            route_policy=route_policy,
+            correction_outcome=correction_outcome,
+            interruption_route=interruption_route,
+            continuation_from_turn_id=continuation_from_turn_id,
             episodic_timeline_maxlen=EPISODIC_TIMELINE_MAXLEN,
         )
 

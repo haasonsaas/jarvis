@@ -17,6 +17,10 @@ def _require_env(name: str) -> str:
     return val.strip()
 
 
+def _require_openai_api_key() -> str:
+    return _require_env("OPENAI_API_KEY")
+
+
 def _env_bool(name: str) -> bool | None:
     val = os.environ.get(name)
     if val is None:
@@ -98,8 +102,36 @@ def _env_is_set(name: str) -> bool:
 
 @dataclass
 class Config:
-    # Claude
-    anthropic_api_key: str = field(default_factory=lambda: _require_env("ANTHROPIC_API_KEY"))
+    # OpenAI model API key.
+    openai_api_key: str = field(default_factory=_require_openai_api_key)
+    openai_model: str = field(default_factory=lambda: os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"))
+    openai_router_model: str = field(default_factory=lambda: os.environ.get("OPENAI_ROUTER_MODEL", ""))
+    openai_router_shadow_model: str = field(default_factory=lambda: os.environ.get("OPENAI_ROUTER_SHADOW_MODEL", ""))
+    router_shadow_enabled: bool = field(default_factory=lambda: _env_bool("ROUTER_SHADOW_ENABLED") or False)
+    router_canary_percent: float = field(default_factory=lambda: _env_float("ROUTER_CANARY_PERCENT", 0.0))
+    router_timeout_sec: float = field(default_factory=lambda: _env_positive_float("ROUTER_TIMEOUT_SEC", 2.0))
+    policy_router_min_confidence: float = field(
+        default_factory=lambda: _env_float("POLICY_ROUTER_MIN_CONFIDENCE", 0.55)
+    )
+    interruption_router_timeout_sec: float = field(
+        default_factory=lambda: _env_positive_float("INTERRUPTION_ROUTER_TIMEOUT_SEC", 1.5)
+    )
+    interruption_resume_min_confidence: float = field(
+        default_factory=lambda: _env_float("INTERRUPTION_RESUME_MIN_CONFIDENCE", 0.6)
+    )
+    semantic_turn_enabled: bool = field(default_factory=lambda: _env_bool("SEMANTIC_TURN_ENABLED") is not False)
+    semantic_turn_router_timeout_sec: float = field(
+        default_factory=lambda: _env_positive_float("SEMANTIC_TURN_ROUTER_TIMEOUT_SEC", 0.8)
+    )
+    semantic_turn_min_confidence: float = field(
+        default_factory=lambda: _env_float("SEMANTIC_TURN_MIN_CONFIDENCE", 0.6)
+    )
+    semantic_turn_extension_sec: float = field(
+        default_factory=lambda: _env_positive_float("SEMANTIC_TURN_EXTENSION_SEC", 0.6)
+    )
+    semantic_turn_max_transcript_chars: int = field(
+        default_factory=lambda: _env_int("SEMANTIC_TURN_MAX_TRANSCRIPT_CHARS", 220)
+    )
 
     # ElevenLabs TTS
     elevenlabs_api_key: str = field(default_factory=lambda: os.environ.get("ELEVENLABS_API_KEY", ""))
@@ -151,6 +183,9 @@ class Config:
             "EXPANSION_STATE_PATH",
             os.path.expanduser("~/.jarvis/expansion-state.json"),
         )
+    )
+    policy_engine_path: str = field(
+        default_factory=lambda: os.environ.get("POLICY_ENGINE_PATH", "config/policy-engine-v1.json")
     )
     release_channel_config_path: str = field(
         default_factory=lambda: os.environ.get("RELEASE_CHANNEL_CONFIG_PATH", "config/release-channels.json")
@@ -236,6 +271,35 @@ class Config:
     memory_decay_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_DECAY_ENABLED") or False)
     memory_mmr_lambda: float = field(default_factory=lambda: _env_float("MEMORY_MMR_LAMBDA", 0.7))
     memory_mmr_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_MMR_ENABLED") or False)
+    memory_embedding_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_EMBEDDING_ENABLED") or False)
+    memory_embedding_model: str = field(
+        default_factory=lambda: os.environ.get("MEMORY_EMBEDDING_MODEL", "text-embedding-3-small")
+    )
+    memory_embedding_base_url: str = field(default_factory=lambda: os.environ.get("MEMORY_EMBEDDING_BASE_URL", ""))
+    memory_embedding_vector_weight: float = field(
+        default_factory=lambda: _env_float("MEMORY_EMBEDDING_VECTOR_WEIGHT", 0.65)
+    )
+    memory_embedding_min_similarity: float = field(
+        default_factory=lambda: _env_float("MEMORY_EMBEDDING_MIN_SIMILARITY", 0.2)
+    )
+    memory_embedding_timeout_sec: float = field(
+        default_factory=lambda: _env_positive_float("MEMORY_EMBEDDING_TIMEOUT_SEC", 6.0)
+    )
+    memory_conflict_resolution_enabled: bool = field(
+        default_factory=lambda: _env_bool("MEMORY_CONFLICT_RESOLUTION_ENABLED") or False
+    )
+    memory_conflict_resolution_model: str = field(
+        default_factory=lambda: os.environ.get("MEMORY_CONFLICT_RESOLUTION_MODEL", "gpt-4.1-mini")
+    )
+    memory_conflict_resolution_base_url: str = field(
+        default_factory=lambda: os.environ.get("MEMORY_CONFLICT_RESOLUTION_BASE_URL", "")
+    )
+    memory_conflict_resolution_timeout_sec: float = field(
+        default_factory=lambda: _env_positive_float("MEMORY_CONFLICT_RESOLUTION_TIMEOUT_SEC", 4.0)
+    )
+    memory_prompt_sanitization_enabled: bool = field(
+        default_factory=lambda: _env_bool("MEMORY_PROMPT_SANITIZATION_ENABLED") is not False
+    )
     memory_pii_guardrails_enabled: bool = field(default_factory=lambda: _env_bool("MEMORY_PII_GUARDRAILS_ENABLED") is not False)
 
     # Tool policy
@@ -294,6 +358,9 @@ class Config:
     plan_preview_require_ack: bool = field(default_factory=lambda: _env_bool("PLAN_PREVIEW_REQUIRE_ACK") or False)
     memory_retention_days: float = field(default_factory=lambda: _env_nonnegative_float("MEMORY_RETENTION_DAYS", 0.0))
     audit_retention_days: float = field(default_factory=lambda: _env_nonnegative_float("AUDIT_RETENTION_DAYS", 0.0))
+    autonomy_llm_replan_enabled: bool = field(
+        default_factory=lambda: _env_bool("AUTONOMY_LLM_REPLAN_ENABLED") or False
+    )
 
     # Quick toggles
     motion_enabled: bool = field(default_factory=lambda: _env_bool("MOTION_ENABLED") is not False)
@@ -348,6 +415,24 @@ class Config:
             raise ValueError("watchdog_speaking_timeout_sec must be > 0")
         if self.turn_timeout_act_sec <= 0.0:
             raise ValueError("turn_timeout_act_sec must be > 0")
+        if self.router_timeout_sec <= 0.0:
+            raise ValueError("router_timeout_sec must be > 0")
+        if self.router_canary_percent < 0.0 or self.router_canary_percent > 100.0:
+            raise ValueError("router_canary_percent must be between 0.0 and 100.0")
+        if self.policy_router_min_confidence < 0.0 or self.policy_router_min_confidence > 1.0:
+            raise ValueError("policy_router_min_confidence must be between 0.0 and 1.0")
+        if self.interruption_router_timeout_sec <= 0.0:
+            raise ValueError("interruption_router_timeout_sec must be > 0")
+        if self.interruption_resume_min_confidence < 0.0 or self.interruption_resume_min_confidence > 1.0:
+            raise ValueError("interruption_resume_min_confidence must be between 0.0 and 1.0")
+        if self.semantic_turn_router_timeout_sec <= 0.0:
+            raise ValueError("semantic_turn_router_timeout_sec must be > 0")
+        if self.semantic_turn_min_confidence < 0.0 or self.semantic_turn_min_confidence > 1.0:
+            raise ValueError("semantic_turn_min_confidence must be between 0.0 and 1.0")
+        if self.semantic_turn_extension_sec <= 0.0:
+            raise ValueError("semantic_turn_extension_sec must be > 0")
+        if self.semantic_turn_max_transcript_chars < 20:
+            raise ValueError("semantic_turn_max_transcript_chars must be >= 20")
         if self.face_track_fps <= 0:
             raise ValueError("face_track_fps must be > 0")
         if self.memory_search_limit < 1:
@@ -360,6 +445,14 @@ class Config:
             raise ValueError("memory_decay_half_life_days must be > 0")
         if not (0.0 <= self.memory_mmr_lambda <= 1.0):
             raise ValueError("memory_mmr_lambda must be between 0.0 and 1.0")
+        if not (0.0 <= self.memory_embedding_vector_weight <= 1.0):
+            raise ValueError("memory_embedding_vector_weight must be between 0.0 and 1.0")
+        if not (0.0 <= self.memory_embedding_min_similarity <= 1.0):
+            raise ValueError("memory_embedding_min_similarity must be between 0.0 and 1.0")
+        if self.memory_embedding_timeout_sec <= 0.0:
+            raise ValueError("memory_embedding_timeout_sec must be > 0")
+        if self.memory_conflict_resolution_timeout_sec <= 0.0:
+            raise ValueError("memory_conflict_resolution_timeout_sec must be > 0")
         if self.audit_log_max_bytes <= 0:
             raise ValueError("audit_log_max_bytes must be > 0")
         if self.audit_log_backups < 1:
@@ -385,6 +478,12 @@ class Config:
         self.startup_warnings = self._collect_startup_warnings()
         self.backchannel_style = self._normalize_backchannel_style(self.backchannel_style)
         self.persona_style = self._normalize_persona_style(self.persona_style)
+        if not str(self.memory_conflict_resolution_model).strip():
+            self.memory_conflict_resolution_model = "gpt-4.1-mini"
+        if not str(self.openai_router_model).strip():
+            self.openai_router_model = self.openai_model
+        if self.router_shadow_enabled and not str(self.openai_router_shadow_model).strip():
+            self.openai_router_shadow_model = self.openai_router_model
         self.wake_mode = self._normalize_wake_mode(self.wake_mode)
         self.wake_calibration_profile = self._normalize_wake_calibration_profile(self.wake_calibration_profile)
         self.voice_timeout_profile = self._normalize_voice_timeout_profile(self.voice_timeout_profile)
@@ -763,6 +862,16 @@ class Config:
             warnings.append("SKILLS_REQUIRE_SIGNATURE enabled without SKILLS_SIGNATURE_KEY; non-signed skills will remain blocked.")
         if (self.memory_encryption_enabled or self.audit_encryption_enabled) and not self.data_encryption_key.strip():
             warnings.append("Encryption enabled without JARVIS_DATA_KEY; encrypted storage features will be disabled.")
+        if self.memory_embedding_enabled and not self.openai_api_key.strip():
+            warnings.append("MEMORY_EMBEDDING_ENABLED=true without OPENAI_API_KEY; semantic retrieval will be disabled.")
+        if self.memory_embedding_enabled and self.memory_encryption_enabled:
+            warnings.append(
+                "MEMORY_EMBEDDING_ENABLED=true with MEMORY_ENCRYPTION_ENABLED=true; semantic retrieval is disabled for encrypted memory."
+            )
+        if self.memory_conflict_resolution_enabled and not self.openai_api_key.strip():
+            warnings.append(
+                "MEMORY_CONFLICT_RESOLUTION_ENABLED=true without OPENAI_API_KEY; conflict resolution will be disabled."
+            )
         checks: list[tuple[str, str, str]] = [
             ("DOA_CHANGE_THRESHOLD", "float", str(self.doa_change_threshold)),
             ("DOA_TIMEOUT", "float", str(self.doa_timeout)),
@@ -779,6 +888,39 @@ class Config:
             ("WATCHDOG_THINKING_TIMEOUT_SEC", "positive_float", str(self.watchdog_thinking_timeout_sec)),
             ("WATCHDOG_SPEAKING_TIMEOUT_SEC", "positive_float", str(self.watchdog_speaking_timeout_sec)),
             ("TURN_TIMEOUT_ACT_SEC", "positive_float", str(self.turn_timeout_act_sec)),
+            ("ROUTER_TIMEOUT_SEC", "positive_float", str(self.router_timeout_sec)),
+            ("ROUTER_CANARY_PERCENT", "float", str(self.router_canary_percent)),
+            ("POLICY_ROUTER_MIN_CONFIDENCE", "float", str(self.policy_router_min_confidence)),
+            (
+                "INTERRUPTION_ROUTER_TIMEOUT_SEC",
+                "positive_float",
+                str(self.interruption_router_timeout_sec),
+            ),
+            (
+                "INTERRUPTION_RESUME_MIN_CONFIDENCE",
+                "float",
+                str(self.interruption_resume_min_confidence),
+            ),
+            (
+                "SEMANTIC_TURN_ROUTER_TIMEOUT_SEC",
+                "positive_float",
+                str(self.semantic_turn_router_timeout_sec),
+            ),
+            (
+                "SEMANTIC_TURN_MIN_CONFIDENCE",
+                "float",
+                str(self.semantic_turn_min_confidence),
+            ),
+            (
+                "SEMANTIC_TURN_EXTENSION_SEC",
+                "positive_float",
+                str(self.semantic_turn_extension_sec),
+            ),
+            (
+                "SEMANTIC_TURN_MAX_TRANSCRIPT_CHARS",
+                "int",
+                str(self.semantic_turn_max_transcript_chars),
+            ),
             ("OPERATOR_SERVER_PORT", "int", str(self.operator_server_port)),
             (
                 "OBSERVABILITY_FAILURE_BURST_THRESHOLD",
@@ -791,6 +933,14 @@ class Config:
                 str(self.observability_snapshot_interval_sec),
             ),
             ("MEMORY_SEARCH_LIMIT", "int", str(self.memory_search_limit)),
+            ("MEMORY_EMBEDDING_VECTOR_WEIGHT", "float", str(self.memory_embedding_vector_weight)),
+            ("MEMORY_EMBEDDING_MIN_SIMILARITY", "float", str(self.memory_embedding_min_similarity)),
+            ("MEMORY_EMBEDDING_TIMEOUT_SEC", "positive_float", str(self.memory_embedding_timeout_sec)),
+            (
+                "MEMORY_CONFLICT_RESOLUTION_TIMEOUT_SEC",
+                "positive_float",
+                str(self.memory_conflict_resolution_timeout_sec),
+            ),
             ("AUDIT_LOG_MAX_BYTES", "int", str(self.audit_log_max_bytes)),
             ("AUDIT_LOG_BACKUPS", "int", str(self.audit_log_backups)),
             ("MEMORY_RETENTION_DAYS", "nonnegative_float", str(self.memory_retention_days)),
@@ -823,12 +973,16 @@ class Config:
             "MEMORY_ENABLED",
             "MEMORY_DECAY_ENABLED",
             "MEMORY_MMR_ENABLED",
+            "MEMORY_EMBEDDING_ENABLED",
+            "MEMORY_CONFLICT_RESOLUTION_ENABLED",
+            "MEMORY_PROMPT_SANITIZATION_ENABLED",
             "MEMORY_PII_GUARDRAILS_ENABLED",
             "STT_FALLBACK_ENABLED",
             "TTS_FALLBACK_TEXT_ONLY",
             "MODEL_FAILOVER_ENABLED",
             "STARTUP_STRICT",
             "WATCHDOG_ENABLED",
+            "ROUTER_SHADOW_ENABLED",
             "OPERATOR_SERVER_ENABLED",
             "WEBHOOK_INBOUND_ENABLED",
             "OBSERVABILITY_ENABLED",
@@ -845,6 +999,7 @@ class Config:
             "IDENTITY_ENFORCEMENT_ENABLED",
             "IDENTITY_REQUIRE_APPROVAL",
             "PLAN_PREVIEW_REQUIRE_ACK",
+            "SEMANTIC_TURN_ENABLED",
         ]
         for name in bool_checks:
             raw = os.environ.get(name)

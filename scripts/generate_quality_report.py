@@ -5,7 +5,7 @@ import argparse
 import json
 import time
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -178,7 +178,7 @@ def main() -> int:
         baseline_path=str(baseline_path) if baseline is not None else "",
     )
 
-    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     json_path = output_dir / f"weekly-quality-{stamp}.json"
     json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 

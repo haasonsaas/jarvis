@@ -10,6 +10,10 @@ from jarvis.tools.services_identity_runtime import (
     identity_context as _runtime_identity_context,
     identity_enriched_audit as _runtime_identity_enriched_audit,
     identity_trust_domain as _runtime_identity_trust_domain,
+    issue_step_up_token as _runtime_issue_step_up_token,
+    record_identity_trust_outcome as _runtime_record_identity_trust_outcome,
+    trust_score as _runtime_trust_score,
+    validate_step_up_token as _runtime_validate_step_up_token,
 )
 
 
@@ -57,4 +61,58 @@ def identity_enriched_audit(
         details,
         identity,
         decision_chain,
+    )
+
+
+def issue_step_up_token(
+    *,
+    requester_id: str,
+    domain: str,
+    scope: str,
+    ttl_sec: float,
+) -> dict[str, Any]:
+    return _runtime_issue_step_up_token(
+        _services_module(),
+        requester_id=requester_id,
+        domain=domain,
+        scope=scope,
+        ttl_sec=ttl_sec,
+    )
+
+
+def validate_step_up_token(
+    token: str,
+    *,
+    requester_id: str,
+    domain: str,
+    scope: str = "",
+    consume: bool = False,
+) -> tuple[bool, str]:
+    return _runtime_validate_step_up_token(
+        _services_module(),
+        token,
+        requester_id=requester_id,
+        domain=domain,
+        scope=scope,
+        consume=consume,
+    )
+
+
+def trust_score(requester_id: str) -> float:
+    return _runtime_trust_score(_services_module(), requester_id)
+
+
+def record_identity_trust_outcome(
+    requester_id: str,
+    *,
+    success: bool,
+    high_risk: bool,
+    verification_failed: bool = False,
+) -> float:
+    return _runtime_record_identity_trust_outcome(
+        _services_module(),
+        requester_id,
+        success=success,
+        high_risk=high_risk,
+        verification_failed=verification_failed,
     )

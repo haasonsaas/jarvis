@@ -309,10 +309,65 @@ def test_record_conversation_trace_writes_episodic_snapshot_for_action_turn():
 
     assert len(jarvis._conversation_traces) == 1
     assert len(jarvis._episodic_timeline) == 1
+    trace = jarvis._conversation_traces[0]
+    assert trace["conversation_id"] == "default"
+    assert trace["parent_turn_id"] is None
+    assert trace["route_policy"] == {}
+    assert trace["correction_outcome"] == "none"
+    assert trace["final_tool_usage"]["attempted_count"] == 1
     episode = jarvis._episodic_timeline[0]
     assert episode["intent"] == "action"
+    assert episode["conversation_id"] == "default"
     assert "porch light" in episode["summary"].lower()
     assert episode["tool_count"] == 1
+
+
+def test_record_conversation_trace_captures_route_policy_and_correction_outcome():
+    jarvis = Jarvis.__new__(Jarvis)
+    jarvis._turn_trace_seq = 0
+    jarvis._conversation_traces = deque(maxlen=20)
+    jarvis._episodic_timeline = deque(maxlen=20)
+    jarvis._episode_seq = 0
+    jarvis._conversation_id = "conv-1"
+    jarvis._last_trace_turn_id = 7
+    jarvis._observability = None
+    jarvis.presence = SimpleNamespace(attention_source=lambda: "doa")
+    jarvis._turn_choreography = {}
+
+    Jarvis._record_conversation_trace(
+        jarvis,
+        user_text="Unlock the front door now.",
+        intent_class="action",
+        turn_started_at=0.0,
+        stt_latency_ms=30.0,
+        llm_first_sentence_ms=50.0,
+        tts_first_audio_ms=70.0,
+        response_success=True,
+        tool_summaries=[{"name": "smart_home_control", "status": "denied", "detail": "policy"}],
+        lifecycle="completed",
+        used_brain_response=True,
+        route_policy={
+            "starting_agent": "safety",
+            "route_confidence": 0.2,
+            "guardrail_correction": "low_confidence_fail_closed",
+        },
+        correction_outcome="resolved",
+        interruption_route={
+            "strategy": "resume",
+            "route_confidence": 0.91,
+            "route_source": "router",
+        },
+        continuation_from_turn_id=7,
+    )
+
+    trace = jarvis._conversation_traces[0]
+    assert trace["conversation_id"] == "conv-1"
+    assert trace["parent_turn_id"] == 7
+    assert trace["route_policy"]["starting_agent"] == "safety"
+    assert trace["route_policy"]["route_confidence"] == 0.2
+    assert trace["interruption_route"]["strategy"] == "resume"
+    assert trace["correction_outcome"] == "resolved"
+    assert trace["final_tool_usage"]["attempted_count"] == 1
 
 
 def test_conversation_latency_and_policy_decision_analytics():
@@ -539,6 +594,15 @@ def test_telemetry_snapshot_averages():
         "multimodal_turns": 4.0,
         "multimodal_confidence_total": 2.4,
         "multimodal_low_confidence_turns": 1.0,
+        "interruption_routes_total": 3.0,
+        "interruption_resumes": 1.0,
+        "interruption_replaces": 2.0,
+        "interruption_clarifies": 0.0,
+        "interruption_route_fallbacks": 1.0,
+        "semantic_turn_decisions_total": 5.0,
+        "semantic_turn_waits": 2.0,
+        "semantic_turn_commits": 3.0,
+        "semantic_turn_fallbacks": 1.0,
     }
     snapshot = Jarvis._telemetry_snapshot(jarvis)
     assert snapshot["turns"] == 10.0
@@ -558,6 +622,14 @@ def test_telemetry_snapshot_averages():
     assert multimodal["turn_count"] == 4.0
     assert multimodal["avg_confidence"] == 0.6
     assert multimodal["low_confidence_rate"] == 0.25
+    interruption = snapshot["interruption_metrics"]
+    assert interruption["route_count"] == 3.0
+    assert interruption["resume_count"] == 1.0
+    assert interruption["fallback_count"] == 1.0
+    semantic_turn = snapshot["semantic_turn_metrics"]
+    assert semantic_turn["decision_count"] == 5.0
+    assert semantic_turn["wait_count"] == 2.0
+    assert semantic_turn["commit_count"] == 3.0
 
 
 def test_telemetry_snapshot_intent_metric_rates():

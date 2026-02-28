@@ -40,6 +40,7 @@ async def dead_letter_replay(args: dict[str, Any]) -> dict[str, Any]:
     record_summary = s.record_summary
     _tool_permitted = s._tool_permitted
     _record_service_error = s._record_service_error
+    _as_bool = s._as_bool
     _as_int = s._as_int
     _read_dead_letter_entries = s._read_dead_letter_entries
     _dead_letter_matches = s._dead_letter_matches
@@ -65,6 +66,7 @@ async def dead_letter_replay(args: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "status must be one of open, all, pending, failed, replayed."}]}
     entry_id = str(args.get("entry_id", "")).strip()
     limit = _as_int(args.get("limit", 10), 10, minimum=1, maximum=50)
+    dry_run = _as_bool(args.get("dry_run"), default=False)
     entries = _read_dead_letter_entries()
     if not entries:
         record_summary("dead_letter_replay", "empty", start_time)
@@ -105,6 +107,16 @@ async def dead_letter_replay(args: dict[str, Any]) -> dict[str, Any]:
         handler = replay_handlers.get(tool_name)
         if handler is None:
             continue
+        if dry_run:
+            results.append(
+                {
+                    "entry_id": str(entry.get("entry_id", "")),
+                    "tool": tool_name,
+                    "status": str(entry.get("status", "unknown")),
+                    "result": "dry_run",
+                }
+            )
+            continue
         payload_raw = entry.get("args")
         payload = dict(payload_raw) if isinstance(payload_raw, dict) else {}
         payload["_dead_letter_replay"] = True
@@ -138,13 +150,17 @@ async def dead_letter_replay(args: dict[str, Any]) -> dict[str, Any]:
                 "result": replay_text[:300],
             }
         )
-    _write_dead_letter_entries(entries)
-    if failed_count > 0 and replayed_count == 0:
+    if not dry_run:
+        _write_dead_letter_entries(entries)
+    if dry_run:
+        record_summary("dead_letter_replay", "ok", start_time, "dry_run")
+    elif failed_count > 0 and replayed_count == 0:
         record_summary("dead_letter_replay", "error", start_time, "replay_failed")
     else:
         record_summary("dead_letter_replay", "ok", start_time)
     payload = {
         "requested_entry_id": entry_id,
+        "dry_run": dry_run,
         "attempted_count": len(selected_indexes),
         "replayed_count": replayed_count,
         "failed_count": failed_count,
@@ -153,10 +169,11 @@ async def dead_letter_replay(args: dict[str, Any]) -> dict[str, Any]:
     _audit(
         "dead_letter_replay",
         {
-            "result": "ok" if failed_count == 0 else "partial",
+            "result": "dry_run" if dry_run else ("ok" if failed_count == 0 else "partial"),
             "attempted_count": len(selected_indexes),
             "replayed_count": replayed_count,
             "failed_count": failed_count,
+            "dry_run": dry_run,
         },
     )
     return {"content": [{"type": "text", "text": json.dumps(payload, default=str)}]}

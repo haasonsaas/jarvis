@@ -12,6 +12,7 @@ DEFAULT_RECOVERY_JOURNAL = Path.home() / ".jarvis" / "recovery-journal.jsonl"
 DEFAULT_DEAD_LETTER_QUEUE = Path.home() / ".jarvis" / "dead-letter-queue.jsonl"
 DEFAULT_EXPANSION_STATE = Path.home() / ".jarvis" / "expansion-state.json"
 DEFAULT_RELEASE_CHANNEL_CONFIG = Path("config/release-channels.json")
+DEFAULT_POLICY_ENGINE_CONFIG = Path("config/policy-engine-v1.json")
 QUALITY_REPORT_DIR_DEFAULT = Path.home() / ".jarvis" / "quality-reports"
 NOTES_CAPTURE_DIR_DEFAULT = Path.home() / ".jarvis" / "notes"
 
@@ -41,6 +42,8 @@ DEFERRED_ACTION_MAX = 500
 NUDGE_RECENT_DISPATCH_MAX = 500
 HOME_AUTOMATION_MAX_TRACKED = 300
 AUTONOMY_CYCLE_HISTORY_MAX = 200
+AUTONOMY_REPLAN_DRAFT_MAX = 400
+GOAL_STACK_MAX = 100
 RELEASE_CHANNELS = {"dev", "beta", "stable"}
 NOTION_API_VERSION = "2022-06-28"
 SKILL_SANDBOX_TEMPLATES: dict[str, dict[str, Any]] = {
@@ -90,9 +93,20 @@ _PII_PATTERNS = [
 def default_proactive_state() -> dict[str, Any]:
     return {
         "pending_follow_through": [],
+        "follow_through_seq": 1,
+        "follow_through_enqueued_total": 0,
+        "follow_through_executed_total": 0,
+        "follow_through_deduped_total": 0,
+        "follow_through_pruned_total": 0,
+        "last_follow_through_at": 0.0,
         "digest_snoozed_until": 0.0,
         "last_briefing_at": 0.0,
+        "briefings_total": 0,
+        "last_briefing_mode": "",
         "last_digest_at": 0.0,
+        "digests_total": 0,
+        "digest_items_total": 0,
+        "digest_deduped_total": 0,
         "nudge_decisions_total": 0,
         "nudge_interrupt_total": 0,
         "nudge_notify_total": 0,
@@ -101,6 +115,19 @@ def default_proactive_state() -> dict[str, Any]:
         "last_nudge_decision_at": 0.0,
         "last_nudge_dedupe_at": 0.0,
         "nudge_recent_dispatches": [],
+        "approval_requests": [],
+        "approval_seq": 1,
+        "approval_requests_total": 0,
+        "approval_approved_total": 0,
+        "approval_rejected_total": 0,
+        "approval_consumed_total": 0,
+        "approval_expired_total": 0,
+        "approval_pruned_total": 0,
+        "effect_verification_total": 0,
+        "effect_verification_passed_total": 0,
+        "effect_verification_failed_total": 0,
+        "autonomy_replan_seq": 1,
+        "identity_trust_scores": {},
     }
 
 

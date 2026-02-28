@@ -28,6 +28,9 @@ def home_mutation_policy_validate_identity(
     _identity_enriched_audit = s._identity_enriched_audit
     _redact_sensitive_for_audit = s._redact_sensitive_for_audit
     _home_require_confirm_execute = s._home_require_confirm_execute
+    _domain_in_policy = s._domain_in_policy
+    policy_engine = s._policy_engine if isinstance(s._policy_engine, dict) else {}
+    execution_policy = policy_engine.get("execution") if isinstance(policy_engine.get("execution"), dict) else {}
 
     domain = str(args.get("domain", "")).strip().lower()
     action = str(args.get("action", "")).strip().lower()
@@ -57,11 +60,22 @@ def home_mutation_policy_validate_identity(
     safe_mode_forced = _safe_mode_enabled and not dry_run
     if safe_mode_forced:
         dry_run = True
+    high_risk_policy_domains = (
+        execution_policy.get("high_risk_domains")
+        if isinstance(execution_policy.get("high_risk_domains"), list)
+        else []
+    )
+    require_confirm_domains = (
+        execution_policy.get("require_confirm_domains")
+        if isinstance(execution_policy.get("require_confirm_domains"), list)
+        else []
+    )
+    high_risk_domain = domain in SENSITIVE_DOMAINS or _domain_in_policy(high_risk_policy_domains, domain)
     identity_allowed, identity_message, identity_context, identity_chain = _identity_authorize(
         "smart_home",
         args,
         mutating=not dry_run,
-        high_risk=(not dry_run and domain in SENSITIVE_DOMAINS),
+        high_risk=(not dry_run and high_risk_domain),
     )
     if not identity_allowed:
         _record_service_error("smart_home", start_time, "policy")
@@ -107,7 +121,7 @@ def home_mutation_policy_validate_identity(
             ),
         )
         return None, {"content": [{"type": "text", "text": "Action requires confirm=true when HOME_REQUIRE_CONFIRM_EXECUTE=true."}]}
-    if domain in SENSITIVE_DOMAINS and not dry_run and not confirm:
+    if (domain in SENSITIVE_DOMAINS or _domain_in_policy(require_confirm_domains, domain)) and not dry_run and not confirm:
         _record_service_error("smart_home", start_time, "policy")
         _audit(
             "smart_home",

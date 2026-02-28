@@ -11,14 +11,124 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
 try:
     from cryptography.fernet import Fernet, InvalidToken
 except Exception:  # pragma: no cover - runtime fallback
     Fernet = None  # type: ignore[assignment]
     InvalidToken = Exception  # type: ignore[assignment]
 
+try:
+    from openai import OpenAI
+except Exception:  # pragma: no cover - optional dependency
+    OpenAI = None  # type: ignore[assignment]
+
 MAX_QUERY_LIMIT = 200
 MAX_SEARCH_FANOUT = 800
+MAX_CANDIDATE_ANALYSIS_FANOUT = 400
+DEFAULT_SEARCH_CANDIDATE_MULTIPLIER = 4
+DEFAULT_RECENCY_PRIOR_HALF_LIFE_DAYS = 45.0
+
+_STOP_WORDS = {
+    "a",
+    "an",
+    "the",
+    "this",
+    "that",
+    "these",
+    "those",
+    "i",
+    "me",
+    "my",
+    "we",
+    "our",
+    "you",
+    "your",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "can",
+    "may",
+    "might",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "about",
+    "into",
+    "through",
+    "during",
+    "before",
+    "after",
+    "above",
+    "below",
+    "between",
+    "under",
+    "over",
+    "and",
+    "or",
+    "but",
+    "if",
+    "then",
+    "because",
+    "as",
+    "while",
+    "when",
+    "where",
+    "what",
+    "which",
+    "who",
+    "how",
+    "why",
+    "please",
+    "help",
+    "find",
+    "show",
+    "get",
+    "tell",
+    "give",
+    "yesterday",
+    "today",
+    "tomorrow",
+    "earlier",
+    "later",
+    "recently",
+    "now",
+    "thing",
+    "things",
+    "stuff",
+}
+
+_TOKEN_EXPANSIONS: dict[str, tuple[str, ...]] = {
+    "prefs": ("preference", "preferences"),
+    "pref": ("preference",),
+    "todo": ("task", "tasks"),
+    "todos": ("task", "tasks"),
+    "appt": ("appointment", "calendar"),
+    "tv": ("television",),
+    "msg": ("message", "messages"),
+    "addr": ("address",),
+}
 
 
 @dataclass
@@ -80,7 +190,19 @@ class ReminderEntry:
 
 
 class MemoryStore:
-    def __init__(self, path: str, *, encryption_key: str = "") -> None:
+    def __init__(
+        self,
+        path: str,
+        *,
+        encryption_key: str = "",
+        embedding_enabled: bool = False,
+        embedding_model: str = "text-embedding-3-small",
+        embedding_api_key: str = "",
+        embedding_base_url: str = "",
+        embedding_vector_weight: float = 0.65,
+        embedding_min_similarity: float = 0.2,
+        embedding_timeout_sec: float = 6.0,
+    ) -> None:
         if path not in {":memory:", ""}:
             parent = os.path.dirname(path)
             if parent:
@@ -95,6 +217,24 @@ class MemoryStore:
         self._configure_connection()
         self._fts_enabled = False
         self._memory_enabled = False
+        self._embedding_enabled = False
+        self._embedding_model = ""
+        self._embedding_api_key = ""
+        self._embedding_base_url = ""
+        self._embedding_vector_weight = 0.65
+        self._embedding_min_similarity = 0.2
+        self._embedding_timeout_sec = 6.0
+        self._embedding_last_error = ""
+        self._embedding_client: Any | None = None
+        self._configure_embeddings(
+            embedding_enabled=embedding_enabled,
+            embedding_model=embedding_model,
+            embedding_api_key=embedding_api_key,
+            embedding_base_url=embedding_base_url,
+            embedding_vector_weight=embedding_vector_weight,
+            embedding_min_similarity=embedding_min_similarity,
+            embedding_timeout_sec=embedding_timeout_sec,
+        )
         self._last_warm = None
         self._last_sync = None
         self._last_optimize = None
@@ -130,6 +270,61 @@ class MemoryStore:
             fernet_key = base64.urlsafe_b64encode(digest)
         self._fernet = Fernet(fernet_key)
         self._encrypted = True
+
+    def _configure_embeddings(
+        self,
+        *,
+        embedding_enabled: bool,
+        embedding_model: str,
+        embedding_api_key: str,
+        embedding_base_url: str,
+        embedding_vector_weight: float,
+        embedding_min_similarity: float,
+        embedding_timeout_sec: float,
+    ) -> None:
+        self._embedding_model = str(embedding_model or "text-embedding-3-small").strip() or "text-embedding-3-small"
+        self._embedding_api_key = str(embedding_api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
+        self._embedding_base_url = str(embedding_base_url or "").strip()
+        vector_weight = 0.65
+        try:
+            parsed_vector_weight = float(embedding_vector_weight)
+            if math.isfinite(parsed_vector_weight):
+                vector_weight = parsed_vector_weight
+        except (TypeError, ValueError):
+            pass
+        min_similarity = 0.2
+        try:
+            parsed_min_similarity = float(embedding_min_similarity)
+            if math.isfinite(parsed_min_similarity):
+                min_similarity = parsed_min_similarity
+        except (TypeError, ValueError):
+            pass
+        timeout = 6.0
+        try:
+            parsed_timeout = float(embedding_timeout_sec)
+            if math.isfinite(parsed_timeout):
+                timeout = parsed_timeout
+        except (TypeError, ValueError):
+            pass
+        self._embedding_vector_weight = self._clamp01(vector_weight)
+        self._embedding_min_similarity = self._clamp01(min_similarity)
+        self._embedding_timeout_sec = max(0.5, timeout)
+        self._embedding_last_error = ""
+        self._embedding_enabled = bool(embedding_enabled)
+        if not self._embedding_enabled:
+            return
+        if self._encrypted:
+            self._embedding_enabled = False
+            self._embedding_last_error = "disabled_by_encryption"
+            return
+        if OpenAI is None:
+            self._embedding_enabled = False
+            self._embedding_last_error = "openai_sdk_missing"
+            return
+        if not self._embedding_api_key:
+            self._embedding_enabled = False
+            self._embedding_last_error = "missing_api_key"
+            return
 
     def _encrypt_text(self, text: str) -> str:
         value = str(text)
@@ -178,6 +373,18 @@ class MemoryStore:
             );
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memory_embeddings (
+                memory_id INTEGER PRIMARY KEY,
+                model TEXT NOT NULL,
+                vector TEXT NOT NULL,
+                updated_at REAL NOT NULL,
+                FOREIGN KEY(memory_id) REFERENCES memory(id) ON DELETE CASCADE
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model ON memory_embeddings(model);")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS task_plans (
@@ -304,6 +511,8 @@ class MemoryStore:
         if self._memory_enabled and not self._encrypted:
             cur.execute("INSERT INTO memory_vec(rowid, text) VALUES (?, ?)", (memory_id, clean))
         self._conn.commit()
+        if self._embedding_enabled:
+            self._refresh_embedding_for_memory(memory_id, clean)
         return memory_id
 
     def warm(self) -> None:
@@ -324,15 +533,17 @@ class MemoryStore:
         mmr_enabled: bool = False,
         mmr_lambda: float = 0.7,
         sources: list[str] | None = None,
+        candidate_multiplier: int = DEFAULT_SEARCH_CANDIDATE_MULTIPLIER,
     ) -> list[MemoryEntry]:
         cleaned = query.strip()
         if not cleaned:
             return []
         limit = self._normalize_limit(limit, default=5)
+        candidate_limit = self._candidate_limit(limit=limit, multiplier=candidate_multiplier)
         if self._encrypted:
             entries = self._search_encrypted(
                 cleaned,
-                limit=min(MAX_SEARCH_FANOUT, limit * 4),
+                limit=candidate_limit,
                 max_sensitivity=max_sensitivity,
                 sources=sources,
             )
@@ -342,23 +553,117 @@ class MemoryStore:
             if mmr_enabled:
                 entries = self._apply_mmr(entries, mmr_lambda)
             return sorted(entries, key=lambda e: e.score, reverse=True)[:limit]
+        vector_rows = self._search_vector(
+            cleaned,
+            limit=candidate_limit,
+            max_sensitivity=max_sensitivity,
+            sources=sources,
+        )
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         keyword_rows = self._search_keyword(
             cleaned,
-            min(MAX_SEARCH_FANOUT, limit * 4),
+            candidate_limit,
             sensitivity_clause,
             sensitivity_params,
             sources,
         )
-        if not keyword_rows:
+        if not keyword_rows and not vector_rows:
             return []
-        entries = [self._row_to_memory(row) for row in keyword_rows]
-        entries = self._apply_hybrid_scoring(entries, cleaned, hybrid_weight)
+        entries_by_id: dict[int, MemoryEntry] = {}
+        vector_scores: dict[int, float] = {}
+        for row in keyword_rows:
+            entry = self._row_to_memory(row)
+            entries_by_id[entry.id] = entry
+        for entry, score in vector_rows:
+            vector_scores[entry.id] = float(score)
+            if entry.id not in entries_by_id:
+                entries_by_id[entry.id] = entry
+        entries = list(entries_by_id.values())
+        entries = self._apply_hybrid_scoring(
+            entries,
+            cleaned,
+            hybrid_weight,
+            vector_scores=vector_scores,
+            vector_weight=self._embedding_vector_weight,
+        )
         if decay_enabled:
             entries = self._apply_temporal_decay(entries, decay_half_life_days)
         if mmr_enabled:
             entries = self._apply_mmr(entries, mmr_lambda)
         return sorted(entries, key=lambda e: e.score, reverse=True)[:limit]
+
+    def inspect_memory_candidate(
+        self,
+        text: str,
+        *,
+        limit: int = 3,
+        fanout: int = 40,
+        max_sensitivity: float | None = None,
+        sources: list[str] | None = None,
+        duplicate_threshold: float = 0.88,
+    ) -> dict[str, Any]:
+        clean = str(text or "").strip()
+        if not clean:
+            return {
+                "candidate_count": 0,
+                "top_matches": [],
+                "near_duplicates": [],
+                "contradictions": [],
+            }
+        limit = self._normalize_limit(limit, default=3)
+        fanout = self._normalize_limit(fanout, default=40)
+        fanout = max(limit, min(MAX_CANDIDATE_ANALYSIS_FANOUT, fanout))
+        incoming_tokens = set(self._tokenize_words(clean))
+        incoming_assertion = self._extract_assertion(clean)
+        candidates = self.search_v2(
+            clean,
+            limit=fanout,
+            max_sensitivity=max_sensitivity,
+            hybrid_weight=0.5,
+            decay_enabled=False,
+            mmr_enabled=False,
+            sources=sources,
+            candidate_multiplier=1,
+        )
+        top_matches: list[dict[str, Any]] = []
+        duplicates: list[dict[str, Any]] = []
+        contradictions: list[dict[str, Any]] = []
+        for entry in candidates:
+            entry_tokens = set(self._tokenize_words(entry.text))
+            similarity = self._token_similarity(incoming_tokens, entry_tokens)
+            if self._normalize_text(entry.text) == self._normalize_text(clean):
+                similarity = 1.0
+            candidate = {
+                "memory_id": int(entry.id),
+                "similarity": round(similarity, 4),
+                "score": round(float(entry.score), 4),
+                "kind": str(entry.kind),
+                "source": str(entry.source),
+                "text": str(entry.text),
+            }
+            top_matches.append(candidate)
+            if similarity >= max(0.0, min(1.0, float(duplicate_threshold))):
+                duplicates.append(candidate)
+            existing_assertion = self._extract_assertion(entry.text)
+            if incoming_assertion and existing_assertion and self._assertions_conflict(incoming_assertion, existing_assertion):
+                contradictions.append(
+                    {
+                        **candidate,
+                        "subject": incoming_assertion["subject"],
+                        "predicate": incoming_assertion["predicate"],
+                        "incoming": f"{incoming_assertion['polarity']}:{incoming_assertion['value']}",
+                        "existing": f"{existing_assertion['polarity']}:{existing_assertion['value']}",
+                    }
+                )
+        top_matches.sort(key=lambda item: float(item["similarity"]), reverse=True)
+        duplicates.sort(key=lambda item: float(item["similarity"]), reverse=True)
+        contradictions.sort(key=lambda item: float(item["similarity"]), reverse=True)
+        return {
+            "candidate_count": len(top_matches),
+            "top_matches": top_matches[:limit],
+            "near_duplicates": duplicates[:limit],
+            "contradictions": contradictions[:limit],
+        }
 
     def search(
         self,
@@ -435,6 +740,8 @@ class MemoryStore:
             if self._memory_enabled and not self._encrypted:
                 cur.execute("DELETE FROM memory_vec WHERE rowid = ?", (memory_key,))
                 cur.execute("INSERT INTO memory_vec(rowid, text) VALUES (?, ?)", (memory_key, clean))
+        if self._embedding_enabled:
+            self._refresh_embedding_for_memory(memory_key, clean)
         return True
 
     def delete_memory(self, memory_id: int) -> bool:
@@ -445,6 +752,8 @@ class MemoryStore:
                 cur.execute("DELETE FROM memory_fts WHERE rowid = ?", (memory_key,))
             if self._memory_enabled and not self._encrypted:
                 cur.execute("DELETE FROM memory_vec WHERE rowid = ?", (memory_key,))
+            if self._embedding_enabled:
+                cur.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (memory_key,))
             cur.execute("DELETE FROM memory WHERE id = ?", (memory_key,))
             return cur.rowcount > 0
 
@@ -826,6 +1135,11 @@ class MemoryStore:
                 cur.execute("DELETE FROM memory_fts WHERE rowid IN (SELECT id FROM memory WHERE created_at < ?)", (cutoff,))
             if self._memory_enabled:
                 cur.execute("DELETE FROM memory_vec WHERE rowid IN (SELECT id FROM memory WHERE created_at < ?)", (cutoff,))
+            if self._embedding_enabled:
+                cur.execute(
+                    "DELETE FROM memory_embeddings WHERE memory_id IN (SELECT id FROM memory WHERE created_at < ?)",
+                    (cutoff,),
+                )
             cur.execute("DELETE FROM memory WHERE created_at < ?", (cutoff,))
             deleted["memory"] = int(cur.rowcount)
 
@@ -855,12 +1169,22 @@ class MemoryStore:
         count = cur.execute("SELECT COUNT(*) as c FROM memory").fetchone()["c"]
         sources = cur.execute("SELECT source, COUNT(*) as c FROM memory GROUP BY source").fetchall()
         source_counts = {str(row["source"]): int(row["c"]) for row in sources}
+        embedding_count_row = cur.execute("SELECT COUNT(*) AS c FROM memory_embeddings").fetchone()
+        embedding_count = int(embedding_count_row["c"]) if embedding_count_row is not None else 0
         return {
             "entries": int(count),
             "fts": self._fts_enabled,
             "vector": self._memory_enabled,
             "encrypted": self._encrypted,
             "crypto_available": self._crypto_available,
+            "semantic_vector": {
+                "enabled": self._embedding_enabled,
+                "model": self._embedding_model,
+                "entries": embedding_count,
+                "vector_weight": self._embedding_vector_weight,
+                "min_similarity": self._embedding_min_similarity,
+                "last_error": self._embedding_last_error,
+            },
             "sources": source_counts,
             "timers": self.timer_counts(),
             "reminders": self.reminder_counts(),
@@ -955,98 +1279,284 @@ class MemoryStore:
         return max(1, min(MAX_QUERY_LIMIT, parsed))
 
     def _build_fts_query(self, text: str) -> str:
-        tokens = re.findall(r"\w+", text.lower())
-        return " OR ".join(tokens[:12])
+        tokens = self._extract_keywords(text)
+        if not tokens:
+            tokens = self._tokenize_words(text)
+        return " OR ".join(tokens[:16])
 
     def _extract_keywords(self, text: str) -> list[str]:
-        tokens = re.findall(r"\w+", text.lower())
-        stop = {
-            "a",
-            "an",
-            "the",
-            "this",
-            "that",
-            "these",
-            "those",
-            "i",
-            "me",
-            "my",
-            "we",
-            "our",
-            "you",
-            "your",
-            "is",
-            "are",
-            "was",
-            "were",
-            "be",
-            "been",
-            "being",
-            "have",
-            "has",
-            "had",
-            "do",
-            "does",
-            "did",
-            "will",
-            "would",
-            "could",
-            "should",
-            "can",
-            "may",
-            "might",
-            "in",
-            "on",
-            "at",
-            "to",
-            "for",
-            "of",
-            "with",
-            "by",
-            "from",
-            "about",
-            "into",
-            "through",
-            "during",
-            "before",
-            "after",
-            "above",
-            "below",
-            "between",
-            "under",
-            "over",
-            "and",
-            "or",
-            "but",
-            "if",
-            "then",
-            "because",
-            "as",
-            "while",
-            "when",
-            "where",
-            "what",
-            "which",
-            "who",
-            "how",
-            "why",
-            "please",
-            "help",
-            "find",
-            "show",
-            "get",
-            "tell",
-            "give",
-        }
+        tokens = self._tokenize_words(text)
         keywords: list[str] = []
         seen = set()
         for token in tokens:
-            if token in stop or len(token) < 3:
+            if token in _STOP_WORDS or len(token) < 3:
                 continue
             if token not in seen:
                 seen.add(token)
                 keywords.append(token)
         return keywords
+
+    def _tokenize_words(self, text: str) -> list[str]:
+        return re.findall(r"[a-z0-9_']+", str(text or "").lower())
+
+    def _expand_query_tokens(self, tokens: list[str]) -> list[str]:
+        expanded: list[str] = []
+        seen = set(tokens)
+        for token in tokens:
+            stems: list[str] = []
+            if token.endswith("ies") and len(token) > 4:
+                stems.append(token[:-3] + "y")
+            if token.endswith("ing") and len(token) > 5:
+                stems.append(token[:-3])
+            if token.endswith("ed") and len(token) > 4:
+                stems.append(token[:-2])
+            if token.endswith("es") and len(token) > 4:
+                stems.append(token[:-2])
+            if token.endswith("s") and len(token) > 3:
+                stems.append(token[:-1])
+            stems.extend(_TOKEN_EXPANSIONS.get(token, ()))
+            for stem in stems:
+                normalized = stem.strip().lower()
+                if not normalized or normalized in _STOP_WORDS or normalized in seen:
+                    continue
+                seen.add(normalized)
+                expanded.append(normalized)
+        return expanded
+
+    def _normalize_text(self, text: str) -> str:
+        return " ".join(str(text or "").strip().lower().split())
+
+    def _token_similarity(self, left: set[str], right: set[str]) -> float:
+        if not left or not right:
+            return 0.0
+        intersection = len(left & right)
+        union = len(left | right)
+        if union <= 0:
+            return 0.0
+        return intersection / union
+
+    def _temporal_prior(self, created_at: float, *, half_life_days: float) -> float:
+        if half_life_days <= 0.0:
+            return 1.0
+        age_days = max(0.0, (time.time() - float(created_at)) / 86400.0)
+        multiplier = math.exp(-math.log(2.0) * (age_days / half_life_days))
+        return self._clamp01(multiplier)
+
+    @staticmethod
+    def _clamp01(value: float) -> float:
+        return max(0.0, min(1.0, float(value)))
+
+    def _candidate_limit(self, *, limit: int, multiplier: Any) -> int:
+        parsed = DEFAULT_SEARCH_CANDIDATE_MULTIPLIER
+        if isinstance(multiplier, bool):
+            parsed = DEFAULT_SEARCH_CANDIDATE_MULTIPLIER
+        elif isinstance(multiplier, int):
+            parsed = multiplier
+        elif isinstance(multiplier, float):
+            if math.isfinite(multiplier):
+                parsed = int(multiplier)
+        elif isinstance(multiplier, str):
+            text = multiplier.strip()
+            if text and (text.isdigit() or (text.startswith(("+", "-")) and text[1:].isdigit())):
+                with_value_error = DEFAULT_SEARCH_CANDIDATE_MULTIPLIER
+                try:
+                    with_value_error = int(text)
+                except ValueError:
+                    with_value_error = DEFAULT_SEARCH_CANDIDATE_MULTIPLIER
+                parsed = with_value_error
+        parsed = max(1, min(20, parsed))
+        return min(MAX_SEARCH_FANOUT, max(limit, limit * parsed))
+
+    def _extract_assertion(self, text: str) -> dict[str, str] | None:
+        parsed_text = self._normalize_text(text)
+        if not parsed_text:
+            return None
+        match = re.match(
+            (
+                r"^(?P<subject>[a-z0-9][a-z0-9 _'-]{1,80}?)\s+"
+                r"(?P<predicate>is|are|likes|like|prefers|prefer)\s+"
+                r"(?P<negation>not\s+)?"
+                r"(?P<value>[a-z0-9][a-z0-9 _'/-]{0,80})$"
+            ),
+            parsed_text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        predicate_raw = match.group("predicate").strip().lower()
+        predicate = {
+            "are": "is",
+            "like": "likes",
+            "prefer": "prefers",
+        }.get(predicate_raw, predicate_raw)
+        subject = self._normalize_text(match.group("subject"))
+        value = self._normalize_text(match.group("value"))
+        if not subject or not value:
+            return None
+        return {
+            "subject": subject,
+            "predicate": predicate,
+            "polarity": "negative" if match.group("negation") else "positive",
+            "value": value,
+        }
+
+    def _assertions_conflict(self, left: dict[str, str], right: dict[str, str]) -> bool:
+        if left.get("subject") != right.get("subject"):
+            return False
+        if left.get("predicate") != right.get("predicate"):
+            return False
+        left_polarity = left.get("polarity", "positive")
+        right_polarity = right.get("polarity", "positive")
+        left_value = left.get("value", "")
+        right_value = right.get("value", "")
+        if left_polarity != right_polarity and left_value == right_value:
+            return True
+        # "X is A" vs "X is B" is likely inconsistent.
+        if left.get("predicate") == "is" and left_polarity == "positive" and right_polarity == "positive":
+            return left_value != right_value
+        return False
+
+    def _embedding_client_instance(self) -> Any | None:
+        if not self._embedding_enabled:
+            return None
+        if self._embedding_client is not None:
+            return self._embedding_client
+        if OpenAI is None:
+            self._embedding_last_error = "openai_sdk_missing"
+            self._embedding_enabled = False
+            return None
+        kwargs: dict[str, Any] = {
+            "api_key": self._embedding_api_key,
+            "timeout": self._embedding_timeout_sec,
+        }
+        if self._embedding_base_url:
+            kwargs["base_url"] = self._embedding_base_url
+        try:
+            self._embedding_client = OpenAI(**kwargs)
+        except Exception as exc:
+            self._embedding_last_error = f"client_init_failed:{exc}"
+            self._embedding_enabled = False
+            return None
+        return self._embedding_client
+
+    def _embed_text(self, text: str) -> list[float] | None:
+        client = self._embedding_client_instance()
+        if client is None:
+            return None
+        clean = str(text or "").strip()
+        if not clean:
+            return None
+        try:
+            response = client.embeddings.create(
+                model=self._embedding_model,
+                input=clean,
+            )
+        except Exception as exc:
+            self._embedding_last_error = f"embed_failed:{exc}"
+            return None
+        payload = getattr(response, "data", None)
+        if not payload:
+            self._embedding_last_error = "embed_failed:empty_response"
+            return None
+        vector_raw = getattr(payload[0], "embedding", None)
+        if not isinstance(vector_raw, list) or not vector_raw:
+            self._embedding_last_error = "embed_failed:invalid_payload"
+            return None
+        vector: list[float] = []
+        for value in vector_raw:
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                self._embedding_last_error = "embed_failed:non_numeric"
+                return None
+            if not math.isfinite(numeric):
+                self._embedding_last_error = "embed_failed:non_finite"
+                return None
+            vector.append(numeric)
+        self._embedding_last_error = ""
+        return vector
+
+    def _refresh_embedding_for_memory(self, memory_id: int, text: str) -> None:
+        if not self._embedding_enabled:
+            return
+        vector = self._embed_text(text)
+        try:
+            with self._conn:
+                cur = self._conn.cursor()
+                cur.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (int(memory_id),))
+                if not vector:
+                    return
+                cur.execute(
+                    """
+                    INSERT INTO memory_embeddings(memory_id, model, vector, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (int(memory_id), self._embedding_model, json.dumps(vector), time.time()),
+                )
+        except Exception as exc:
+            self._embedding_last_error = f"embedding_store_failed:{exc}"
+
+    def _search_vector(
+        self,
+        query: str,
+        *,
+        limit: int,
+        max_sensitivity: float | None,
+        sources: list[str] | None,
+    ) -> list[tuple[MemoryEntry, float]]:
+        if not self._embedding_enabled:
+            return []
+        query_vector = self._embed_text(query)
+        if not query_vector:
+            return []
+        query_np = np.asarray(query_vector, dtype=np.float32)
+        query_norm = float(np.linalg.norm(query_np))
+        if not math.isfinite(query_norm) or query_norm <= 0.0:
+            return []
+        sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
+        source_clause, source_params = self._source_filter(sources)
+        fetch_limit = min(MAX_SEARCH_FANOUT, max(limit, limit * 6))
+        rows = self._conn.cursor().execute(
+            (
+                "SELECT memory.*, memory_embeddings.vector AS embedding_vector "
+                "FROM memory_embeddings "
+                "JOIN memory ON memory_embeddings.memory_id = memory.id "
+                "WHERE memory_embeddings.model = ? "
+                f"{sensitivity_clause} {source_clause} "
+                "ORDER BY memory.created_at DESC LIMIT ?"
+            ),
+            (self._embedding_model, *sensitivity_params, *source_params, fetch_limit),
+        ).fetchall()
+        scored: list[tuple[MemoryEntry, float]] = []
+        for row in rows:
+            vector_text = str(row["embedding_vector"] or "")
+            if not vector_text:
+                continue
+            try:
+                parsed = json.loads(vector_text)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(parsed, list) or not parsed:
+                continue
+            try:
+                candidate_np = np.asarray(parsed, dtype=np.float32)
+            except Exception:
+                continue
+            if candidate_np.shape != query_np.shape:
+                continue
+            candidate_norm = float(np.linalg.norm(candidate_np))
+            if not math.isfinite(candidate_norm) or candidate_norm <= 0.0:
+                continue
+            cosine = float(np.dot(candidate_np, query_np) / (candidate_norm * query_norm))
+            if not math.isfinite(cosine):
+                continue
+            score = self._clamp01((cosine + 1.0) / 2.0)
+            if score < self._embedding_min_similarity:
+                continue
+            entry = self._row_to_memory(row)
+            scored.append((entry, score))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return scored[:limit]
 
     def _search_keyword(
         self,
@@ -1059,6 +1569,9 @@ class MemoryStore:
         source_clause, source_params = self._source_filter(sources)
         if self._fts_enabled:
             keywords = self._extract_keywords(query)
+            keywords.extend(self._expand_query_tokens(keywords))
+            if len(keywords) > 24:
+                keywords = keywords[:24]
             fts_query = self._build_fts_query(query)
             expanded = " OR ".join([fts_query, *keywords]) if keywords else fts_query
             if not expanded:
@@ -1091,37 +1604,88 @@ class MemoryStore:
         max_sensitivity: float | None,
         sources: list[str] | None,
     ) -> list[MemoryEntry]:
-        lowered = query.lower()
+        lowered = self._normalize_text(query)
+        query_tokens = set(self._tokenize_words(lowered))
         cur = self._conn.cursor()
         sensitivity_clause, sensitivity_params = self._sensitivity_filter(max_sensitivity)
         source_clause, source_params = self._source_filter(sources)
+        fetch_limit = min(MAX_SEARCH_FANOUT, max(limit, limit * 5))
         rows = cur.execute(
             (
                 "SELECT * FROM memory WHERE 1=1 "
                 f"{sensitivity_clause} {source_clause} "
                 "ORDER BY created_at DESC LIMIT ?"
             ),
-            (*sensitivity_params, *source_params, min(MAX_SEARCH_FANOUT, max(limit * 20, limit))),
+            (*sensitivity_params, *source_params, fetch_limit),
         ).fetchall()
         results: list[MemoryEntry] = []
         for row in rows:
             entry = self._row_to_memory(row)
-            if lowered in entry.text.lower():
+            entry_text = self._normalize_text(entry.text)
+            if lowered and lowered in entry_text:
                 results.append(entry)
                 continue
-            query_tokens = set(re.findall(r"\w+", lowered))
-            text_tokens = set(re.findall(r"\w+", entry.text.lower()))
+            text_tokens = set(self._tokenize_words(entry_text))
             if query_tokens and (query_tokens & text_tokens):
                 results.append(entry)
         return results[:limit]
 
-    def _apply_hybrid_scoring(self, entries: list[MemoryEntry], query: str, weight: float) -> list[MemoryEntry]:
-        tokens = set(re.findall(r"\w+", query.lower()))
+    def _apply_hybrid_scoring(
+        self,
+        entries: list[MemoryEntry],
+        query: str,
+        weight: float,
+        *,
+        vector_scores: dict[int, float] | None = None,
+        vector_weight: float = 0.0,
+    ) -> list[MemoryEntry]:
+        if not entries:
+            return entries
+        importance_weight = max(0.0, min(1.0, float(weight)))
+        lexical_weight = 1.0 - importance_weight
+        vector_weight = self._clamp01(float(vector_weight))
+        vector_scores = vector_scores or {}
+        query_terms = self._extract_keywords(query)
+        if not query_terms:
+            query_terms = self._tokenize_words(query)
+        expanded_terms = self._expand_query_tokens(query_terms)
+        all_terms = list(dict.fromkeys([*query_terms, *expanded_terms]))
+        if not all_terms:
+            all_terms = self._tokenize_words(query)[:8]
+        entry_token_cache: list[set[str]] = [set(self._tokenize_words(entry.text)) for entry in entries]
+        doc_count = max(1, len(entries))
+        term_idf: dict[str, float] = {}
+        for term in all_terms:
+            document_frequency = sum(1 for tokens in entry_token_cache if term in tokens)
+            term_idf[term] = 1.0 + math.log((doc_count + 1.0) / (1.0 + float(document_frequency)))
+        query_mass = sum(term_idf.get(term, 0.0) for term in query_terms)
+        if query_mass <= 0.0:
+            query_mass = float(max(1, len(query_terms)))
+        all_mass = sum(term_idf.get(term, 0.0) for term in all_terms)
+        if all_mass <= 0.0:
+            all_mass = float(max(1, len(all_terms)))
+        query_phrase = self._normalize_text(query)
+        query_token_set = set(query_terms)
         for entry in entries:
-            entry_tokens = set(re.findall(r"\w+", entry.text.lower()))
-            overlap = len(tokens & entry_tokens)
-            text_score = overlap / max(1, len(tokens))
-            entry.score = (weight * entry.importance) + ((1 - weight) * text_score)
+            entry_tokens = set(self._tokenize_words(entry.text))
+            weighted_coverage = sum(term_idf.get(term, 0.0) for term in query_terms if term in entry_tokens) / query_mass
+            expansion_coverage = sum(term_idf.get(term, 0.0) for term in all_terms if term in entry_tokens) / all_mass
+            phrase_hit = 1.0 if query_phrase and query_phrase in self._normalize_text(entry.text) else 0.0
+            token_similarity = self._token_similarity(query_token_set, entry_tokens)
+            lexical_score = self._clamp01(
+                (0.45 * weighted_coverage)
+                + (0.25 * expansion_coverage)
+                + (0.2 * token_similarity)
+                + (0.1 * phrase_hit)
+            )
+            recency_prior = self._temporal_prior(entry.created_at, half_life_days=DEFAULT_RECENCY_PRIOR_HALF_LIFE_DAYS)
+            retrieval_score = self._clamp01((0.9 * lexical_score) + (0.1 * recency_prior))
+            vector_score = vector_scores.get(entry.id)
+            if vector_score is not None:
+                retrieval_score = self._clamp01(
+                    ((1.0 - vector_weight) * retrieval_score) + (vector_weight * self._clamp01(float(vector_score)))
+                )
+            entry.score = self._clamp01((importance_weight * entry.importance) + (lexical_weight * retrieval_score))
         return entries
 
     def _apply_temporal_decay(self, entries: list[MemoryEntry], half_life_days: float) -> list[MemoryEntry]:
@@ -1156,12 +1720,10 @@ class MemoryStore:
             for entry in remaining:
                 relevance = normalize(entry.score)
                 max_sim = 0.0
-                entry_tokens = set(re.findall(r"\w+", entry.text.lower()))
+                entry_tokens = set(self._tokenize_words(entry.text))
                 for chosen in selected:
-                    chosen_tokens = set(re.findall(r"\w+", chosen.text.lower()))
-                    intersection = len(entry_tokens & chosen_tokens)
-                    union = len(entry_tokens | chosen_tokens)
-                    sim = intersection / union if union else 0.0
+                    chosen_tokens = set(self._tokenize_words(chosen.text))
+                    sim = self._token_similarity(entry_tokens, chosen_tokens)
                     if sim > max_sim:
                         max_sim = sim
                 mmr_score = (lambda_weight * relevance) - ((1 - lambda_weight) * max_sim)

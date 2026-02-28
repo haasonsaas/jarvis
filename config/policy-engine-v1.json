@@ -1,0 +1,39 @@
+{
+  "version": "1",
+  "execution": {
+    "high_risk_domains": [
+      "lock",
+      "alarm_control_panel"
+    ],
+    "require_confirm_domains": [
+      "lock",
+      "alarm_control_panel",
+      "cover"
+    ],
+    "effect_verification_domains": [
+      "light",
+      "switch",
+      "fan",
+      "climate",
+      "cover",
+      "lock",
+      "media_player"
+    ],
+    "max_actions_per_execute": 25
+  },
+  "identity": {
+    "step_up_token_ttl_sec": 900,
+    "step_up_required_domains": [],
+    "min_trust_score_for_high_risk": 0.6
+  },
+  "autonomy_slo": {
+    "max_replan_rate": 0.25,
+    "max_verification_failure_rate": 0.2,
+    "max_backlog_steps": 25,
+    "max_minutes_since_last_cycle": 30
+  },
+  "router": {
+    "shadow_mode": false,
+    "canary_percent": 0
+  }
+}

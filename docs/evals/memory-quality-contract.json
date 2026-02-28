@@ -1,0 +1,143 @@
+{
+  "cases": [
+    {
+      "id": "duplicate_exact_preference",
+      "objective": "Exact duplicates should not create redundant entries.",
+      "seed_memories": [
+        {
+          "text": "favorite drink is coffee",
+          "kind": "profile",
+          "importance": 0.9,
+          "source": "user"
+        }
+      ],
+      "incoming_memory": {
+        "text": "favorite drink is coffee",
+        "kind": "profile",
+        "importance": 0.9,
+        "source": "user"
+      },
+      "expected_actions": [
+        "skip_duplicate",
+        "supersede"
+      ],
+      "must_contain_any": [
+        "favorite drink is coffee"
+      ],
+      "max_total_memories": 1,
+      "min_judge_score": 0.7
+    },
+    {
+      "id": "correction_supersede_single_truth",
+      "objective": "A corrected preference should replace stale contradictory state.",
+      "seed_memories": [
+        {
+          "text": "favorite color is blue",
+          "kind": "profile",
+          "importance": 0.85,
+          "source": "user"
+        }
+      ],
+      "incoming_memory": {
+        "text": "favorite color is green",
+        "kind": "profile",
+        "importance": 0.9,
+        "source": "user"
+      },
+      "expected_actions": [
+        "supersede"
+      ],
+      "must_contain_any": [
+        "favorite color",
+        "green"
+      ],
+      "must_not_contain": [
+        "favorite color is blue"
+      ],
+      "max_total_memories": 1,
+      "min_judge_score": 0.75
+    },
+    {
+      "id": "new_fact_is_stored",
+      "objective": "Unrelated new facts should be stored as net-new memory.",
+      "seed_memories": [
+        {
+          "text": "lights in bedroom go off at 10pm",
+          "kind": "note",
+          "importance": 0.6,
+          "source": "user"
+        }
+      ],
+      "incoming_memory": {
+        "text": "user likes dark roast coffee",
+        "kind": "profile",
+        "importance": 0.8,
+        "source": "user"
+      },
+      "expected_actions": [
+        "store"
+      ],
+      "must_contain_all": [
+        "user likes dark roast coffee"
+      ],
+      "min_total_memories": 2,
+      "min_judge_score": 0.65
+    },
+    {
+      "id": "contradiction_becomes_latest_truth",
+      "objective": "Contradictory updates should resolve to one latest canonical statement.",
+      "seed_memories": [
+        {
+          "text": "gym membership is active",
+          "kind": "profile",
+          "importance": 0.8,
+          "source": "user"
+        }
+      ],
+      "incoming_memory": {
+        "text": "gym membership is not active",
+        "kind": "profile",
+        "importance": 0.9,
+        "source": "user"
+      },
+      "expected_actions": [
+        "supersede"
+      ],
+      "must_contain_all": [
+        "not active"
+      ],
+      "must_not_contain": [
+        "gym membership is active"
+      ],
+      "max_total_memories": 1,
+      "min_judge_score": 0.75
+    },
+    {
+      "id": "paraphrase_duplicate_compression",
+      "objective": "Near-duplicate paraphrases should compress into a single memory entry.",
+      "seed_memories": [
+        {
+          "text": "buy oat milk every week",
+          "kind": "task",
+          "importance": 0.75,
+          "source": "user"
+        }
+      ],
+      "incoming_memory": {
+        "text": "remember to buy oat milk weekly",
+        "kind": "task",
+        "importance": 0.8,
+        "source": "user"
+      },
+      "expected_actions": [
+        "skip_duplicate",
+        "supersede"
+      ],
+      "must_contain_any": [
+        "oat milk"
+      ],
+      "max_total_memories": 1,
+      "min_judge_score": 0.7
+    }
+  ]
+}

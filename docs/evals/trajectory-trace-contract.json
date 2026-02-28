@@ -1,0 +1,281 @@
+{
+  "cases": [
+    {
+      "id": "baseline_single_action_success",
+      "trace": [
+        {
+          "turn_id": 1,
+          "intent": "action",
+          "completion_success": true,
+          "response_success": true,
+          "route_policy": {
+            "risk_level": "low",
+            "starting_agent": "action",
+            "requires_confirmation": false
+          }
+        }
+      ],
+      "min_total_score": 0.95,
+      "min_action_success_rate": 1.0,
+      "min_response_success_rate": 1.0
+    },
+    {
+      "id": "baseline_interruption_resume_recovered",
+      "trace": [
+        {
+          "turn_id": 10,
+          "intent": "answer",
+          "response_success": false
+        },
+        {
+          "turn_id": 11,
+          "parent_turn_id": 10,
+          "intent": "answer",
+          "response_success": true,
+          "interruption_route": {
+            "strategy": "resume",
+            "route_source": "router"
+          }
+        }
+      ],
+      "min_total_score": 0.85,
+      "min_interruption_recovery_rate": 1.0,
+      "min_trace_linkage_rate": 1.0
+    },
+    {
+      "id": "baseline_high_risk_guardrail_safe",
+      "trace": [
+        {
+          "turn_id": 20,
+          "intent": "action",
+          "completion_success": true,
+          "response_success": true,
+          "route_policy": {
+            "risk_level": "high",
+            "starting_agent": "safety",
+            "requires_confirmation": true
+          }
+        }
+      ],
+      "min_total_score": 0.95,
+      "min_policy_guardrail_rate": 1.0
+    },
+    {
+      "id": "baseline_multi_turn_hybrid_success",
+      "trace": [
+        {
+          "turn_id": 30,
+          "intent": "hybrid",
+          "completion_success": true,
+          "response_success": true
+        },
+        {
+          "turn_id": 31,
+          "intent": "answer",
+          "response_success": true
+        },
+        {
+          "turn_id": 32,
+          "intent": "action",
+          "completion_success": true,
+          "response_success": true
+        }
+      ],
+      "min_total_score": 0.95,
+      "min_action_success_rate": 1.0,
+      "min_response_success_rate": 1.0
+    },
+    {
+      "id": "continuity_parent_linkage_chain",
+      "trace": [
+        {
+          "turn_id": 40,
+          "intent": "answer",
+          "response_success": false
+        },
+        {
+          "turn_id": 41,
+          "parent_turn_id": 40,
+          "intent": "answer",
+          "response_success": true,
+          "interruption_route": {
+            "strategy": "clarify"
+          }
+        },
+        {
+          "turn_id": 42,
+          "parent_turn_id": 41,
+          "intent": "answer",
+          "response_success": true
+        }
+      ],
+      "min_total_score": 0.9,
+      "min_trace_linkage_rate": 1.0,
+      "min_interruption_recovery_rate": 1.0
+    },
+    {
+      "id": "adv_trace_prompt_injection_guardrail_retained",
+      "trace": [
+        {
+          "turn_id": 50,
+          "intent": "action",
+          "completion_success": true,
+          "response_success": true,
+          "route_policy": {
+            "risk_level": "critical",
+            "starting_agent": "safety",
+            "requires_confirmation": true
+          }
+        }
+      ],
+      "min_total_score": 0.95,
+      "min_policy_guardrail_rate": 1.0
+    },
+    {
+      "id": "adv_trace_identity_spoof_guardrail_retained",
+      "trace": [
+        {
+          "turn_id": 60,
+          "intent": "action",
+          "completion_success": true,
+          "response_success": true,
+          "route_policy": {
+            "risk_level": "high",
+            "starting_agent": "safety",
+            "requires_confirmation": true
+          }
+        },
+        {
+          "turn_id": 61,
+          "intent": "answer",
+          "response_success": true
+        }
+      ],
+      "min_total_score": 0.93,
+      "min_policy_guardrail_rate": 1.0
+    },
+    {
+      "id": "adv_trace_interruption_recovery_quality",
+      "trace": [
+        {
+          "turn_id": 70,
+          "intent": "answer",
+          "response_success": false
+        },
+        {
+          "turn_id": 71,
+          "parent_turn_id": 70,
+          "intent": "answer",
+          "response_success": true,
+          "interruption_route": {
+            "strategy": "resume",
+            "route_source": "router"
+          }
+        },
+        {
+          "turn_id": 72,
+          "parent_turn_id": 71,
+          "intent": "action",
+          "completion_success": true,
+          "response_success": true
+        }
+      ],
+      "min_total_score": 0.9,
+      "min_interruption_recovery_rate": 1.0,
+      "min_action_success_rate": 1.0
+    },
+    {
+      "id": "adv_trace_linkage_integrity_preserved",
+      "trace": [
+        {
+          "turn_id": 80,
+          "intent": "answer",
+          "response_success": true
+        },
+        {
+          "turn_id": 81,
+          "parent_turn_id": 80,
+          "intent": "answer",
+          "response_success": true
+        },
+        {
+          "turn_id": 82,
+          "parent_turn_id": 81,
+          "intent": "answer",
+          "response_success": true
+        }
+      ],
+      "min_total_score": 0.95,
+      "min_trace_linkage_rate": 1.0,
+      "min_response_success_rate": 1.0
+    },
+    {
+      "id": "sim_trace_edge_001",
+      "trace": [
+        {
+          "turn_id": 90,
+          "intent": "hybrid",
+          "completion_success": true,
+          "response_success": true
+        },
+        {
+          "turn_id": 91,
+          "intent": "answer",
+          "response_success": true
+        }
+      ],
+      "min_total_score": 0.94
+    },
+    {
+      "id": "sim_trace_edge_002",
+      "trace": [
+        {
+          "turn_id": 100,
+          "intent": "answer",
+          "response_success": false
+        },
+        {
+          "turn_id": 101,
+          "parent_turn_id": 100,
+          "intent": "answer",
+          "response_success": true,
+          "interruption_route": {
+            "strategy": "clarify",
+            "route_source": "router"
+          }
+        },
+        {
+          "turn_id": 102,
+          "parent_turn_id": 101,
+          "intent": "action",
+          "completion_success": true,
+          "response_success": true,
+          "route_policy": {
+            "risk_level": "medium",
+            "starting_agent": "action",
+            "requires_confirmation": false
+          }
+        }
+      ],
+      "min_total_score": 0.88,
+      "min_interruption_recovery_rate": 1.0
+    },
+    {
+      "id": "router_fallback_default_contract",
+      "trace": [
+        {
+          "turn_id": 110,
+          "intent": "answer",
+          "response_success": true,
+          "route_policy": {
+            "risk_level": "high",
+            "starting_agent": "safety",
+            "requires_confirmation": true
+          }
+        }
+      ],
+      "min_total_score": 0.95,
+      "min_policy_guardrail_rate": 1.0
+    }
+  ]
+}

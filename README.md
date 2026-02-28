@@ -1,7 +1,7 @@
 # Jarvis — AI Assistant on Reachy Mini
 
 An embodied AI assistant inspired by Jarvis from Iron Man, running on the
-[Reachy Mini](https://huggingface.co/reachy-mini) robot with Claude as its brain.
+[Reachy Mini](https://huggingface.co/reachy-mini) robot with OpenAI Agents as its brain.
 
 ## Design Principles
 
@@ -41,7 +41,7 @@ An embodied AI assistant inspired by Jarvis from Iron Man, running on the
 └───────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Audio Input    │     │   Claude Brain    │     │   Audio Output  │
+│   Audio Input    │     │   Agent Brain     │     │   Audio Output  │
 │                  │     │                  │     │                  │
 │  Mic → VAD ──────┼────►│  Agent SDK       │────►│  Stream TTS     │
 │       ↓          │     │  + MCP tools:    │     │  (ElevenLabs)   │
@@ -64,7 +64,7 @@ An embodied AI assistant inspired by Jarvis from Iron Man, running on the
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | Presence Loop | Custom 30Hz controller | Continuous micro-behaviors, state machine |
-| Brain | Claude Agent SDK + custom MCP tools | Reasoning, conversation, embodiment plans |
+| Brain | OpenAI Agents SDK + custom tools | Reasoning, conversation, embodiment plans |
 | Speech-to-Text | Whisper (local, `faster-whisper`) | Transcribe user speech |
 | Text-to-Speech | ElevenLabs API (streaming) | Jarvis voice, sentence-level streaming |
 | VAD | Silero VAD | End-of-utterance + barge-in detection |
@@ -78,7 +78,7 @@ An embodied AI assistant inspired by Jarvis from Iron Man, running on the
 cd jarvis
 uv sync
 cp .env.example .env
-# Fill in: ANTHROPIC_API_KEY, ELEVENLABS_API_KEY
+# Fill in: OPENAI_API_KEY, ELEVENLABS_API_KEY
 # Optional: HASS_URL, HASS_TOKEN for smart home
 # Optional: HOME_PERMISSION_PROFILE=readonly (state only) or control (default)
 # Optional: HOME_REQUIRE_CONFIRM_EXECUTE=true (require confirm=true on all executes)
@@ -104,6 +104,10 @@ cp .env.example .env
 # Optional: MEMORY_ENCRYPTION_ENABLED / AUDIT_ENCRYPTION_ENABLED / JARVIS_DATA_KEY
 # Optional: WAKE_MODE / WAKE_CALIBRATION_PROFILE / WAKE_WORDS / WAKE_WORD_SENSITIVITY / VOICE_TIMEOUT_PROFILE
 # Optional: STT_FALLBACK_ENABLED / WHISPER_MODEL_FALLBACK / TTS_FALLBACK_TEXT_ONLY
+# Optional: OPENAI_ROUTER_MODEL / ROUTER_TIMEOUT_SEC / POLICY_ROUTER_MIN_CONFIDENCE
+# Optional: INTERRUPTION_ROUTER_TIMEOUT_SEC / INTERRUPTION_RESUME_MIN_CONFIDENCE
+# Optional: SEMANTIC_TURN_ENABLED / SEMANTIC_TURN_ROUTER_TIMEOUT_SEC / SEMANTIC_TURN_MIN_CONFIDENCE
+# Optional: SEMANTIC_TURN_EXTENSION_SEC / SEMANTIC_TURN_MAX_TRANSCRIPT_CHARS
 # Optional: MODEL_FAILOVER_ENABLED / MODEL_SECONDARY_MODE / WATCHDOG_* / TURN_TIMEOUT_ACT_SEC / STARTUP_STRICT
 # Optional: OPERATOR_SERVER_ENABLED / OPERATOR_SERVER_HOST / OPERATOR_SERVER_PORT / OPERATOR_AUTH_MODE / OPERATOR_AUTH_TOKEN
 # Optional: WEBHOOK_INBOUND_ENABLED / WEBHOOK_INBOUND_TOKEN
@@ -147,6 +151,11 @@ Smart home safety defaults:
   - `voice_attention.stt_diagnostics` reports confidence score/band, model source, fallback usage, and transcript quality signals.
 - Low-confidence action requests trigger a lightweight repair loop:
   - Jarvis asks `I may have misheard you as ...` and accepts either `confirm` or an immediate corrected phrase.
+- Semantic turn-end detection can defer utterance commit when speech appears incomplete:
+  - an LLM router decides `commit` vs `wait`, then applies a short extension window before finalizing the turn.
+- Barge-in follow-up handling is LLM-routed:
+  - interruption turns are classified as `replace`, `resume`, or `clarify` with fail-closed fallback to `replace`.
+  - resumed turns include continuity context from the interrupted answer.
 - Per-user voice profiles can tune speaking behavior:
   - `set_voice_profile` / `clear_voice_profile` / `list_voice_profiles` manage per-user `verbosity`, `confirmations`, `pace`, and `tone`.
 - Personality posture auto-switches by context:
@@ -218,7 +227,15 @@ Smart home safety defaults:
 - Release channel checks: run `./scripts/check_release_channel.py --channel dev|beta|stable`.
 - Weekly quality artifact: run `./scripts/generate_quality_report.py --output-dir .artifacts/quality --markdown --compare-with .artifacts/quality/weekly-quality-<previous>.json`.
 - Deterministic eval dataset runner: run `./scripts/run_eval_dataset.py docs/evals/assistant-contract.json --strict --min-pass-rate 1.0 --max-failed 0`.
-  - Current dataset includes 91 contract cases spanning home orchestration, planner/autonomy, integrations, comms, trust, and status contracts.
+  - Current dataset includes 250+ contract cases spanning home orchestration, planner/autonomy, integrations, comms, trust, and status contracts.
+- Router policy eval dataset runner: run `./scripts/run_router_policy_eval.py docs/evals/router-policy-contract.json --strict --min-pass-rate 1.0 --max-failed 0`.
+  - Router dataset includes adversarial prompt-injection, identity-spoofing, escalation, and fail-closed routing contract cases.
+- Interruption route eval dataset runner: run `./scripts/run_interruption_route_eval.py docs/evals/interruption-route-contract.json --strict --min-pass-rate 1.0 --max-failed 0`.
+  - Interruption dataset checks `replace|resume|clarify` routing, fallback behavior, and continuation metadata integrity.
+- Trajectory trace grading runner: run `./scripts/run_trace_trajectory_eval.py docs/evals/trajectory-trace-contract.json --strict --min-pass-rate 1.0 --max-failed 0`.
+  - Trace grading scores full trajectories across completion success, response quality, interruption recovery, linkage integrity, and high-risk guardrail adherence.
+- Autonomy cycle contract runner: run `./scripts/run_autonomy_cycle_eval.py docs/evals/autonomy-cycle-contract.json --strict --min-pass-rate 1.0 --max-failed 0`.
+  - Autonomy cycle dataset checks retry escalation, checkpoint gating, replan state transitions, and failure taxonomy accounting.
 - Unified readiness gate: run `./scripts/jarvis_readiness.sh fast|full` (or `make readiness`).
 - One-command host bootstrap: run `./scripts/bootstrap.sh`.
 - Container profile: `docker compose up --build` (simulation/no-vision default).
@@ -268,7 +285,8 @@ Smart home safety defaults:
   - capability negotiation, dependency health, quotas, harness runs, bundle signing metadata, sandbox templates
 - Planning and autonomy (`planner_engine`):
   - planner/executor split output, task graphs with checkpoint/resume, deferred scheduling, self-critique
-  - autonomy loop controls: `autonomy_schedule`, `autonomy_checkpoint`, `autonomy_cycle`, `autonomy_status`
+  - autonomy loop controls: `autonomy_schedule`, `autonomy_checkpoint`, `autonomy_replan`, `autonomy_cycle`, `autonomy_status`
+  - autonomy cycle supports structured step contracts (precondition/postcondition), bounded retry with backoff, and automatic replan escalation with failure taxonomy in `autonomy_status`
 - Quality and evaluation (`quality_evaluator`):
   - weekly report generation + deterministic dataset-runner summary
 - Embodiment roadmap controls (`embodiment_presence`):
@@ -279,7 +297,7 @@ Smart home safety defaults:
 
 ### First-Time Operator Checklist
 
-1. Copy `.env.example` to `.env`, then set required keys: `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY`.
+1. Copy `.env.example` to `.env`, then set required keys: `OPENAI_API_KEY` and `ELEVENLABS_API_KEY`.
 2. If using integrations, set both values for each pair:
    - `HASS_URL` and `HASS_TOKEN`
    - `PUSHOVER_API_TOKEN` and `PUSHOVER_USER_KEY`
@@ -403,7 +421,7 @@ jarvis/
 │   └── jarvis/
 │       ├── __main__.py        # Entry point + conversation loop
 │       ├── config.py          # Settings & env vars
-│       ├── brain.py           # Claude Agent SDK orchestrator
+│       ├── brain.py           # OpenAI Agents SDK orchestrator
 │       ├── observability.py   # Telemetry store + metrics export
 │       ├── operator_server.py # Local operator dashboard/API
 │       ├── skills.py          # Local skill discovery + lifecycle

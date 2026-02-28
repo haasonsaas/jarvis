@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import aiohttp
@@ -43,7 +44,18 @@ async def test_operator_server_routes_and_control_log(tmp_path):
         base = f"http://127.0.0.1:{port}"
 
         async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
-            dashboard = await (await session.get(f"{base}/")).text()
+            dashboard_resp = await session.get(f"{base}/")
+            dashboard = await dashboard_resp.text()
+            assert dashboard_resp.headers["X-Content-Type-Options"] == "nosniff"
+            assert dashboard_resp.headers["X-Frame-Options"] == "DENY"
+            assert dashboard_resp.headers["Referrer-Policy"] == "no-referrer"
+            csp = dashboard_resp.headers["Content-Security-Policy"]
+            assert "unsafe-inline" not in csp
+            assert "style-src 'self' 'nonce-" in csp
+            assert "script-src 'self' 'nonce-" in csp
+            assert "'unsafe-hashes'" in csp
+            assert '<style nonce="' in dashboard
+            assert '<script nonce="' in dashboard
             assert "@media (max-width: 920px)" in dashboard
             assert "Control Schema" in dashboard
             assert "Conversation Trace" in dashboard
@@ -53,6 +65,14 @@ async def test_operator_server_routes_and_control_log(tmp_path):
             assert "Operator Brief Profile" in dashboard
             assert "Preset Quiet Hours" in dashboard
             assert "Export Runtime Profile" in dashboard
+            assert "List Pending Approvals" in dashboard
+            assert "Approve + Execute" in dashboard
+            assert "Dead-Letter Replay" in dashboard
+            assert "Dead-Letter Dry-Run" in dashboard
+            assert "dead_letter_replay" in dashboard
+            assert "List Autonomy Replans" in dashboard
+            assert "Apply Autonomy Replan" in dashboard
+            assert "apply_autonomy_replan" in dashboard
 
             bad_control = await session.post(
                 f"{base}/api/control",
@@ -62,7 +82,9 @@ async def test_operator_server_routes_and_control_log(tmp_path):
             assert bad_control.status == 400
             assert (await bad_control.json())["error"] == "invalid_json"
 
-            status = await (await session.get(f"{base}/api/status")).json()
+            status_resp = await session.get(f"{base}/api/status")
+            assert status_resp.headers["Cache-Control"] == "no-store"
+            status = await status_resp.json()
             assert status["status"] == "ok"
 
             metrics_text = await (await session.get(f"{base}/metrics")).text()
@@ -152,6 +174,8 @@ async def test_operator_server_inbound_webhook_token_enforcement():
         async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
             forbidden = await session.post(f"{base}/api/webhook/inbound", json={"x": 1})
             assert forbidden.status == 403
+            query_forbidden = await session.post(f"{base}/api/webhook/inbound?token=secret-token", json={"x": 2})
+            assert query_forbidden.status == 403
 
             ok_bearer = await session.post(
                 f"{base}/api/webhook/inbound",
@@ -309,11 +333,18 @@ async def test_operator_server_session_auth_login_logout_flow():
             assert payload["ok"] is True
             assert payload["mode"] == "session"
             assert "jarvis_operator_session" in login.cookies
+            assert payload["csrf_header"] == "X-CSRF-Token"
+            csrf_token = str(payload["csrf_token"]).strip()
+            assert csrf_token
+            assert str(payload.get("operator_identity", "")).startswith("session-")
 
             allowed = await session.get(f"{base}/api/status")
             assert allowed.status == 200
 
-            logout = await session.post(f"{base}/api/session/logout")
+            logout = await session.post(
+                f"{base}/api/session/logout",
+                headers={"X-CSRF-Token": csrf_token},
+            )
             assert logout.status == 200
 
             after_logout = await session.get(f"{base}/api/status")
@@ -357,6 +388,232 @@ async def test_operator_server_auth_off_mode_allows_unauthenticated_api():
 
 
 @pytest.mark.asyncio
+async def test_operator_server_session_login_throttles_repeated_failures():
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=lambda a, p: _awaitable({"ok": True}),
+        control_schema_provider=lambda: {"actions": {}},
+        metrics_provider=lambda: "",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="op-secret",
+        operator_auth_mode="session",
+    )
+    await server.start()
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
+            for _ in range(5):
+                bad = await session.post(f"{base}/api/session/login", json={"token": "wrong"})
+                assert bad.status == 403
+            blocked = await session.post(f"{base}/api/session/login", json={"token": "wrong"})
+            assert blocked.status == 429
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_operator_server_records_security_events_for_operator_auth_failures():
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=lambda a, p: _awaitable({"ok": True}),
+        control_schema_provider=lambda: {"actions": {}},
+        metrics_provider=lambda: "",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="op-secret",
+        operator_auth_mode="token",
+    )
+    await server.start()
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+        async with aiohttp.ClientSession() as session:
+            missing = await session.get(f"{base}/api/status")
+            assert missing.status == 401
+            wrong = await session.get(f"{base}/api/status", headers={"X-Operator-Token": "wrong"})
+            assert wrong.status == 403
+            actions_resp = await session.get(f"{base}/api/operator-actions", headers={"X-Operator-Token": "op-secret"})
+            assert actions_resp.status == 200
+            actions = await actions_resp.json()
+        security = [row for row in actions if row.get("action") == "security_event"]
+        reasons = {str((row.get("payload") or {}).get("reason", "")) for row in security}
+        assert "token_missing" in reasons
+        assert "token_invalid" in reasons
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_operator_server_records_security_events_for_login_throttle():
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=lambda a, p: _awaitable({"ok": True}),
+        control_schema_provider=lambda: {"actions": {}},
+        metrics_provider=lambda: "",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="op-secret",
+        operator_auth_mode="session",
+    )
+    await server.start()
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
+            for _ in range(5):
+                bad = await session.post(f"{base}/api/session/login", json={"token": "wrong"})
+                assert bad.status == 403
+            blocked = await session.post(f"{base}/api/session/login", json={"token": "wrong"})
+            assert blocked.status == 429
+
+            server._login_blocked_until.clear()
+            server._login_failures.clear()
+
+            login = await session.post(f"{base}/api/session/login", json={"token": "op-secret"})
+            assert login.status == 200
+            actions_resp = await session.get(f"{base}/api/operator-actions")
+            assert actions_resp.status == 200
+            actions = await actions_resp.json()
+        security = [row for row in actions if row.get("action") == "security_event"]
+        reasons = {str((row.get("payload") or {}).get("reason", "")) for row in security}
+        assert "token_invalid" in reasons
+        assert "throttle_armed" in reasons
+        assert "throttled" in reasons
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_operator_server_injects_authenticated_identity_for_resolve_approval():
+    calls: list[tuple[str, dict]] = []
+
+    async def control_handler(action: str, payload: dict):
+        calls.append((action, dict(payload)))
+        return {"ok": True}
+
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=control_handler,
+        control_schema_provider=lambda: {"actions": {"resolve_approval": {"required": ["approval_id", "approved"]}}},
+        metrics_provider=lambda: "",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="op-secret",
+        operator_auth_mode="token",
+    )
+    await server.start()
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+        async with aiohttp.ClientSession() as session:
+            resp = await session.post(
+                f"{base}/api/control",
+                headers={"X-Operator-Token": "op-secret"},
+                json={
+                    "action": "resolve_approval",
+                    "payload": {
+                        "approval_id": "approval-1",
+                        "approved": True,
+                        "resolver_id": "spoofed-user",
+                        "__operator_identity": "spoofed-identity",
+                    },
+                },
+            )
+            assert resp.status == 200
+        assert calls
+        action, payload = calls[-1]
+        assert action == "resolve_approval"
+        expected_identity = "token-" + hashlib.sha256("op-secret".encode("utf-8")).hexdigest()[:12]
+        assert payload["__operator_identity"] == expected_identity
+        assert payload["resolver_id"] == "spoofed-user"
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_operator_server_injects_authenticated_identity_for_apply_autonomy_replan():
+    calls: list[tuple[str, dict]] = []
+
+    async def control_handler(action: str, payload: dict):
+        calls.append((action, dict(payload)))
+        return {"ok": True}
+
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=control_handler,
+        control_schema_provider=lambda: {"actions": {"apply_autonomy_replan": {"required": ["task_id"]}}},
+        metrics_provider=lambda: "",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="op-secret",
+        operator_auth_mode="token",
+    )
+    await server.start()
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+        async with aiohttp.ClientSession() as session:
+            resp = await session.post(
+                f"{base}/api/control",
+                headers={"X-Operator-Token": "op-secret"},
+                json={
+                    "action": "apply_autonomy_replan",
+                    "payload": {
+                        "task_id": "deferred-1",
+                        "resolver_id": "spoofed-user",
+                        "__operator_identity": "spoofed-identity",
+                    },
+                },
+            )
+            assert resp.status == 200
+        assert calls
+        action, payload = calls[-1]
+        assert action == "apply_autonomy_replan"
+        expected_identity = "token-" + hashlib.sha256("op-secret".encode("utf-8")).hexdigest()[:12]
+        assert payload["__operator_identity"] == expected_identity
+        assert payload["resolver_id"] == "spoofed-user"
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
 async def test_operator_server_control_maps_invalid_action_to_400():
     async def control_handler(action: str, payload: dict):
         return {"ok": False, "error": "invalid_action", "message": "unknown action"}
@@ -387,6 +644,52 @@ async def test_operator_server_control_maps_invalid_action_to_400():
             assert resp.status == 400
             payload = await resp.json()
             assert payload["error"] == "invalid_action"
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_operator_server_session_mode_requires_csrf_for_control():
+    server = OperatorServer(
+        host="127.0.0.1",
+        port=0,
+        status_provider=lambda: _awaitable({"ok": True}),
+        diagnostics_provider=lambda: [],
+        control_handler=lambda a, p: _awaitable({"ok": True, "action": a}),
+        control_schema_provider=lambda: {"actions": {}},
+        metrics_provider=lambda: "",
+        events_provider=lambda: [],
+        inbound_callback=lambda payload, headers, path, source: 1,
+        inbound_enabled=False,
+        inbound_token="",
+        operator_auth_token="op-secret",
+        operator_auth_mode="session",
+    )
+    await server.start()
+    try:
+        assert server._site is not None
+        sockets = getattr(server._site, "_server").sockets
+        port = int(sockets[0].getsockname()[1])
+        base = f"http://127.0.0.1:{port}"
+        async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
+            login = await session.post(f"{base}/api/session/login", json={"token": "op-secret"})
+            assert login.status == 200
+            payload = await login.json()
+            csrf_token = str(payload["csrf_token"]).strip()
+            no_csrf = await session.post(f"{base}/api/control", json={"action": "noop", "payload": {}})
+            assert no_csrf.status == 401
+            bad_csrf = await session.post(
+                f"{base}/api/control",
+                headers={"X-CSRF-Token": "bad"},
+                json={"action": "noop", "payload": {}},
+            )
+            assert bad_csrf.status == 403
+            good_csrf = await session.post(
+                f"{base}/api/control",
+                headers={"X-CSRF-Token": csrf_token},
+                json={"action": "noop", "payload": {}},
+            )
+            assert good_csrf.status == 200
     finally:
         await server.stop()
 

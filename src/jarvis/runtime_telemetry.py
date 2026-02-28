@@ -522,4 +522,17 @@ def telemetry_snapshot(
             "low_confidence_count": metric("multimodal_low_confidence_turns"),
             "low_confidence_rate": multimodal_low_confidence_rate,
         },
+        "interruption_metrics": {
+            "route_count": metric("interruption_routes_total"),
+            "resume_count": metric("interruption_resumes"),
+            "replace_count": metric("interruption_replaces"),
+            "clarify_count": metric("interruption_clarifies"),
+            "fallback_count": metric("interruption_route_fallbacks"),
+        },
+        "semantic_turn_metrics": {
+            "decision_count": metric("semantic_turn_decisions_total"),
+            "wait_count": metric("semantic_turn_waits"),
+            "commit_count": metric("semantic_turn_commits"),
+            "fallback_count": metric("semantic_turn_fallbacks"),
+        },
     }

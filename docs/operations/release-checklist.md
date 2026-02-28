@@ -11,7 +11,7 @@ Use this checklist for policy or integration behavior changes before merging to 
   - allow path
   - deny path
   - failure normalization path
-- [ ] `TODO.md` items touched in this release are updated (`[x]` / `[ ]`) to reflect current status.
+- [ ] Planning artifacts touched in this release are updated and archived as needed (for example under `docs/operations/`).
 - [ ] Any new GitHub Action usage is pinned to a full commit SHA.
 
 ## 2) Configuration Review

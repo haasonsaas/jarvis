@@ -103,6 +103,7 @@ SERVICE_TOOL_SCHEMAS_COMMS: dict[str, dict[str, Any]] = {
             "entry_id": {"type": "string"},
             "limit": {"type": "integer"},
             "status": {"type": "string"},
+            "dry_run": {"type": "boolean"},
         },
     },
     "timer_create": {

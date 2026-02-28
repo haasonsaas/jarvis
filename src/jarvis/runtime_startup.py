@@ -79,6 +79,47 @@ def operator_control_schema(
             "skills_enable": {"required": ["name"], "types": {"name": "string"}},
             "skills_disable": {"required": ["name"], "types": {"name": "string"}},
             "clear_inbound_webhooks": {"required": []},
+            "list_pending_approvals": {"required": []},
+            "resolve_approval": {
+                "required": ["approval_id", "approved"],
+                "types": {
+                    "approval_id": "string",
+                    "approved": "boolean",
+                    "notes": "string",
+                    "resolver_id": "string",
+                    "execute": "boolean",
+                },
+            },
+            "dead_letter_status": {
+                "required": [],
+                "types": {"limit": "integer", "status_filter": "string"},
+            },
+            "dead_letter_replay": {
+                "required": [],
+                "types": {"limit": "integer", "status_filter": "string", "dry_run": "boolean"},
+            },
+            "list_autonomy_replans": {
+                "required": [],
+                "types": {"limit": "integer"},
+            },
+            "apply_autonomy_replan": {
+                "required": ["task_id"],
+                "types": {
+                    "task_id": "string",
+                    "draft_id": "string",
+                    "plan_steps": "array",
+                    "step_contracts": "array",
+                    "reset_progress": "boolean",
+                    "execute_at": "number",
+                    "notes": "string",
+                    "resolver_id": "string",
+                },
+            },
+            "copilot_actions": {"required": []},
+            "copilot_execute": {
+                "required": ["action_id"],
+                "types": {"action_id": "string", "payload": "object"},
+            },
         },
     }
 

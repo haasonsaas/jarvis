@@ -34,6 +34,10 @@ def test_operator_control_schema_exposes_expected_actions_and_enums() -> None:
     assert "set_wake_mode" in actions
     assert "set_voice_profile" in actions
     assert "apply_control_preset" in actions
+    assert "list_autonomy_replans" in actions
+    assert "apply_autonomy_replan" in actions
+    assert "copilot_actions" in actions
+    assert "copilot_execute" in actions
     assert actions["set_wake_mode"]["enum"]["mode"] == sorted(VALID_WAKE_MODES)
     assert actions["apply_control_preset"]["enum"]["preset"] == sorted(
         VALID_CONTROL_PRESETS

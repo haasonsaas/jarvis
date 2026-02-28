@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tmux:*)",
+      "Bash(echo:*)",
+      "Bash(printf %s\\\\n:*)"
+    ]
+  }
+}

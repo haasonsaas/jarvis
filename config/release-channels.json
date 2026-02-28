@@ -4,7 +4,7 @@
     "dev": {
       "description": "Fast iteration channel",
       "required_checks": [
-        {"type": "file_exists", "path": "TODO.md"},
+        {"type": "file_exists", "path": "docs/operations/release-checklist.md"},
         {"type": "file_exists", "path": "README.md"}
       ]
     },

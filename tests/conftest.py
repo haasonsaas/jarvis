@@ -13,7 +13,7 @@ import numpy as np
 from unittest.mock import AsyncMock, MagicMock
 
 # Set required env vars before any imports touch Config
-os.environ.setdefault("ANTHROPIC_API_KEY", "test-key-not-real")
+os.environ.setdefault("OPENAI_API_KEY", "test-key-not-real")
 os.environ.setdefault("ELEVENLABS_API_KEY", "test-key-not-real")
 
 

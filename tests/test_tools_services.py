@@ -376,6 +376,91 @@ class TestServicesTools:
         assert "stored" in allowed["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
+    async def test_memory_add_surfaces_duplicate_and_contradiction_candidates(self, tmp_path):
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(services._config, store)
+
+        first = await services.memory_add({"text": "favorite color is blue"})
+        assert "stored" in first["content"][0]["text"].lower()
+
+        contradiction = await services.memory_add({"text": "favorite color is not blue"})
+        contradiction_text = contradiction["content"][0]["text"].lower()
+        assert "stored" in contradiction_text
+        assert "potential contradiction candidate" in contradiction_text
+
+        duplicate = await services.memory_add({"text": "favorite color is blue"})
+        duplicate_text = duplicate["content"][0]["text"].lower()
+        assert "stored" in duplicate_text
+        assert "potential duplicate candidate" in duplicate_text
+
+    @pytest.mark.asyncio
+    async def test_memory_add_conflict_resolution_can_skip_duplicate(self, tmp_path, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+        from jarvis.tools.services_domains import trust_memory_ops
+
+        cfg = Config()
+        cfg.memory_conflict_resolution_enabled = True
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        first = await services.memory_add({"text": "favorite drink is coffee"})
+        first_id = int(first["content"][0]["text"].split("id=")[1].split(",", 1)[0])
+
+        async def _fake_resolve_conflict_decision(**_kwargs):
+            return {
+                "action": "skip_duplicate",
+                "target_memory_id": first_id,
+                "rewritten_text": "",
+                "reason": "same fact already stored",
+            }
+
+        monkeypatch.setattr(trust_memory_ops, "_resolve_conflict_decision", _fake_resolve_conflict_decision)
+
+        result = await services.memory_add({"text": "favorite drink is coffee", "resolve_conflicts": True})
+        assert "skipped as duplicate" in result["content"][0]["text"].lower()
+        matching = [entry for entry in store.recent(limit=20) if entry.text.lower() == "favorite drink is coffee"]
+        assert len(matching) == 1
+
+    @pytest.mark.asyncio
+    async def test_memory_add_conflict_resolution_can_supersede_existing_memory(self, tmp_path, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+        from jarvis.tools.services_domains import trust_memory_ops
+
+        cfg = Config()
+        cfg.memory_conflict_resolution_enabled = True
+        memory_path = tmp_path / "memory.sqlite"
+        store = MemoryStore(str(memory_path))
+        services.bind(cfg, store)
+
+        first = await services.memory_add({"text": "favorite color is blue"})
+        first_id = int(first["content"][0]["text"].split("id=")[1].split(",", 1)[0])
+
+        async def _fake_resolve_conflict_decision(**_kwargs):
+            return {
+                "action": "supersede",
+                "target_memory_id": first_id,
+                "rewritten_text": "favorite color is teal",
+                "reason": "newer user correction",
+            }
+
+        monkeypatch.setattr(trust_memory_ops, "_resolve_conflict_decision", _fake_resolve_conflict_decision)
+
+        result = await services.memory_add({"text": "favorite color is green", "resolve_conflicts": True})
+        assert "merged into existing entry" in result["content"][0]["text"].lower()
+        updated = next(entry for entry in store.recent(limit=10) if entry.id == first_id)
+        assert updated.text == "favorite color is teal"
+        assert len(store.recent(limit=10)) == 1
+
+    @pytest.mark.asyncio
     async def test_task_plan_list_parses_open_only_string(self, tmp_path):
         from jarvis.memory import MemoryStore
         from jarvis.tools import services
@@ -613,7 +698,7 @@ class TestServicesTools:
         assert "requires approval" in denied["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
-    async def test_identity_high_risk_webhook_allows_code_or_trusted_approval(self):
+    async def test_identity_high_risk_webhook_requires_replay_resistant_approval_for_low_trust(self):
         from jarvis.config import Config
         from jarvis.tools import services
 
@@ -653,9 +738,19 @@ class TestServicesTools:
                     "approved": True,
                 }
             )
+            services._proactive_state["identity_trust_scores"] = {"trusted-user": 0.9}
+            by_trusted_high = await services.webhook_trigger(
+                {
+                    "url": "https://api.example.com/hook",
+                    "method": "POST",
+                    "requester_id": "trusted-user",
+                    "approved": True,
+                }
+            )
 
         assert "webhook delivered" in by_code["content"][0]["text"].lower()
-        assert "webhook delivered" in by_trusted["content"][0]["text"].lower()
+        assert "requires step_up_token or valid approval_code" in by_trusted["content"][0]["text"].lower()
+        assert "webhook delivered" in by_trusted_high["content"][0]["text"].lower()
 
     @pytest.mark.asyncio
     async def test_smart_home_dry_run_explicit_false_with_confirm(self, aiohttp_response, aiohttp_session_mock):
@@ -1643,6 +1738,54 @@ class TestServicesTools:
         listed_all_payload = json.loads(listed_all["content"][0]["text"])
         assert listed_all_payload["pending_count"] == 0
         assert listed_all_payload["replayed_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_dead_letter_replay_dry_run_does_not_mutate_queue(self, tmp_path, monkeypatch):
+        from jarvis.tools import services
+
+        cfg = services._config
+        assert cfg is not None
+        cfg.webhook_allowlist = ["example.com"]
+        cfg.dead_letter_queue_path = str(tmp_path / "dead-letter.jsonl")
+        services.bind(cfg)
+
+        fail_response = AsyncMock()
+        fail_response.status = 500
+        fail_response.text = AsyncMock(return_value="nope")
+        fail_ctx = AsyncMock()
+        fail_ctx.__aenter__ = AsyncMock(return_value=fail_response)
+        fail_ctx.__aexit__ = AsyncMock(return_value=False)
+        fail_session = AsyncMock()
+        fail_session.__aenter__ = AsyncMock(return_value=fail_session)
+        fail_session.__aexit__ = AsyncMock(return_value=False)
+        fail_session.request = MagicMock(return_value=fail_ctx)
+
+        args = {"url": "https://api.example.com/hooks/jarvis", "method": "POST", "payload": {"ok": True}}
+        with patch("aiohttp.ClientSession", return_value=fail_session):
+            failed = await services.webhook_trigger(args)
+        assert "failed (500)" in failed["content"][0]["text"].lower()
+
+        listed_before = await services.dead_letter_list({"status": "open"})
+        payload_before = json.loads(listed_before["content"][0]["text"])
+        assert payload_before["pending_count"] == 1
+        entry_id = payload_before["recent"][0]["entry_id"]
+
+        async def _unexpected_replay(_args: dict) -> dict:
+            raise AssertionError("replay handler should not run in dry_run mode")
+
+        monkeypatch.setattr("jarvis.tools.services.webhook_trigger", _unexpected_replay)
+
+        replayed = await services.dead_letter_replay({"entry_id": entry_id, "dry_run": True})
+        replayed_payload = json.loads(replayed["content"][0]["text"])
+        assert replayed_payload["dry_run"] is True
+        assert replayed_payload["attempted_count"] == 1
+        assert replayed_payload["replayed_count"] == 0
+        assert replayed_payload["failed_count"] == 0
+        assert replayed_payload["results"][0]["result"] == "dry_run"
+
+        listed_after = await services.dead_letter_list({"status": "open"})
+        payload_after = json.loads(listed_after["content"][0]["text"])
+        assert payload_after["pending_count"] == payload_before["pending_count"]
 
     @pytest.mark.asyncio
     async def test_webhook_inbound_list_and_clear(self):
@@ -3832,6 +3975,7 @@ class TestServicesTools:
         assert schemas["email_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["dead_letter_list"]["properties"]["limit"]["type"] == "integer"
         assert schemas["dead_letter_replay"]["properties"]["limit"]["type"] == "integer"
+        assert schemas["dead_letter_replay"]["properties"]["dry_run"]["type"] == "boolean"
         assert schemas["webhook_inbound_list"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary"]["properties"]["limit"]["type"] == "integer"
         assert schemas["tool_summary_text"]["properties"]["limit"]["type"] == "integer"
@@ -4255,6 +4399,53 @@ class TestServicesTools:
         assert second_payload["counters"]["nudge_recent_dispatch_count"] >= 1
 
     @pytest.mark.asyncio
+    async def test_proactive_event_digest_dedupes_and_caps_dispatch(self):
+        from jarvis.tools import services
+
+        result = await services.proactive_assistant(
+            {
+                "action": "event_digest",
+                "max_dispatch": 1,
+                "digest_items": [
+                    {"id": "a", "title": "Water plants", "severity": "low"},
+                    {"id": "a", "title": "Water plants", "severity": "high"},
+                    {"id": "b", "title": "Leak detected", "severity": "critical"},
+                ],
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["status"] == "ready"
+        assert payload["total_candidates"] == 2
+        assert payload["deduped_count"] == 1
+        assert payload["digest_count"] == 1
+        assert payload["deferred_count"] == 1
+        assert payload["digest_items"][0]["id"] == "b"
+
+    @pytest.mark.asyncio
+    async def test_proactive_follow_through_dedupes_and_executes_priority_first(self):
+        from jarvis.tools import services
+
+        result = await services.proactive_assistant(
+            {
+                "action": "follow_through",
+                "confirm": True,
+                "max_dispatch": 1,
+                "pending_actions": [
+                    {"task": "water plants", "priority": "low"},
+                    {"task": "check leak sensor", "priority": "critical"},
+                    {"task": "water plants", "priority": "low"},
+                ],
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["enqueued_count"] == 2
+        assert payload["deduped_count"] == 1
+        assert payload["executed_count"] == 1
+        assert payload["executed"]["task"] == "check leak sensor"
+        assert payload["queue_size"] == 1
+        assert payload["queue_preview"][0]["task"] == "water plants"
+
+    @pytest.mark.asyncio
     async def test_integration_hub_release_channel_actions(self):
         from jarvis.tools import services
 
@@ -4473,6 +4664,470 @@ class TestServicesTools:
         assert "status_counts" in status_payload
 
     @pytest.mark.asyncio
+    async def test_planner_engine_autonomy_cycle_progresses_plan_steps(self):
+        from jarvis.tools import services
+
+        now = time.time()
+        scheduled = await services.planner_engine(
+            {
+                "action": "autonomy_schedule",
+                "title": "Morning autonomy routine",
+                "execute_at": now - 1.0,
+                "requires_checkpoint": False,
+                "step_cadence_sec": 0.0,
+                "plan_steps": [
+                    "Check weather",
+                    "Prepare agenda digest",
+                    "Draft kickoff summary",
+                ],
+            }
+        )
+        scheduled_payload = json.loads(scheduled["content"][0]["text"])
+        assert scheduled_payload["plan_step_count"] == 3
+
+        cycle_one = await services.planner_engine(
+            {"action": "autonomy_cycle", "now": now, "max_steps_per_task": 1}
+        )
+        payload_one = json.loads(cycle_one["content"][0]["text"])
+        assert payload_one["cycle"]["progressed_step_count"] == 1
+        assert payload_one["executed"][0]["plan_step_index"] == 1
+
+        cycle_two = await services.planner_engine(
+            {"action": "autonomy_cycle", "now": now + 0.1, "max_steps_per_task": 1}
+        )
+        payload_two = json.loads(cycle_two["content"][0]["text"])
+        assert payload_two["cycle"]["progressed_step_count"] == 1
+
+        cycle_three = await services.planner_engine(
+            {"action": "autonomy_cycle", "now": now + 0.2, "max_steps_per_task": 1}
+        )
+        payload_three = json.loads(cycle_three["content"][0]["text"])
+        assert payload_three["cycle"]["progressed_step_count"] == 1
+
+        status = await services.planner_engine({"action": "autonomy_status"})
+        status_payload = json.loads(status["content"][0]["text"])
+        assert status_payload["backlog_step_count"] == 0
+        assert status_payload["in_progress_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_planner_engine_autonomy_cycle_precondition_retry_then_replan(self):
+        from jarvis.tools import services
+
+        now = time.time()
+        scheduled = await services.planner_engine(
+            {
+                "action": "autonomy_schedule",
+                "title": "Verify backup channel",
+                "execute_at": now - 1.0,
+                "requires_checkpoint": False,
+                "plan_steps": ["Verify backup channel"],
+                "step_contracts": [
+                    {
+                        "precondition": {
+                            "source": "runtime",
+                            "path": "backup_channel_ready",
+                            "equals": True,
+                        }
+                    }
+                ],
+                "max_step_retries": 1,
+                "retry_backoff_sec": 0.0,
+            }
+        )
+        scheduled_payload = json.loads(scheduled["content"][0]["text"])
+        assert scheduled_payload["plan_step_count"] == 1
+        assert scheduled_payload["step_contract_count"] == 1
+
+        cycle_one = await services.planner_engine(
+            {
+                "action": "autonomy_cycle",
+                "now": now,
+                "runtime_state": {"backup_channel_ready": False},
+            }
+        )
+        payload_one = json.loads(cycle_one["content"][0]["text"])
+        assert payload_one["cycle"]["retry_scheduled_count"] == 1
+        assert payload_one["cycle"]["verification_failure_count"] == 1
+        assert payload_one["cycle"]["replan_count"] == 0
+        assert payload_one["executed"][0]["retry_scheduled"] is True
+        assert payload_one["executed"][0]["needs_replan"] is False
+
+        cycle_two = await services.planner_engine(
+            {
+                "action": "autonomy_cycle",
+                "now": now + 0.1,
+                "runtime_state": {"backup_channel_ready": False},
+            }
+        )
+        payload_two = json.loads(cycle_two["content"][0]["text"])
+        assert payload_two["cycle"]["replan_count"] == 1
+        assert payload_two["executed"][0]["needs_replan"] is True
+        assert payload_two["needs_replan_count"] >= 1
+
+        status = await services.planner_engine({"action": "autonomy_status"})
+        status_payload = json.loads(status["content"][0]["text"])
+        assert status_payload["needs_replan_count"] >= 1
+        assert status_payload["failure_taxonomy"].get("condition_equals_mismatch", 0) >= 2
+
+    @pytest.mark.asyncio
+    async def test_planner_engine_autonomy_cycle_postcondition_retry_then_recover(self):
+        from jarvis.tools import services
+
+        now = time.time()
+        scheduled = await services.planner_engine(
+            {
+                "action": "autonomy_schedule",
+                "title": "Apply config update",
+                "execute_at": now - 1.0,
+                "requires_checkpoint": False,
+                "plan_steps": ["Apply config update"],
+                "step_contracts": [
+                    {
+                        "postcondition": {
+                            "source": "runtime",
+                            "path": "config_applied",
+                            "equals": True,
+                        }
+                    }
+                ],
+                "max_step_retries": 2,
+                "retry_backoff_sec": 0.0,
+            }
+        )
+        scheduled_payload = json.loads(scheduled["content"][0]["text"])
+        assert scheduled_payload["step_contract_count"] == 1
+
+        cycle_one = await services.planner_engine(
+            {
+                "action": "autonomy_cycle",
+                "now": now,
+                "runtime_state": {"config_applied": False},
+            }
+        )
+        payload_one = json.loads(cycle_one["content"][0]["text"])
+        assert payload_one["cycle"]["retry_scheduled_count"] == 0
+        assert payload_one["cycle"]["progressed_step_count"] == 0
+        assert payload_one["executed"][0]["steps_executed"] == 0
+        assert payload_one["executed"][0]["failed_steps"] == []
+        assert payload_one["executed"][0]["executed_steps"][0]["verification"] == "pending_postcondition"
+
+        cycle_two = await services.planner_engine(
+            {
+                "action": "autonomy_cycle",
+                "now": now + 2.1,
+                "runtime_state": {"config_applied": True},
+            }
+        )
+        payload_two = json.loads(cycle_two["content"][0]["text"])
+        assert payload_two["cycle"]["progressed_step_count"] == 1
+        assert payload_two["executed"][0]["steps_executed"] == 1
+        assert payload_two["executed"][0]["status"] == "completed"
+
+        status = await services.planner_engine({"action": "autonomy_status"})
+        status_payload = json.loads(status["content"][0]["text"])
+        assert status_payload["backlog_step_count"] == 0
+        assert status_payload["needs_replan_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_planner_engine_autonomy_replan_action_resets_progress(self):
+        from jarvis.tools import services
+
+        now = time.time()
+        scheduled = await services.planner_engine(
+            {
+                "action": "autonomy_schedule",
+                "title": "Replan me",
+                "execute_at": now - 1.0,
+                "requires_checkpoint": False,
+                "step_cadence_sec": 0.0,
+                "plan_steps": ["step-a", "step-b"],
+            }
+        )
+        scheduled_payload = json.loads(scheduled["content"][0]["text"])
+        task_id = str(scheduled_payload["scheduled"]["id"])
+
+        cycle = await services.planner_engine(
+            {"action": "autonomy_cycle", "now": now, "max_steps_per_task": 1}
+        )
+        cycle_payload = json.loads(cycle["content"][0]["text"])
+        assert cycle_payload["executed"][0]["plan_step_index"] == 1
+
+        replan = await services.planner_engine(
+            {
+                "action": "autonomy_replan",
+                "task_id": task_id,
+                "plan_steps": ["replacement-step"],
+                "reset_progress": True,
+            }
+        )
+        replan_payload = json.loads(replan["content"][0]["text"])
+        assert replan_payload["action"] == "autonomy_replan"
+        assert replan_payload["task"]["plan_step_index"] == 0
+        assert replan_payload["plan_step_count"] == 1
+
+        status = await services.planner_engine({"action": "autonomy_status"})
+        status_payload = json.loads(status["content"][0]["text"])
+        task_row = next(
+            row for row in status_payload["task_progress"] if str(row.get("id", "")) == task_id
+        )
+        assert task_row["status"] == "scheduled"
+        assert task_row["plan_step_index"] == 0
+        assert task_row["plan_total_steps"] == 1
+
+    @pytest.mark.asyncio
+    async def test_planner_engine_autonomy_replan_marks_other_pending_drafts_superseded(self):
+        from jarvis.tools import services
+
+        now = time.time()
+        scheduled = await services.planner_engine(
+            {
+                "action": "autonomy_schedule",
+                "title": "Supersede drafts",
+                "execute_at": now - 1.0,
+                "requires_checkpoint": False,
+                "plan_steps": ["step-a"],
+            }
+        )
+        task_id = str(json.loads(scheduled["content"][0]["text"])["scheduled"]["id"])
+        services._autonomy_replan_drafts["draft-a"] = {
+            "draft_id": "draft-a",
+            "task_id": task_id,
+            "status": "pending",
+            "created_at": now,
+            "plan_steps": ["replacement-a"],
+        }
+        services._autonomy_replan_drafts["draft-b"] = {
+            "draft_id": "draft-b",
+            "task_id": task_id,
+            "status": "pending",
+            "created_at": now + 1.0,
+            "plan_steps": ["replacement-b"],
+        }
+
+        applied = await services.planner_engine(
+            {
+                "action": "autonomy_replan",
+                "task_id": task_id,
+                "draft_id": "draft-a",
+                "resolver_id": "session-operator",
+            }
+        )
+        applied_payload = json.loads(applied["content"][0]["text"])
+        assert applied_payload["draft_id"] == "draft-a"
+        assert applied_payload["superseded_draft_count"] == 1
+
+        listed = await services.planner_engine(
+            {
+                "action": "autonomy_replan_list",
+                "task_id": task_id,
+                "status_filter": "all",
+            }
+        )
+        listed_payload = json.loads(listed["content"][0]["text"])
+        statuses = {
+            str(row.get("draft_id", "")): str(row.get("status", ""))
+            for row in listed_payload["drafts"]
+            if isinstance(row, dict)
+        }
+        assert statuses["draft-a"] == "applied"
+        assert statuses["draft-b"] == "superseded"
+
+    @pytest.mark.asyncio
+    async def test_planner_engine_goal_stack_crud(self):
+        from jarvis.tools import services
+
+        pushed = await services.planner_engine(
+            {
+                "action": "goal_push",
+                "goal_id": "morning-routine",
+                "title": "Morning routine",
+                "priority": 80,
+                "notes": "Daily startup",
+            }
+        )
+        pushed_payload = json.loads(pushed["content"][0]["text"])
+        assert pushed_payload["goal"]["goal_id"] == "morning_routine"
+        assert pushed_payload["goal_stack_depth"] >= 1
+
+        listed = await services.planner_engine({"action": "goal_list"})
+        listed_payload = json.loads(listed["content"][0]["text"])
+        assert any(
+            str(row.get("goal_id", "")) == "morning_routine"
+            for row in listed_payload["goals"]
+            if isinstance(row, dict)
+        )
+
+        updated = await services.planner_engine(
+            {
+                "action": "goal_update",
+                "goal_id": "morning_routine",
+                "status": "completed",
+            }
+        )
+        updated_payload = json.loads(updated["content"][0]["text"])
+        assert updated_payload["goal"]["status"] == "completed"
+
+        popped = await services.planner_engine(
+            {
+                "action": "goal_pop",
+                "goal_id": "morning_routine",
+            }
+        )
+        popped_payload = json.loads(popped["content"][0]["text"])
+        assert popped_payload["removed"]["goal_id"] == "morning_routine"
+
+    @pytest.mark.asyncio
+    async def test_planner_engine_autonomy_cycle_generates_replan_draft(self):
+        from jarvis.tools import services
+
+        now = time.time()
+        await services.planner_engine(
+            {
+                "action": "autonomy_schedule",
+                "title": "Generate draft on failure",
+                "execute_at": now - 1.0,
+                "requires_checkpoint": False,
+                "plan_steps": ["Verify fail condition"],
+                "step_contracts": [
+                    {
+                        "precondition": {
+                            "source": "runtime",
+                            "path": "fail_condition",
+                            "equals": True,
+                        }
+                    }
+                ],
+                "max_step_retries": 0,
+                "retry_backoff_sec": 0.0,
+            }
+        )
+
+        cycle = await services.planner_engine(
+            {
+                "action": "autonomy_cycle",
+                "now": now,
+                "runtime_state": {"fail_condition": False},
+            }
+        )
+        cycle_payload = json.loads(cycle["content"][0]["text"])
+        assert cycle_payload["cycle"]["replan_count"] == 1
+        assert cycle_payload["replan_draft_count"] >= 1
+
+        status = await services.planner_engine({"action": "autonomy_status"})
+        status_payload = json.loads(status["content"][0]["text"])
+        assert status_payload["replan_draft_count"] >= 1
+        assert len(status_payload["replan_drafts"]) >= 1
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_approval_resolve_issues_step_up_token(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_require_approval = True
+        cfg.identity_approval_code = "super-secret-code"
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        queued = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "confirm": True,
+                "actions": [{"domain": "lock", "action": "lock", "entity_id": "lock.front_door"}],
+            }
+        )
+        queued_payload = json.loads(queued["content"][0]["text"])
+        approval_id = queued_payload["approval_id"]
+
+        resolved = await services.home_orchestrator(
+            {
+                "action": "approval_resolve",
+                "approval_id": approval_id,
+                "approved": True,
+                "__operator_identity": "session-operator",
+            }
+        )
+        resolved_payload = json.loads(resolved["content"][0]["text"])
+        assert resolved_payload["resolved"] is True
+        assert isinstance(resolved_payload.get("step_up_token"), str)
+        assert resolved_payload.get("step_up_token")
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_execute_reports_effect_verification(self, monkeypatch):
+        from jarvis.tools import services
+
+        async def _fake_call(domain, service, service_data, **_kwargs):
+            return [], None
+
+        async def _fake_get_state(_entity_id: str):
+            return {"state": "off", "attributes": {}}, None
+
+        monkeypatch.setattr("jarvis.tools.services._ha_call_service", _fake_call)
+        monkeypatch.setattr("jarvis.tools.services._ha_get_state", _fake_get_state)
+
+        result = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "confirm": True,
+                "actions": [{"domain": "light", "action": "turn_on", "entity_id": "light.kitchen"}],
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["effect_verification"]["attempted"] == 1
+        assert payload["effect_verification"]["failed"] == 1
+
+    @pytest.mark.asyncio
+    async def test_planner_engine_autonomy_cycle_builds_runtime_snapshot_from_ha_contracts(self, monkeypatch):
+        from jarvis.tools import services
+
+        now = time.time()
+        ha_calls: list[str] = []
+
+        async def _fake_ha_get_state(entity_id: str):
+            ha_calls.append(entity_id)
+            if entity_id == "binary_sensor.backup_channel":
+                return (
+                    {
+                        "state": "on",
+                        "attributes": {"source": "unit-test"},
+                        "last_changed": "2026-01-01T00:00:00+00:00",
+                        "last_updated": "2026-01-01T00:00:00+00:00",
+                    },
+                    None,
+                )
+            return None, "not_found"
+
+        monkeypatch.setattr(services, "_ha_get_state", _fake_ha_get_state)
+
+        await services.planner_engine(
+            {
+                "action": "autonomy_schedule",
+                "title": "Contract-driven HA snapshot",
+                "execute_at": now - 1.0,
+                "requires_checkpoint": False,
+                "plan_steps": ["validate backup channel"],
+                "step_contracts": [
+                    {
+                        "precondition": {
+                            "source": "runtime",
+                            "path": "home_assistant.entities.binary_sensor.backup_channel.state",
+                            "equals": "on",
+                        }
+                    }
+                ],
+            }
+        )
+
+        cycle = await services.planner_engine({"action": "autonomy_cycle", "now": now})
+        payload = json.loads(cycle["content"][0]["text"])
+        assert payload["cycle"]["progressed_step_count"] == 1
+        assert "binary_sensor.backup_channel" in ha_calls
+
+    @pytest.mark.asyncio
     async def test_identity_guest_session_capability_enforced(self):
         from jarvis.tools import services
 
@@ -4521,11 +5176,375 @@ class TestServicesTools:
         assert payload["partial_failure"] is True
         assert payload["failed_count"] == 1
 
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_execute_live_requires_confirm(self):
+        from jarvis.tools import services
+
+        result = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "actions": [{"domain": "light", "action": "turn_on", "entity_id": "light.kitchen"}],
+            }
+        )
+        assert "confirm=true" in result["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_execute_live_calls_home_assistant(self, monkeypatch):
+        from jarvis.tools import services
+
+        calls: list[tuple[str, str, dict]] = []
+
+        async def _fake_call(domain, service, service_data, **_kwargs):
+            calls.append((domain, service, dict(service_data)))
+            return [], None
+
+        monkeypatch.setattr("jarvis.tools.services._ha_call_service", _fake_call)
+        result = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "confirm": True,
+                "actions": [{"domain": "light", "action": "turn_on", "entity_id": "light.kitchen"}],
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["dry_run"] is False
+        assert payload["live_executed_count"] == 1
+        assert payload["failed_count"] == 0
+        assert calls[0][0] == "light"
+        assert calls[0][1] == "turn_on"
+        assert calls[0][2]["entity_id"] == "light.kitchen"
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_execute_high_risk_creates_approval_request(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_require_approval = True
+        cfg.identity_approval_code = "super-secret-code"
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        result = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "confirm": True,
+                "actions": [
+                    {"domain": "lock", "action": "lock", "entity_id": "lock.front_door"},
+                ],
+            }
+        )
+        payload = json.loads(result["content"][0]["text"])
+        assert payload["approval_required"] is True
+        assert payload["approval_id"].startswith("approval-")
+        assert payload["approval_status"] == "pending"
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_approval_resolve_then_execute(self, tmp_path, monkeypatch):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_require_approval = True
+        cfg.identity_approval_code = "super-secret-code"
+        cfg.identity_trusted_users = ["owner"]
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        calls: list[tuple[str, str, dict]] = []
+
+        async def _fake_call(domain, service, service_data, **_kwargs):
+            calls.append((domain, service, dict(service_data)))
+            return [], None
+
+        monkeypatch.setattr("jarvis.tools.services._ha_call_service", _fake_call)
+
+        queued = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "confirm": True,
+                "actions": [
+                    {"domain": "lock", "action": "lock", "entity_id": "lock.front_door"},
+                ],
+            }
+        )
+        queued_payload = json.loads(queued["content"][0]["text"])
+        approval_id = queued_payload["approval_id"]
+
+        resolved = await services.home_orchestrator(
+            {
+                "action": "approval_resolve",
+                "approval_id": approval_id,
+                "approved": True,
+                "__operator_identity": "session-operator",
+            }
+        )
+        resolved_payload = json.loads(resolved["content"][0]["text"])
+        assert resolved_payload["resolved"] is True
+        assert resolved_payload["approved"] is True
+        execution_ticket = str(resolved_payload.get("execution_ticket", "")).strip()
+        assert execution_ticket
+
+        executed = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "approval_id": approval_id,
+                "execution_ticket": execution_ticket,
+                "resolver_id": "session-operator",
+                "__operator_identity": "session-operator",
+                "dry_run": False,
+                "confirm": True,
+            }
+        )
+        executed_payload = json.loads(executed["content"][0]["text"])
+        assert executed_payload["approval_consumed"] is True
+        assert executed_payload["live_executed_count"] == 1
+        assert calls[0][0] == "lock"
+        assert calls[0][1] == "lock"
+
+        consumed = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "approval_id": approval_id,
+                "execution_ticket": execution_ticket,
+                "resolver_id": "session-operator",
+                "__operator_identity": "session-operator",
+                "dry_run": False,
+                "confirm": True,
+            }
+        )
+        assert "already been consumed" in consumed["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_execute_requires_execution_ticket_for_approved_actions(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_require_approval = True
+        cfg.identity_approval_code = "super-secret-code"
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        queued = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "confirm": True,
+                "actions": [
+                    {"domain": "lock", "action": "lock", "entity_id": "lock.front_door"},
+                ],
+            }
+        )
+        approval_id = json.loads(queued["content"][0]["text"])["approval_id"]
+
+        resolved = await services.home_orchestrator(
+            {
+                "action": "approval_resolve",
+                "approval_id": approval_id,
+                "approved": True,
+                "__operator_identity": "session-operator",
+            }
+        )
+        resolved_payload = json.loads(resolved["content"][0]["text"])
+        assert str(resolved_payload.get("execution_ticket", "")).strip()
+
+        denied = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "approval_id": approval_id,
+                "__operator_identity": "session-operator",
+                "dry_run": False,
+                "confirm": True,
+            }
+        )
+        assert "execution_ticket is required" in denied["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_execute_with_approval_requires_operator_identity(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_require_approval = True
+        cfg.identity_approval_code = "super-secret-code"
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        queued = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "confirm": True,
+                "actions": [
+                    {"domain": "lock", "action": "lock", "entity_id": "lock.front_door"},
+                ],
+            }
+        )
+        approval_id = json.loads(queued["content"][0]["text"])["approval_id"]
+
+        resolved = await services.home_orchestrator(
+            {
+                "action": "approval_resolve",
+                "approval_id": approval_id,
+                "approved": True,
+                "__operator_identity": "session-operator",
+            }
+        )
+        execution_ticket = str(json.loads(resolved["content"][0]["text"]).get("execution_ticket", "")).strip()
+        assert execution_ticket
+
+        denied = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "approval_id": approval_id,
+                "execution_ticket": execution_ticket,
+                "resolver_id": "session-operator",
+                "dry_run": False,
+                "confirm": True,
+            }
+        )
+        assert "authenticated operator context" in denied["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_execute_rejects_scope_mismatched_step_up_token(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_require_approval = True
+        cfg.identity_approval_code = "super-secret-code"
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+        services._policy_engine["identity"]["step_up_required_domains"] = ["lock"]
+
+        queued_one = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "confirm": True,
+                "actions": [{"domain": "lock", "action": "lock", "entity_id": "lock.front_door"}],
+            }
+        )
+        approval_one = json.loads(queued_one["content"][0]["text"])["approval_id"]
+        resolved_one = await services.home_orchestrator(
+            {
+                "action": "approval_resolve",
+                "approval_id": approval_one,
+                "approved": True,
+                "__operator_identity": "session-operator",
+            }
+        )
+        resolved_one_payload = json.loads(resolved_one["content"][0]["text"])
+        ticket_one = str(resolved_one_payload.get("execution_ticket", "")).strip()
+        assert ticket_one
+
+        queued_two = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "confirm": True,
+                "actions": [{"domain": "lock", "action": "lock", "entity_id": "lock.back_door"}],
+            }
+        )
+        approval_two = json.loads(queued_two["content"][0]["text"])["approval_id"]
+        resolved_two = await services.home_orchestrator(
+            {
+                "action": "approval_resolve",
+                "approval_id": approval_two,
+                "approved": True,
+                "__operator_identity": "session-operator",
+            }
+        )
+        token_two = str(json.loads(resolved_two["content"][0]["text"]).get("step_up_token", "")).strip()
+        assert token_two
+
+        denied = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "approval_id": approval_one,
+                "execution_ticket": ticket_one,
+                "step_up_token": token_two,
+                "__operator_identity": "session-operator",
+                "dry_run": False,
+                "confirm": True,
+            }
+        )
+        assert "scope does not match the approved action set" in denied["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_approval_resolve_requires_operator_identity(self, tmp_path):
+        from jarvis.config import Config
+        from jarvis.memory import MemoryStore
+        from jarvis.tools import services
+
+        cfg = Config()
+        cfg.identity_enforcement_enabled = True
+        cfg.identity_require_approval = True
+        cfg.identity_approval_code = "super-secret-code"
+        store = MemoryStore(str(tmp_path / "memory.sqlite"))
+        services.bind(cfg, store)
+
+        queued = await services.home_orchestrator(
+            {
+                "action": "execute",
+                "dry_run": False,
+                "confirm": True,
+                "actions": [
+                    {"domain": "lock", "action": "lock", "entity_id": "lock.front_door"},
+                ],
+            }
+        )
+        approval_id = json.loads(queued["content"][0]["text"])["approval_id"]
+
+        denied = await services.home_orchestrator(
+            {
+                "action": "approval_resolve",
+                "approval_id": approval_id,
+                "approved": True,
+                "resolver_id": "spoofed-user",
+            }
+        )
+        assert "authenticated operator context" in denied["content"][0]["text"].lower()
+
+    @pytest.mark.asyncio
+    async def test_home_orchestrator_area_policy_set_validates_quiet_hours(self):
+        from jarvis.tools import services
+
+        result = await services.home_orchestrator(
+            {
+                "action": "area_policy_set",
+                "area": "bedroom",
+                "policy": {"quiet_hours_start": "bad", "quiet_hours_end": "07:00"},
+            }
+        )
+        assert "hh:mm" in result["content"][0]["text"].lower()
+
     def test_release_scripts_and_workflows_exist(self):
         project_root = Path(__file__).resolve().parents[1]
         assert (project_root / "scripts" / "bootstrap.sh").exists()
         assert (project_root / "scripts" / "generate_quality_report.py").exists()
         assert (project_root / "scripts" / "run_eval_dataset.py").exists()
+        assert (project_root / "scripts" / "run_router_policy_eval.py").exists()
+        assert (project_root / "scripts" / "run_interruption_route_eval.py").exists()
+        assert (project_root / "scripts" / "run_trace_trajectory_eval.py").exists()
+        assert (project_root / "scripts" / "run_autonomy_cycle_eval.py").exists()
+        assert (project_root / "scripts" / "run_memory_quality_eval.py").exists()
+        assert (project_root / "scripts" / "run_runtime_outcome_gate.py").exists()
         assert (project_root / "scripts" / "release_acceptance.sh").exists()
         assert (project_root / "scripts" / "check_release_channel.py").exists()
         assert (project_root / "scripts" / "jarvis_readiness.sh").exists()
@@ -4545,6 +5564,12 @@ class TestServicesTools:
         makefile_text = (project_root / "Makefile").read_text()
         assert "quality-report" in makefile_text
         assert "eval-dataset" in makefile_text
+        assert "router-eval" in makefile_text
+        assert "interruption-eval" in makefile_text
+        assert "trace-eval" in makefile_text
+        assert "autonomy-eval" in makefile_text
+        assert "memory-eval" in makefile_text
+        assert "runtime-outcome-gate" in makefile_text
         assert "quality-trend-gate" in makefile_text
         assert "release-acceptance" in makefile_text
         assert "readiness" in makefile_text

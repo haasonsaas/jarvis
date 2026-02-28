@@ -26,6 +26,7 @@ def tool_policy_status_snapshot(services_module: Any) -> dict[str, Any]:
         "identity_default_profile": s._identity_default_profile,
         "identity_require_approval": s._identity_require_approval,
         "plan_preview_require_ack": s._plan_preview_require_ack,
+        "policy_engine_version": str(s._policy_engine.get("version", "unknown")),
     }
 
 

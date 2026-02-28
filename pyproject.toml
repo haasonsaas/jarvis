@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Jarvis AI assistant on Reachy Mini"
 requires-python = ">=3.12"
 dependencies = [
-    "claude-agent-sdk>=0.1.0",
     "reachy-mini>=0.1.0",
     "faster-whisper>=1.1.0",
     "elevenlabs>=1.0.0",
@@ -17,6 +16,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "cryptography>=44.0.0",
     "torch>=2.0.0",
+    "openai-agents>=0.10.2",
+    "openai>=2.24.0",
 ]
 
 [project.optional-dependencies]

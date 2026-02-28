@@ -392,3 +392,80 @@ def test_memory_store_encryption_reads_legacy_plaintext(tmp_path):
         assert rows[0].text == "legacy row"
     finally:
         store.close()
+
+
+def test_search_v2_prefers_stronger_lexical_match_when_importance_weight_is_lower(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        best_id = store.add_memory(
+            "Project atlas launch deadline is Friday.",
+            importance=0.2,
+            source="notes",
+        )
+        _ = store.add_memory(
+            "Atlas launch planning note.",
+            importance=1.0,
+            source="notes",
+        )
+
+        rows = store.search_v2(
+            "project atlas launch deadline",
+            limit=2,
+            hybrid_weight=0.2,
+        )
+        assert rows
+        assert rows[0].id == best_id
+    finally:
+        store.close()
+
+
+def test_inspect_memory_candidate_detects_duplicates_and_contradictions(tmp_path):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        contradiction_id = store.add_memory("favorite color is blue", source="profile")
+        duplicate_id = store.add_memory("buy oat milk every week", source="profile")
+
+        contradiction_report = store.inspect_memory_candidate("favorite color is not blue", limit=5, fanout=50)
+        contradiction_ids = [row["memory_id"] for row in contradiction_report["contradictions"]]
+        assert contradiction_id in contradiction_ids
+
+        duplicate_report = store.inspect_memory_candidate("buy oat milk every week", limit=5, fanout=50)
+        duplicate_ids = [row["memory_id"] for row in duplicate_report["near_duplicates"]]
+        assert duplicate_id in duplicate_ids
+    finally:
+        store.close()
+
+
+def test_add_memory_refreshes_embedding_when_enabled(tmp_path, monkeypatch):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        store._embedding_enabled = True
+        calls: list[tuple[int, str]] = []
+
+        def _fake_refresh(memory_id: int, text: str) -> None:
+            calls.append((int(memory_id), text))
+
+        monkeypatch.setattr(store, "_refresh_embedding_for_memory", _fake_refresh)
+        memory_id = store.add_memory("Lights should be warm white")
+        assert calls == [(memory_id, "Lights should be warm white")]
+    finally:
+        store.close()
+
+
+def test_search_v2_uses_vector_results_when_lexical_misses(tmp_path, monkeypatch):
+    store = MemoryStore(str(tmp_path / "memory.sqlite"))
+    try:
+        target_id = store.add_memory("Configure evening lights to warm white.", importance=0.2)
+        _ = store.add_memory("Buy paper towels this weekend.", importance=0.9)
+        store._embedding_enabled = True
+        target = next(entry for entry in store.recent(limit=20) if entry.id == target_id)
+
+        def _fake_vector_search(*_args, **_kwargs):
+            return [(target, 0.99)]
+
+        monkeypatch.setattr(store, "_search_vector", _fake_vector_search)
+        rows = store.search_v2("make the room cozy for movie night", limit=1, hybrid_weight=0.2)
+        assert rows
+        assert rows[0].id == target_id
+    finally:
+        store.close()

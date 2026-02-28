@@ -13,6 +13,8 @@ from jarvis.tools.services_domains.home_orch_automation import (
     home_orch_automation_suggest,
 )
 from jarvis.tools.services_domains.home_orch_plan_exec import (
+    home_orch_approval_list,
+    home_orch_approval_resolve,
     home_orch_area_policy_list,
     home_orch_area_policy_set,
     home_orch_execute,
@@ -47,6 +49,10 @@ async def home_orchestrator(args: dict[str, Any]) -> dict[str, Any]:
         return await home_orch_plan(args, start_time=start_time)
     if action == "execute":
         return await home_orch_execute(args, start_time=start_time)
+    if action == "approval_list":
+        return await home_orch_approval_list(args, start_time=start_time)
+    if action == "approval_resolve":
+        return await home_orch_approval_resolve(args, start_time=start_time)
     if action == "area_policy_set":
         return await home_orch_area_policy_set(args, start_time=start_time)
     if action == "area_policy_list":

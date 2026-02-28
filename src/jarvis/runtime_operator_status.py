@@ -89,6 +89,14 @@ def _recommendations(
         )
 
     expansion = status.get("expansion") if isinstance(status.get("expansion"), dict) else {}
+    proactive = expansion.get("proactive") if isinstance(expansion.get("proactive"), dict) else {}
+    approval_pending = int(proactive.get("approval_pending_count", 0) or 0)
+    if approval_pending > 0:
+        add(
+            "high",
+            "approval_queue_pending",
+            f"{approval_pending} high-risk approval request(s) are pending operator decision.",
+        )
     planner = expansion.get("planner_engine") if isinstance(expansion.get("planner_engine"), dict) else {}
     waiting_checkpoint_count = int(planner.get("autonomy_waiting_checkpoint_count", 0) or 0)
     if waiting_checkpoint_count > 0:
@@ -96,6 +104,42 @@ def _recommendations(
             "medium",
             "autonomy_waiting_checkpoint",
             f"{waiting_checkpoint_count} autonomy task(s) are waiting for checkpoint approval.",
+        )
+    autonomy_backlog = int(planner.get("autonomy_backlog_step_count", 0) or 0)
+    if autonomy_backlog > 0:
+        add(
+            "medium",
+            "autonomy_backlog_steps",
+            f"Autonomy backlog has {autonomy_backlog} remaining plan step(s).",
+        )
+    autonomy_needs_replan = int(planner.get("autonomy_needs_replan_count", 0) or 0)
+    if autonomy_needs_replan > 0:
+        add(
+            "high",
+            "autonomy_needs_replan",
+            f"{autonomy_needs_replan} autonomy task(s) require operator replan.",
+        )
+    autonomy_retry_pending = int(planner.get("autonomy_retry_pending_count", 0) or 0)
+    if autonomy_retry_pending > 0:
+        add(
+            "medium",
+            "autonomy_retry_pending",
+            f"{autonomy_retry_pending} autonomy task(s) have pending retry attempts.",
+        )
+    autonomy_replan_drafts = int(planner.get("autonomy_replan_draft_count", 0) or 0)
+    if autonomy_replan_drafts > 0:
+        add(
+            "medium",
+            "autonomy_replan_drafts",
+            f"{autonomy_replan_drafts} autonomy replan draft(s) are awaiting operator review.",
+        )
+    autonomy_slo = planner.get("autonomy_slo") if isinstance(planner.get("autonomy_slo"), dict) else {}
+    autonomy_slo_alert_count = int(autonomy_slo.get("alert_count", 0) or 0)
+    if autonomy_slo_alert_count > 0:
+        add(
+            "high",
+            "autonomy_slo_alerts",
+            f"{autonomy_slo_alert_count} autonomy SLO alert(s) are active.",
         )
 
     voice_attention = (
@@ -114,6 +158,23 @@ def _recommendations(
             "medium",
             "multimodal_low_confidence",
             "Multimodal grounding is low; use confirmations for high-impact actions.",
+        )
+    dead_letter = status.get("dead_letter_queue") if isinstance(status.get("dead_letter_queue"), dict) else {}
+    dead_letter_pending = int(dead_letter.get("pending_count", 0) or 0)
+    if dead_letter_pending > 0:
+        add(
+            "high",
+            "dead_letter_pending",
+            f"Dead-letter queue has {dead_letter_pending} pending item(s) requiring replay or triage.",
+        )
+    recovery = status.get("recovery_journal") if isinstance(status.get("recovery_journal"), dict) else {}
+    interrupted = int(recovery.get("interrupted_count", 0) or 0)
+    unresolved = int(recovery.get("unresolved_count", 0) or 0)
+    if interrupted > 0 or unresolved > 0:
+        add(
+            "medium",
+            "recovery_unresolved",
+            f"Recovery journal has interrupted={interrupted}, unresolved={unresolved}.",
         )
 
     if not rows:

@@ -29,6 +29,36 @@ def load_expansion_state(services_module: Any) -> None:
             if isinstance(pending, list)
             else []
         )
+        s._proactive_state["follow_through_seq"] = s._as_int(
+            proactive.get("follow_through_seq", 1),
+            1,
+            minimum=1,
+        )
+        s._proactive_state["follow_through_enqueued_total"] = s._as_int(
+            proactive.get("follow_through_enqueued_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["follow_through_executed_total"] = s._as_int(
+            proactive.get("follow_through_executed_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["follow_through_deduped_total"] = s._as_int(
+            proactive.get("follow_through_deduped_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["follow_through_pruned_total"] = s._as_int(
+            proactive.get("follow_through_pruned_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["last_follow_through_at"] = s._as_float(
+            proactive.get("last_follow_through_at", 0.0),
+            0.0,
+            minimum=0.0,
+        )
         s._proactive_state["digest_snoozed_until"] = s._as_float(
             proactive.get("digest_snoozed_until", 0.0),
             0.0,
@@ -39,10 +69,33 @@ def load_expansion_state(services_module: Any) -> None:
             0.0,
             minimum=0.0,
         )
+        s._proactive_state["briefings_total"] = s._as_int(
+            proactive.get("briefings_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["last_briefing_mode"] = (
+            str(proactive.get("last_briefing_mode", "")).strip().lower()
+        )
         s._proactive_state["last_digest_at"] = s._as_float(
             proactive.get("last_digest_at", 0.0),
             0.0,
             minimum=0.0,
+        )
+        s._proactive_state["digests_total"] = s._as_int(
+            proactive.get("digests_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["digest_items_total"] = s._as_int(
+            proactive.get("digest_items_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["digest_deduped_total"] = s._as_int(
+            proactive.get("digest_deduped_total", 0),
+            0,
+            minimum=0,
         )
         s._proactive_state["nudge_decisions_total"] = s._as_int(
             proactive.get("nudge_decisions_total", 0),
@@ -92,6 +145,89 @@ def load_expansion_state(services_module: Any) -> None:
                 s._proactive_state["nudge_recent_dispatches"].append(
                     {"fingerprint": fingerprint, "dispatched_at": dispatched_at}
                 )
+        approval_rows = proactive.get("approval_requests")
+        s._proactive_state["approval_requests"] = []
+        if isinstance(approval_rows, list):
+            for row in approval_rows[-500:]:
+                if not isinstance(row, dict):
+                    continue
+                approval_id = str(row.get("approval_id", "")).strip().lower()
+                if not approval_id:
+                    continue
+                entry = {str(key): s._json_safe_clone(value) for key, value in row.items()}
+                entry["approval_id"] = approval_id
+                entry["status"] = str(row.get("status", "pending")).strip().lower() or "pending"
+                entry["created_at"] = s._as_float(row.get("created_at", 0.0), 0.0, minimum=0.0)
+                entry["expires_at"] = s._as_float(row.get("expires_at", 0.0), 0.0, minimum=0.0)
+                s._proactive_state["approval_requests"].append(entry)
+        s._proactive_state["approval_seq"] = s._as_int(
+            proactive.get("approval_seq", 1),
+            1,
+            minimum=1,
+        )
+        s._proactive_state["approval_requests_total"] = s._as_int(
+            proactive.get("approval_requests_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["approval_approved_total"] = s._as_int(
+            proactive.get("approval_approved_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["approval_rejected_total"] = s._as_int(
+            proactive.get("approval_rejected_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["approval_consumed_total"] = s._as_int(
+            proactive.get("approval_consumed_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["approval_expired_total"] = s._as_int(
+            proactive.get("approval_expired_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["approval_pruned_total"] = s._as_int(
+            proactive.get("approval_pruned_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["effect_verification_total"] = s._as_int(
+            proactive.get("effect_verification_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["effect_verification_passed_total"] = s._as_int(
+            proactive.get("effect_verification_passed_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["effect_verification_failed_total"] = s._as_int(
+            proactive.get("effect_verification_failed_total", 0),
+            0,
+            minimum=0,
+        )
+        s._proactive_state["autonomy_replan_seq"] = s._as_int(
+            proactive.get("autonomy_replan_seq", 1),
+            1,
+            minimum=1,
+        )
+        trust_scores_raw = proactive.get("identity_trust_scores")
+        trust_scores: dict[str, float] = {}
+        if isinstance(trust_scores_raw, dict):
+            for raw_user, raw_score in trust_scores_raw.items():
+                user = str(raw_user).strip().lower()
+                if not user:
+                    continue
+                score = s._as_float(raw_score, 0.5, minimum=0.0, maximum=1.0)
+                trust_scores[user] = score
+        s._proactive_state["identity_trust_scores"] = trust_scores
+
+    policy_engine_raw = payload.get("policy_engine")
+    s._policy_engine = s._normalize_policy_engine(policy_engine_raw)
 
     replace_state_dict(s, s._memory_partition_overlays, payload.get("memory_partition_overlays"))
     replace_state_dict(s, s._memory_quality_last, payload.get("memory_quality_last"))
@@ -117,6 +253,81 @@ def load_expansion_state(services_module: Any) -> None:
                 s._autonomy_cycle_history.append(
                     {str(key): s._json_safe_clone(value) for key, value in row.items()}
                 )
+
+    replace_state_dict(s, s._autonomy_replan_drafts, payload.get("autonomy_replan_drafts"))
+    world_model_raw = payload.get("world_model_state")
+    if isinstance(world_model_raw, dict):
+        s._world_model_state["entities"] = (
+            {
+                str(key): s._json_safe_clone(value)
+                for key, value in world_model_raw.get("entities", {}).items()
+            }
+            if isinstance(world_model_raw.get("entities"), dict)
+            else {}
+        )
+        s._world_model_state["facts"] = (
+            {
+                str(key): s._json_safe_clone(value)
+                for key, value in world_model_raw.get("facts", {}).items()
+            }
+            if isinstance(world_model_raw.get("facts"), dict)
+            else {}
+        )
+        s._world_model_state["events"] = (
+            [s._json_safe_clone(row) for row in world_model_raw.get("events", []) if isinstance(row, dict)][-500:]
+            if isinstance(world_model_raw.get("events"), list)
+            else []
+        )
+        s._world_model_state["updated_at"] = s._as_float(
+            world_model_raw.get("updated_at", 0.0),
+            0.0,
+            minimum=0.0,
+        )
+    else:
+        s._world_model_state["entities"] = {}
+        s._world_model_state["facts"] = {}
+        s._world_model_state["events"] = []
+        s._world_model_state["updated_at"] = 0.0
+
+    s._goal_stack.clear()
+    goal_stack = payload.get("goal_stack")
+    if isinstance(goal_stack, list):
+        for row in goal_stack[-s.GOAL_STACK_MAX :]:
+            if isinstance(row, dict):
+                s._goal_stack.append({str(key): s._json_safe_clone(value) for key, value in row.items()})
+
+    replace_state_dict(s, s._identity_step_up_tokens, payload.get("identity_step_up_tokens"))
+    autonomy_slo_raw = payload.get("autonomy_slo_state")
+    if isinstance(autonomy_slo_raw, dict):
+        s._autonomy_slo_state["updated_at"] = s._as_float(
+            autonomy_slo_raw.get("updated_at", 0.0),
+            0.0,
+            minimum=0.0,
+        )
+        s._autonomy_slo_state["window_size"] = s._as_int(
+            autonomy_slo_raw.get("window_size", 50),
+            50,
+            minimum=5,
+            maximum=500,
+        )
+        s._autonomy_slo_state["metrics"] = (
+            {
+                str(key): s._json_safe_clone(value)
+                for key, value in autonomy_slo_raw.get("metrics", {}).items()
+            }
+            if isinstance(autonomy_slo_raw.get("metrics"), dict)
+            else {}
+        )
+        s._autonomy_slo_state["alerts"] = (
+            [s._json_safe_clone(row) for row in autonomy_slo_raw.get("alerts", []) if isinstance(row, dict)][-200:]
+            if isinstance(autonomy_slo_raw.get("alerts"), list)
+            else []
+        )
+    else:
+        s._autonomy_slo_state["updated_at"] = 0.0
+        s._autonomy_slo_state["window_size"] = 50
+        s._autonomy_slo_state["metrics"] = {}
+        s._autonomy_slo_state["alerts"] = []
 
     s._guest_sessions.clear()
     guest_sessions = payload.get("guest_sessions")

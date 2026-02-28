@@ -166,13 +166,23 @@ async def test_operator_status_provider_recommends_on_health_and_checkpoint_sign
         payload = {
             "health": {"health_level": "degraded", "reasons": ["memory_error"]},
             "plan_preview": {"pending_count": 2},
-            "expansion": {"planner_engine": {"autonomy_waiting_checkpoint_count": 1}},
+            "expansion": {
+                "planner_engine": {
+                    "autonomy_waiting_checkpoint_count": 1,
+                    "autonomy_backlog_step_count": 3,
+                    "autonomy_needs_replan_count": 1,
+                    "autonomy_retry_pending_count": 2,
+                },
+                "proactive": {"approval_pending_count": 1},
+            },
             "voice_attention": {
                 "multimodal_grounding": {
                     "confidence_band": "low",
                     "overall_confidence": 0.2,
                 }
             },
+            "dead_letter_queue": {"pending_count": 2},
+            "recovery_journal": {"interrupted_count": 1, "unresolved_count": 1},
         }
         return {"content": [{"text": str(payload).replace("'", '"')}]}
 
@@ -189,6 +199,12 @@ async def test_operator_status_provider_recommends_on_health_and_checkpoint_sign
     assert "runtime_health_degraded" in codes
     assert "pending_previews" in codes
     assert "autonomy_waiting_checkpoint" in codes
+    assert "autonomy_backlog_steps" in codes
+    assert "autonomy_needs_replan" in codes
+    assert "autonomy_retry_pending" in codes
+    assert "approval_queue_pending" in codes
+    assert "dead_letter_pending" in codes
+    assert "recovery_unresolved" in codes
     assert "multimodal_low_confidence" in codes
 
 
@@ -256,8 +272,18 @@ async def test_operator_status_recommendation_codes_stress_contract() -> None:
         payload = {
             "health": {"health_level": "degraded", "reasons": ["memory_error"]},
             "plan_preview": {"pending_count": 2},
-            "expansion": {"planner_engine": {"autonomy_waiting_checkpoint_count": 1}},
+            "expansion": {
+                "planner_engine": {
+                    "autonomy_waiting_checkpoint_count": 1,
+                    "autonomy_backlog_step_count": 2,
+                    "autonomy_needs_replan_count": 1,
+                    "autonomy_retry_pending_count": 1,
+                },
+                "proactive": {"approval_pending_count": 1},
+            },
             "voice_attention": {"multimodal_grounding": {"confidence_band": "low"}},
+            "dead_letter_queue": {"pending_count": 1},
+            "recovery_journal": {"interrupted_count": 1, "unresolved_count": 0},
         }
         return {"content": [{"text": json.dumps(payload)}]}
 
@@ -276,6 +302,12 @@ async def test_operator_status_recommendation_codes_stress_contract() -> None:
         "runtime_invariants",
         "pending_previews",
         "autonomy_waiting_checkpoint",
+        "autonomy_backlog_steps",
+        "autonomy_needs_replan",
+        "autonomy_retry_pending",
+        "approval_queue_pending",
+        "dead_letter_pending",
+        "recovery_unresolved",
         "multimodal_low_confidence",
     }
     assert required_codes.issubset(codes)

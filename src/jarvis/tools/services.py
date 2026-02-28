@@ -52,6 +52,18 @@ from jarvis.tools.service_schemas import (
     SERVICE_TOOL_SCHEMAS,  # noqa: F401  # compatibility export for tests/importers
 )
 from jarvis.tools import services_defaults as _services_defaults
+from jarvis.tools.services_autonomy_replan_runtime import (
+    generate_autonomy_replan_draft as _runtime_generate_autonomy_replan_draft,
+)
+from jarvis.tools.services_effect_verification_runtime import (
+    verify_home_action_effect as _runtime_verify_home_action_effect,
+)
+from jarvis.tools.services_policy_engine_runtime import (
+    default_policy_engine as _runtime_default_policy_engine,
+    domain_in_policy as _runtime_domain_in_policy,
+    load_policy_engine as _runtime_load_policy_engine,
+    normalize_policy_engine as _runtime_normalize_policy_engine,
+)
 from jarvis.tools.services_server import create_services_server  # noqa: F401  # compatibility export for callers
 from jarvis.tools.services_state_facade_runtime import (
     append_quality_report as _facade_append_quality_report,
@@ -77,7 +89,11 @@ from jarvis.tools.services_identity_facade_runtime import (
     identity_authorize as _facade_identity_authorize,
     identity_context as _facade_identity_context,
     identity_enriched_audit as _facade_identity_enriched_audit,
+    issue_step_up_token as _facade_issue_step_up_token,
+    record_identity_trust_outcome as _facade_record_identity_trust_outcome,
+    trust_score as _facade_trust_score,
     identity_trust_domain as _facade_identity_trust_domain,
+    validate_step_up_token as _facade_validate_step_up_token,
 )
 from jarvis.tools.services_status_facade_runtime import (
     duration_p95_ms as _facade_duration_p95_ms,
@@ -346,6 +362,7 @@ DEFAULT_RECOVERY_JOURNAL = _services_defaults.DEFAULT_RECOVERY_JOURNAL
 DEFAULT_DEAD_LETTER_QUEUE = _services_defaults.DEFAULT_DEAD_LETTER_QUEUE
 DEFAULT_EXPANSION_STATE = _services_defaults.DEFAULT_EXPANSION_STATE
 DEFAULT_RELEASE_CHANNEL_CONFIG = _services_defaults.DEFAULT_RELEASE_CHANNEL_CONFIG
+DEFAULT_POLICY_ENGINE_CONFIG = _services_defaults.DEFAULT_POLICY_ENGINE_CONFIG
 QUALITY_REPORT_DIR_DEFAULT = _services_defaults.QUALITY_REPORT_DIR_DEFAULT
 NOTES_CAPTURE_DIR_DEFAULT = _services_defaults.NOTES_CAPTURE_DIR_DEFAULT
 
@@ -375,6 +392,8 @@ DEFERRED_ACTION_MAX = _services_defaults.DEFERRED_ACTION_MAX
 NUDGE_RECENT_DISPATCH_MAX = _services_defaults.NUDGE_RECENT_DISPATCH_MAX
 HOME_AUTOMATION_MAX_TRACKED = _services_defaults.HOME_AUTOMATION_MAX_TRACKED
 AUTONOMY_CYCLE_HISTORY_MAX = _services_defaults.AUTONOMY_CYCLE_HISTORY_MAX
+AUTONOMY_REPLAN_DRAFT_MAX = _services_defaults.AUTONOMY_REPLAN_DRAFT_MAX
+GOAL_STACK_MAX = _services_defaults.GOAL_STACK_MAX
 RELEASE_CHANNELS = _services_defaults.RELEASE_CHANNELS
 NOTION_API_VERSION = _services_defaults.NOTION_API_VERSION
 SKILL_SANDBOX_TEMPLATES = _services_defaults.SKILL_SANDBOX_TEMPLATES
@@ -458,9 +477,11 @@ _recovery_journal_path: Path = DEFAULT_RECOVERY_JOURNAL
 _dead_letter_queue_path: Path = DEFAULT_DEAD_LETTER_QUEUE
 _expansion_state_path: Path = DEFAULT_EXPANSION_STATE
 _release_channel_config_path: Path = DEFAULT_RELEASE_CHANNEL_CONFIG
+_policy_engine_path: Path = DEFAULT_POLICY_ENGINE_CONFIG
 _quality_report_dir: Path = QUALITY_REPORT_DIR_DEFAULT
 _notes_capture_dir: Path = NOTES_CAPTURE_DIR_DEFAULT
 _proactive_state: dict[str, Any] = _services_defaults.default_proactive_state()
+_policy_engine: dict[str, Any] = _runtime_default_policy_engine()
 _memory_partition_overlays: dict[str, dict[str, Any]] = {}
 _memory_quality_last: dict[str, Any] = {}
 _identity_trust_policies: dict[str, dict[str, Any]] = {}
@@ -479,6 +500,16 @@ _deferred_actions: dict[str, dict[str, Any]] = {}
 _deferred_action_seq: int = 1
 _autonomy_checkpoints: dict[str, dict[str, Any]] = {}
 _autonomy_cycle_history: list[dict[str, Any]] = []
+_autonomy_replan_drafts: dict[str, dict[str, Any]] = {}
+_world_model_state: dict[str, Any] = {"entities": {}, "facts": {}, "events": [], "updated_at": 0.0}
+_goal_stack: list[dict[str, Any]] = []
+_identity_step_up_tokens: dict[str, dict[str, Any]] = {}
+_autonomy_slo_state: dict[str, Any] = {
+    "updated_at": 0.0,
+    "window_size": 50,
+    "metrics": {},
+    "alerts": [],
+}
 _quality_reports: list[dict[str, Any]] = []
 _micro_expression_library: dict[str, dict[str, Any]] = {}
 _gaze_calibrations: dict[str, dict[str, Any]] = {}
@@ -565,6 +596,10 @@ _identity_audit_fields = _facade_identity_audit_fields
 _identity_trust_domain = _facade_identity_trust_domain
 _identity_authorize = _facade_identity_authorize
 _identity_enriched_audit = _facade_identity_enriched_audit
+_issue_step_up_token = _facade_issue_step_up_token
+_validate_step_up_token = _facade_validate_step_up_token
+_identity_trust_score = _facade_trust_score
+_record_identity_trust_outcome = _facade_record_identity_trust_outcome
 
 
 _tokenized_words = _facade_tokenized_words
@@ -669,6 +704,55 @@ def _persist_expansion_state() -> None:
 
 def _load_expansion_state() -> None:
     _facade_load_expansion_state()
+
+
+def _normalize_policy_engine(value: Any) -> dict[str, Any]:
+    return _runtime_normalize_policy_engine(value)
+
+
+def _load_policy_engine() -> str:
+    global _policy_engine
+    policy, source = _runtime_load_policy_engine(_policy_engine_path)
+    _policy_engine = policy
+    return source
+
+
+def _domain_in_policy(domains: list[str], domain: str) -> bool:
+    return _runtime_domain_in_policy(domains, domain)
+
+
+async def _verify_home_action_effect(
+    *,
+    domain: str,
+    action: str,
+    entity_id: str,
+    enabled_domains: list[str],
+    max_attempts: int = 2,
+) -> dict[str, Any]:
+    return await _runtime_verify_home_action_effect(
+        _services_module(),
+        domain=domain,
+        action=action,
+        entity_id=entity_id,
+        enabled_domains=enabled_domains,
+        max_attempts=max_attempts,
+    )
+
+
+async def _generate_autonomy_replan_draft(
+    *,
+    task_row: dict[str, Any],
+    reason_code: str,
+    phase: str,
+    runtime_state: dict[str, Any],
+) -> dict[str, Any]:
+    return await _runtime_generate_autonomy_replan_draft(
+        _services_module(),
+        task_row=task_row,
+        reason_code=reason_code,
+        phase=phase,
+        runtime_state=runtime_state,
+    )
 
 
 _run_release_channel_check = _facade_run_release_channel_check

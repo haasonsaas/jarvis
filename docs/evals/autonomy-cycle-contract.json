@@ -1,0 +1,413 @@
+{
+  "cases": [
+    {
+      "id": "baseline_checkpoint_blocked",
+      "actual_cycle": {
+        "due_count": 1,
+        "executed_count": 0,
+        "blocked_count": 1,
+        "progressed_step_count": 0,
+        "retry_scheduled_count": 0,
+        "verification_failure_count": 0,
+        "replan_count": 0
+      },
+      "actual_status": {
+        "autonomy_task_count": 1,
+        "needs_replan_count": 0,
+        "retry_pending_count": 0,
+        "backlog_step_count": 2,
+        "status_counts": {
+          "waiting_checkpoint": 1
+        },
+        "failure_taxonomy": {}
+      },
+      "expected_cycle": {
+        "blocked_count": 1,
+        "replan_count": 0
+      },
+      "expected_status": {
+        "needs_replan_count": 0,
+        "retry_pending_count": 0
+      },
+      "required_statuses": [
+        "waiting_checkpoint"
+      ],
+      "min_backlog_step_count": 1
+    },
+    {
+      "id": "baseline_step_progress",
+      "actual_cycle": {
+        "due_count": 1,
+        "executed_count": 1,
+        "blocked_count": 0,
+        "progressed_step_count": 1,
+        "retry_scheduled_count": 0,
+        "verification_failure_count": 0,
+        "replan_count": 0
+      },
+      "actual_status": {
+        "autonomy_task_count": 1,
+        "needs_replan_count": 0,
+        "retry_pending_count": 0,
+        "backlog_step_count": 2,
+        "status_counts": {
+          "scheduled": 1
+        },
+        "failure_taxonomy": {}
+      },
+      "expected_cycle": {
+        "progressed_step_count": 1,
+        "replan_count": 0
+      },
+      "expected_status": {
+        "needs_replan_count": 0
+      },
+      "required_statuses": [
+        "scheduled"
+      ],
+      "min_backlog_step_count": 1
+    },
+    {
+      "id": "baseline_retry_pending",
+      "actual_cycle": {
+        "due_count": 1,
+        "executed_count": 1,
+        "blocked_count": 0,
+        "progressed_step_count": 0,
+        "retry_scheduled_count": 1,
+        "verification_failure_count": 1,
+        "replan_count": 0
+      },
+      "actual_status": {
+        "autonomy_task_count": 1,
+        "needs_replan_count": 0,
+        "retry_pending_count": 1,
+        "backlog_step_count": 1,
+        "status_counts": {
+          "scheduled": 1
+        },
+        "failure_taxonomy": {
+          "condition_equals_mismatch": 1
+        }
+      },
+      "expected_cycle": {
+        "retry_scheduled_count": 1,
+        "replan_count": 0
+      },
+      "expected_status": {
+        "retry_pending_count": 1,
+        "needs_replan_count": 0
+      },
+      "min_retry_pending_count": 1,
+      "min_failure_taxonomy_total": 1
+    },
+    {
+      "id": "baseline_replan_required",
+      "actual_cycle": {
+        "due_count": 1,
+        "executed_count": 1,
+        "blocked_count": 0,
+        "progressed_step_count": 0,
+        "retry_scheduled_count": 0,
+        "verification_failure_count": 2,
+        "replan_count": 1
+      },
+      "actual_status": {
+        "autonomy_task_count": 1,
+        "needs_replan_count": 1,
+        "retry_pending_count": 1,
+        "backlog_step_count": 1,
+        "status_counts": {
+          "needs_replan": 1
+        },
+        "failure_taxonomy": {
+          "condition_equals_mismatch": 2
+        }
+      },
+      "expected_cycle": {
+        "replan_count": 1
+      },
+      "expected_status": {
+        "needs_replan_count": 1
+      },
+      "required_statuses": [
+        "needs_replan"
+      ],
+      "min_replan_count": 1,
+      "min_needs_replan_count": 1,
+      "min_failure_taxonomy_total": 2
+    },
+    {
+      "id": "baseline_replan_applied_reset",
+      "actual_cycle": {
+        "due_count": 0,
+        "executed_count": 0,
+        "blocked_count": 0,
+        "progressed_step_count": 0,
+        "retry_scheduled_count": 0,
+        "verification_failure_count": 0,
+        "replan_count": 0
+      },
+      "actual_status": {
+        "autonomy_task_count": 1,
+        "needs_replan_count": 0,
+        "retry_pending_count": 0,
+        "backlog_step_count": 2,
+        "status_counts": {
+          "scheduled": 1
+        },
+        "failure_taxonomy": {
+          "condition_equals_mismatch": 2
+        }
+      },
+      "expected_cycle": {
+        "replan_count": 0
+      },
+      "expected_status": {
+        "needs_replan_count": 0,
+        "retry_pending_count": 0
+      },
+      "required_statuses": [
+        "scheduled"
+      ]
+    },
+    {
+      "id": "baseline_postcondition_recovered",
+      "actual_cycle": {
+        "due_count": 1,
+        "executed_count": 1,
+        "blocked_count": 0,
+        "progressed_step_count": 1,
+        "retry_scheduled_count": 0,
+        "verification_failure_count": 0,
+        "replan_count": 0
+      },
+      "actual_status": {
+        "autonomy_task_count": 1,
+        "needs_replan_count": 0,
+        "retry_pending_count": 0,
+        "backlog_step_count": 0,
+        "status_counts": {
+          "completed": 1
+        },
+        "failure_taxonomy": {
+          "condition_equals_mismatch": 1
+        }
+      },
+      "expected_cycle": {
+        "progressed_step_count": 1,
+        "replan_count": 0
+      },
+      "expected_status": {
+        "backlog_step_count": 0,
+        "needs_replan_count": 0
+      },
+      "required_statuses": [
+        "completed"
+      ]
+    },
+    {
+      "id": "adv_autonomy_precondition_retry_escalates_replan",
+      "actual_cycle": {
+        "due_count": 1,
+        "executed_count": 1,
+        "blocked_count": 0,
+        "progressed_step_count": 0,
+        "retry_scheduled_count": 0,
+        "verification_failure_count": 2,
+        "replan_count": 1
+      },
+      "actual_status": {
+        "autonomy_task_count": 2,
+        "needs_replan_count": 1,
+        "retry_pending_count": 1,
+        "backlog_step_count": 3,
+        "status_counts": {
+          "needs_replan": 1,
+          "scheduled": 1
+        },
+        "failure_taxonomy": {
+          "condition_equals_mismatch": 3
+        }
+      },
+      "expected_cycle": {
+        "replan_count": 1
+      },
+      "expected_status": {
+        "needs_replan_count": 1
+      },
+      "required_statuses": [
+        "needs_replan"
+      ],
+      "min_needs_replan_count": 1,
+      "min_failure_taxonomy_total": 3
+    },
+    {
+      "id": "adv_autonomy_postcondition_retry_recovers",
+      "actual_cycle": {
+        "due_count": 1,
+        "executed_count": 1,
+        "blocked_count": 0,
+        "progressed_step_count": 0,
+        "retry_scheduled_count": 1,
+        "verification_failure_count": 1,
+        "replan_count": 0
+      },
+      "actual_status": {
+        "autonomy_task_count": 1,
+        "needs_replan_count": 0,
+        "retry_pending_count": 1,
+        "backlog_step_count": 1,
+        "status_counts": {
+          "scheduled": 1
+        },
+        "failure_taxonomy": {
+          "condition_equals_mismatch": 1
+        }
+      },
+      "expected_cycle": {
+        "retry_scheduled_count": 1,
+        "replan_count": 0
+      },
+      "expected_status": {
+        "needs_replan_count": 0,
+        "retry_pending_count": 1
+      },
+      "required_statuses": [
+        "scheduled"
+      ],
+      "min_retry_pending_count": 1
+    },
+    {
+      "id": "adv_autonomy_checkpoint_gate_blocks_until_approved",
+      "actual_cycle": {
+        "due_count": 2,
+        "executed_count": 0,
+        "blocked_count": 2,
+        "progressed_step_count": 0,
+        "retry_scheduled_count": 0,
+        "verification_failure_count": 0,
+        "replan_count": 0
+      },
+      "actual_status": {
+        "autonomy_task_count": 2,
+        "needs_replan_count": 0,
+        "retry_pending_count": 0,
+        "backlog_step_count": 4,
+        "status_counts": {
+          "waiting_checkpoint": 2
+        },
+        "failure_taxonomy": {}
+      },
+      "expected_cycle": {
+        "blocked_count": 2,
+        "replan_count": 0
+      },
+      "expected_status": {
+        "needs_replan_count": 0
+      },
+      "required_statuses": [
+        "waiting_checkpoint"
+      ],
+      "min_backlog_step_count": 2
+    },
+    {
+      "id": "adv_autonomy_failure_taxonomy_accumulates",
+      "actual_cycle": {
+        "due_count": 1,
+        "executed_count": 1,
+        "blocked_count": 0,
+        "progressed_step_count": 0,
+        "retry_scheduled_count": 1,
+        "verification_failure_count": 2,
+        "replan_count": 0
+      },
+      "actual_status": {
+        "autonomy_task_count": 2,
+        "needs_replan_count": 0,
+        "retry_pending_count": 2,
+        "backlog_step_count": 3,
+        "status_counts": {
+          "scheduled": 2
+        },
+        "failure_taxonomy": {
+          "condition_equals_mismatch": 3,
+          "condition_not_in_allowed_set": 2
+        }
+      },
+      "expected_cycle": {
+        "replan_count": 0
+      },
+      "expected_status": {
+        "retry_pending_count": 2
+      },
+      "min_retry_pending_count": 2,
+      "min_failure_taxonomy_total": 5
+    },
+    {
+      "id": "sim_autonomy_cycle_edge_001",
+      "actual_cycle": {
+        "due_count": 3,
+        "executed_count": 2,
+        "blocked_count": 1,
+        "progressed_step_count": 2,
+        "retry_scheduled_count": 0,
+        "verification_failure_count": 0,
+        "replan_count": 0
+      },
+      "actual_status": {
+        "autonomy_task_count": 3,
+        "needs_replan_count": 0,
+        "retry_pending_count": 0,
+        "backlog_step_count": 1,
+        "status_counts": {
+          "completed": 2,
+          "waiting_checkpoint": 1
+        },
+        "failure_taxonomy": {}
+      },
+      "expected_cycle": {
+        "executed_count": 2,
+        "blocked_count": 1
+      },
+      "expected_status": {
+        "needs_replan_count": 0
+      },
+      "required_statuses": [
+        "completed",
+        "waiting_checkpoint"
+      ],
+      "max_replan_count": 0
+    },
+    {
+      "id": "autonomy_default_contract",
+      "actual_cycle": {
+        "due_count": 0,
+        "executed_count": 0,
+        "blocked_count": 0,
+        "progressed_step_count": 0,
+        "retry_scheduled_count": 0,
+        "verification_failure_count": 0,
+        "replan_count": 0
+      },
+      "actual_status": {
+        "autonomy_task_count": 0,
+        "needs_replan_count": 0,
+        "retry_pending_count": 0,
+        "backlog_step_count": 0,
+        "status_counts": {},
+        "failure_taxonomy": {}
+      },
+      "expected_cycle": {
+        "replan_count": 0
+      },
+      "expected_status": {
+        "autonomy_task_count": 0,
+        "needs_replan_count": 0,
+        "retry_pending_count": 0,
+        "backlog_step_count": 0
+      },
+      "max_replan_count": 0
+    }
+  ]
+}

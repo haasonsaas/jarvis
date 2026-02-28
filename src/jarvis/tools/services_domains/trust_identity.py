@@ -95,6 +95,14 @@ async def identity_trust(args: dict[str, Any]) -> dict[str, Any]:
                 "action": action,
                 "policy_count": len(_identity_trust_policies),
                 "policies": {name: dict(row) for name, row in sorted(_identity_trust_policies.items())},
+                "trust_scores": (
+                    {
+                        str(user): s._as_float(score, 0.5, minimum=0.0, maximum=1.0)
+                        for user, score in s._proactive_state.get("identity_trust_scores", {}).items()
+                    }
+                    if isinstance(s._proactive_state.get("identity_trust_scores"), dict)
+                    else {}
+                ),
             }
         record_summary("identity_trust", "ok", start_time, effect="policy_get", risk="low")
         return _expansion_payload_response(payload)

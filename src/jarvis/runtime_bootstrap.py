@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
 from collections import deque
 from typing import Any
 
@@ -97,6 +98,15 @@ def telemetry_defaults() -> dict[str, float]:
         "multimodal_turns": 0.0,
         "multimodal_confidence_total": 0.0,
         "multimodal_low_confidence_turns": 0.0,
+        "interruption_routes_total": 0.0,
+        "interruption_resumes": 0.0,
+        "interruption_replaces": 0.0,
+        "interruption_clarifies": 0.0,
+        "interruption_route_fallbacks": 0.0,
+        "semantic_turn_decisions_total": 0.0,
+        "semantic_turn_waits": 0.0,
+        "semantic_turn_commits": 0.0,
+        "semantic_turn_fallbacks": 0.0,
     }
 
 
@@ -141,6 +151,7 @@ def initialize_runtime_fields(
     runtime._response_start_at = None
     runtime._filler_task = None
     runtime._tts_gain = 1.0
+    runtime._last_response_spoken_text = ""
 
     runtime._utterance_queue = asyncio.Queue(maxsize=1)
     runtime._listen_task = None
@@ -152,6 +163,11 @@ def initialize_runtime_fields(
     runtime._telemetry_error_counts = {}
     runtime._conversation_traces = deque(maxlen=conversation_trace_maxlen)
     runtime._turn_trace_seq = 0
+    runtime._last_trace_turn_id = 0
+    runtime._conversation_id = str(uuid.uuid4())
+    runtime._interrupted_turn = None
+    runtime._last_interruption_route = {}
+    runtime._last_semantic_turn_route = {}
     runtime._episodic_timeline = deque(maxlen=episodic_timeline_maxlen)
     runtime._episode_seq = 0
     runtime._voice_user_profiles = {}

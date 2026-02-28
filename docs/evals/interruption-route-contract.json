@@ -1,0 +1,392 @@
+{
+  "cases": [
+    {
+      "id": "baseline_ack_resume",
+      "expected_route": {
+        "strategy": "resume",
+        "user_intent": "acknowledgement",
+        "route_confidence": 0.86,
+        "route_source": "router",
+        "continuation_prompt_applied": true,
+        "interrupted_turn_id": 41
+      },
+      "actual_route": {
+        "strategy": "resume",
+        "user_intent": "acknowledgement",
+        "route_confidence": 0.86,
+        "route_source": "router",
+        "continuation_prompt_applied": true,
+        "interrupted_turn_id": 41
+      },
+      "min_confidence": 0.75
+    },
+    {
+      "id": "baseline_noise_resume",
+      "expected_route": {
+        "strategy": "resume",
+        "user_intent": "noise",
+        "route_confidence": 0.74,
+        "route_source": "router",
+        "continuation_prompt_applied": true
+      },
+      "actual_route": {
+        "strategy": "resume",
+        "user_intent": "noise",
+        "route_confidence": 0.74,
+        "route_source": "router",
+        "continuation_prompt_applied": true
+      },
+      "min_confidence": 0.6
+    },
+    {
+      "id": "baseline_followup_clarify",
+      "expected_route": {
+        "strategy": "clarify",
+        "user_intent": "followup",
+        "route_confidence": 0.66,
+        "route_source": "router",
+        "continuation_prompt_applied": true
+      },
+      "actual_route": {
+        "strategy": "clarify",
+        "user_intent": "followup",
+        "route_confidence": 0.66,
+        "route_source": "router",
+        "continuation_prompt_applied": true
+      },
+      "min_confidence": 0.55
+    },
+    {
+      "id": "baseline_new_request_replace",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.89,
+        "route_source": "router",
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.89,
+        "route_source": "router",
+        "continuation_prompt_applied": false
+      },
+      "min_confidence": 0.75
+    },
+    {
+      "id": "baseline_correction_replace",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "correction",
+        "route_confidence": 0.91,
+        "route_source": "router",
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "correction",
+        "route_confidence": 0.91,
+        "route_source": "router",
+        "continuation_prompt_applied": false
+      },
+      "min_confidence": 0.8
+    },
+    {
+      "id": "baseline_unknown_low_confidence_replace",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "unknown",
+        "route_confidence": 0.42,
+        "route_source": "router",
+        "continuation_prompt_applied": false,
+        "uncertainty_reason": "ambiguous interruption"
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "unknown",
+        "route_confidence": 0.42,
+        "route_source": "router",
+        "continuation_prompt_applied": false,
+        "uncertainty_reason": "ambiguous interruption"
+      },
+      "max_confidence": 0.5
+    },
+    {
+      "id": "fallback_timeout_replace",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.0,
+        "route_source": "fallback",
+        "fallback_reason": "router_timeout",
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.0,
+        "route_source": "fallback",
+        "fallback_reason": "router_timeout",
+        "continuation_prompt_applied": false
+      },
+      "max_confidence": 0.05
+    },
+    {
+      "id": "fallback_guardrail_tripwire_replace",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.0,
+        "route_source": "fallback",
+        "fallback_reason": "guardrail_tripwire",
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.0,
+        "route_source": "fallback",
+        "fallback_reason": "guardrail_tripwire",
+        "continuation_prompt_applied": false
+      },
+      "max_confidence": 0.05
+    },
+    {
+      "id": "fallback_invalid_output_replace",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.0,
+        "route_source": "fallback",
+        "fallback_reason": "invalid_router_output",
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.0,
+        "route_source": "fallback",
+        "fallback_reason": "invalid_router_output",
+        "continuation_prompt_applied": false
+      },
+      "max_confidence": 0.05
+    },
+    {
+      "id": "adv_interruption_prompt_injection_forced_replace",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.93,
+        "route_source": "router",
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.93,
+        "route_source": "router",
+        "continuation_prompt_applied": false
+      },
+      "min_confidence": 0.8
+    },
+    {
+      "id": "adv_interruption_identity_spoof_forced_replace",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.92,
+        "route_source": "router",
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.92,
+        "route_source": "router",
+        "continuation_prompt_applied": false
+      },
+      "min_confidence": 0.8
+    },
+    {
+      "id": "adv_interruption_low_confidence_resume_forced_replace",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "acknowledgement",
+        "route_confidence": 0.31,
+        "route_source": "router",
+        "guardrail_correction": "low_confidence_resume_forced_replace",
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "acknowledgement",
+        "route_confidence": 0.31,
+        "route_source": "router",
+        "guardrail_correction": "low_confidence_resume_forced_replace",
+        "continuation_prompt_applied": false
+      },
+      "max_confidence": 0.5
+    },
+    {
+      "id": "adv_interruption_correction_never_resume",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "correction",
+        "route_confidence": 0.88,
+        "route_source": "router",
+        "guardrail_correction": "intent_forced_replace",
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "correction",
+        "route_confidence": 0.88,
+        "route_source": "router",
+        "guardrail_correction": "intent_forced_replace",
+        "continuation_prompt_applied": false
+      },
+      "min_confidence": 0.75
+    },
+    {
+      "id": "continuity_parent_turn_preserved_01",
+      "expected_route": {
+        "strategy": "resume",
+        "user_intent": "acknowledgement",
+        "route_confidence": 0.83,
+        "route_source": "router",
+        "interrupted_turn_id": 112,
+        "continuation_prompt_applied": true
+      },
+      "actual_route": {
+        "strategy": "resume",
+        "user_intent": "acknowledgement",
+        "route_confidence": 0.83,
+        "route_source": "router",
+        "interrupted_turn_id": 112,
+        "continuation_prompt_applied": true
+      },
+      "min_confidence": 0.7
+    },
+    {
+      "id": "continuity_parent_turn_preserved_02",
+      "expected_route": {
+        "strategy": "clarify",
+        "user_intent": "unknown",
+        "route_confidence": 0.58,
+        "route_source": "router",
+        "interrupted_turn_id": 113,
+        "continuation_prompt_applied": true
+      },
+      "actual_route": {
+        "strategy": "clarify",
+        "user_intent": "unknown",
+        "route_confidence": 0.58,
+        "route_source": "router",
+        "interrupted_turn_id": 113,
+        "continuation_prompt_applied": true
+      },
+      "min_confidence": 0.55
+    },
+    {
+      "id": "continuity_parent_turn_preserved_03",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.87,
+        "route_source": "router",
+        "interrupted_turn_id": 114,
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.87,
+        "route_source": "router",
+        "interrupted_turn_id": 114,
+        "continuation_prompt_applied": false
+      },
+      "min_confidence": 0.75
+    },
+    {
+      "id": "continuity_parent_turn_preserved_04",
+      "expected_route": {
+        "strategy": "resume",
+        "user_intent": "noise",
+        "route_confidence": 0.69,
+        "route_source": "router",
+        "interrupted_turn_id": 115,
+        "continuation_prompt_applied": true
+      },
+      "actual_route": {
+        "strategy": "resume",
+        "user_intent": "noise",
+        "route_confidence": 0.69,
+        "route_source": "router",
+        "interrupted_turn_id": 115,
+        "continuation_prompt_applied": true
+      },
+      "min_confidence": 0.6
+    },
+    {
+      "id": "continuity_parent_turn_preserved_05",
+      "expected_route": {
+        "strategy": "clarify",
+        "user_intent": "followup",
+        "route_confidence": 0.64,
+        "route_source": "router",
+        "interrupted_turn_id": 116,
+        "continuation_prompt_applied": true
+      },
+      "actual_route": {
+        "strategy": "clarify",
+        "user_intent": "followup",
+        "route_confidence": 0.64,
+        "route_source": "router",
+        "interrupted_turn_id": 116,
+        "continuation_prompt_applied": true
+      },
+      "min_confidence": 0.55
+    },
+    {
+      "id": "continuity_parent_turn_preserved_06",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "correction",
+        "route_confidence": 0.9,
+        "route_source": "router",
+        "interrupted_turn_id": 117,
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "correction",
+        "route_confidence": 0.9,
+        "route_source": "router",
+        "interrupted_turn_id": 117,
+        "continuation_prompt_applied": false
+      },
+      "min_confidence": 0.8
+    },
+    {
+      "id": "router_fallback_default_contract",
+      "expected_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.0,
+        "route_source": "fallback",
+        "fallback_reason": "router_error",
+        "continuation_prompt_applied": false
+      },
+      "actual_route": {
+        "strategy": "replace",
+        "user_intent": "new_request",
+        "route_confidence": 0.0,
+        "route_source": "fallback",
+        "fallback_reason": "router_error",
+        "continuation_prompt_applied": false
+      },
+      "max_confidence": 0.05
+    }
+  ]
+}

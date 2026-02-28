@@ -23,6 +23,158 @@ from jarvis.tools import services as service_tools
 log = logging.getLogger(__name__)
 
 
+def _safe_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _interruption_continuity_prompt(
+    interrupted_turn: dict[str, Any],
+    interruption_text: str,
+    *,
+    clarify: bool,
+) -> str:
+    previous_request = str(interrupted_turn.get("user_text", "")).strip()[:280]
+    partial_response = str(interrupted_turn.get("spoken_text", "")).strip()[:420]
+    interrupted_turn_id = _safe_positive_int(interrupted_turn.get("interrupted_turn_id"))
+    continuity_lines = [
+        f"Interrupted turn id: {interrupted_turn_id or 0}",
+        f"Previous user request: {previous_request}",
+        f"Assistant partial response: {partial_response}",
+    ]
+    if clarify:
+        continuity_lines.append(
+            "Instruction: Ask one concise clarifying question whether to continue the previous answer or switch tasks."
+        )
+    else:
+        continuity_lines.append(
+            "Instruction: Continue the interrupted answer from where it left off while incorporating the interruption transcript if relevant."
+        )
+    return (
+        f"{interruption_text.strip()}\n\n"
+        f"Interruption continuity context:\n{chr(10).join(continuity_lines)}"
+    )
+
+
+def _increment_telemetry(runtime: Any, key: str, amount: float = 1.0) -> None:
+    telemetry = getattr(runtime, "_telemetry", None)
+    if not isinstance(telemetry, dict):
+        return
+    current = telemetry.get(key, 0.0)
+    try:
+        base = float(current)
+    except (TypeError, ValueError):
+        base = 0.0
+    telemetry[key] = base + float(amount)
+
+
+async def _semantic_turn_should_commit(
+    runtime: Any,
+    *,
+    audio: np.ndarray,
+    assistant_busy: bool,
+    silence_elapsed_sec: float,
+    utterance_duration_sec: float,
+) -> bool:
+    if assistant_busy:
+        return True
+    config = getattr(runtime, "config", None)
+    if not bool(getattr(config, "semantic_turn_enabled", False)):
+        return True
+    brain = getattr(runtime, "brain", None)
+    if brain is None or not hasattr(brain, "semantic_turn_decision"):
+        return True
+    transcribe_fn = getattr(runtime, "_transcribe_with_fallback", None)
+    if not callable(transcribe_fn):
+        return True
+
+    loop = asyncio.get_event_loop()
+    try:
+        transcript = await loop.run_in_executor(None, transcribe_fn, audio)
+    except Exception as exc:
+        log.warning("Semantic turn pre-transcription failed; committing utterance: %s", exc)
+        _increment_telemetry(runtime, "semantic_turn_decisions_total", 1.0)
+        _increment_telemetry(runtime, "semantic_turn_commits", 1.0)
+        _increment_telemetry(runtime, "semantic_turn_fallbacks", 1.0)
+        runtime._last_semantic_turn_route = {
+            "action": "commit",
+            "route_confidence": 0.0,
+            "route_source": "fallback",
+            "fallback_reason": "pretranscribe_error",
+            "guardrail_correction": "none",
+        }
+        return True
+
+    text = str(transcript or "").strip()
+    if not text:
+        _increment_telemetry(runtime, "semantic_turn_decisions_total", 1.0)
+        _increment_telemetry(runtime, "semantic_turn_commits", 1.0)
+        runtime._last_semantic_turn_route = {
+            "action": "commit",
+            "route_confidence": 0.0,
+            "route_source": "fallback",
+            "fallback_reason": "empty_transcript",
+            "guardrail_correction": "none",
+        }
+        return True
+
+    max_chars = int(getattr(config, "semantic_turn_max_transcript_chars", 220) or 220)
+    if max_chars > 0:
+        text = text[:max_chars]
+
+    route_payload: dict[str, Any] = {
+        "action": "commit",
+        "route_confidence": 0.0,
+        "route_source": "fallback",
+        "fallback_reason": "router_unavailable",
+        "guardrail_correction": "none",
+    }
+    try:
+        decision = await brain.semantic_turn_decision(
+            transcript=text,
+            silence_elapsed_sec=silence_elapsed_sec,
+            utterance_duration_sec=utterance_duration_sec,
+        )
+        if hasattr(brain, "latest_semantic_turn_trace"):
+            trace_payload = brain.latest_semantic_turn_trace()
+            if isinstance(trace_payload, dict) and trace_payload:
+                route_payload = {str(key): value for key, value in trace_payload.items()}
+        if (
+            not route_payload
+            and hasattr(decision, "model_dump")
+            and callable(decision.model_dump)
+        ):
+            route_payload = {str(key): value for key, value in decision.model_dump().items()}
+    except Exception as exc:
+        log.warning("Semantic turn routing failed; committing utterance: %s", exc)
+        route_payload = {
+            "action": "commit",
+            "route_confidence": 0.0,
+            "route_source": "fallback",
+            "fallback_reason": "router_error",
+            "guardrail_correction": "none",
+        }
+
+    action = str(route_payload.get("action", "commit")).strip().lower() or "commit"
+    if action not in {"commit", "wait"}:
+        action = "commit"
+    route_payload["action"] = action
+    route_payload["transcript_preview"] = text[:120]
+    runtime._last_semantic_turn_route = dict(route_payload)
+
+    _increment_telemetry(runtime, "semantic_turn_decisions_total", 1.0)
+    if str(route_payload.get("route_source", "")).strip().lower() == "fallback":
+        _increment_telemetry(runtime, "semantic_turn_fallbacks", 1.0)
+    if action == "wait":
+        _increment_telemetry(runtime, "semantic_turn_waits", 1.0)
+        return False
+    _increment_telemetry(runtime, "semantic_turn_commits", 1.0)
+    return True
+
+
 async def run(runtime: Any) -> None:
     """Main conversation loop."""
     try:
@@ -167,7 +319,94 @@ async def run(runtime: Any) -> None:
                     runtime._repair_candidate_text = None
                     repair_resolved_this_turn = True
 
-            intent_class = runtime._classify_user_intent(text)
+            user_text = text
+            response_input_text = user_text
+            interruption_route: dict[str, Any] = {}
+            continuation_from_turn_id: int | None = None
+            interrupted_turn = getattr(runtime, "_interrupted_turn", None)
+            if isinstance(interrupted_turn, dict):
+                interruption_route = {
+                    "strategy": "replace",
+                    "route_confidence": 0.0,
+                    "route_source": "fallback",
+                    "fallback_reason": "router_unavailable",
+                    "guardrail_correction": "none",
+                    "user_intent": "unknown",
+                    "uncertainty_reason": "interruption_router_unavailable",
+                }
+                if hasattr(runtime.brain, "route_interruption"):
+                    try:
+                        route = await runtime.brain.route_interruption(
+                            interruption_text=user_text,
+                            interrupted_user_text=str(interrupted_turn.get("user_text", "")),
+                            interrupted_spoken_text=str(interrupted_turn.get("spoken_text", "")),
+                        )
+                        if hasattr(runtime.brain, "latest_interruption_route_trace"):
+                            trace_payload = runtime.brain.latest_interruption_route_trace()
+                            if isinstance(trace_payload, dict) and trace_payload:
+                                interruption_route = {
+                                    str(key): value for key, value in trace_payload.items()
+                                }
+                        if (
+                            not interruption_route
+                            and hasattr(route, "model_dump")
+                            and callable(route.model_dump)
+                        ):
+                            interruption_route = {
+                                str(key): value for key, value in route.model_dump().items()
+                            }
+                    except Exception as exc:
+                        log.warning("Interruption routing failed; defaulting to replace: %s", exc)
+                        interruption_route = {
+                            "strategy": "replace",
+                            "route_confidence": 0.0,
+                            "route_source": "fallback",
+                            "fallback_reason": "router_error",
+                            "guardrail_correction": "none",
+                            "user_intent": "unknown",
+                            "uncertainty_reason": "interruption_router_error",
+                        }
+
+                strategy = str(interruption_route.get("strategy", "replace")).strip().lower() or "replace"
+                if strategy not in {"replace", "resume", "clarify"}:
+                    strategy = "replace"
+                route_source = str(interruption_route.get("route_source", "")).strip().lower()
+                _increment_telemetry(runtime, "interruption_routes_total", 1.0)
+                if route_source == "fallback":
+                    _increment_telemetry(runtime, "interruption_route_fallbacks", 1.0)
+
+                interrupted_turn_id = _safe_positive_int(
+                    interrupted_turn.get("interrupted_turn_id")
+                )
+                if interrupted_turn_id is not None:
+                    continuation_from_turn_id = interrupted_turn_id
+
+                if strategy == "resume":
+                    _increment_telemetry(runtime, "interruption_resumes", 1.0)
+                    response_input_text = _interruption_continuity_prompt(
+                        interrupted_turn,
+                        user_text,
+                        clarify=False,
+                    )
+                elif strategy == "clarify":
+                    _increment_telemetry(runtime, "interruption_clarifies", 1.0)
+                    response_input_text = _interruption_continuity_prompt(
+                        interrupted_turn,
+                        user_text,
+                        clarify=True,
+                    )
+                else:
+                    _increment_telemetry(runtime, "interruption_replaces", 1.0)
+
+                interruption_route["strategy"] = strategy
+                interruption_route["interrupted_turn_id"] = interrupted_turn_id
+                interruption_route["continuation_prompt_applied"] = bool(
+                    strategy in {"resume", "clarify"}
+                )
+                runtime._last_interruption_route = dict(interruption_route)
+                runtime._interrupted_turn = None
+
+            intent_class = runtime._classify_user_intent(user_text)
             runtime._telemetry["intent_turns_total"] += 1.0
             if intent_class == "action":
                 runtime._telemetry["intent_action_turns"] += 1.0
@@ -175,7 +414,7 @@ async def run(runtime: Any) -> None:
                 runtime._telemetry["intent_hybrid_turns"] += 1.0
             else:
                 runtime._telemetry["intent_answer_turns"] += 1.0
-            looks_like_correction = runtime._looks_like_user_correction(text)
+            looks_like_correction = runtime._looks_like_user_correction(user_text)
             if looks_like_correction:
                 runtime._telemetry["intent_corrections"] += 1.0
 
@@ -184,7 +423,7 @@ async def run(runtime: Any) -> None:
             if hasattr(runtime, "_learn_voice_preferences"):
                 try:
                     learned_preferences = runtime._learn_voice_preferences(
-                        text,
+                        user_text,
                         now_ts=turn_started_at,
                     )
                 except Exception:
@@ -215,11 +454,11 @@ async def run(runtime: Any) -> None:
                     runtime._telemetry["multimodal_low_confidence_turns"] += 1.0
             if (
                 not repair_resolved_this_turn
-                and runtime._requires_stt_repair(text, intent_class)
+                and runtime._requires_stt_repair(user_text, intent_class)
             ):
                 runtime._awaiting_repair_confirmation = True
-                runtime._repair_candidate_text = text
-                prompt = runtime._repair_prompt(text)
+                runtime._repair_candidate_text = user_text
+                prompt = runtime._repair_prompt(user_text)
                 if runtime.tts:
                     await runtime._tts_queue.put(
                         (runtime._active_response_id, prompt, True, 0.0)
@@ -229,7 +468,7 @@ async def run(runtime: Any) -> None:
                 runtime.presence.signals.state = State.LISTENING
                 runtime._publish_voice_status()
                 runtime._record_conversation_trace(
-                    user_text=text,
+                    user_text=user_text,
                     intent_class=intent_class,
                     turn_started_at=turn_started_at,
                     stt_latency_ms=stt_latency_ms,
@@ -241,10 +480,14 @@ async def run(runtime: Any) -> None:
                     used_brain_response=False,
                     followup_carryover_applied=False,
                     multimodal_grounding=multimodal_grounding,
+                    route_policy={},
+                    correction_outcome="none",
+                    interruption_route=interruption_route,
+                    continuation_from_turn_id=continuation_from_turn_id,
                 )
                 continue
 
-            memory_correction = runtime._parse_memory_correction_command(text)
+            memory_correction = runtime._parse_memory_correction_command(user_text)
             if memory_correction is not None:
                 tool_name, payload = memory_correction
                 if tool_name == "memory_forget":
@@ -263,7 +506,7 @@ async def run(runtime: Any) -> None:
                         runtime._telemetry["intent_completion_success"] += 1.0
                 correction_succeeded = not bool(result.get("isError", False))
                 runtime._update_followup_carryover(
-                    text,
+                    user_text,
                     intent_class,
                     resolved=correction_succeeded,
                     now_ts=turn_started_at,
@@ -281,7 +524,7 @@ async def run(runtime: Any) -> None:
                 runtime.presence.signals.state = State.IDLE
                 runtime._publish_voice_status()
                 runtime._record_conversation_trace(
-                    user_text=text,
+                    user_text=user_text,
                     intent_class=intent_class,
                     turn_started_at=turn_started_at,
                     stt_latency_ms=stt_latency_ms,
@@ -293,15 +536,19 @@ async def run(runtime: Any) -> None:
                     used_brain_response=False,
                     followup_carryover_applied=False,
                     multimodal_grounding=multimodal_grounding,
+                    route_policy={},
+                    correction_outcome="applied" if correction_succeeded else "failed",
+                    interruption_route=interruption_route,
+                    continuation_from_turn_id=continuation_from_turn_id,
                 )
                 continue
 
             if runtime._requires_confirmation(time.monotonic()):
                 runtime._awaiting_confirmation = True
-                runtime._pending_text = text
+                runtime._pending_text = user_text
                 runtime._telemetry["fallback_responses"] += 1.0
                 runtime._update_followup_carryover(
-                    text,
+                    user_text,
                     intent_class,
                     resolved=False,
                     now_ts=turn_started_at,
@@ -320,7 +567,7 @@ async def run(runtime: Any) -> None:
                 runtime.presence.signals.state = State.LISTENING
                 runtime._publish_voice_status()
                 runtime._record_conversation_trace(
-                    user_text=text,
+                    user_text=user_text,
                     intent_class=intent_class,
                     turn_started_at=turn_started_at,
                     stt_latency_ms=stt_latency_ms,
@@ -332,16 +579,23 @@ async def run(runtime: Any) -> None:
                     used_brain_response=False,
                     followup_carryover_applied=False,
                     multimodal_grounding=multimodal_grounding,
+                    route_policy={},
+                    correction_outcome="none",
+                    interruption_route=interruption_route,
+                    continuation_from_turn_id=continuation_from_turn_id,
                 )
                 continue
 
             runtime._telemetry["turns"] += 1.0
             response_prompt_text, followup_carryover_applied = (
                 runtime._with_followup_carryover(
-                    text,
+                    user_text,
                     now_ts=turn_started_at,
                 )
             )
+            if response_input_text != user_text:
+                response_prompt_text = response_input_text
+                followup_carryover_applied = False
             response_prompt_text = runtime._with_voice_profile_guidance(response_prompt_text)
             await runtime._respond_and_speak(response_prompt_text)
             response_success = bool(
@@ -378,26 +632,56 @@ async def run(runtime: Any) -> None:
             else:
                 resolved = True
             runtime._update_followup_carryover(
-                text,
+                user_text,
                 intent_class,
                 resolved=resolved,
                 now_ts=turn_started_at,
             )
+
+            if response_success:
+                runtime._interrupted_turn = None
+            elif bool(runtime._barge_in.is_set() and runtime._response_started):
+                interruption_turn_id = _safe_positive_int(getattr(runtime, "_turn_trace_seq", 0))
+                if interruption_turn_id is None:
+                    interruption_turn_id = 0
+                interruption_turn_id += 1
+                runtime._interrupted_turn = {
+                    "interrupted_turn_id": interruption_turn_id,
+                    "user_text": str(user_text).strip()[:300],
+                    "spoken_text": str(getattr(runtime, "_last_response_spoken_text", "")).strip()[:500],
+                    "captured_at": time.time(),
+                    "response_prompt_text": str(response_prompt_text).strip()[:500],
+                }
+
             runtime._record_conversation_trace(
-                user_text=text,
+                user_text=user_text,
                 intent_class=intent_class,
                 turn_started_at=turn_started_at,
                 stt_latency_ms=stt_latency_ms,
                 llm_first_sentence_ms=llm_first_sentence_ms,
                 tts_first_audio_ms=tts_first_audio_ms,
                 response_success=response_success,
-                    tool_summaries=turn_tool_summaries,
-                    lifecycle="completed",
-                    used_brain_response=True,
-                    followup_carryover_applied=followup_carryover_applied,
-                    preference_updates=learned_preferences,
-                    multimodal_grounding=multimodal_grounding,
-                )
+                tool_summaries=turn_tool_summaries,
+                lifecycle="completed",
+                used_brain_response=True,
+                followup_carryover_applied=followup_carryover_applied,
+                preference_updates=learned_preferences,
+                multimodal_grounding=multimodal_grounding,
+                route_policy=(
+                    runtime.brain.latest_policy_route_trace()
+                    if hasattr(runtime.brain, "latest_policy_route_trace")
+                    else {}
+                ),
+                correction_outcome=(
+                    "resolved"
+                    if looks_like_correction and resolved is True
+                    else "unresolved"
+                    if looks_like_correction and resolved is False
+                    else "none"
+                ),
+                interruption_route=interruption_route,
+                continuation_from_turn_id=continuation_from_turn_id,
+            )
             if int(runtime._telemetry["turns"]) % TELEMETRY_LOG_EVERY_TURNS == 0:
                 runtime._refresh_tool_error_counters()
                 snapshot = runtime._telemetry_snapshot()
@@ -514,20 +798,49 @@ async def listen_loop(
             chunks.append(chunk_16k)
             if silence_start is None:
                 silence_start = time.monotonic()
-            elif time.monotonic() - silence_start > runtime._voice_controller().silence_timeout():
+            else:
+                silence_elapsed_sec = time.monotonic() - silence_start
+                if silence_elapsed_sec <= runtime._voice_controller().silence_timeout():
+                    runtime._publish_voice_status()
+                    return
                 audio = np.concatenate(chunks) if chunks else np.array([], dtype=np.float32)
+                if audio.size == 0:
+                    runtime.vad.reset()
+                    runtime.presence.signals.vad_energy = 0.0
+                    chunks = []
+                    silence_start = None
+                    recording = False
+                    return
+
+                duration = len(audio) / runtime.config.sample_rate
+                should_commit = True
+                if duration >= min_utterance:
+                    should_commit = await _semantic_turn_should_commit(
+                        runtime,
+                        audio=audio,
+                        assistant_busy=assistant_busy,
+                        silence_elapsed_sec=float(silence_elapsed_sec),
+                        utterance_duration_sec=float(duration),
+                    )
+                if duration >= min_utterance and not should_commit:
+                    extension_sec = float(
+                        getattr(runtime.config, "semantic_turn_extension_sec", 0.6) or 0.6
+                    )
+                    silence_start = time.monotonic()
+                    runtime._voice_controller().continue_listening(
+                        now=time.monotonic(),
+                        window_sec=extension_sec,
+                    )
+                    runtime.presence.signals.state = State.LISTENING
+                    runtime._publish_voice_status()
+                    return
 
                 runtime.vad.reset()
                 runtime.presence.signals.vad_energy = 0.0
                 chunks = []
                 silence_start = None
                 recording = False
-
-                if audio.size == 0:
-                    return
-
-                duration = len(audio) / runtime.config.sample_rate
-                if duration >= min_utterance:
+                if duration >= min_utterance and should_commit:
                     await runtime._enqueue_utterance(audio)
 
         runtime._publish_voice_status()
@@ -598,6 +911,8 @@ async def respond_and_speak(runtime: Any, text: str) -> None:
     runtime._first_audio_at = None
     runtime._response_start_at = time.monotonic()
     runtime._tts_gain = 1.0
+    spoken_sentences: list[str] = []
+    runtime._last_response_spoken_text = ""
 
     if runtime._filler_task is not None:
         runtime._filler_task.cancel()
@@ -641,10 +956,14 @@ async def respond_and_speak(runtime: Any, text: str) -> None:
                 )
             else:
                 print(f"  JARVIS: {sentence}")
+            spoken_sentences.append(sentence.strip())
 
     finally:
         with suppress(Exception):
             await response_iter.aclose()
+        runtime._last_response_spoken_text = " ".join(
+            sentence for sentence in spoken_sentences if sentence
+        ).strip()
         with runtime._lock:
             runtime._speaking = False
         if not runtime._barge_in.is_set():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import suppress
 from typing import Any
 
@@ -16,6 +17,23 @@ from jarvis.runtime_constants import (
 )
 from jarvis.tools import services as service_tools
 from jarvis.voice_attention import VALID_TIMEOUT_PROFILES, VALID_WAKE_MODES
+
+
+def _tool_json_payload(result: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    content = result.get("content")
+    if not isinstance(content, list) or not content:
+        return {}
+    first = content[0] if isinstance(content[0], dict) else {}
+    text = first.get("text")
+    if not isinstance(text, str):
+        return {}
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return {"raw_text": text}
+    return payload if isinstance(payload, dict) else {"value": payload}
 
 
 async def handle_operator_control(runtime: Any, action: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -336,6 +354,295 @@ async def handle_operator_control(runtime: Any, action: str, payload: dict[str, 
         result = await service_tools.webhook_inbound_clear({})
         text = result.get("content", [{}])[0].get("text", "")
         return {"ok": True, "message": text}
+    if command == "list_pending_approvals":
+        try:
+            limit = int(data.get("limit", 50))
+        except (TypeError, ValueError):
+            limit = 50
+        limit = max(1, min(200, limit))
+        result = await service_tools.home_orchestrator(
+            {"action": "approval_list", "status_filter": "pending", "limit": limit}
+        )
+        payload_data = _tool_json_payload(result)
+        return {
+            "ok": True,
+            "pending_count": int(payload_data.get("pending_count", 0) or 0),
+            "approvals": payload_data.get("approvals", []),
+            "status_counts": payload_data.get("status_counts", {}),
+        }
+    if command == "resolve_approval":
+        approval_id = str(data.get("approval_id", "")).strip().lower()
+        if not approval_id:
+            return {"ok": False, "error": "invalid_payload", "field": "approval_id", "expected": "non-empty string"}
+        approved = runtime._parse_control_bool(data.get("approved"))
+        if approved is None:
+            return {"ok": False, "error": "invalid_payload", "field": "approved", "expected": "boolean"}
+        notes = str(data.get("notes", "")).strip()
+        operator_identity = str(data.get("__operator_identity", "")).strip().lower()
+        resolver_id = operator_identity or "operator"
+        resolve_result = await service_tools.home_orchestrator(
+            {
+                "action": "approval_resolve",
+                "approval_id": approval_id,
+                "approved": approved,
+                "notes": notes,
+                "resolver_id": resolver_id,
+                "__operator_identity": resolver_id,
+            }
+        )
+        resolve_payload = _tool_json_payload(resolve_result)
+        execute_now = runtime._parse_control_bool(data.get("execute"))
+        execution_payload: dict[str, Any] | None = None
+        if bool(approved) and bool(execute_now):
+            execution_ticket = str(resolve_payload.get("execution_ticket", "")).strip()
+            step_up_token = str(resolve_payload.get("step_up_token", "")).strip()
+            if not execution_ticket:
+                return {
+                    "ok": False,
+                    "error": "execution_ticket_missing",
+                    "message": "approved execution requires execution_ticket from approval resolution",
+                    "approval": resolve_payload,
+                }
+            execute_result = await service_tools.home_orchestrator(
+                {
+                    "action": "execute",
+                    "approval_id": approval_id,
+                    "execution_ticket": execution_ticket,
+                    "resolver_id": resolver_id,
+                    "requester_id": resolver_id,
+                    "__operator_identity": resolver_id,
+                    "dry_run": False,
+                    "confirm": True,
+                    "step_up_token": step_up_token,
+                }
+            )
+            execution_payload = _tool_json_payload(execute_result)
+        return {
+            "ok": bool(resolve_payload.get("resolved", False)),
+            "approval": resolve_payload,
+            "execution": execution_payload,
+        }
+    if command == "dead_letter_status":
+        try:
+            limit = int(data.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+        limit = max(1, min(200, limit))
+        status_filter = str(data.get("status_filter", "open")).strip().lower() or "open"
+        result = await service_tools.dead_letter_list({"limit": limit, "status": status_filter})
+        payload_data = _tool_json_payload(result)
+        return {"ok": True, "dead_letter_queue": payload_data}
+    if command == "dead_letter_replay":
+        try:
+            limit = int(data.get("limit", 10))
+        except (TypeError, ValueError):
+            limit = 10
+        limit = max(1, min(50, limit))
+        status_filter = str(data.get("status_filter", "open")).strip().lower() or "open"
+        entry_id = str(data.get("entry_id", "")).strip()
+        args_payload: dict[str, Any] = {"limit": limit, "status": status_filter}
+        if entry_id:
+            args_payload["entry_id"] = entry_id
+        dry_run = runtime._parse_control_bool(data.get("dry_run"))
+        if isinstance(dry_run, bool):
+            args_payload["dry_run"] = dry_run
+        result = await service_tools.dead_letter_replay(args_payload)
+        payload_data = _tool_json_payload(result)
+        ok = int(payload_data.get("failed_count", 0) or 0) == 0
+        return {"ok": ok, "dead_letter_replay": payload_data}
+    if command == "list_autonomy_replans":
+        try:
+            limit = int(data.get("limit", 50))
+        except (TypeError, ValueError):
+            limit = 50
+        limit = max(1, min(200, limit))
+        result = await service_tools.planner_engine({"action": "autonomy_status"})
+        payload_data = _tool_json_payload(result)
+        rows = payload_data.get("task_progress")
+        task_rows = rows if isinstance(rows, list) else []
+        replans = [
+            row
+            for row in task_rows
+            if isinstance(row, dict)
+            and (
+                bool(row.get("needs_replan", False))
+                or str(row.get("status", "")).strip().lower() == "needs_replan"
+            )
+        ][:limit]
+        draft_payload: dict[str, Any] = {}
+        try:
+            draft_result = await service_tools.planner_engine(
+                {"action": "autonomy_replan_list", "limit": limit}
+            )
+            draft_payload = _tool_json_payload(draft_result)
+        except Exception:
+            draft_payload = {}
+        return {
+            "ok": True,
+            "needs_replan_count": int(payload_data.get("needs_replan_count", 0) or 0),
+            "retry_pending_count": int(payload_data.get("retry_pending_count", 0) or 0),
+            "failure_taxonomy": (
+                payload_data.get("failure_taxonomy")
+                if isinstance(payload_data.get("failure_taxonomy"), dict)
+                else {}
+            ),
+            "tasks": replans,
+            "draft_count": int(draft_payload.get("draft_count", 0) or 0),
+            "drafts": draft_payload.get("drafts", []) if isinstance(draft_payload.get("drafts"), list) else [],
+        }
+    if command == "apply_autonomy_replan":
+        task_id = str(data.get("task_id", "")).strip()
+        if not task_id:
+            return {"ok": False, "error": "invalid_payload", "field": "task_id", "expected": "non-empty string"}
+        operator_identity = str(data.get("__operator_identity", "")).strip().lower()
+        resolver_id = operator_identity or str(data.get("resolver_id", "")).strip().lower() or "operator"
+        args_payload: dict[str, Any] = {
+            "action": "autonomy_replan",
+            "task_id": task_id,
+            "resolver_id": resolver_id,
+            "notes": str(data.get("notes", "")).strip(),
+        }
+        draft_id = str(data.get("draft_id", "")).strip().lower()
+        if draft_id:
+            args_payload["draft_id"] = draft_id
+        if "execute_at" in data:
+            try:
+                args_payload["execute_at"] = float(data.get("execute_at"))
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "invalid_payload", "field": "execute_at", "expected": "number"}
+        if "reset_progress" in data:
+            reset_progress = runtime._parse_control_bool(data.get("reset_progress"))
+            if reset_progress is None:
+                return {"ok": False, "error": "invalid_payload", "field": "reset_progress", "expected": "boolean"}
+            args_payload["reset_progress"] = reset_progress
+        if "plan_steps" in data:
+            plan_steps = data.get("plan_steps")
+            if not isinstance(plan_steps, list):
+                return {"ok": False, "error": "invalid_payload", "field": "plan_steps", "expected": "array"}
+            args_payload["plan_steps"] = plan_steps
+        if "step_contracts" in data:
+            step_contracts = data.get("step_contracts")
+            if not isinstance(step_contracts, list):
+                return {"ok": False, "error": "invalid_payload", "field": "step_contracts", "expected": "array"}
+            if not all(isinstance(item, dict) for item in step_contracts):
+                return {
+                    "ok": False,
+                    "error": "invalid_payload",
+                    "field": "step_contracts",
+                    "expected": "array<object>",
+                }
+            args_payload["step_contracts"] = step_contracts
+        result = await service_tools.planner_engine(args_payload)
+        payload_data = _tool_json_payload(result)
+        ok = str(payload_data.get("action", "")).strip().lower() == "autonomy_replan"
+        if not ok and "raw_text" in payload_data:
+            return {
+                "ok": False,
+                "error": "autonomy_replan_failed",
+                "message": str(payload_data.get("raw_text", "")).strip(),
+                "autonomy_replan": payload_data,
+            }
+        return {"ok": ok, "autonomy_replan": payload_data}
+    if command == "copilot_actions":
+        status_result = await service_tools.system_status({})
+        status_payload = _tool_json_payload(status_result)
+        expansion = status_payload.get("expansion") if isinstance(status_payload.get("expansion"), dict) else {}
+        proactive = expansion.get("proactive") if isinstance(expansion.get("proactive"), dict) else {}
+        planner = expansion.get("planner_engine") if isinstance(expansion.get("planner_engine"), dict) else {}
+        dead_letter = (
+            status_payload.get("dead_letter_queue")
+            if isinstance(status_payload.get("dead_letter_queue"), dict)
+            else {}
+        )
+        suggestions: list[dict[str, Any]] = []
+        if int(proactive.get("approval_pending_count", 0) or 0) > 0:
+            suggestions.append(
+                {
+                    "action_id": "pending_approvals",
+                    "severity": "high",
+                    "title": "Review pending approvals",
+                    "command": "list_pending_approvals",
+                    "payload": {"limit": 25},
+                }
+            )
+        if int(planner.get("autonomy_needs_replan_count", 0) or 0) > 0:
+            suggestions.append(
+                {
+                    "action_id": "autonomy_replans",
+                    "severity": "high",
+                    "title": "Review autonomy replans",
+                    "command": "list_autonomy_replans",
+                    "payload": {"limit": 50},
+                }
+            )
+        if int(dead_letter.get("pending_count", 0) or 0) > 0:
+            suggestions.append(
+                {
+                    "action_id": "dead_letter_replay_dry_run",
+                    "severity": "medium",
+                    "title": "Dry-run dead-letter replay",
+                    "command": "dead_letter_replay",
+                    "payload": {"status_filter": "open", "limit": 10, "dry_run": True},
+                }
+            )
+        slo = planner.get("autonomy_slo") if isinstance(planner.get("autonomy_slo"), dict) else {}
+        if int(slo.get("alert_count", 0) or 0) > 0:
+            suggestions.append(
+                {
+                    "action_id": "autonomy_slo_alerts",
+                    "severity": "high",
+                    "title": "Inspect autonomy SLO alerts",
+                    "command": "list_autonomy_replans",
+                    "payload": {"limit": 50},
+                }
+            )
+        if not suggestions:
+            suggestions.append(
+                {
+                    "action_id": "healthy",
+                    "severity": "low",
+                    "title": "No urgent copilot actions",
+                    "command": "system_status",
+                    "payload": {},
+                }
+            )
+        return {"ok": True, "actions": suggestions}
+    if command == "copilot_execute":
+        action_id = str(data.get("action_id", "")).strip().lower()
+        if not action_id:
+            return {"ok": False, "error": "invalid_payload", "field": "action_id", "expected": "non-empty string"}
+        suggestions = await handle_operator_control(runtime, "copilot_actions", {})
+        rows = suggestions.get("actions") if isinstance(suggestions, dict) else []
+        if not isinstance(rows, list):
+            rows = []
+        selected = next(
+            (
+                row
+                for row in rows
+                if isinstance(row, dict) and str(row.get("action_id", "")).strip().lower() == action_id
+            ),
+            None,
+        )
+        if not isinstance(selected, dict):
+            return {"ok": False, "error": "not_found", "message": f"Unknown copilot action_id: {action_id}"}
+        target_command = str(selected.get("command", "")).strip().lower()
+        payload_override = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+        target_payload = dict(selected.get("payload", {})) if isinstance(selected.get("payload"), dict) else {}
+        target_payload.update(payload_override)
+        if target_command == "system_status":
+            status_result = await service_tools.system_status({})
+            return {"ok": True, "result": _tool_json_payload(status_result)}
+        if target_command == "list_pending_approvals":
+            return await handle_operator_control(runtime, "list_pending_approvals", target_payload)
+        if target_command == "list_autonomy_replans":
+            return await handle_operator_control(runtime, "list_autonomy_replans", target_payload)
+        if target_command == "dead_letter_replay":
+            return await handle_operator_control(runtime, "dead_letter_replay", target_payload)
+        return {
+            "ok": False,
+            "error": "unsupported_action",
+            "message": f"Copilot action '{target_command}' is not executable.",
+        }
     if command == "skills_reload":
         runtime._skills.discover()
         runtime._publish_skills_status()

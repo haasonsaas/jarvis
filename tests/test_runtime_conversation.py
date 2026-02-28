@@ -5,10 +5,11 @@ import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
 from jarvis.presence import State
-from jarvis.runtime_conversation import respond_and_speak
+from jarvis.runtime_conversation import _semantic_turn_should_commit, respond_and_speak
 
 
 @pytest.mark.asyncio
@@ -96,3 +97,60 @@ async def test_respond_and_speak_honors_barge_in_mid_stream() -> None:
     assert queued[1] == "First sentence"
     runtime._flush_output.assert_called_once()
     runtime.robot.stop_sequence.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_semantic_turn_should_commit_returns_true_when_disabled() -> None:
+    runtime = SimpleNamespace(
+        config=SimpleNamespace(semantic_turn_enabled=False),
+        _telemetry={},
+    )
+    decision = await _semantic_turn_should_commit(
+        runtime,
+        audio=np.ones(32, dtype=np.float32),
+        assistant_busy=False,
+        silence_elapsed_sec=0.9,
+        utterance_duration_sec=1.2,
+    )
+    assert decision is True
+
+
+@pytest.mark.asyncio
+async def test_semantic_turn_should_commit_respects_brain_wait_decision() -> None:
+    class _Brain:
+        async def semantic_turn_decision(self, **_kwargs):
+            return SimpleNamespace(action="wait", route_confidence=0.9)
+
+        def latest_semantic_turn_trace(self):
+            return {
+                "action": "wait",
+                "route_confidence": 0.9,
+                "route_source": "router",
+            }
+
+    runtime = SimpleNamespace(
+        config=SimpleNamespace(
+            semantic_turn_enabled=True,
+            semantic_turn_max_transcript_chars=220,
+        ),
+        brain=_Brain(),
+        _transcribe_with_fallback=lambda _audio: "turn on the office and",
+        _telemetry={
+            "semantic_turn_decisions_total": 0.0,
+            "semantic_turn_waits": 0.0,
+            "semantic_turn_commits": 0.0,
+            "semantic_turn_fallbacks": 0.0,
+        },
+        _last_semantic_turn_route={},
+    )
+    decision = await _semantic_turn_should_commit(
+        runtime,
+        audio=np.ones(32, dtype=np.float32),
+        assistant_busy=False,
+        silence_elapsed_sec=0.85,
+        utterance_duration_sec=1.15,
+    )
+    assert decision is False
+    assert runtime._telemetry["semantic_turn_decisions_total"] == 1.0
+    assert runtime._telemetry["semantic_turn_waits"] == 1.0
+    assert runtime._last_semantic_turn_route["action"] == "wait"

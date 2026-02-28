@@ -30,6 +30,7 @@ def expansion_state_payload(services_module: Any) -> dict[str, Any]:
         "version": 1,
         "saved_at": time.time(),
         "proactive_state": s._json_safe_clone(s._proactive_state),
+        "policy_engine": s._json_safe_clone(s._policy_engine),
         "memory_partition_overlays": s._json_safe_clone(s._memory_partition_overlays),
         "memory_quality_last": s._json_safe_clone(s._memory_quality_last),
         "identity_trust_policies": s._json_safe_clone(s._identity_trust_policies),
@@ -50,6 +51,11 @@ def expansion_state_payload(services_module: Any) -> dict[str, Any]:
         "autonomy_cycle_history": s._json_safe_clone(
             s._autonomy_cycle_history[-s.AUTONOMY_CYCLE_HISTORY_MAX :]
         ),
+        "autonomy_replan_drafts": s._json_safe_clone(s._autonomy_replan_drafts),
+        "world_model_state": s._json_safe_clone(s._world_model_state),
+        "goal_stack": s._json_safe_clone(s._goal_stack[-s.GOAL_STACK_MAX :]),
+        "identity_step_up_tokens": s._json_safe_clone(s._identity_step_up_tokens),
+        "autonomy_slo_state": s._json_safe_clone(s._autonomy_slo_state),
         "quality_reports": s._json_safe_clone(s._quality_reports[-s.CACHED_QUALITY_REPORT_MAX :]),
         "micro_expression_library": s._json_safe_clone(s._micro_expression_library),
         "gaze_calibrations": s._json_safe_clone(s._gaze_calibrations),
@@ -69,4 +75,3 @@ def persist_expansion_state(services_module: Any) -> None:
         path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     except OSError:
         s.log.warning("Failed to persist expansion state", exc_info=True)
-

@@ -187,6 +187,9 @@ def load_runtime_state(
                 "episode_id": safe_int(item.get("episode_id", 0), 0),
                 "timestamp": safe_float(item.get("timestamp", 0.0), 0.0),
                 "turn_id": safe_int(item.get("turn_id", 0), 0),
+                "conversation_id": str(item.get("conversation_id", "")).strip()[:120],
+                "parent_turn_id": max(0, safe_int(item.get("parent_turn_id", 0), 0))
+                or None,
                 "intent": str(item.get("intent", "unknown")),
                 "lifecycle": str(item.get("lifecycle", "unknown")),
                 "summary": str(item.get("summary", "")).strip()[:240],

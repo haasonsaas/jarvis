@@ -76,7 +76,7 @@ SERVICE_TOOL_SCHEMAS_ADVANCED: dict[str, dict[str, Any]] = {
             "action": {
                 "type": "string",
                 "description": (
-                    "plan | execute | area_policy_set | area_policy_list | automation_suggest | "
+                    "plan | execute | approval_list | approval_resolve | area_policy_set | area_policy_list | automation_suggest | "
                     "automation_create | automation_apply | automation_rollback | automation_status | "
                     "task_start | task_update | task_list"
                 ),
@@ -99,6 +99,12 @@ SERVICE_TOOL_SCHEMAS_ADVANCED: dict[str, dict[str, Any]] = {
             "dry_run": {"type": "boolean"},
             "confirm": {"type": "boolean"},
             "ha_apply": {"type": "boolean"},
+            "approval_id": {"type": "string"},
+            "execution_ticket": {"type": "string"},
+            "resolver_id": {"type": "string"},
+            "approved": {"type": "boolean"},
+            "limit": {"type": "integer"},
+            "status_filter": {"type": "string"},
         },
         "required": ["action"],
     },
@@ -126,7 +132,8 @@ SERVICE_TOOL_SCHEMAS_ADVANCED: dict[str, dict[str, Any]] = {
                 "description": (
                     "plan | task_graph_create | task_graph_update | task_graph_resume | deferred_schedule | "
                     "deferred_list | self_critique | autonomy_schedule | autonomy_checkpoint | "
-                    "autonomy_cycle | autonomy_status"
+                    "autonomy_replan | autonomy_replan_list | autonomy_cycle | autonomy_status | "
+                    "goal_push | goal_pop | goal_list | goal_update"
                 ),
             },
             "goal": {"type": "string"},
@@ -146,6 +153,21 @@ SERVICE_TOOL_SCHEMAS_ADVANCED: dict[str, dict[str, Any]] = {
             "approved_checkpoints": {"type": "array", "items": {"type": "string"}},
             "recurrence_sec": {"type": "number"},
             "now": {"type": "number"},
+            "plan_steps": {"type": "array", "items": {"type": "string"}},
+            "step_contracts": {"type": "array", "items": {"type": "object"}},
+            "step_cadence_sec": {"type": "number"},
+            "max_steps_per_task": {"type": "integer"},
+            "max_step_retries": {"type": "integer"},
+            "retry_backoff_sec": {"type": "number"},
+            "runtime_state": {"type": "object"},
+            "ha_entities": {"type": "array", "items": {"type": "string"}},
+            "task_id": {"type": "string"},
+            "draft_id": {"type": "string"},
+            "reset_progress": {"type": "boolean"},
+            "notes": {"type": "string"},
+            "resolver_id": {"type": "string"},
+            "goal_id": {"type": "string"},
+            "priority": {"type": "integer"},
         },
         "required": ["action"],
     },

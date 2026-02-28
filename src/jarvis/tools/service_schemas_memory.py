@@ -19,6 +19,18 @@ SERVICE_TOOL_SCHEMAS_MEMORY: dict[str, dict[str, Any]] = {
             "sensitivity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "source": {"type": "string"},
             "allow_pii": {"type": "boolean"},
+            "inspect_candidate": {
+                "type": "boolean",
+                "description": "Run pre-write duplicate/contradiction candidate checks before storing.",
+            },
+            "resolve_conflicts": {
+                "type": "boolean",
+                "description": "Use LLM conflict resolution against duplicate/contradiction candidates before storing.",
+            },
+            "conflict_resolution_model": {
+                "type": "string",
+                "description": "Optional model override for memory conflict resolution.",
+            },
         },
         "required": ["text"],
     },

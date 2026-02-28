@@ -1,4 +1,4 @@
-"""Claude Agent SDK custom tools for Reachy Mini robot control.
+"""OpenAI Agents custom tools for Reachy Mini robot control.
 
 Instead of calling raw emotion names, the LLM outputs an "embodiment plan"
 with intent, prosody, and motion primitives. The renderer maps these to
@@ -12,8 +12,8 @@ import logging
 import math
 from typing import Any, TYPE_CHECKING
 
-from claude_agent_sdk import tool, create_sdk_mcp_server
 from jarvis.tool_policy import is_tool_allowed
+from jarvis.tools.openai_tooling import build_function_tool
 
 if TYPE_CHECKING:
     from jarvis.robot.controller import RobotController
@@ -323,72 +323,61 @@ async def run_macro(args: dict[str, Any]) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": f"Macro queued: {name}"}]}
 
 
-# ── Tool objects (kept separate so the underlying Python functions stay callable in tests) ──
-
-embody_tool = tool(
-    "embody",
-    "Express physical behavior. Call this alongside your verbal response to control "
-    "how Jarvis physically behaves while speaking. This is NOT for emotions library "
-    "playback — it sets continuous parameters for the presence loop.",
-    ROBOT_TOOL_SCHEMAS["embody"],
-)(embody)
-
-
-play_emotion_tool = tool(
-    "play_emotion",
-    "Play a pre-recorded emotion animation from the library. Use this for strong, "
-    "specific emotional moments (celebration, surprise) — not for subtle conversational cues.",
-    ROBOT_TOOL_SCHEMAS["play_emotion"],
-)(play_emotion)
-
-
-play_dance_tool = tool(
-    "play_dance",
-    "Play a pre-recorded dance. Use when the user asks for entertainment or celebration.",
-    ROBOT_TOOL_SCHEMAS["play_dance"],
-)(play_dance)
-
-
-list_animations_tool = tool(
-    "list_animations",
-    "List available emotions and dances.",
-    ROBOT_TOOL_SCHEMAS["list_animations"],
-)(list_animations)
-
-
-run_sequence_tool = tool(
-    "run_sequence",
-    "Run a short motion sequence (head/body/antennas/emotion/dance/pause).",
-    ROBOT_TOOL_SCHEMAS["run_sequence"],
-)(run_sequence)
-
-stop_motion_tool = tool(
-    "stop_motion",
-    "Stop any active motion sequence.",
-    ROBOT_TOOL_SCHEMAS["stop_motion"],
-)(stop_motion)
-
-
-run_macro_tool = tool(
-    "run_macro",
-    "Run a named gesture macro (acknowledge, affirm, curious, shrug).",
-    ROBOT_TOOL_SCHEMAS["run_macro"],
-)(run_macro)
-
-
-# ── Build MCP server ──────────────────────────────────────────
-
 def create_robot_server():
-    return create_sdk_mcp_server(
-        name="jarvis-robot",
-        version="0.1.0",
-        tools=[
-            embody_tool,
-            play_emotion_tool,
-            play_dance_tool,
-            list_animations_tool,
-            run_sequence_tool,
-            run_macro_tool,
-            stop_motion_tool,
-        ],
-    )
+    """Compatibility constructor returning OpenAI function tools."""
+    tool_specs = [
+        (
+            "embody",
+            "Express physical behavior. Call this alongside your verbal response to control "
+            "how Jarvis physically behaves while speaking. This is NOT for emotions library "
+            "playback — it sets continuous parameters for the presence loop.",
+            ROBOT_TOOL_SCHEMAS["embody"],
+            embody,
+        ),
+        (
+            "play_emotion",
+            "Play a pre-recorded emotion animation from the library. Use this for strong, "
+            "specific emotional moments (celebration, surprise) — not for subtle conversational cues.",
+            ROBOT_TOOL_SCHEMAS["play_emotion"],
+            play_emotion,
+        ),
+        (
+            "play_dance",
+            "Play a pre-recorded dance. Use when the user asks for entertainment or celebration.",
+            ROBOT_TOOL_SCHEMAS["play_dance"],
+            play_dance,
+        ),
+        (
+            "list_animations",
+            "List available emotions and dances.",
+            ROBOT_TOOL_SCHEMAS["list_animations"],
+            list_animations,
+        ),
+        (
+            "run_sequence",
+            "Run a short motion sequence (head/body/antennas/emotion/dance/pause).",
+            ROBOT_TOOL_SCHEMAS["run_sequence"],
+            run_sequence,
+        ),
+        (
+            "run_macro",
+            "Run a named gesture macro (acknowledge, affirm, curious, shrug).",
+            ROBOT_TOOL_SCHEMAS["run_macro"],
+            run_macro,
+        ),
+        (
+            "stop_motion",
+            "Stop any active motion sequence.",
+            ROBOT_TOOL_SCHEMAS["stop_motion"],
+            stop_motion,
+        ),
+    ]
+    return [
+        build_function_tool(
+            name=name,
+            description=description,
+            schema=schema,
+            handler=handler,
+        )
+        for name, description, schema, handler in tool_specs
+    ]
