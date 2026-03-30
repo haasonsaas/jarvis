@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jarvis Control Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Reachy Mini App</p>
+        <h1>Jarvis Control Deck</h1>
+        <p class="lede">
+          Watch runtime health, adjust live behavior, and stop the app without leaving the Reachy dashboard.
+        </p>
+      </div>
+      <div class="hero-actions">
+        <button class="primary" id="refresh">Refresh Status</button>
+        <button class="danger" id="stop-app">Stop App</button>
+      </div>
+    </section>
+
+    <section class="status-grid">
+      <article class="panel">
+        <p class="label">Health</p>
+        <h2 id="health-level">Loading</h2>
+        <p id="health-detail" class="detail">Waiting for Jarvis runtime...</p>
+      </article>
+      <article class="panel">
+        <p class="label">Wake Mode</p>
+        <h2 id="wake-mode">Loading</h2>
+        <p id="sleep-state" class="detail">...</p>
+      </article>
+      <article class="panel">
+        <p class="label">Voice Profile</p>
+        <h2 id="persona-style">Loading</h2>
+        <p id="backchannel-style" class="detail">...</p>
+      </article>
+      <article class="panel">
+        <p class="label">Live Flags</p>
+        <h2 id="feature-flags">Loading</h2>
+        <p id="operator-mode" class="detail">...</p>
+      </article>
+    </section>
+
+    <section class="controls">
+      <article class="panel">
+        <div class="panel-head">
+          <h3>Wake Controls</h3>
+          <p>Swap attention behavior live.</p>
+        </div>
+        <div class="button-row">
+          <button data-action="set_wake_mode" data-payload='{"mode":"always_listening"}'>Always Listening</button>
+          <button data-action="set_wake_mode" data-payload='{"mode":"wake_word"}'>Wake Word</button>
+          <button data-action="set_wake_mode" data-payload='{"mode":"push_to_talk"}'>Push-to-Talk</button>
+          <button data-action="set_sleeping" data-payload='{"sleeping":true}'>Sleep</button>
+          <button data-action="set_sleeping" data-payload='{"sleeping":false}'>Wake</button>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h3>Personality</h3>
+          <p>Adjust tone and backchanneling.</p>
+        </div>
+        <div class="button-row">
+          <button data-action="set_persona_style" data-payload='{"style":"jarvis"}'>Jarvis</button>
+          <button data-action="set_persona_style" data-payload='{"style":"composed"}'>Composed</button>
+          <button data-action="set_persona_style" data-payload='{"style":"friendly"}'>Friendly</button>
+          <button data-action="set_persona_style" data-payload='{"style":"terse"}'>Terse</button>
+          <button data-action="set_backchannel_style" data-payload='{"style":"quiet"}'>Quiet Backchannel</button>
+          <button data-action="set_backchannel_style" data-payload='{"style":"balanced"}'>Balanced Backchannel</button>
+          <button data-action="set_backchannel_style" data-payload='{"style":"expressive"}'>Expressive Backchannel</button>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h3>Runtime Flags</h3>
+          <p>Turn subsystems on and off safely.</p>
+        </div>
+        <div class="button-row">
+          <button data-action="set_motion_enabled" data-payload='{"enabled":true}'>Motion On</button>
+          <button data-action="set_motion_enabled" data-payload='{"enabled":false}'>Motion Off</button>
+          <button data-action="set_tts_enabled" data-payload='{"enabled":true}'>TTS On</button>
+          <button data-action="set_tts_enabled" data-payload='{"enabled":false}'>TTS Off</button>
+          <button data-action="set_home_enabled" data-payload='{"enabled":true}'>Home Tools On</button>
+          <button data-action="set_home_enabled" data-payload='{"enabled":false}'>Home Tools Off</button>
+        </div>
+      </article>
+    </section>
+
+    <section class="logs">
+      <article class="panel">
+        <div class="panel-head">
+          <h3>Control Result</h3>
+          <p>Latest response from the runtime control API.</p>
+        </div>
+        <pre id="control-result">No commands sent yet.</pre>
+      </article>
+      <article class="panel">
+        <div class="panel-head">
+          <h3>Status Payload</h3>
+          <p>Raw status for debugging and support.</p>
+        </div>
+        <pre id="status-json">Loading...</pre>
+      </article>
+      <article class="panel">
+        <div class="panel-head">
+          <h3>Available Actions</h3>
+          <p>Control schema exposed by the running app.</p>
+        </div>
+        <pre id="schema-json">Loading...</pre>
+      </article>
+    </section>
+  </main>
+
+  <script src="/static/main.js" defer></script>
+</body>
+</html>

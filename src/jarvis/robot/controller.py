@@ -72,6 +72,7 @@ class RobotController:
         self._emotions: RecordedMoves | None = None
         self._dances: RecordedMoves | None = None
         self._connected = False
+        self._owns_connection = False
 
         self._recording_started = False
         self._playing_started = False
@@ -86,7 +87,31 @@ class RobotController:
     def connected(self) -> bool:
         return self._connected
 
+    def _load_motion_libraries(self) -> None:
+        # Best-effort preload of shared move assets for motion macros.
+        try:
+            self._emotions = RecordedMoves(EMOTIONS_REPO)
+            log.info("Loaded emotions library")
+        except Exception as e:
+            log.warning("Could not load emotions library: %s", e)
+
+        try:
+            self._dances = RecordedMoves(DANCES_REPO)
+            log.info("Loaded dances library")
+        except Exception as e:
+            log.warning("Could not load dances library: %s", e)
+
+    def attach(self, mini: ReachyMini, *, owns_connection: bool = False) -> None:
+        """Bind an already-open Reachy Mini instance to this controller."""
+        self._mini = mini
+        self._sim = False
+        self._connected = True
+        self._owns_connection = owns_connection
+        self._load_motion_libraries()
+
     def connect(self) -> None:
+        if self._connected and self._mini is not None:
+            return
         if self._sim:
             log.info("Running in simulation mode — no robot connected")
             return
@@ -116,38 +141,31 @@ class RobotController:
 
             self._mini.__enter__()
             self._connected = True
+            self._owns_connection = True
             log.info("Connected to Reachy Mini")
         except Exception as e:
             log.error("Failed to connect to Reachy Mini: %s", e)
             log.info("Falling back to simulation mode")
             self._mini = None
             self._sim = True
+            self._owns_connection = False
             return
 
-        # Pre-load emotion and dance libraries
-        try:
-            self._emotions = RecordedMoves(EMOTIONS_REPO)
-            log.info("Loaded emotions library")
-        except Exception as e:
-            log.warning("Could not load emotions library: %s", e)
-
-        try:
-            self._dances = RecordedMoves(DANCES_REPO)
-            log.info("Loaded dances library")
-        except Exception as e:
-            log.warning("Could not load dances library: %s", e)
+        self._load_motion_libraries()
 
     def disconnect(self) -> None:
         if self._mini and self._connected:
             try:
                 self.stop_sequence()
                 self.stop_audio(recording=True, playing=True)
-                self._mini.__exit__(None, None, None)
+                if self._owns_connection:
+                    self._mini.__exit__(None, None, None)
             except Exception as e:
                 log.warning("Error during disconnect: %s", e)
             finally:
                 self._mini = None
                 self._connected = False
+                self._owns_connection = False
                 log.info("Disconnected from Reachy Mini")
 
     def stop_sequence(self) -> None:

@@ -1,3 +1,16 @@
+---
+title: Jarvis
+emoji: "🤖"
+colorFrom: orange
+colorTo: blue
+sdk: static
+pinned: false
+short_description: Low-latency embodied voice assistant for Reachy Mini.
+tags:
+ - reachy_mini
+ - reachy_mini_python_app
+---
+
 # Jarvis — AI Assistant on Reachy Mini
 
 An embodied AI assistant inspired by Jarvis from Iron Man, running on the

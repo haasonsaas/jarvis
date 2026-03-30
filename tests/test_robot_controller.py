@@ -97,6 +97,17 @@ class TestRobotControllerReal:
         mock_mini.__exit__.assert_called_once_with(None, None, None)
         assert rc._connected is False
 
+    @patch("jarvis.robot.controller.RecordedMoves")
+    def test_disconnect_does_not_close_externally_owned_connection(self, mock_moves_cls):
+        mock_mini = MagicMock()
+
+        rc = RobotController(sim=False)
+        rc.attach(mock_mini, owns_connection=False)
+        rc.disconnect()
+
+        mock_mini.__exit__.assert_not_called()
+        assert rc._connected is False
+
     @patch("jarvis.robot.controller.ReachyMini")
     @patch("jarvis.robot.controller.RecordedMoves")
     def test_run_sequence_calls_goto_target(self, mock_moves_cls, mock_mini_cls):

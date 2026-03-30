@@ -2,6 +2,7 @@
 name = "jarvis"
 version = "0.1.0"
 description = "Jarvis AI assistant on Reachy Mini"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "reachy-mini>=0.1.0",
@@ -19,6 +20,10 @@ dependencies = [
     "openai-agents>=0.10.2",
     "openai>=2.24.0",
 ]
+keywords = ["reachy-mini-app", "robotics", "voice-assistant"]
+
+[project.entry-points."reachy_mini_apps"]
+jarvis = "jarvis.main:Jarvis"
 
 [project.optional-dependencies]
 wireless = ["reachy-mini[wireless]"]

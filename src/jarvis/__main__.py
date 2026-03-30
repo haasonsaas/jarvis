@@ -244,8 +244,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 class Jarvis:
     """Main application orchestrating all subsystems."""
 
-    def __init__(self, args: argparse.Namespace):
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        *,
+        reachy_mini: Any | None = None,
+        operator_server_enabled: bool | None = None,
+    ):
         self.config = Config()
+        if operator_server_enabled is not None:
+            self.config.operator_server_enabled = bool(operator_server_enabled)
         self.args = args
 
         # Robot
@@ -256,6 +264,8 @@ class Jarvis:
             media_backend=self.config.reachy_media_backend,
             automatic_body_yaw=self.config.reachy_automatic_body_yaw,
         )
+        if reachy_mini is not None:
+            self.robot.attach(reachy_mini, owns_connection=False)
 
         # Presence loop (the soul)
         self.presence = PresenceLoop(self.robot)
