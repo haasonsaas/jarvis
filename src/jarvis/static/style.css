@@ -173,6 +173,12 @@ pre {
   line-height: 1.45;
 }
 
+#readiness-summary,
+#startup-diagnostics,
+#capabilities-json {
+  min-height: 140px;
+}
+
 @media (max-width: 1080px) {
   .status-grid,
   .controls,

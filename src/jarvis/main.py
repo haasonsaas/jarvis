@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import suppress
+import importlib.util
 import threading
 from typing import Any
 
@@ -59,11 +60,19 @@ class Jarvis(ReachyMiniApp):
         @self.settings_app.get("/api/status")
         async def status() -> dict[str, Any]:
             runtime = self._runtime
+            readiness_state = self._readiness_state(runtime)
             if runtime is None:
                 return {
                     "ok": False,
-                    "state": "starting" if not self.stop_event.is_set() else "stopping",
+                    "state": readiness_state,
                     "message": "Jarvis runtime is not ready.",
+                    "app_readiness": {
+                        "state": readiness_state,
+                        "summary_lines": [],
+                        "diagnostics": [],
+                        "blockers": [],
+                        "capabilities": self._capability_snapshot(None),
+                    },
                 }
             payload = self._run_on_runtime_loop(
                 runtime._operator_status_provider(),
@@ -71,6 +80,19 @@ class Jarvis(ReachyMiniApp):
             )
             if not isinstance(payload, dict):
                 return {"ok": False, "message": "Invalid runtime status payload."}
+            blockers = runtime._startup_blockers()
+            diagnostics = runtime._startup_diagnostics_provider()
+            payload["app_readiness"] = {
+                "state": self._readiness_state(
+                    runtime,
+                    blockers=blockers,
+                    diagnostics=diagnostics,
+                ),
+                "summary_lines": runtime._startup_summary_lines(),
+                "diagnostics": diagnostics,
+                "blockers": blockers,
+                "capabilities": self._capability_snapshot(runtime),
+            }
             payload["ok"] = True
             return payload
 
@@ -103,6 +125,46 @@ class Jarvis(ReachyMiniApp):
             raise
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    def _readiness_state(
+        self,
+        runtime: JarvisRuntime | None,
+        *,
+        blockers: list[str] | None = None,
+        diagnostics: list[str] | None = None,
+    ) -> str:
+        if runtime is None:
+            return "stopping" if self.stop_event.is_set() else "starting"
+        if self.stop_event.is_set():
+            return "stopping"
+        if blockers is None:
+            blockers = runtime._startup_blockers()
+        if blockers:
+            return "blocked"
+        if diagnostics is None:
+            diagnostics = runtime._startup_diagnostics_provider()
+        if diagnostics:
+            return "degraded"
+        return "running"
+
+    def _capability_snapshot(self, runtime: JarvisRuntime | None) -> dict[str, Any]:
+        config = getattr(runtime, "config", None)
+        args = getattr(runtime, "args", None)
+        return {
+            "vision_stack_available": importlib.util.find_spec("ultralytics") is not None,
+            "local_audio_stack_available": importlib.util.find_spec("sounddevice") is not None,
+            "tts_configured": bool(getattr(config, "elevenlabs_api_key", "")) if config is not None else False,
+            "tts_runtime_enabled": bool(getattr(runtime, "tts", None)) if runtime is not None else False,
+            "vision_requested": not bool(getattr(args, "no_vision", False)) if args is not None else False,
+            "hand_tracking_requested": bool(getattr(config, "hand_track_enabled", False)) if config is not None else False,
+            "motion_enabled": bool(getattr(config, "motion_enabled", False)) if config is not None else False,
+            "home_enabled": bool(getattr(config, "home_enabled", False)) if config is not None else False,
+            "operator_server_embedded": False,
+            "settings_ui_available": self.settings_app is not None,
+            "space_url": "https://huggingface.co/spaces/EvalOps/jarvis",
+            "release_notes_path": "CHANGELOG.md",
+            "smoke_test_runbook": "docs/operations/reachy-app-smoke-test.md",
+        }
 
     def run(self, reachy_mini: ReachyMini, stop_event: threading.Event) -> None:
         args = parse_args([])

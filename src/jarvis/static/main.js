@@ -1,6 +1,9 @@
 const statusJson = document.getElementById("status-json");
 const schemaJson = document.getElementById("schema-json");
 const controlResult = document.getElementById("control-result");
+const readinessSummary = document.getElementById("readiness-summary");
+const startupDiagnostics = document.getElementById("startup-diagnostics");
+const capabilitiesJson = document.getElementById("capabilities-json");
 
 const healthLevel = document.getElementById("health-level");
 const healthDetail = document.getElementById("health-detail");
@@ -36,6 +39,7 @@ function summarizeStatus(payload) {
   const operator = payload.operator || {};
   const controls = payload.operator_controls || {};
   const runtimeProfile = controls.runtime_profile || {};
+  const readiness = payload.app_readiness || {};
 
   healthLevel.textContent = statusLine(health.health_level, "Unknown");
   healthDetail.textContent = Array.isArray(health.reasons) && health.reasons.length
@@ -55,6 +59,19 @@ function summarizeStatus(payload) {
   ];
   featureFlags.textContent = flags.join(" | ");
   operatorMode.textContent = `operator auth=${statusLine(operator.auth_mode, "n/a")} | enabled=${statusLine(operator.enabled, "n/a")}`;
+
+  const summaryLines = Array.isArray(readiness.summary_lines) ? readiness.summary_lines : [];
+  readinessSummary.textContent = summaryLines.length
+    ? summaryLines.join("\n")
+    : "No readiness summary available yet.";
+
+  const blockers = Array.isArray(readiness.blockers) ? readiness.blockers : [];
+  const diagnostics = Array.isArray(readiness.diagnostics) ? readiness.diagnostics : [];
+  startupDiagnostics.textContent = blockers.length || diagnostics.length
+    ? [...blockers.map((item) => `BLOCKER: ${item}`), ...diagnostics].join("\n")
+    : "No startup diagnostics reported.";
+
+  renderJson(capabilitiesJson, readiness.capabilities || {});
 }
 
 async function fetchJson(path, options = {}) {

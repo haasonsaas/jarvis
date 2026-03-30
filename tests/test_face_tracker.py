@@ -213,3 +213,10 @@ class TestFaceTracker:
         from jarvis.vision.face_tracker import FaceTracker
         with pytest.raises(ValueError):
             FaceTracker(presence=mock_presence, get_frame=lambda: None, fps=0)
+
+    def test_missing_ultralytics_raises_helpful_error(self, mock_presence):
+        from jarvis.vision import face_tracker as module
+
+        with patch.object(module, "YOLO", None), patch.object(module, "_YOLO_IMPORT_ERROR", "module not found"):
+            with pytest.raises(RuntimeError, match="ultralytics"):
+                module.FaceTracker(presence=mock_presence, get_frame=lambda: None)

@@ -22,16 +22,11 @@
         <div class="cta-row">
           <a class="button primary" href="#highlights">Explore Features</a>
           <a class="button ghost" href="README.md">Read Setup Notes</a>
+          <a class="button ghost" href="CHANGELOG.md">Release Notes</a>
         </div>
       </div>
       <div class="hero-card">
-        <p class="card-label">What ships</p>
-        <ul>
-          <li>Streaming STT, LLM, and TTS loop with interruption handling</li>
-          <li>Embodied presence system with gaze, micro-behaviors, and motion macros</li>
-          <li>Bundled settings UI for wake mode, personality, and runtime toggles</li>
-          <li>Robot-safe wrapper for Reachy Mini dashboard install and launch</li>
-        </ul>
+        <img class="preview" src="assets/jarvis-control-deck-preview.svg" alt="Jarvis control deck preview" />
       </div>
     </section>
 
@@ -55,6 +50,13 @@
         <h2>Live controls in-app</h2>
         <p>
           The packaged settings panel exposes wake mode, sleep state, personality, motion, and TTS controls directly from the Reachy dashboard.
+        </p>
+      </article>
+      <article class="card">
+        <p class="card-label">Operations</p>
+        <h2>Readiness and smoke paths</h2>
+        <p>
+          App compatibility checks run in CI, and the release path now includes a dedicated Reachy app smoke-test runbook for daemon and hardware validation.
         </p>
       </article>
     </section>

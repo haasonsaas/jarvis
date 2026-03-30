@@ -55,6 +55,10 @@ Use this checklist for policy or integration behavior changes before merging to 
    - integration read path (`todoist_list_tasks` if configured)
    - smart-home dry-run path (if Home Assistant configured)
 4. Validate audit log writes for the smoke-test actions.
+5. Validate the Reachy Mini app packaging and dashboard path:
+   - `./scripts/reachy_app_smoke.sh --reinstall`
+   - `./scripts/reachy_app_smoke.sh --daemon --reinstall` when `reachy-mini-daemon` is available
+   - complete the hardware checks in [`docs/operations/reachy-app-smoke-test.md`](docs/operations/reachy-app-smoke-test.md)
 
 ## 6) Rollback Triggers and Actions
 

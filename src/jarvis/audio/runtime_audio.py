@@ -6,7 +6,11 @@ import math
 from typing import Any
 
 import numpy as np
-from scipy.signal import resample_poly
+
+try:
+    from scipy.signal import resample_poly as _resample_poly
+except Exception:  # pragma: no cover - exercised via fallback path tests
+    _resample_poly = None
 
 
 def require_sounddevice(sd_obj: Any, import_error: str | None, *, feature: str) -> None:
@@ -37,8 +41,16 @@ def resample_audio(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     if sr_in == sr_out or x.size == 0:
         return x.astype(np.float32, copy=False)
 
-    g = math.gcd(int(sr_in), int(sr_out))
-    up = int(sr_out) // g
-    down = int(sr_in) // g
-    y = resample_poly(x.astype(np.float32, copy=False), up=up, down=down)
+    source = x.astype(np.float32, copy=False)
+    if _resample_poly is not None:
+        g = math.gcd(int(sr_in), int(sr_out))
+        up = int(sr_out) // g
+        down = int(sr_in) // g
+        y = _resample_poly(source, up=up, down=down)
+        return y.astype(np.float32, copy=False)
+
+    target_len = max(1, int(round(float(source.size) * float(sr_out) / float(sr_in))))
+    source_idx = np.arange(source.size, dtype=np.float32)
+    target_idx = np.linspace(0.0, float(max(source.size - 1, 0)), num=target_len, dtype=np.float32)
+    y = np.interp(target_idx, source_idx, source)
     return y.astype(np.float32, copy=False)

@@ -7,8 +7,9 @@ import math
 from typing import Any
 
 import numpy as np
-from scipy.signal import resample_poly
 from faster_whisper import WhisperModel
+
+from jarvis.audio.runtime_audio import resample_audio
 
 log = logging.getLogger(__name__)
 
@@ -107,10 +108,7 @@ class SpeechToText:
             return "", diagnostics
 
         if sample_rate != 16000:
-            g = math.gcd(int(sample_rate), 16000)
-            up = 16000 // g
-            down = int(sample_rate) // g
-            audio = resample_poly(audio.astype(np.float32, copy=False), up=up, down=down).astype(np.float32, copy=False)
+            audio = resample_audio(audio, sample_rate, 16000)
 
         try:
             segments_iter, info = self._model.transcribe(audio, beam_size=5)

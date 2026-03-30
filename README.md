@@ -16,6 +16,13 @@ tags:
 An embodied AI assistant inspired by Jarvis from Iron Man, running on the
 [Reachy Mini](https://huggingface.co/reachy-mini) robot with OpenAI Agents as its brain.
 
+Published Reachy Mini app:
+- Space: [EvalOps/jarvis](https://huggingface.co/spaces/EvalOps/jarvis)
+- Release notes: [`CHANGELOG.md`](CHANGELOG.md)
+- Reachy app smoke test: [`docs/operations/reachy-app-smoke-test.md`](docs/operations/reachy-app-smoke-test.md)
+
+![Jarvis control deck preview](assets/jarvis-control-deck-preview.svg)
+
 ## Design Principles
 
 1. **Latency is king.** First audible response within 300-600ms (filler or real).
@@ -90,6 +97,10 @@ An embodied AI assistant inspired by Jarvis from Iron Man, running on the
 ```bash
 cd jarvis
 uv sync
+# Optional for local workstation speaker/mic fallback:
+# uv sync --extra local-audio
+# Optional for contributor tooling:
+# uv sync --extra dev
 cp .env.example .env
 # Fill in: OPENAI_API_KEY, ELEVENLABS_API_KEY
 # Optional: HASS_URL, HASS_TOKEN for smart home

@@ -132,6 +132,30 @@ def test_start_builds_trackers_and_configures_robot_audio_on_hardware() -> None:
     assert runtime._robot_output_sr == 16000
 
 
+def test_start_warns_and_continues_when_face_tracker_is_unavailable() -> None:
+    runtime = _runtime_stub()
+    runtime.robot.sim = False
+    runtime.args.no_vision = False
+    runtime.config.motion_enabled = True
+    runtime.config.startup_warnings = []
+    logger = SimpleNamespace(info=MagicMock(), warning=MagicMock())
+
+    start(
+        runtime,
+        require_sounddevice_fn=MagicMock(),
+        sd_module=SimpleNamespace(OutputStream=MagicMock()),
+        build_face_tracker_fn=lambda: (_ for _ in ()).throw(RuntimeError("vision stack missing")),
+        build_hand_tracker_fn=lambda: None,
+        sleep_fn=lambda _delay: None,
+        logger=logger,
+    )
+
+    runtime.presence.start.assert_called_once()
+    runtime.robot.start_audio.assert_called_once_with(recording=True, playing=False)
+    assert any("Vision disabled at startup" in warning for warning in runtime.config.startup_warnings)
+    logger.warning.assert_called_once()
+
+
 def test_stop_suppresses_component_errors_and_resets_state() -> None:
     runtime = _runtime_stub()
     runtime._started = True

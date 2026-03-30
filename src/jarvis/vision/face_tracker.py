@@ -13,7 +13,12 @@ import threading
 import numpy as np
 from dataclasses import dataclass
 
-from ultralytics import YOLO
+try:
+    from ultralytics import YOLO
+    _YOLO_IMPORT_ERROR: str | None = None
+except Exception as e:  # pragma: no cover - exercised in optional-dependency tests
+    YOLO = None  # type: ignore[assignment]
+    _YOLO_IMPORT_ERROR = str(e)
 
 from jarvis.presence import PresenceLoop
 
@@ -64,6 +69,12 @@ class FaceTracker:
         """
         if fps <= 0:
             raise ValueError("fps must be > 0")
+        if YOLO is None:
+            detail = f" ({_YOLO_IMPORT_ERROR})" if _YOLO_IMPORT_ERROR else ""
+            raise RuntimeError(
+                "Face tracking requires ultralytics. Install the optional vision stack before enabling it."
+                f"{detail}"
+            )
 
         self._presence = presence
         self._get_frame = get_frame

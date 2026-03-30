@@ -8,6 +8,12 @@ from typing import Any, Callable
 from jarvis.tools.services import set_runtime_voice_state
 
 
+def _append_startup_warning(runtime: Any, message: str) -> None:
+    warnings = getattr(runtime.config, "startup_warnings", None)
+    if isinstance(warnings, list):
+        warnings.append(str(message))
+
+
 def start(
     runtime: Any,
     *,
@@ -44,12 +50,22 @@ def start(
         runtime._use_robot_audio = not runtime.robot.sim
 
         if not runtime.args.no_vision and not runtime.robot.sim:
-            runtime.face_tracker = build_face_tracker_fn()
-            runtime.face_tracker.start()
+            try:
+                runtime.face_tracker = build_face_tracker_fn()
+                runtime.face_tracker.start()
+            except Exception as exc:
+                runtime.face_tracker = None
+                logger.warning("Face tracker unavailable: %s", exc)
+                _append_startup_warning(runtime, f"Vision disabled at startup: {exc}")
 
             if runtime.config.hand_track_enabled:
-                runtime.hand_tracker = build_hand_tracker_fn()
-                runtime.hand_tracker.start()
+                try:
+                    runtime.hand_tracker = build_hand_tracker_fn()
+                    runtime.hand_tracker.start()
+                except Exception as exc:
+                    runtime.hand_tracker = None
+                    logger.warning("Hand tracker unavailable: %s", exc)
+                    _append_startup_warning(runtime, f"Hand tracking disabled at startup: {exc}")
 
         if runtime._use_robot_audio:
             runtime.robot.start_audio(recording=True, playing=runtime.tts is not None)

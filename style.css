@@ -82,18 +82,18 @@ h2 {
 }
 
 .hero-card {
-  padding: 22px;
+  padding: 18px;
   border-radius: 24px;
   background: linear-gradient(180deg, rgba(12, 123, 132, 0.09), rgba(8, 79, 88, 0.15));
 }
 
-.hero-card ul {
-  margin: 0;
-  padding-left: 18px;
-}
-
-.hero-card li + li {
-  margin-top: 12px;
+.preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 18px;
+  border: 1px solid rgba(16, 32, 41, 0.08);
+  background: rgba(255, 255, 255, 0.42);
 }
 
 .cta-row {
