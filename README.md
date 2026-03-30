@@ -1,7 +1,7 @@
 ---
 title: Jarvis
 emoji: "🤖"
-colorFrom: orange
+colorFrom: yellow
 colorTo: blue
 sdk: static
 pinned: false
