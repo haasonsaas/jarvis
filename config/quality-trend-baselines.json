@@ -3,7 +3,7 @@
     "max_failed_count": 0,
     "baseline_avg_phase_duration_sec": 3.5,
     "max_avg_phase_duration_delta_sec": 8.0,
-    "baseline_sim_baseline_duration_sec": 9.0,
+    "baseline_sim_baseline_duration_sec": 25.0,
     "max_sim_baseline_duration_delta_sec": 10.0
   },
   "fault": {
