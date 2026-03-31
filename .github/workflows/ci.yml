@@ -67,8 +67,19 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
 
+      - name: Install system deps (reachy-mini on Linux)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq --no-install-recommends \
+            libportaudio2 libsndfile1 libffi-dev gcc pkg-config python3-dev
+
       - name: Sync dependencies
         run: uv sync --extra dev
+
+      - name: Pre-flight pip install check (verbose — surfaces hidden errors)
+        run: |
+          python -m venv /tmp/preflight-venv
+          /tmp/preflight-venv/bin/pip install . 2>&1 | tail -50
 
       - name: Reachy app smoke contract
         run: |
