@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "reachy-mini>=0.1.0",
-    "faster-whisper>=1.1.0",
+    "faster-whisper>=1.2.1",
     "elevenlabs>=1.0.0",
     "silero-vad>=5.1",
     "ultralytics>=8.3.0",
