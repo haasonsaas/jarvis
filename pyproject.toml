@@ -15,7 +15,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "cryptography>=44.0.0",
     "torch>=2.0.0",
-    "openai-agents>=0.10.2",
+    "openai-agents>=0.13.6",
     "openai>=2.24.0",
 ]
 keywords = ["reachy-mini-app", "robotics", "voice-assistant"]
