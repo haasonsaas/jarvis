@@ -27,7 +27,7 @@ jarvis = "jarvis.main:Jarvis"
 wireless = ["reachy-mini[wireless-version]"]
 local-audio = ["sounddevice>=0.5.0"]
 dev = [
-    "ruff>=0.11.0",
+    "ruff>=0.15.10",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-mock>=3.14",
